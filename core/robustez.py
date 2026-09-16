@@ -182,6 +182,15 @@ def teste_runs(liquido: np.ndarray) -> dict:
     }
 
 
+def _autocorrelacao_1(serie: np.ndarray) -> float:
+    """Autocorrelação de defasagem 1 de uma série já numérica, 0.0 se degenerada."""
+    c = serie - serie.mean()
+    den = float((c * c).sum())
+    if den <= 0:
+        return 0.0
+    return float((c[:-1] * c[1:]).sum() / den)
+
+
 def bloco_medio(por_dia: np.ndarray) -> int:
     """De quantos pregões é o bloco do bootstrap.
 
@@ -190,15 +199,21 @@ def bloco_medio(por_dia: np.ndarray) -> int:
     mais que um pregão, e é justamente essa dependência que produz o
     drawdown. O comprimento sai da autocorrelação de defasagem 1, pela
     razão (1+ρ)/(1−ρ) — a mesma que descreve a perda de amostra efetiva.
+
+    Duas rhos, não uma: a do NÍVEL (dias bons/maus em sequência) e a da
+    MAGNITUDE, medida em |x| (volatilidade alta/baixa em sequência). Um
+    P&L que alterna sinal dia a dia mas cuja magnitude anda em blocos tem
+    ρ do nível perto de zero — ganho e perda se cancelam na soma — e ainda
+    assim produz drawdown maior por causa do agrupamento de volatilidade,
+    que só o ρ de |x| enxerga. Usamos o maior dos dois.
     """
     x = np.asarray(por_dia, dtype=float)
     if len(x) < 30:
         return 1
-    x = x - x.mean()
-    den = float((x * x).sum())
-    if den <= 0:
-        return 1
-    rho = float((x[:-1] * x[1:]).sum() / den)
+    xc = x - x.mean()
+    rho_nivel = _autocorrelacao_1(xc)
+    rho_vol = _autocorrelacao_1(np.abs(xc))
+    rho = max(rho_nivel, rho_vol)
     rho = min(max(rho, 0.0), 0.95)              # dependência negativa não alonga bloco
     return max(1, int(round((1 + rho) / (1 - rho))))
 
@@ -227,7 +242,9 @@ def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
        responde só "e se a ordem fosse outra?", deixando de fora a incerteza
        que domina: o edge medido não ser o verdadeiro.
     2. **em blocos** — dias vizinhos viajam juntos, preservando o agrupamento
-       de volatilidade que produz o drawdown.
+       que produz o drawdown: tanto o de NÍVEL (dias bons/maus em sequência)
+       quanto o de MAGNITUDE (volatilidade alta em sequência, mesmo quando o
+       sinal do dia alterna e a soma não denuncia nada) — ver `bloco_medio`.
     3. **com horizonte** — mede o drawdown no prazo em que a decisão vale
        (até a próxima reotimização), não no comprimento inteiro do histórico.
 
@@ -238,8 +255,15 @@ def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
     x = np.asarray(por_dia, dtype=float)
     if len(x) < 30:
         return {}
-    L = int(bloco or bloco_medio(x))
-    H = int(horizonte or len(x))
+    # "or" engoliria bloco=0 (cai pro default) e deixaria bloco negativo
+    # passar direto pro rng: circular com passo negativo, drawdown errado
+    # e sem erro nenhum avisando
+    if bloco is not None and bloco < 1:
+        raise ValueError("bloco tem que ser um inteiro >= 1")
+    if horizonte is not None and horizonte < 1:
+        raise ValueError("horizonte tem que ser um inteiro >= 1")
+    L = int(bloco) if bloco is not None else bloco_medio(x)
+    H = int(horizonte) if horizonte is not None else len(x)
     rng = np.random.default_rng(semente)
 
     # o índice de cada dia sorteado: começa um bloco novo com probabilidade

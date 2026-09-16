@@ -294,3 +294,74 @@ def test_bootstrap_conta_perdas_seguidas_e_tempo_submerso_em_pregoes():
 
 def test_bootstrap_com_serie_curta_devolve_vazio():
     assert rb.bootstrap(np.zeros(5), 10_000.0) == {}
+
+
+def test_bootstrap_bloco_maior_aumenta_dd_p95_na_serie_agrupada():
+    """Bloco descartado (tratado como independente) subestima o drawdown na
+    série agrupada. A comparação com `monte_carlo` não pega esse defeito
+    porque a permutação também ignora a ordem original — este teste isola o
+    efeito do parâmetro `bloco` sozinho, sem depender da permutação."""
+    rng = np.random.default_rng(7)
+    base = rng.normal(10, 120, 120)
+    dia = np.repeat(base, 5)
+    grande = rb.bootstrap(dia, 10_000.0, n=500, semente=9, bloco=8)
+    pequeno = rb.bootstrap(dia, 10_000.0, n=500, semente=9, bloco=1)
+    assert grande["dd_p95"] > pequeno["dd_p95"]
+
+
+def test_bootstrap_submerso_e_perdas_em_pregoes_nao_em_fracao():
+    """As unidades de `submerso_p95` e `perdas_seguidas_p95` são PREGÕES,
+    não fração de tempo — nesta série (60 dias, todos no vermelho), uma
+    implementação que devolvesse fração daria 100 em vez de 60."""
+    dia = np.array([-10.0] * 60)
+    b = rb.bootstrap(dia, 10_000.0, n=50, semente=1, bloco=1)
+    assert b["dd_p95"] == pytest.approx(600.0)
+    assert b["submerso_p95"] == pytest.approx(60.0)
+    assert b["perdas_seguidas_p95"] == pytest.approx(60.0)
+
+
+def test_bootstrap_inclui_o_capital_como_ponto_de_partida_do_pico():
+    """O pico tem que nascer no capital, não no primeiro dia já debitado —
+    senão uma sequência só de perdas mede metade do drawdown real. Série
+    constante e horizonte curto (2 dias) tornam o resultado exato: com
+    dois dias de -40, o correto é 80; começar o pico depois do capital
+    daria só 40."""
+    dia = np.full(30, -40.0)
+    b = rb.bootstrap(dia, 10_000.0, n=5, semente=1, bloco=1, horizonte=2)
+    assert b["dd_p95"] == pytest.approx(80.0)
+
+
+def test_bootstrap_rejeita_bloco_invalido():
+    """`bloco or bloco_medio(x)` engolia bloco=0 (caía pro default sem
+    avisar) e deixava bloco negativo passar direto pro sorteio, produzindo
+    um índice circular de passo negativo — drawdown errado, sem erro
+    nenhum."""
+    with pytest.raises(ValueError):
+        rb.bootstrap(np.zeros(40), 10_000.0, bloco=0)
+    with pytest.raises(ValueError):
+        rb.bootstrap(np.zeros(40), 10_000.0, bloco=-3)
+
+
+def test_bootstrap_rejeita_horizonte_invalido():
+    """Mesma falha do `bloco`, no `horizonte`: `horizonte or len(x)`
+    engolia zero e negativo em silêncio."""
+    with pytest.raises(ValueError):
+        rb.bootstrap(np.zeros(40), 10_000.0, horizonte=0)
+    with pytest.raises(ValueError):
+        rb.bootstrap(np.zeros(40), 10_000.0, horizonte=-5)
+
+
+def test_bloco_medio_capta_volatilidade_agrupada_com_sinal_alternado():
+    """Sinal alterna a cada pregão (ganho, perda, ganho, perda...), então a
+    autocorrelação da série CRUA fica perto de zero — ganho e perda se
+    cancelam na soma. Mas a MAGNITUDE anda em blocos de 5 pregões (baixa,
+    depois alta): é agrupamento de volatilidade de verdade, e só a
+    autocorrelação de |x| enxerga. A versão que olha só o nível dava 1
+    aqui; a corrigida tem que dar mais que 1."""
+    rng = np.random.default_rng(5)
+    mag_baixa = rng.uniform(5, 15, 20)
+    mag_alta = rng.uniform(80, 120, 20)
+    magnitude = np.repeat(np.concatenate([mag_baixa, mag_alta]), 5)
+    sinal = np.resize([1.0, -1.0], len(magnitude))
+    dia = magnitude * sinal
+    assert rb.bloco_medio(dia) > 1
