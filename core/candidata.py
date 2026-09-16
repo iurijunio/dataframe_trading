@@ -508,7 +508,7 @@ def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
     real = float(depois.sum())
     p10 = float(boot["final_p10"])
     return {**portao(nome, real >= p10, True, round(real, 2),
-                     f"≥ {p10:,.2f} (10% piores)", dica),
+                     "fora dos 10% piores caminhos", dica),
             "lucro_mes_antes": float(antes.sum()) / max(len(antes) / 21, 1e-9),
             "lucro_mes_holdout": real / max(len(depois) / 21, 1e-9),
             "esperado_p10": p10, "pregoes_holdout": int(len(depois))}

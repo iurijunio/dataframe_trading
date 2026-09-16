@@ -607,3 +607,31 @@ def test_holdout_entre_p10_e_p50_passa_mas_reprovaria_com_p50():
 
     p = candidata.portao_holdout(dias, pnl, corte, CAP)
     assert p["ok"] is True
+
+
+# --------------------------------- rodada de correção 1 da tarefa 3
+
+
+def test_holdout_exigido_sem_numero_formatado_a_americana():
+    """`exigido` não pode carregar o p10 formatado (vírgula de milhar, ponto
+    decimal) — a tela (`ui/components/wfa_panel.py::_fmt_portao`) imprime o
+    campo direto, sem reformatar, e o operador pode ler a vírgula como
+    separador decimal e errar a ordem de grandeza. O limite cru continua
+    disponível em `esperado_p10` para a tela formatar em reais."""
+    rng = np.random.default_rng(3)
+    dias, pnl, corte = _serie(rng.normal(5, 40, 800), rng.normal(5, 40, 110))
+    p = candidata.portao_holdout(dias, pnl, corte, CAP)
+    assert p["exigido"] == "fora dos 10% piores caminhos"
+    assert p["esperado_p10"] is not None
+
+
+def test_holdout_historico_curto_demais_nao_mede():
+    """Menos de 30 pregões antes do corte não dá para o bootstrap montar
+    2.000 caminhos de verdade (`robustez.bootstrap` devolve `{}` com menos
+    de 30 pontos) — o portão fica pendente (`ok=None`), não reprovado:
+    falta de dado não é resultado ruim."""
+    rng = np.random.default_rng(3)
+    dias, pnl, corte = _serie(rng.normal(5, 40, 20), rng.normal(5, 40, 40))
+    p = candidata.portao_holdout(dias, pnl, corte, CAP)
+    assert p["ok"] is None
+    assert p["valor"] == "histórico curto demais"
