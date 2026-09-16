@@ -1554,3 +1554,56 @@ Ela é escrita **depois**, e não agora, por um motivo: a medição da tarefa 10
 decisões dela — o limiar do portão 1 e quantas repetições cabem no portão 3.
 Escrever agora seria escrever com número suposto, que é o que esta tela inteira
 existe para evitar.
+
+---
+
+## Resultado da execução (16/09/2026)
+
+As 11 tarefas foram executadas e revisadas uma a uma, mais uma revisão final
+do ramo inteiro. 22 commits no ramo `candidata`, 445 testes. O que a execução
+descobriu e que **muda o plano da parte 2**:
+
+### Decisões que divergiram deste plano
+
+- **Sharpe pelo dia de saída**, não de entrada (tarefa 3): o plano estava
+  errado.
+- **Perdas seguidas contam só pregões operados** (tarefa 9).
+- **`bloco_medio` olha também o valor absoluto** da série (tarefa 6).
+- **Horizonte por `wfa.pregoes` do deploy**, não 21 pregões por mês
+  (tarefa 9): 131 pregões no #3 e no #8, contra 126.
+- **Estratificação do aleatório pela hora de execução** (`ts + 1 min`),
+  não pela hora do carimbo da barra (tarefa 11).
+- **`perfil_plato` lê a chave `dd`**, que é o que `optimizer.carregar_salva`
+  devolve — o plano dizia `max_dd` (tarefa 10).
+
+### O que a parte 2 precisa levar em conta
+
+1. **Portão 1 (platô): três motivos de parada, não dois.** `perfil_plato` já
+   distingue queda de borda (`borda_esq`/`borda_dir`). Falta o terceiro: um
+   ponto **ausente** ao lado do centro (mineração interrompida) hoje para a
+   caminhada com `borda = False`, lido igual a uma queda comprovada. Na #40
+   as duas larguras são a grade acabando — o portão não pode tratar isso como
+   platô confirmado; a pergunta honesta é se a mineração devia ter ido além
+   de 80.
+2. **Portão 3 (aleatório): calibrar uma vez por janela.** Calibrando a cada
+   repetição, 1.000 repetições × 8 janelas levam ~206 s; calibrando por
+   janela, ~34 s. E conferir o número de trades obtidos contra o alvo depois
+   de `calibrar`, que devolve o melhor visto em silêncio quando o alvo é
+   inatingível.
+3. **O "p95 = 5% de desligar em falso" é otimista fora da amostra.** Medido
+   estimando o p95 numa curva e simulando trajetórias novas do mesmo
+   processo: 6,8% a 7,1%. O teste atual do p95 é circular.
+4. **O disjuntor mede drawdown desde o início do ciclo, não desde o topo
+   histórico.** Medido desde o topo, o limite fica subestimado: no #8, 863 em
+   131 pregões contra 1.108 em 262.
+5. **Walk-forward com holdout incluído não alimenta o bloco do holdout
+   lacrado.** O #3 e o #8 foram salvos com holdout incluído: para eles, o
+   holdout já foi visto.
+6. **`sharpes_matriz` vazio grava NULL** e fica indistinguível de registro
+   antigo: a tela precisa dizer "matriz não calculada ao salvar".
+7. **`optimizer.excluir_salva` ainda apaga os walk-forwards da mineração**,
+   contra o §7 do desenho ("só o bloco 2 cai"). Decidir.
+8. **Tela:** os três p95 do bloco 1 podem vir de recortes diferentes e não
+   descrevem uma trajetória simultânea — falta uma linha na seção dizendo
+   isso. E `cand_opcoes` devolve o valor atual em vez de `no_update` quando
+   ele segue válido, o que recalcula o bloco à toa ao entrar no modo.

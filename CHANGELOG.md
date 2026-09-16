@@ -8,6 +8,65 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Modo Candidata, parte 1** (`core/candidata.py`, `core/aleatorio.py`,
+  `ui/components/candidata_panel.py`, `ui/callbacks_candidata.py`): o quarto
+  modo, ao lado de Backtest, Mineração e Walk-Forward. É o passo 10 da
+  metodologia — robustez — medido sobre a curva que o otimizador **nunca
+  viu**. Desenho em [docs/PLANO-CANDIDATA.md](docs/PLANO-CANDIDATA.md). Nesta
+  parte a tela **mostra, mas ainda não reprova**: os portões vêm na parte 2.
+  - **A robustez mudou de curva.** A aba Robustez do Backtest mede os trades
+    que o otimizador escolheu olhando o resultado. A Candidata mede os trades
+    fora da amostra do walk-forward salvo (`wfa_trades`).
+  - **E mudou de método.** O Monte Carlo antigo permuta os trades **sem
+    reposição**: todas as trajetórias terminam no mesmo lucro, e a dependência
+    entre pregões some. Entrou o **bootstrap estacionário** (Politis & Romano,
+    1994) sobre o resultado diário: com reposição (o lucro varia, então a
+    incerteza do próprio edge entra na conta), em blocos de pregão (o
+    agrupamento de ganhos e perdas sobrevive) e com **horizonte** — o
+    drawdown é medido até a próxima reotimização, não no comprimento inteiro
+    do histórico. A permutação continua, como "risco de ordenação".
+  - **Comprimento do bloco pela própria série** (`robustez.bloco_medio`):
+    autocorrelação de defasagem 1 do resultado e do seu valor absoluto — a
+    volatilidade agrupada com sinal alternado some da primeira e aparece na
+    segunda. No walk-forward #3 o bloco saiu 1, e isso é dos dados: a
+    autocorrelação fica entre −0,06 e +0,04 nas defasagens 1 a 10, e forçar
+    blocos maiores não aumenta o drawdown.
+  - **Dois recortes, vale o pior, métrica a métrica**: curva inteira e
+    últimos 12 meses (o índice foi de 96 mil a 197 mil pontos dentro da
+    amostra). Cada cartão diz de qual recorte e de qual prazo veio o seu
+    número, e avisa quando o recorte contém o holdout.
+  - **Perdas seguidas contam só pregões operados.** Dia sem trade não
+    interrompe a sequência: no #3, 64% dos pregões não têm operação, e a
+    contagem antiga mostrava 5 onde a curva real teve 12.
+  - **Risco de desligar uma estratégia sadia** (`candidata.risco_de_desligar`):
+    a fração das trajetórias simuladas que encosta no limite estando a
+    estratégia viva — o preço do disjuntor.
+  - **Perfil do platô** (`candidata.perfil_plato`): o fator de recuperação ao
+    longo da faixa minerada, com o parâmetro escolhido marcado, a largura do
+    platô em passos da grade e **se cada lado parou por queda ou porque a
+    grade acabou**. Na #40 as duas larguras são a grade acabando: toda a
+    faixa de 40 a 80 fica acima do piso.
+  - **Entrada aleatória** (`core/aleatorio.py`): estratégia falsa que sorteia
+    as barras de entrada e herda toda a gestão da real, sem tocar no motor.
+    Estratificada pela **hora de execução** (a barra reamostrada é carimbada
+    pelo fim do período e a entrada acontece no minuto seguinte — sortear pela
+    hora do carimbo tirava 5 pontos da abertura na #40), calibrada até o
+    número de trades bater, e com p-valor de permutação conservador.
+  - **`wfa_runs` guarda perfil, capital e os Sharpes da matriz**, para a
+    Candidata não depender de a mineração de origem ainda existir. Os
+    walk-forwards salvos antes disso abrem com o aviso "salvo antes desta
+    tela".
+  - 445 testes (eram 372). Toda conta que vira número de disjuntor tem teste
+    que **falha quando a implementação é quebrada de propósito** — dez de doze
+    versões defeituosas do bootstrap passavam nos testes da primeira versão.
+
+### Corrigido
+- **Sharpe da matriz agregado pelo dia de saída.** O cálculo novo nasceu
+  agregando pelo dia de entrada, ao contrário do resto da plataforma
+  (`metrics.resumo`, `wfa_store.serie_diaria`): a mesma curva mostraria dois
+  Sharpes na mesma tela.
+- **Barra lateral do Backtest** deixa de aparecer nos modos em que os
+  parâmetros não são escolhidos à mão.
 - **Modo Walk-Forward** (`core/wfa.py`, `core/wfa_runner.py`,
   `ui/components/wfa_panel.py`): o terceiro modo, ao lado de Backtest e
   Mineração. Implementa o WFA do Pardo — **reotimizando a cada janela**, que
