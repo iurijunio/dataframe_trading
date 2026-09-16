@@ -7,12 +7,29 @@ para um lugar pequeno quando algo trava.
 
 from __future__ import annotations
 
-from dash import Input, Output
+from dash import Input, Output, no_update
 
 from core import wfa_store
 
 
 def register(app):
+    @app.callback(
+        Output("cand-wfa", "options"),
+        Input("modo", "value"),
+        Input("store-wfa-lista", "data"),
+    )
+    def cand_opcoes(qual, _lista):
+        """Busca só ao entrar no modo — não a cada troca de aba.
+
+        `store-wfa-lista` é o aviso de que um walk-forward foi salvo ou
+        excluído (ver `wfa_guardar`/exclusão em `ui/callbacks.py`); sem ele a
+        lista só se atualizaria reabrindo o modo.
+        """
+        if qual != "candidata":
+            return no_update
+        return [{"label": w["rotulo"], "value": w["wfa_id"]}
+                for w in wfa_store.listar()]
+
     @app.callback(
         Output("cand-resumo", "children"),
         Input("cand-wfa", "value"),
