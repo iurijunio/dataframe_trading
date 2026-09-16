@@ -58,6 +58,38 @@ domina. Ver §4.1.
 
 ---
 
+### Decisões revistas em 16/09/2026 (depois da parte 1)
+
+Estas valem por cima do que estiver escrito diferente no resto do documento.
+
+| # | Assunto | Decisão |
+|---|---|---|
+| 9 | Como dividir o que falta | **Duas etapas.** Etapa 2: aprovar ou reprovar (os portões). Etapa 3: contratos, limite de desligamento e plano de operação. Não faz sentido dimensionar posição de candidata reprovada. |
+| 10 | O holdout | **É critério de escolha e também portão.** O operador salva o walk-forward com o holdout incluído e usa o holdout para escolher a configuração — nada antes dele (mineração, backtest, walk-forward) o viu. O portão reprova se o resultado no holdout ficar entre os 10% piores do que a curva **antes do corte** fazia esperar para um período do mesmo tamanho. Resultado melhor que o esperado passa. |
+| 11 | Confirmação em dado novo | **Não vem de nova exportação do MT5**: a base é unificada, e outras estratégias vão minerar esses meses. A confirmação independente é a **incubação** (passo 11), sobre dias que ainda não existem quando se decide. |
+| 12 | Excluir uma mineração | **Apaga tudo junto**: walk-forwards e planos de operação que vieram dela. |
+| 13 | A tela | Números em **tabela com mapa de calor**, não em cartões. Textos em português simples: o nome diz a pergunta que o número responde. |
+
+**Os portões da etapa 2** (substituem a tabela da §5):
+
+| # | Pergunta, em palavras simples | Regra | Tipo |
+|---|---|---|---|
+| 1 | O parâmetro está numa região larga, não num pico? | ≥ 2 passos de cada lado segurando 60% do fator de recuperação do centro. Lado que termina no fim da faixa testada não reprova — vira alerta "amplie a mineração". Lado que termina num ponto não minerado também é alerta, não reprovação. | crítico |
+| 2 | Ganha de entradas sorteadas ao acaso? | chance de o sorteio fazer igual ou melhor ≤ 5% | crítico |
+| 3 | O lucro não é acaso? | média por dia firme: t ≥ 2,0 sobre o resultado diário, contando os dias parados | crítico |
+| 4 | Não depende de poucos dias? | lucro continua positivo sem os 5 melhores pregões | crítico |
+| 5 | Aguenta custo maior? | lucro continua positivo com 1 tick a mais por ponta | crítico |
+| 6 | Aguenta o desconto por muitas tentativas? | SPA de Hansen, p ≤ 0,10 | crítico |
+| 7 | O capital comporta o mínimo? | com 1 contrato, a perda esperada cabe em 20% do capital | crítico |
+| 8 | O holdout confirma? | resultado no holdout fora dos 10% piores esperados pela curva antes do corte | crítico |
+| — | Algum vizinho dá prejuízo? | nenhum ponto a até 2 passos com lucro negativo | alerta |
+| — | Depende do 1% melhor dos trades? | lucro positivo sem o 1% melhor | alerta |
+| — | Reotimizar compensou? | curva do walk-forward ≥ mediana das combinações fixas | alerta |
+
+Os portões 2 e 6 e o alerta de reotimização precisam refazer a varredura
+e rodar o motor: ficam atrás de um botão, com barra de progresso. Os
+outros saem na hora, dos dados salvos.
+
 ## 3. Arquitetura
 
 ```
