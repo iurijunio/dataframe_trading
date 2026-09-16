@@ -942,6 +942,17 @@ def agregar(passos: list[Passo], capital: float,
         eq = np.concatenate(([capital], capital + np.cumsum(liquido_oos)))
         dd_oos = float((np.maximum.accumulate(eq) - eq).max())
 
+    # o Sharpe da curva concatenada, para a dispersão entre configurações
+    # alimentar o Sharpe Deflacionado da tela Candidata
+    sharpe = None
+    if liquido_oos is not None and len(liquido_oos) and entrada_oos is not None:
+        dia = np.asarray(entrada_oos, dtype="datetime64[D]")
+        ordem = np.argsort(dia, kind="stable")
+        d, por_dia = np.unique(dia[ordem], return_index=True)
+        soma = np.add.reduceat(np.asarray(liquido_oos)[ordem], por_dia)
+        sharpe = sharpe_diario(soma, pregoes(reais[0].janela.oos_de,
+                                            reais[-1].janela.oos_ate))
+
     sem = (semestres_oos(passos, entrada_oos, liquido_oos)
            if entrada_oos is not None and liquido_oos is not None
            else {"n": 0, "positivos": 0, "pct": None, "fora": 0})
@@ -951,6 +962,7 @@ def agregar(passos: list[Passo], capital: float,
         # o mergulho da curva CONCATENADA, e nao a soma dos mergulhos por
         # janela: e a curva inteira que se opera, nao os pedacos
         "dd_oos": dd_oos,
+        "sharpe": sharpe,
         "semestres": sem["n"], "semestres_positivos": sem["positivos"],
         "semestres_fora": sem["fora"],
         # a régua do portão; sem nenhum semestre inteiro, vale a de janelas
@@ -1069,6 +1081,7 @@ def _linha_matriz(is_m, oos_m, ag, ag_anc, ver) -> dict:
             "oos_lucro": ag["oos_lucro"],
             "oos_trades": ag["oos_trades"],
             "wfe": ag["wfe_global"],
+            "sharpe": ag.get("sharpe"),
             "wfe_ancorado": ag_anc.get("wfe_global"),
             "wfe_mediana": ag["wfe_mediana"],
             "wfe_desvio": ag["wfe_desvio"],

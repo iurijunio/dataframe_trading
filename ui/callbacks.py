@@ -1316,6 +1316,7 @@ def register(app):
                     strategy=d["estrategia"], is_meses=int(is_m or 12),
                     oos_meses=int(oos_m or 6), inteligencia=qual,
                     holdout=estende, agregado=ag, veredito=ver, passos=passos,
+                    capital=capital,
                     deploy=next((p.params for p in passos if p.janela.deploy),
                                 None))
         # O Store só é regravado quando MUDA. O dcc.Store redispara quem o
@@ -1521,13 +1522,23 @@ def register(app):
             trades = wfa_runner.trades_oos_detalhados(
                 d["perfil"], _WFA["strategy"], _WFA["symbol"],
                 _WFA["passos"], set(SCHEMA_EXECUCAO)) if d else []
+            # a mesma chave com que `_matriz_guardada` guardou a matriz desta
+            # configuração — sem casar run/geração/holdout, os sharpes
+            # viriam de outra varredura ou do outro lado do holdout
+            chave = (f"{_WFA.get('run_id')}-{(_store or {}).get('g')}-"
+                    f"{int(_WFA.get('holdout', False))}")
+            por_q = (_WFA.get("matrizes", {}).get(chave) or {}).get("por_q", {})
+            sharpes = [r["sharpe"] for linhas in por_q.values()
+                      for r in linhas if r.get("sharpe") is not None]
             wid = wfa_store.salvar(
                 run_id=_WFA["run_id"], symbol=_WFA["symbol"],
                 strategy=_WFA["strategy"], nome=nome,
                 is_meses=_WFA["is_meses"], oos_meses=_WFA["oos_meses"],
                 inteligencia=_WFA["inteligencia"], holdout=_WFA["holdout"],
                 agregado=_WFA["agregado"], veredito=_WFA["veredito"],
-                passos=_WFA["passos"], trades=trades)
+                passos=_WFA["passos"], trades=trades,
+                profile=d["perfil"] if d else None,
+                capital=_WFA.get("capital"), sharpes_matriz=sharpes)
             aviso = (f"walk-forward #{wid} salvo · "
                      f"{len(trades)} trades gravados para o portfólio")
         elif gatilho == "store-wfa-lista":

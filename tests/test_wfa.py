@@ -791,6 +791,28 @@ def test_linha_da_matriz_traz_o_veredito_dos_seis_portoes():
     assert linhas[0]["estado"] in ("aprovado", "aprovado com ressalva", "reprovado")
 
 
+def test_agregar_traz_o_sharpe_da_curva_oos():
+    """O Sharpe Deflacionado precisa da dispersão dos Sharpes entre as
+    configurações — sem este campo, não há de onde tirá-la."""
+    combos = _dois_combos()
+    js = wfa.montar_janelas(INICIO, FIM, 12, 6)
+    passos = wfa.rodar(combos, js, CAP, "sharpe")
+    ts, liq, _ = wfa.trades_oos(combos, passos)
+    ag = wfa.agregar(passos, CAP, liq, ts)
+
+    assert ag["sharpe"] is not None
+    assert ag["sharpe"] > 0                      # as duas combinações lucram
+    linhas = wfa.matriz(combos, INICIO, FIM, CAP, "sharpe",
+                        configs=[(12, 6), (24, 6)])
+    assert all(r["sharpe"] is not None for r in linhas)
+
+
+def test_agregar_sem_curva_oos_devolve_sharpe_nulo():
+    js = wfa.montar_janelas(INICIO, FIM, 12, 6)
+    passos = wfa.rodar(_dois_combos(), js, CAP, "sharpe")
+    assert wfa.agregar(passos, CAP)["sharpe"] is None
+
+
 def _linha(config, wfe, estado):
     is_m, oos_m = (int(x.split(":")[1]) for x in config.split(" / "))
     return {"config": config, "is_meses": is_m, "oos_meses": oos_m,
