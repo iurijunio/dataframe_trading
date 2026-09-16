@@ -230,3 +230,13 @@ def test_bloco_medio_cresce_quando_os_dias_andam_juntos():
 def test_bloco_medio_nao_quebra_com_serie_curta_ou_constante():
     assert rb.bloco_medio(np.array([1.0, 2.0])) == 1
     assert rb.bloco_medio(np.zeros(200)) == 1
+
+
+def test_bloco_medio_guarda_serie_curta_com_dependencia():
+    """Amostra pequena (< 30) não sustenta estimativa confiável de dependência.
+    Sem a guarda, uma série de 15 pontos com agrupamento forte daria bloco > 1,
+    violando o princípio de que bootstrap em blocos sem amostra não faz sentido."""
+    rng = np.random.default_rng(42)
+    base = rng.normal(10, 50, 5)
+    agrupada_curta = np.repeat(base, 3)  # 15 pontos: cada valor dura 3 pregões
+    assert rb.bloco_medio(agrupada_curta) == 1
