@@ -117,6 +117,22 @@ def risco_de_desligar(boot: dict, limite: float) -> float | None:
 PLATO_PISO = 0.6            # o vizinho segura 60% do FR do centro
 
 
+def _perfil(pontos=None, centro_fr=None, ausentes=0, largura_esq=0,
+           largura_dir=0, borda_esq=False, borda_dir=False, abstem=False,
+           motivo=None, parametro=None) -> dict:
+    """Monta o retorno de `perfil_plato` com o contrato sempre completo.
+
+    A próxima fase liga um portão neste dicionário. Ramo que devolve um
+    subconjunto de chaves empurra o `KeyError` para quem consome — e quem
+    consome só devia precisar checar `abstem` antes de olhar o resto.
+    """
+    return {"pontos": pontos or [], "centro_fr": centro_fr,
+            "ausentes": ausentes, "largura_esq": largura_esq,
+            "largura_dir": largura_dir, "borda_esq": borda_esq,
+            "borda_dir": borda_dir, "abstem": abstem, "motivo": motivo,
+            "parametro": parametro}
+
+
 def perfil_plato(trials: list[dict], espaco: dict, deploy: dict) -> dict:
     """O perfil do parâmetro varrido, com o DEPLOY marcado.
 
@@ -131,12 +147,32 @@ def perfil_plato(trials: list[dict], espaco: dict, deploy: dict) -> dict:
     mineração real (#40) varia só um parâmetro por vez: com dois vizinhos,
     "2k vizinhos" vira duas amostras — por isso o perfil olha a faixa
     inteira, não uma vizinhança fixa.
+
+    `borda_esq`/`borda_dir` dizem POR QUE a caminhada parou daquele lado:
+    `True` quando parou porque a grade acabou (nenhum ponto caiu abaixo do
+    piso, só faltou mineração mais longe), `False` quando parou porque um
+    ponto caiu abaixo do piso ou está ausente. Sem essa distinção, uma
+    mineração que parou cedo (a #40 termina em 80, e o DEPLOY testado fica a
+    só dois passos dali) parece "platô confirmado até a borda" para quem lê
+    só o número — quando o correto é "não testamos mais longe". Largura
+    grande com borda batida é região não explorada, não região comprovada.
+
+    O centro pode ficar sem fator de recuperação por dois motivos que o
+    motivo do retorno precisa distinguir: o DEPLOY não está na grade
+    minerada (nenhum ponto casa com ele), ou está na grade mas o trial
+    gravado não tem drawdown (`dd <= 0`) para calcular a razão. Tratar os
+    dois como "não está na grade" faria a mensagem mentir no segundo caso.
+
+    Fator de recuperação negativo no centro também exige abstenção: o piso
+    é `centro_fr * 0.6`, e com `centro_fr` negativo o piso fica ACIMA do
+    centro — a régua se inverte e vizinhos melhores passariam a contar como
+    "fora do platô". Medir a forma de um platô em torno de uma combinação
+    que dá prejuízo não tem sentido nenhum: o gate se abstém.
     """
     varridos = [k for k, v in espaco.items() if len(set(v)) > 1]
     if len(varridos) != 1:
-        return {"pontos": [], "centro_fr": None, "abstem": True,
-                "ausentes": 0, "largura_esq": 0, "largura_dir": 0,
-                "motivo": "perfil só existe com um parâmetro varrido"}
+        return _perfil(abstem=True,
+                       motivo="perfil só existe com um parâmetro varrido")
     nome = varridos[0]
     grade = sorted({_valor(v) for v in espaco[nome]})
 
@@ -154,11 +190,26 @@ def perfil_plato(trials: list[dict], espaco: dict, deploy: dict) -> dict:
     ausentes = sum(1 for p in pontos if p["fr"] is None)
 
     centro = next((p for p in pontos if p["atual"]), None)
-    centro_fr = centro["fr"] if centro else None
+    if centro is None:
+        return _perfil(pontos=pontos, ausentes=ausentes, abstem=True,
+                       motivo="o DEPLOY não está na grade minerada",
+                       parametro=nome)
+
+    centro_fr = centro["fr"]
     if centro_fr is None:
-        return {"pontos": pontos, "centro_fr": None, "ausentes": ausentes,
-                "largura_esq": 0, "largura_dir": 0, "abstem": True,
-                "motivo": "o DEPLOY não está na grade minerada"}
+        return _perfil(pontos=pontos, ausentes=ausentes, abstem=True,
+                       motivo=("o DEPLOY está na grade, mas o trial gravado "
+                               "não tem drawdown para calcular o fator de "
+                               "recuperação (dd <= 0 ou ausente)"),
+                       parametro=nome)
+
+    if centro_fr <= 0:
+        return _perfil(pontos=pontos, centro_fr=centro_fr, ausentes=ausentes,
+                       abstem=True,
+                       motivo=("o DEPLOY dá prejuízo na mineração (fator de "
+                               "recuperação <= 0); medir platô em torno de "
+                               "uma perda não faz sentido"),
+                       parametro=nome)
 
     piso = centro_fr * PLATO_PISO
     i = pontos.index(centro)
@@ -169,8 +220,20 @@ def perfil_plato(trials: list[dict], espaco: dict, deploy: dict) -> dict:
                 and pontos[k]["fr"] >= piso:
             n += 1
             k += passo
-        return n
+        # k saiu do intervalo da grade sem nunca falhar o piso: a caminhada
+        # não provou platô até a borda, só ficou sem grade para continuar
+        borda = not (0 <= k < len(pontos))
+        return n, borda
 
-    return {"pontos": pontos, "centro_fr": centro_fr, "ausentes": ausentes,
-            "largura_esq": anda(-1), "largura_dir": anda(1),
-            "abstem": ausentes * 3 > len(pontos), "parametro": nome}
+    largura_esq, borda_esq = anda(-1)
+    largura_dir, borda_dir = anda(1)
+    abstem_buraco = ausentes * 3 > len(pontos)
+    return _perfil(
+        pontos=pontos, centro_fr=centro_fr, ausentes=ausentes,
+        largura_esq=largura_esq, largura_dir=largura_dir,
+        borda_esq=borda_esq, borda_dir=borda_dir, abstem=abstem_buraco,
+        motivo=("buraco grande demais na grade minerada: mais de um terço "
+                "dos pontos não tem fator de recuperação, e portão que "
+                "decide sobre grade furada decide sobre nada"
+                ) if abstem_buraco else None,
+        parametro=nome)

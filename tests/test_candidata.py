@@ -195,3 +195,120 @@ def test_perfil_plato_sem_o_deploy_na_grade_nao_quebra():
                                {"periodo_canal": [40, 50]},
                                {"periodo_canal": 99})
     assert p["centro_fr"] is None and p["abstem"]
+
+
+# ------------------------------------------- rodada de correção 1: bordas
+
+
+def test_perfil_plato_borda_dir_quando_a_grade_acaba_sem_queda():
+    """#40 em miniatura: FR se mantém alto até a última combinação
+    minerada. `largura_dir == 2` sozinho parece "platô confirmado à
+    direita", mas a caminhada só parou porque a grade acabou em 80 — não
+    porque o FR caiu. `borda_dir` existe para separar essas duas histórias:
+    sem ele, o portão da próxima fase confundiria "não testamos mais longe"
+    com "testamos e resistiu"."""
+    trials = _trials([40, 50, 60, 70, 80],
+                     [3000.0, 3200.0, 3400.0, 3600.0, 3300.0])
+    espaco = {"periodo_canal": [40, 50, 60, 70, 80]}
+    p = candidata.perfil_plato(trials, espaco, {"periodo_canal": 60})
+    assert p["largura_dir"] == 2 and p["borda_dir"] is True
+    assert p["largura_esq"] == 2 and p["borda_esq"] is True
+
+
+def test_perfil_plato_borda_falsa_quando_ha_queda_real_antes_da_borda():
+    """Mesma grade, mas agora o FR desmorona ANTES de chegar na borda: a
+    caminhada para por causa da queda, não da grade acabando —
+    `borda_dir` tem que vir `False`."""
+    trials = _trials([40, 50, 60, 70, 80],
+                     [3000.0, 3200.0, 3400.0, 500.0, 3300.0])
+    espaco = {"periodo_canal": [40, 50, 60, 70, 80]}
+    p = candidata.perfil_plato(trials, espaco, {"periodo_canal": 60})
+    assert p["largura_dir"] == 0 and p["borda_dir"] is False
+
+
+# --------------------------------- rodada de correção 1: motivo diferente
+
+
+def test_perfil_plato_motivo_diferencia_deploy_ausente_de_fr_indefinido():
+    """`centro_fr is None` acontece por dois motivos bem diferentes: o
+    DEPLOY não está na grade, ou está na grade mas o trial gravado não tem
+    drawdown (dd <= 0) para calcular o fator de recuperação. Confundir os
+    dois faz o motivo mentir — "o DEPLOY não está na grade" quando ele
+    está."""
+    fora = candidata.perfil_plato(_trials([40, 50], [1.0, 2.0]),
+                                  {"periodo_canal": [40, 50]},
+                                  {"periodo_canal": 99})
+    sem_dd = [{"params": {"periodo_canal": 40}, "lucro": 100.0, "dd": 500.0},
+              {"params": {"periodo_canal": 50}, "lucro": 200.0, "dd": 0.0}]
+    presente = candidata.perfil_plato(sem_dd, {"periodo_canal": [40, 50]},
+                                      {"periodo_canal": 50})
+    assert fora["centro_fr"] is None and fora["abstem"]
+    assert presente["centro_fr"] is None and presente["abstem"]
+    assert "não está na grade" in fora["motivo"]
+    assert "não está na grade" not in presente["motivo"]
+    assert "fator de recuperação" in presente["motivo"]
+    assert fora["motivo"] != presente["motivo"]
+
+
+# --------------------------------- rodada de correção 1: FR negativo
+
+
+def test_perfil_plato_abstem_quando_o_centro_da_prejuizo():
+    """FR negativo inverte a régua: `piso = centro_fr * 0.6` fica ACIMA do
+    centro (ex.: centro -0.4, piso -0.24), e vizinhos com FR melhor que o
+    centro passam a contar como "abaixo do piso" — a função devolveria
+    larguras com cara de válidas para uma região que é, na verdade, uma
+    perda. Medir platô em torno de prejuízo não faz sentido: o portão tem
+    que se abster, não inventar uma largura."""
+    trials = _trials([40, 50, 60], [100.0, -200.0, 150.0])
+    espaco = {"periodo_canal": [40, 50, 60]}
+    p = candidata.perfil_plato(trials, espaco, {"periodo_canal": 50})
+    assert p["abstem"] is True
+    assert p["centro_fr"] == pytest.approx(-0.4)
+    assert "prejuízo" in p["motivo"]
+
+
+# --------------------------------- rodada de correção 1: contrato de retorno
+
+
+CHAVES_PERFIL = {"pontos", "centro_fr", "ausentes", "largura_esq",
+                 "largura_dir", "borda_esq", "borda_dir", "abstem",
+                 "motivo", "parametro"}
+
+
+def test_perfil_plato_devolve_sempre_o_mesmo_conjunto_de_chaves():
+    """A próxima fase liga um portão neste dicionário: se um ramo esquece
+    uma chave, o consumidor que não checar `abstem` primeiro toma
+    KeyError. Todo ramo devolve o mesmo contrato, com None nos campos que
+    não fazem sentido naquele ramo."""
+    casos = [
+        # mais de um parâmetro varrido
+        candidata.perfil_plato(_trials([40, 50], [1.0, 2.0]),
+                               {"periodo_canal": [40, 50], "folga": [1, 2]},
+                               {"periodo_canal": 40, "folga": 1}),
+        # DEPLOY fora da grade
+        candidata.perfil_plato(_trials([40, 50], [1.0, 2.0]),
+                               {"periodo_canal": [40, 50]},
+                               {"periodo_canal": 99}),
+        # DEPLOY na grade, fr indefinido (dd <= 0)
+        candidata.perfil_plato(
+            [{"params": {"periodo_canal": 50}, "lucro": 200.0, "dd": 0.0}],
+            {"periodo_canal": [40, 50]}, {"periodo_canal": 50}),
+        # centro com prejuízo
+        candidata.perfil_plato(_trials([40, 50, 60], [100.0, -200.0, 150.0]),
+                               {"periodo_canal": [40, 50, 60]},
+                               {"periodo_canal": 50}),
+        # buraco grande na grade
+        candidata.perfil_plato(_trials([40, 50], [100.0, 900.0]),
+                               {"periodo_canal": [40, 50, 60, 70, 80]},
+                               {"periodo_canal": 50}),
+        # caso normal, sem abstenção
+        candidata.perfil_plato(_trials([40, 50, 60, 70, 80],
+                                       [100.0, 900.0, 1000.0, 950.0, 120.0]),
+                               {"periodo_canal": [40, 50, 60, 70, 80]},
+                               {"periodo_canal": 60.0}),
+    ]
+    for p in casos:
+        assert set(p.keys()) == CHAVES_PERFIL
+        # contrato explícito: motivo só é None quando não há abstenção
+        assert (p["motivo"] is None) == (not p["abstem"])
