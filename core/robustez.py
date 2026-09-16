@@ -246,6 +246,26 @@ def perdas_seguidas_operadas(serie: np.ndarray) -> int:
     return _maior_seq(operados < 0)
 
 
+def indices_estacionarios(tamanho: int, horizonte: int, n: int, bloco: int,
+                          rng: np.random.Generator) -> np.ndarray:
+    """Os índices sorteados do bootstrap estacionário (Politis & Romano,
+    1994), forma `(n, horizonte)`, com valores em `[0, tamanho)`.
+
+    Extraída de `bootstrap` para ser reaproveitada por `spa.teste`, que
+    precisa do MESMO sorteio de pregões (linhas) aplicado a todas as colunas
+    de uma vez — é isso que preserva a correlação entre elas. Consome o
+    `rng` na mesma ordem de antes (`random` primeiro, depois `integers`),
+    para não mudar nenhum número que os testes de `bootstrap` já conferem.
+    """
+    t = np.arange(horizonte)
+    novo = rng.random((n, horizonte)) < (1.0 / bloco)
+    novo[:, 0] = True
+    inicio_em = np.maximum.accumulate(np.where(novo, t, 0), axis=1)
+    sorteado = rng.integers(0, tamanho, size=(n, horizonte))
+    base = np.take_along_axis(sorteado, inicio_em, axis=1)
+    return (base + (t - inicio_em)) % tamanho
+
+
 def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
               semente: int = 7, bloco: int | None = None,
               horizonte: int | None = None) -> dict:
@@ -280,17 +300,7 @@ def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
     L = int(bloco) if bloco is not None else bloco_medio(x)
     H = int(horizonte) if horizonte is not None else len(x)
     rng = np.random.default_rng(semente)
-
-    # o índice de cada dia sorteado: começa um bloco novo com probabilidade
-    # 1/L, senão anda um dia à frente (circular) — é o bootstrap estacionário
-    # de Politis & Romano, vetorizado sobre os n caminhos de uma vez
-    t = np.arange(H)
-    novo = rng.random((n, H)) < (1.0 / L)
-    novo[:, 0] = True
-    inicio_em = np.maximum.accumulate(np.where(novo, t, 0), axis=1)
-    sorteado = rng.integers(0, len(x), size=(n, H))
-    base = np.take_along_axis(sorteado, inicio_em, axis=1)
-    idx = (base + (t - inicio_em)) % len(x)
+    idx = indices_estacionarios(len(x), H, n, L, rng)
     series = x[idx]
 
     quedas = np.empty(n)

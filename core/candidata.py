@@ -514,6 +514,25 @@ def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
             "esperado_p10": p10, "pregoes_holdout": int(len(depois))}
 
 
+def portao_tentativas(resultado_spa: dict, maximo: float = 0.10) -> dict:
+    """O portão 6: aguenta o desconto por muitas tentativas?
+
+    Recebe o dicionário de `spa.teste` (a Superior Predictive Ability de
+    Hansen, 2005, aplicada às combinações mineradas). Sem resultado (dado
+    faltando ou nenhuma coluna sobrou na conta) o portão fica pendente, não
+    reprovado — falta de dado não é a mesma coisa que resultado ruim."""
+    nome = "Aguenta o desconto por muitas tentativas?"
+    dica = ("Foram testadas muitas combinações; alguma sempre sai bem por "
+            "sorte. Este teste mede se a melhor delas continua sendo melhor "
+            "que não operar depois de descontar isso. Reprova acima de "
+            "10%.")
+    exigido = f"até {maximo:.0%} de chance de ser sorte"
+    if not resultado_spa:
+        return portao(nome, None, True, "não foi possível medir", exigido, dica)
+    p = resultado_spa["p"]
+    return portao(nome, p <= maximo, True, p, exigido, dica)
+
+
 def veredito(portoes: list[dict]) -> dict:
     """Crítico reprovado reprova. Crítico ainda não medido impede aprovar.
     Alerta reprovado aprova com ressalva."""
