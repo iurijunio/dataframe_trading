@@ -130,3 +130,68 @@ def test_limite_no_p95_deixa_cerca_de_cinco_por_cento_de_falso_desligamento():
     from core import robustez
     b = robustez.bootstrap(dia, 10_000.0, n=600, semente=8)
     assert candidata.risco_de_desligar(b, b["dd_p95"]) == pytest.approx(5.0, abs=1.5)
+
+
+# ------------------------------------------------------- perfil do platô
+
+
+def _trials(valores, lucros, dd=500.0):
+    # a chave real de mining_trials é "dd" (via optimizer.carregar_salva),
+    # não "max_dd" — usar o nome errado faz o fator de recuperação sair
+    # sempre None e o portão se abster em silêncio
+    return [{"params": {"periodo_canal": v}, "lucro": l, "dd": dd}
+            for v, l in zip(valores, lucros)]
+
+
+def test_perfil_plato_mede_a_largura_em_torno_do_deploy():
+    """Platô largo: os vizinhos seguram o fator de recuperação. É isto que
+    distingue região fértil de pico de sorte.
+
+    Há um segundo pico isolado depois do buraco de cada lado (30 e 90): a
+    contagem tem que PARAR no primeiro ponto que não segura o piso, não
+    pular o buraco e continuar — senão um pico de sorte distante infla a
+    largura do platô central, que é exatamente o erro que este bloco existe
+    para não cometer.
+    """
+    trials = _trials([30, 40, 50, 60, 70, 80, 90],
+                     [1000.0, 100.0, 100.0, 1000.0, 1000.0, 100.0, 1000.0])
+    espaco = {"periodo_canal": [30, 40, 50, 60, 70, 80, 90]}
+    p = candidata.perfil_plato(trials, espaco, {"periodo_canal": 60.0})
+    assert p["largura_esq"] == 0 and p["largura_dir"] == 1
+    assert [x["atual"] for x in p["pontos"]] == \
+        [False, False, False, True, False, False, False]
+
+
+def test_perfil_plato_acha_o_deploy_mesmo_vindo_em_float():
+    """78.0 do JSON tem que casar com o 78 gravado na mineração."""
+    trials = _trials([76, 78, 80], [500.0, 600.0, 550.0])
+    p = candidata.perfil_plato(trials, {"periodo_canal": [76, 78, 80]},
+                               {"periodo_canal": 78.0})
+    assert p["centro_fr"] == pytest.approx(600.0 / 500.0)
+
+
+def test_perfil_plato_casa_deploy_com_ruido_de_ponto_flutuante():
+    """78 + 1e-9 chega assim quando o valor atravessa uma conta de ponto
+    flutuante a montante; sem arredondar o DEPLOY na mesma régua da grade
+    (a mesma regra de `_valor` usada em `chave`), o casamento falha e o
+    portão se abstém à toa, mesmo com o parâmetro batendo com a grade."""
+    trials = _trials([76, 78, 80], [500.0, 600.0, 550.0])
+    p = candidata.perfil_plato(trials, {"periodo_canal": [76, 78, 80]},
+                               {"periodo_canal": 78.0 + 1e-9})
+    assert p["centro_fr"] == pytest.approx(600.0 / 500.0)
+
+
+def test_perfil_plato_abstem_quando_falta_um_terco_da_grade():
+    """Mineração interrompida abre buraco no meio da grade, não só na borda
+    — e portão que decide sobre grade furada decide sobre nada."""
+    trials = _trials([40, 50], [100.0, 900.0])
+    espaco = {"periodo_canal": [40, 50, 60, 70, 80]}
+    p = candidata.perfil_plato(trials, espaco, {"periodo_canal": 50})
+    assert p["ausentes"] == 3 and p["abstem"]
+
+
+def test_perfil_plato_sem_o_deploy_na_grade_nao_quebra():
+    p = candidata.perfil_plato(_trials([40, 50], [1.0, 2.0]),
+                               {"periodo_canal": [40, 50]},
+                               {"periodo_canal": 99})
+    assert p["centro_fr"] is None and p["abstem"]

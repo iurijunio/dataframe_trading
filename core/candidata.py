@@ -10,6 +10,18 @@ from __future__ import annotations
 import numpy as np
 
 
+def _valor(v):
+    """Normaliza um valor de parâmetro para comparação de grade.
+
+    Único lugar com a regra de arredondamento — `chave` e `perfil_plato`
+    chamam este helper para que 78.0 (do JSON) e 78 (da mineração) sejam
+    sempre o mesmo ponto, sem duas cópias da regra podendo divergir.
+    """
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return v
+    return round(float(v), 6)
+
+
 def chave(params: dict) -> tuple:
     """Endereço canônico de uma combinação na grade.
 
@@ -17,14 +29,7 @@ def chave(params: dict) -> tuple:
     comparar dicionários direto devolve "nenhum vizinho encontrado" sem
     levantar erro nenhum — o pior tipo de defeito.
     """
-    itens = []
-    for nome in sorted(params):
-        v = params[nome]
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
-            itens.append((nome, v))
-        else:
-            itens.append((nome, round(float(v), 6)))
-    return tuple(itens)
+    return tuple((nome, _valor(params[nome])) for nome in sorted(params))
 
 
 def por_pregao(saida_ts, liquido, de=None, ate=None):
@@ -107,3 +112,65 @@ def risco_de_desligar(boot: dict, limite: float) -> float | None:
     if quedas is None or not len(quedas):
         return None
     return float((np.asarray(quedas) >= limite).mean() * 100)
+
+
+PLATO_PISO = 0.6            # o vizinho segura 60% do FR do centro
+
+
+def perfil_plato(trials: list[dict], espaco: dict, deploy: dict) -> dict:
+    """O perfil do parâmetro varrido, com o DEPLOY marcado.
+
+    A pergunta é o FORMATO da superfície: o ponto escolhido está num platô ou
+    num pico? Medimos por fator de recuperação, não por lucro — lucro perto de
+    zero faz a razão explodir, e o que interessa é lucro por unidade de
+    mergulho.
+
+    A largura é contada em PASSOS da grade para cada lado, parando no
+    primeiro ponto que não segura 60% do centro. Combinação que perde metade
+    do FR com um passo de diferença não é candidata, é coincidência. A
+    mineração real (#40) varia só um parâmetro por vez: com dois vizinhos,
+    "2k vizinhos" vira duas amostras — por isso o perfil olha a faixa
+    inteira, não uma vizinhança fixa.
+    """
+    varridos = [k for k, v in espaco.items() if len(set(v)) > 1]
+    if len(varridos) != 1:
+        return {"pontos": [], "centro_fr": None, "abstem": True,
+                "ausentes": 0, "largura_esq": 0, "largura_dir": 0,
+                "motivo": "perfil só existe com um parâmetro varrido"}
+    nome = varridos[0]
+    grade = sorted({_valor(v) for v in espaco[nome]})
+
+    achados = {}
+    for t in trials:
+        v = _valor(t["params"][nome])
+        dd = float(t.get("dd") or 0.0)
+        lucro = float(t.get("lucro") or 0.0)
+        achados[v] = {"valor": v, "lucro": lucro,
+                      "fr": (lucro / dd) if dd > 0 else None}
+
+    alvo = _valor(deploy.get(nome, float("nan")))
+    pontos = [dict(achados.get(v, {"valor": v, "lucro": None, "fr": None}),
+                   atual=(v == alvo)) for v in grade]
+    ausentes = sum(1 for p in pontos if p["fr"] is None)
+
+    centro = next((p for p in pontos if p["atual"]), None)
+    centro_fr = centro["fr"] if centro else None
+    if centro_fr is None:
+        return {"pontos": pontos, "centro_fr": None, "ausentes": ausentes,
+                "largura_esq": 0, "largura_dir": 0, "abstem": True,
+                "motivo": "o DEPLOY não está na grade minerada"}
+
+    piso = centro_fr * PLATO_PISO
+    i = pontos.index(centro)
+
+    def anda(passo):
+        n, k = 0, i + passo
+        while 0 <= k < len(pontos) and pontos[k]["fr"] is not None \
+                and pontos[k]["fr"] >= piso:
+            n += 1
+            k += passo
+        return n
+
+    return {"pontos": pontos, "centro_fr": centro_fr, "ausentes": ausentes,
+            "largura_esq": anda(-1), "largura_dir": anda(1),
+            "abstem": ausentes * 3 > len(pontos), "parametro": nome}
