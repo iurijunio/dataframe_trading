@@ -49,3 +49,17 @@ def por_pregao(saida_ts, liquido, de=None, ate=None):
     dentro = (pos < len(dias)) & (dias[np.clip(pos, 0, len(dias) - 1)] == d)
     pnl = np.bincount(pos[dentro], weights=liq[dentro], minlength=len(dias))
     return dias, pnl
+
+
+def risco_de_desligar(boot: dict, limite: float) -> float | None:
+    """Chance de bater o limite de desligamento ESTANDO a estratégia viva.
+
+    O bootstrap simula trajetórias de uma estratégia que continua funcionando
+    como funcionou. Se X% delas encostam no limite, esse é o preço do
+    disjuntor: desligar na hora errada X% das vezes. Sem este número, o
+    limite não está calibrado — está chutado.
+    """
+    quedas = (boot or {}).get("quedas")
+    if quedas is None or not len(quedas):
+        return None
+    return float((np.asarray(quedas) >= limite).mean() * 100)

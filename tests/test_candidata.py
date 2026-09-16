@@ -54,3 +54,20 @@ def test_por_pregao_respeita_o_recorte_pedido():
                                      de="2024-03-01", ate="2024-04-01")
     assert pnl.sum() == 10.0                    # abril ficou fora
     assert len(dias) == 21
+
+
+def test_risco_de_desligar_le_a_distribuicao_do_bootstrap():
+    boot = {"quedas": np.array([100.0, 200.0, 300.0, 400.0])}
+    assert candidata.risco_de_desligar(boot, 250.0) == pytest.approx(50.0)
+    assert candidata.risco_de_desligar(boot, 1000.0) == 0.0
+    assert candidata.risco_de_desligar({}, 100.0) is None
+
+
+def test_limite_no_p95_deixa_cerca_de_cinco_por_cento_de_falso_desligamento():
+    """É a razão de o número existir: desligar no p95 desliga uma estratégia
+    sadia em 5% dos ciclos, e isso precisa estar escrito no plano."""
+    rng = np.random.default_rng(5)
+    dia = rng.normal(10, 100, 400)
+    from core import robustez
+    b = robustez.bootstrap(dia, 10_000.0, n=600, semente=8)
+    assert candidata.risco_de_desligar(b, b["dd_p95"]) == pytest.approx(5.0, abs=1.5)
