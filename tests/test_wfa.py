@@ -39,8 +39,12 @@ def combo(params: dict, por_mes: dict[str, float], trades_mes: int = 12):
             ts.append(base + np.timedelta64(k, "D"))
             liq.append(float(valor))
     ordem = np.argsort(np.array(ts))
+    entrada = np.array(ts)[ordem]
+    # a saída não importa para estes testes — só precisa existir, porque
+    # `matrizes` agora agrega o Sharpe por ela
     return {"params": params,
-            "entry_ts": np.array(ts)[ordem],
+            "entry_ts": entrada,
+            "exit_ts": entrada + np.timedelta64(3, "h"),
             "liquido": np.array(liq)[ordem]}
 
 
@@ -811,6 +815,30 @@ def test_agregar_sem_curva_oos_devolve_sharpe_nulo():
     js = wfa.montar_janelas(INICIO, FIM, 12, 6)
     passos = wfa.rodar(_dois_combos(), js, CAP, "sharpe")
     assert wfa.agregar(passos, CAP)["sharpe"] is None
+
+
+def _dia(d, h=10):
+    return np.datetime64(f"2024-03-{d:02d}T{h:02d}:00", "s")
+
+
+def test_agregar_usa_o_dia_de_saida_para_o_sharpe():
+    """Mesma convenção de `metrics.resumo`/`wfa_store.serie_diaria`: o trade
+    pertence, para o Sharpe, ao dia em que SAI — é quando o resultado se
+    realiza. Agregar pela entrada dava um Sharpe diferente do cartão de KPI
+    para a mesma curva (ver `test_resumo_agrega_o_sharpe_pelo_dia_da_saida`
+    em test_oos_unificado.py, que trava a mesma convenção do lado do
+    metrics). Os passos servem só para dar a `agregar` um `reais` válido; a
+    curva do Sharpe é a sintética abaixo."""
+    js = wfa.montar_janelas(INICIO, FIM, 12, 6)
+    passos = wfa.rodar(_dois_combos(), js, CAP, "sharpe")
+
+    liq = np.array([40.0, -10.0, 25.0])
+    entradas = np.array([_dia(4), _dia(5), _dia(6)])
+    saidas = np.array([_dia(5), _dia(5, 16), _dia(6)])   # os dois primeiros no dia 5
+
+    pela_saida = wfa.agregar(passos, CAP, liq, entradas, saidas)["sharpe"]
+    pela_entrada = wfa.agregar(passos, CAP, liq, entradas)["sharpe"]
+    assert pela_saida != pytest.approx(pela_entrada)
 
 
 def _linha(config, wfe, estado):

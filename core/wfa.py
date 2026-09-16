@@ -896,7 +896,8 @@ def semestres_oos(passos: list[Passo], entrada: np.ndarray,
 
 def agregar(passos: list[Passo], capital: float,
             liquido_oos: np.ndarray | None = None,
-            entrada_oos: np.ndarray | None = None) -> dict:
+            entrada_oos: np.ndarray | None = None,
+            saida_oos: np.ndarray | None = None) -> dict:
     """A linha da matriz WFM para uma configuração IS/OOS.
 
     O **WFE global** é o número principal: soma os OOS e soma os IS antes de
@@ -943,10 +944,17 @@ def agregar(passos: list[Passo], capital: float,
         dd_oos = float((np.maximum.accumulate(eq) - eq).max())
 
     # o Sharpe da curva concatenada, para a dispersão entre configurações
-    # alimentar o Sharpe Deflacionado da tela Candidata
+    # alimentar o Sharpe Deflacionado da tela Candidata. Pela SAÍDA, como
+    # `metrics.resumo` e `wfa_store.serie_diaria` — é quando o resultado se
+    # realiza; cair para a entrada só serve às chamadas antigas que ainda
+    # não têm a saída em mãos.
+    # a agregação diária é duplicada aqui em vez de chamar `metrics.resumo`
+    # porque metrics já importa wfa (usa sharpe_diario) — importar metrics
+    # daqui fecharia um ciclo.
     sharpe = None
-    if liquido_oos is not None and len(liquido_oos) and entrada_oos is not None:
-        dia = np.asarray(entrada_oos, dtype="datetime64[D]")
+    referencia = saida_oos if saida_oos is not None else entrada_oos
+    if liquido_oos is not None and len(liquido_oos) and referencia is not None:
+        dia = np.asarray(referencia, dtype="datetime64[D]")
         ordem = np.argsort(dia, kind="stable")
         d, por_dia = np.unique(dia[ordem], return_index=True)
         soma = np.add.reduceat(np.asarray(liquido_oos)[ordem], por_dia)
@@ -1055,8 +1063,13 @@ def matrizes(combos: list[dict], inicio, fim, capital: float,
         for q in qs:
             passos = rodar(combos, js, capital, q, criterios, min_trades_is,
                            preparado=prep)
-            ts, liq, _ = trades_oos(combos, passos)
-            ag = agregar(passos, capital, liq, ts)
+            # a saída entra à parte: o Sharpe da linha agrega por ela (é
+            # quando o resultado se realiza), mas o "comum" abaixo continua
+            # cortando pela entrada
+            campos = trades_oos_campos(combos, passos,
+                                       ("entry_ts", "exit_ts", "liquido"))
+            ts, saida, liq = campos["entry_ts"], campos["exit_ts"], campos["liquido"]
+            ag = agregar(passos, capital, liq, ts, saida)
             if not ag:
                 continue
             if comum is not None:

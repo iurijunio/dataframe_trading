@@ -1303,7 +1303,9 @@ def register(app):
         oos = wfa.trades_oos_campos(cache, passos,
                                     ("entry_ts", "exit_ts", "liquido", "custo"))
         ts, liq, steps = oos["entry_ts"], oos["liquido"], oos["step"]
-        ag = wfa.agregar(passos, capital, liq, ts)
+        # o Sharpe agrega pela SAÍDA — mesma convenção de metrics.resumo e
+        # wfa_store.serie_diaria — para não divergir do cartão de KPI
+        ag = wfa.agregar(passos, capital, liq, ts, oos["exit_ts"])
         # o contrafactual: a faixa de TODAS as combinações fixas da região no
         # mesmo intervalo — reotimizar só vale se a curva sair de cima dela
         fixas = wfa.faixa_fixas(cache, janelas, capital)
