@@ -420,12 +420,20 @@ def portao_acaso(pnl, minimo: float = 2.0) -> dict:
 
 def portao_poucos_dias(pnl, quantos: int = 5) -> dict:
     x = np.asarray(pnl, dtype=float)
+    dica = (f"O lucro total tirando os {quantos} melhores dias. Se ficar "
+            "negativo, a estratégia viveu de alguns dias de sorte — que "
+            "podem não se repetir.")
+    exigido = f"> 0 sem os {quantos} melhores"
+    if len(x) <= quantos:
+        # tirar "os N melhores" de uma amostra com N dias ou menos zera a
+        # amostra inteira: reprovaria por falta de dado, não por resultado
+        # ruim, então o portão fica pendente em vez de reprovado
+        return portao("O lucro não depende de poucos dias?", None, True,
+                      "poucos pregões para medir", exigido, dica)
     sobra = float(x.sum() - np.sort(x)[::-1][:quantos].sum())
     return portao(
         "O lucro não depende de poucos dias?", sobra > 0, True, round(sobra, 2),
-        f"> 0 sem os {quantos} melhores",
-        f"O lucro total tirando os {quantos} melhores dias. Se ficar negativo, "
-        "a estratégia viveu de alguns dias de sorte — que podem não se repetir.")
+        exigido, dica)
 
 
 def portao_custo(lucro_liquido: float, contratos, tick_value: float) -> dict:
@@ -442,14 +450,21 @@ def portao_custo(lucro_liquido: float, contratos, tick_value: float) -> dict:
 
 def portao_capital(perda_esperada: float, contratos_por_trade: float,
                    capital: float, teto_pct: float = 20.0) -> dict:
+    exigido = f"≤ {teto_pct:.0f}% do capital"
+    dica = ("A perda esperada operando só 1 contrato, em % do capital. Se "
+            "nem o mínimo cabe, não é a estratégia que está errada — é o "
+            "capital que não comporta o instrumento.")
+    if capital <= 0:
+        # capital <= 0 faria a % virar `inf` (nem é JSON válido, e a tela
+        # mostraria "inf% do capital"); sem capital informado não dá para
+        # medir, então o portão fica pendente, não reprovado
+        return portao("O capital comporta 1 contrato?", None, True,
+                      "capital não informado", exigido, dica)
     por_contrato = perda_esperada / max(float(contratos_por_trade), 1.0)
-    pct_ = por_contrato / capital * 100 if capital else float("inf")
+    pct_ = por_contrato / capital * 100
     return portao(
         "O capital comporta 1 contrato?", pct_ <= teto_pct, True,
-        round(pct_, 1), f"≤ {teto_pct:.0f}% do capital",
-        "A perda esperada operando só 1 contrato, em % do capital. Se nem o "
-        "mínimo cabe, não é a estratégia que está errada — é o capital que não "
-        "comporta o instrumento.")
+        round(pct_, 1), exigido, dica)
 
 
 def alerta_poucos_trades(liquido, fracao: float = 0.01) -> dict:
@@ -471,7 +486,10 @@ def veredito(portoes: list[dict]) -> dict:
     ressalvas = [p for p in portoes if not p["critico"] and p["ok"] is False]
     if reprovados:
         estado, cor = "reprovada", "neg"
-    elif pendentes:
+    elif pendentes or not portoes:
+        # lista vazia é o mesmo problema que um pendente: nenhum portão
+        # mediu nada, então a tela não pode aprovar em verde uma estratégia
+        # que não foi testada em nada
         estado, cor = "aguardando testes completos", "warn"
     elif ressalvas:
         estado, cor = "aprovada com ressalva", "warn"

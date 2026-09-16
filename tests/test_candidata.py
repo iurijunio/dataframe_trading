@@ -514,3 +514,32 @@ def test_veredito_pendente_nao_aprova():
     assert candidata.veredito([ok, pend, reprova])["estado"] == "reprovada"
     assert candidata.veredito([ok, alerta])["estado"] == "aprovada com ressalva"
     assert candidata.veredito([ok])["estado"] == "aprovada"
+
+
+# ------------------------------------- rodada de correção 1 da tarefa 2
+
+
+def test_veredito_lista_vazia_nao_aprova():
+    """Se nenhum portão chegou ao veredito (falha no cálculo de algum
+    bloco), a tela não pode mostrar "aprovada" para uma estratégia que não
+    foi testada em nada."""
+    v = candidata.veredito([])
+    assert v["estado"] == "aguardando testes completos"
+    assert v["cor"] == "warn"
+
+
+def test_portao_capital_sem_capital_nao_mede():
+    """Capital 0 (ou negativo) faria `pct_` virar `inf`, que nem é JSON
+    válido — e a tela mostraria "inf% do capital". Sem capital informado
+    não dá para medir, então o portão fica pendente, não reprovado."""
+    r = candidata.portao_capital(3000.0, 1.0, 0.0)
+    assert r["ok"] is None
+    assert r["valor"] == "capital não informado"
+
+
+def test_portao_poucos_dias_com_poucos_pregoes_nao_reprova():
+    """Tirar "os 5 melhores" de uma amostra com 3 dias zera a amostra
+    inteira e reprova por falta de dado, não por resultado ruim."""
+    r = candidata.portao_poucos_dias(np.array([10.0, 20.0, 30.0]), quantos=5)
+    assert r["ok"] is None
+    assert r["valor"] == "poucos pregões para medir"
