@@ -220,3 +220,13 @@ def test_wfa_antigo_sem_as_colunas_novas_nao_quebra(banco):
 
     assert d["capital"] is None and d["profile"] is None
     assert d["sharpes_matriz"] is None
+
+
+def test_estrategias_so_as_que_tem_walk_forward_salvo(banco):
+    """O seletor de estratégia da tela Candidata só oferece o que dá para
+    analisar: estratégia sem walk-forward salvo abriria uma lista vazia."""
+    assert st.estrategias() == []
+    _salvar(strategy="rompimento_canal")
+    _salvar(strategy="setup_cruzamento", is_meses=6)
+    _salvar(strategy="rompimento_canal", is_meses=18)
+    assert st.estrategias() == ["rompimento_canal", "setup_cruzamento"]

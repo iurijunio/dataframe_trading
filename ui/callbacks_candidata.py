@@ -15,50 +15,82 @@ from .components import candidata_panel as CP
 
 
 def _texto_resumo(d: dict) -> str:
-    """O resumo do cabeçalho, extraído para poder ser testado sem o app Dash.
+    """O cabeçalho ao lado do seletor, em palavras de quem opera.
 
-    Os walk-forwards #3 e #8 foram salvos com `holdout=True`: a base incluía
-    o holdout lacrado quando a mineração e o WFA rodaram. Isso importa aqui
-    porque o recorte de "últimos 12 meses" do bloco 1 (usado sempre que ele
-    é o pior — ver `candidata.pior_dos_recortes`) é, na prática, os seis
-    meses do holdout mais os seis anteriores: sem avisar, a tela sugeriria
-    um número medido em dado nunca visto quando metade do recorte já
-    influenciou, indiretamente, quando a mineração parou.
+    Avisa quando o walk-forward foi salvo com o holdout incluído: a curva
+    que a tela analisa contém esses meses.
     """
     base = (f"{d.get('strategy', '—')} · {d.get('symbol', '—')} · "
-            f"IS{d.get('is_meses')}/OOS{d.get('oos_meses')} · "
-            f"{d.get('inteligencia', '—')}")
+            f"IS {d.get('is_meses')} meses / OOS {d.get('oos_meses')} meses · "
+            f"inteligência {d.get('inteligencia', '—')}")
     return base + (" · holdout incluído" if d.get("holdout") else "")
+
+
+def _rotulo_curto(w: dict) -> str:
+    """Só o que identifica o walk-forward. WFE e janelas positivas já estão
+    na aba Walk-Forward, e o holdout aparece no resumo ao lado."""
+    quando = w.get("quando")
+    data = f" · {quando:%d/%m}" if quando else ""
+    return (f"#{w['wfa_id']} · {w.get('nome') or 'sem nome'} · "
+            f"IS {w['is_meses']} / OOS {w['oos_meses']}{data}")
+
+
+def _valor_do_seletor(atual, ids: set, aberto_no_wfa, padrao=None):
+    """O que fica selecionado depois de a lista ser refeita — vale para o
+    seletor de estratégia e para o de walk-forward.
+
+    - a escolha atual continua valendo enquanto existir;
+    - sem escolha (ou com uma que sumiu), herda a da aba Walk-Forward, se
+      ela estiver na lista;
+    - senão, o padrão (a primeira estratégia, no seletor de estratégia).
+    """
+    if atual in ids:
+        return atual
+    if aberto_no_wfa in ids:
+        return aberto_no_wfa
+    return padrao
 
 
 def register(app):
     @app.callback(
-        Output("cand-wfa", "options"),
-        Output("cand-wfa", "value"),
+        Output("cand-estrategia", "options"),
+        Output("cand-estrategia", "value"),
         Input("modo", "value"),
         Input("store-wfa-lista", "data"),
-        State("cand-wfa", "value"),
+        State("cand-estrategia", "value"),
+        State("wfa-estrategia", "value"),
     )
-    def cand_opcoes(qual, _lista, atual):
-        """Busca só ao entrar no modo — não a cada troca de aba.
+    def cand_estrategias(qual, _lista, atual, na_aba_wfa):
+        """Só as estratégias que têm walk-forward salvo — as outras abririam
+        uma lista vazia. Começa pela estratégia aberta na aba Walk-Forward.
 
-        `store-wfa-lista` é o aviso de que um walk-forward foi salvo ou
-        excluído (ver `wfa_guardar`/exclusão em `ui/callbacks.py`); sem ele a
-        lista só se atualizaria reabrindo o modo.
-
-        Também limpa `cand-wfa.value` quando o WFA selecionado saiu da lista
-        (foi excluído na aba Walk-Forward enquanto a Candidata ficava aberta
-        ao lado): sem isto, o valor antigo continuava selecionado e o
-        recálculo dizia "salvo antes desta tela" — mentira, o registro nem
-        existe mais.
+        O valor só é reescrito quando muda: devolver o mesmo valor faria o
+        Dash recalcular a tela inteira a cada entrada no modo.
         """
         if qual != "candidata":
             return no_update, no_update
-        opcoes = [{"label": w["rotulo"], "value": w["wfa_id"]}
-                 for w in wfa_store.listar()]
-        ainda_existe = any(o["value"] == atual for o in opcoes)
-        valor = atual if (atual is None or ainda_existe) else None
-        return opcoes, valor
+        nomes = wfa_store.estrategias()
+        valor = _valor_do_seletor(atual, set(nomes), na_aba_wfa,
+                                  padrao=nomes[0] if nomes else None)
+        return ([{"label": n, "value": n} for n in nomes],
+                no_update if valor == atual else valor)
+
+    @app.callback(
+        Output("cand-wfa", "options"),
+        Output("cand-wfa", "value"),
+        Input("cand-estrategia", "value"),
+        Input("store-wfa-lista", "data"),
+        State("cand-wfa", "value"),
+        State("wfa-salvos", "value"),
+    )
+    def cand_opcoes(estrategia, _lista, atual, aberto):
+        """Os walk-forwards salvos da estratégia escolhida, refeitos também
+        quando um é salvo ou excluído na aba Walk-Forward."""
+        salvos = wfa_store.listar(estrategia) if estrategia else []
+        opcoes = [{"label": _rotulo_curto(w), "value": w["wfa_id"]}
+                  for w in salvos]
+        valor = _valor_do_seletor(atual, {w["wfa_id"] for w in salvos}, aberto)
+        return opcoes, (no_update if valor == atual else valor)
 
     @app.callback(
         Output("cand-resumo", "children"),
@@ -84,13 +116,12 @@ def register(app):
                             "não tem capital nem perfil gravados. Rode e "
                             "salve o walk-forward de novo para analisá-lo.")
         trades = wfa_store.trades(int(wfa_id))
-        # o disjuntor vale até a próxima reotimização: `calcula_horizonte`
-        # tira isso do DEPLOY gravado (ou aproxima por oos_meses em registro
-        # antigo). `limites_oos` alinha a contagem de pregões com a do WFA —
-        # a extensão das janelas reais, não do primeiro ao último trade.
+        # a perda esperada vale até a próxima reotimização; a contagem de
+        # pregões segue a extensão das janelas, igual à aba Walk-Forward
         horizonte = candidata.calcula_horizonte(d)
         de, ate = candidata.limites_oos(d.get("passos"))
         leitura = candidata.leitura_robustez(trades, capital, horizonte,
                                              de=de, ate=ate)
         return CP.bloco_robustez(leitura, capital,
-                                 holdout=bool(d.get("holdout")))
+                                 holdout=bool(d.get("holdout")),
+                                 de=de, ate=ate)

@@ -134,8 +134,17 @@ def listar(strategy: str | None = None, run_id: int | None = None) -> list[dict]
                        + f" · {quando:%d/%m %H:%M}"),
             "is_meses": is_m, "oos_meses": oos_m, "inteligencia": intel,
             "holdout": bool(hold),
+            # separados do rótulo: a tela Candidata monta um rótulo curto
+            "nome": nome, "quando": quando,
         })
     return fora
+
+
+def estrategias() -> list[str]:
+    """As estratégias que têm pelo menos um walk-forward salvo."""
+    with db.connect(read_only=True) as con:
+        return [r[0] for r in con.execute(
+            "SELECT DISTINCT strategy FROM wfa_runs ORDER BY 1").fetchall()]
 
 
 def detalhes(wfa_id: int) -> dict | None:

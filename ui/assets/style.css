@@ -903,9 +903,11 @@ body{
 .pp-rotulo.pp-perto{color:var(--warn);opacity:.8;}
 
 /* --------------------------------------------------------- modo Candidata
-   ainda vazio nesta tarefa: só o seletor do WFA salvo e o resumo. Os portões
-   e os blocos ganham conteúdo nas tarefas seguintes. */
-.cand-topo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-.dd-wfa{flex:1;min-width:260px;}
+   o seletor tem a largura do rótulo curto — esticado até a borda, ele
+   empurrava o resumo para a linha de baixo sem mostrar nada a mais */
+.cand-topo{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.dd-cand-est{flex:0 0 220px;}
+.dd-wfa{flex:0 1 400px;min-width:240px;}
 .cand-resumo{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);}
 .cand-portoes,.cand-blocos{min-height:0;}
+.cand-secoes{display:flex;flex-direction:column;gap:6px;}
