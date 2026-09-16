@@ -1,0 +1,10 @@
+{
+  "estrategia": "setup_cruzamento",
+  "descricao": "Cruzamento de medias moveis simples, com stop e alvo em pontos.",
+  "params": {
+    "media_rapida": {"default": 9,   "range": [2, 60]},
+    "media_lenta":  {"default": 21,  "range": [3, 200]},
+    "stop_pontos":  {"default": 200, "range": [50, 800]},
+    "alvo_pontos":  {"default": 300, "range": [50, 1500]}
+  }
+}

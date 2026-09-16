@@ -1,0 +1,27 @@
+# Camada 1 - Instrumento.
+# Propriedades do contrato. Nao muda entre backtests, nao aparece na tela.
+# Custos, horarios e dimensionamento NAO ficam aqui: sao do operador,
+# vivem no perfil de execucao (camada 4) e sao editaveis na interface.
+
+symbol: "WIN$N"
+description: "Mini Indice Bovespa - serie continua"
+exchange: "B3"
+currency: "BRL"
+
+# O arquivo exportado do MT5 ja vem em hora de Brasilia: a primeira barra
+# de 1.139 dos 1.247 pregoes e 09:00, que e a abertura da B3.
+timezone: "America/Sao_Paulo"
+
+# Precos sao inteiros em pontos. 96.155 a 197.760 no historico atual.
+price_decimals: 0
+tick_size: 5 # pontos
+point_value: 0.20 # R$ por ponto, por contrato
+tick_value: 1.00 # tick_size * point_value
+
+# Day trade puro no WIN. A flag existe para o dia em que entrar Forex
+# ou futuro global com carrego, que precisa da serie ajustada por rolagem.
+allows_overnight: false
+
+# Rolagem do WIN: quarta-feira mais proxima do dia 15 dos meses pares.
+# Conferido contra os gaps medidos no historico (ver core/rollovers.py).
+rollover_policy: "b3_even_month_wed_nearest_15"

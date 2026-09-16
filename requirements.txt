@@ -1,0 +1,24 @@
+# --- F0: camada de dados -------------------------------------------------
+duckdb==1.5.5
+polars==1.44.1
+pyarrow==25.0.1   # ponte Polars <-> DuckDB
+pyyaml==6.0.2
+
+# --- F1: motor -----------------------------------------------------------
+numba==0.67.0
+numpy==2.5.2
+
+# --- F2/F4: interface ----------------------------------------------------
+# dash==3.*
+# dash-tvlwc            # TradingView Lightweight Charts v5
+# dash-ag-grid          # AG Grid Community (MIT)
+# plotly
+
+# --- F3: mineracao -------------------------------------------------------
+# optuna
+
+# --- pos-MVP: sincronizacao automatica -----------------------------------
+# MetaTrader5           # so Windows, com terminal aberto
+
+# --- desenvolvimento -----------------------------------------------------
+pytest==9.0.1

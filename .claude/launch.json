@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dataframe",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "ui/app.py"
+      ],
+      "port": 8050,
+      "autoPort": true
+    }
+  ]
+}

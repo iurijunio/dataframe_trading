@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+data/database.duckdb
+data/database.duckdb.wal
+data/parquet/
+data/raw/
+TEST$N/
+WIN$N/
+.superpowers/
