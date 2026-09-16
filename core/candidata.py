@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from . import wfa
+
 
 def _valor(v):
     """Normaliza um valor de parâmetro para comparação de grade.
@@ -63,13 +65,21 @@ MIN_TRADES = 100
 
 
 def leitura_robustez(trades: list[dict], capital: float,
-                     horizonte_pregoes: int | None = None) -> dict:
+                     horizonte_pregoes: int | None = None,
+                     de=None, ate=None) -> dict:
     """O bloco 1: a robustez medida na curva que o otimizador nunca viu.
 
     Dois recortes sempre: a curva inteira e os últimos 12 meses. O mini
     índice foi de 96 mil a 197 mil pontos dentro da própria amostra — stop e
     alvo em pontos não significam a mesma coisa nas duas pontas, e o risco do
     regime atual não é a média de cinco anos. Vale o pior dos dois.
+
+    `de`/`ate` são os limites da curva fora da amostra segundo o WFA (a
+    extensão das janelas reais, sem a linha DEPLOY — ver `limites_oos`), não
+    o primeiro e o último TRADE. As duas contas divergem sempre que algum
+    pregão da janela não teve trade nenhum: no walk-forward #3 a diferença
+    foi de 1.041 contra 1.044 pregões. Sem eles, cai no comportamento de
+    sempre — do primeiro ao último trade.
     """
     if len(trades) < MIN_TRADES:
         return {"erro": f"menos de {MIN_TRADES} trades fora da amostra"}
@@ -77,7 +87,7 @@ def leitura_robustez(trades: list[dict], capital: float,
     saida = np.array([t["exit_ts"] for t in trades], dtype="datetime64[s]")
     liq = np.array([t["liquido"] for t in trades], dtype=float)
     custo = np.array([t.get("custo", 0.0) for t in trades], dtype=float)
-    dias, pnl = por_pregao(saida, liq)
+    dias, pnl = por_pregao(saida, liq, de=de, ate=ate)
     corte = dias[-1] - np.timedelta64(365, "D")
     # unidade explícita: somar int puro a datetime64 está deprecado no numpy
     ate12 = dias[-1] + np.timedelta64(1, "D")
@@ -98,6 +108,82 @@ def leitura_robustez(trades: list[dict], capital: float,
         # perdedores seguidos a curva real, sem sorteio nenhum, já teve
         "perdas_seguidas_reais": robustez.perdas_seguidas_operadas(pnl),
     }
+
+
+_METRICAS_RISCO = ("dd_p95", "perdas_seguidas_p95", "submerso_p95")
+
+
+def pior_dos_recortes(leitura: dict) -> dict:
+    """Para cada métrica de risco, o PIOR valor entre os dois recortes — e de
+    qual recorte ele veio.
+
+    O desenho (§4.1 do PLANO-CANDIDATA) manda TODAS as contas de risco
+    rodarem nos dois recortes — curva inteira e últimos 12 meses — valendo o
+    pior. Antes desta função só "drawdown esperado" comparava os dois;
+    "perdas seguidas" e "pregões abaixo do topo" liam sempre `boot`, e
+    ficavam otimistas sempre que o recorte de 12 meses fosse o pior daquela
+    métrica específica — no walk-forward #3 o recorte de 12 meses dá 17
+    perdas seguidas no p95 contra 15 na curva inteira, e a tela mostrava 15.
+
+    A escolha é POR MÉTRICA, não por recorte inteiro: o recorte de 12 meses
+    pode ser pior em uma métrica e melhor em outra na mesma leitura, e usar
+    um único "recorte vencedor" para as três esconderia a pior das duas em
+    quem perdeu a disputa geral. Em empate, vale a curva inteira.
+
+    `boot_12m` vazio (menos de 30 pregões no recorte) faz as três métricas
+    caírem para `boot` — não há o que comparar.
+    """
+    boot = leitura.get("boot") or {}
+    boot12 = leitura.get("boot_12m") or {}
+    out = {}
+    for m in _METRICAS_RISCO:
+        v_total = float(boot.get(m, 0.0))
+        if not boot12:
+            out[m] = {"valor": v_total, "recorte": "curva inteira"}
+            continue
+        v_12m = float(boot12.get(m, 0.0))
+        if v_12m > v_total:
+            out[m] = {"valor": v_12m, "recorte": "últimos 12 meses"}
+        else:
+            out[m] = {"valor": v_total, "recorte": "curva inteira"}
+    return out
+
+
+def calcula_horizonte(detalhes: dict) -> int:
+    """Pregões até a próxima reotimização — o horizonte que calibra o
+    bootstrap do bloco 1.
+
+    Extraída do callback para poder ser testada sem montar o app Dash, e
+    porque quebrar o cálculo do horizonte pelo DEPLOY é justamente uma das
+    mutações que os 432 testes antigos não pegavam (I2 do plano de
+    correção). Com DEPLOY gravado, o horizonte é a extensão real da janela
+    que ele projeta — `wfa.pregoes`, o mesmo contador que o resto da
+    plataforma usa, não a aproximação de 21 pregões úteis por mês. Sem
+    DEPLOY (registro salvo antes desta tela), cai na aproximação; `oos_meses`
+    pode vir `None`, daí o piso de 6 meses antes de multiplicar.
+    """
+    deploy = detalhes.get("deploy") or {}
+    if deploy.get("oos_de") and deploy.get("oos_ate"):
+        return wfa.pregoes(deploy["oos_de"], deploy["oos_ate"])
+    return int((detalhes.get("oos_meses") or 6) * 21)
+
+
+def limites_oos(passos: list[dict] | None) -> tuple:
+    """Início e fim da curva fora da amostra segundo o WFA: o `oos_de` da
+    primeira janela REAL e o `oos_ate` da última, ignorando a linha DEPLOY
+    (cujo OOS é o futuro, ainda não aconteceu).
+
+    Contar do primeiro ao último TRADE (o que `leitura_robustez` fazia sem
+    estes limites) e contar a extensão das JANELAS (o que o cartão do WFA e
+    o Sharpe da matriz fazem) dão números diferentes sempre que algum
+    pregão da janela não teve trade — no #3 a diferença foi de 1.041 contra
+    1.044 pregões. Sem `passos` (ou só a linha DEPLOY), devolve `(None,
+    None)` e quem chama cai no comportamento antigo.
+    """
+    reais = [p for p in (passos or []) if p.get("step") != "DEPLOY"]
+    if not reais:
+        return None, None
+    return reais[0]["oos_de"], reais[-1]["oos_ate"]
 
 
 def risco_de_desligar(boot: dict, limite: float) -> float | None:

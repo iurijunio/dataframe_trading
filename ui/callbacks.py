@@ -304,10 +304,12 @@ def register(app):
         # deixava a tabela de mineracao invisivel, com altura zero.
         BLOCO = {"display": "flex"}
         v = lambda cond: BLOCO if cond else OCULTO
-        # A barra lateral inteira sai no Walk-Forward: lá os parâmetros não
-        # são escolhidos à mão - eles MUDAM a cada janela, escolhidos pela
-        # inteligência de seleção. Deixar os campos na tela convidaria a
-        # editá-los achando que mudam alguma coisa.
+        # A barra lateral inteira sai no Walk-Forward E na Candidata: nos
+        # dois os parâmetros não são escolhidos à mão. No WFA eles MUDAM a
+        # cada janela, escolhidos pela inteligência de seleção; na Candidata
+        # vêm do walk-forward salvo escolhido no topo do próprio painel.
+        # Deixar os campos da barra lateral na tela convidaria a editá-los
+        # achando que mudam alguma coisa.
         return (v(qual == "backtest"), v(qual == "mineracao"), v(qual == "wfa"),
                 v(qual == "candidata"),
                 VISIVEL if qual == "backtest" else OCULTO,
@@ -317,7 +319,7 @@ def register(app):
                 # container de LINHA, e as seções (Período, Estratégia,
                 # Parâmetros, Execução) se enfileiravam na horizontal — só a
                 # primeira cabia, e o resto sumia no corte do overflow.
-                OCULTO if qual == "wfa" else {"display": "block"})
+                OCULTO if qual in ("wfa", "candidata") else {"display": "block"})
 
     # ---- ou o valor fixo, ou a faixa de/passo/até - nunca os dois na tela
     @app.callback(

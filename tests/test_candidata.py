@@ -122,6 +122,109 @@ def test_leitura_robustez_recusa_amostra_pequena():
         {"erro": "menos de 100 trades fora da amostra"}
 
 
+# ------------------------------------- rodada de correção final: I2(b)
+
+
+def test_leitura_robustez_repassa_horizonte_aos_dois_bootstraps():
+    """Um dos dois bootstraps ficar sem o horizonte pedido destrava o
+    disjuntor: o cartão mostraria o p95 do comprimento INTEIRO do recorte
+    em vez do prazo até a próxima reotimização, e ninguém notaria porque o
+    número ainda aparece na tela — só que calibrado para o prazo errado."""
+    t = _trades_falsos()
+    r = candidata.leitura_robustez(t, CAP, horizonte_pregoes=60)
+    assert r["boot"]["horizonte"] == 60
+    assert r["boot_12m"]["horizonte"] == 60
+
+
+# ------------------------------------------- rodada de correção final: M4
+
+
+def test_leitura_robustez_usa_limites_da_curva_quando_fornecidos():
+    """Sem limites, a Candidata conta do primeiro ao último TRADE. O cartão
+    do WFA e o Sharpe da matriz contam a extensão das JANELAS OOS reais,
+    ignorando a linha DEPLOY — as duas contas só combinam quando todo
+    pregão da janela teve trade, o que a mineração real não garante (no #3
+    a diferença foi de 1.041 contra 1.044 pregões). Alargar de/ate além do
+    primeiro e do último trade tem que aumentar a contagem de pregões."""
+    t = _trades_falsos()
+    datas = [np.datetime64(x["exit_ts"], "D") for x in t]
+    de = str(min(datas) - np.timedelta64(5, "D"))
+    ate = str(max(datas) + np.timedelta64(6, "D"))
+    sem = candidata.leitura_robustez(t, CAP)
+    com = candidata.leitura_robustez(t, CAP, de=de, ate=ate)
+    assert com["pregoes"] > sem["pregoes"]
+
+
+def test_limites_oos_ignora_a_linha_deploy():
+    """O `oos_de`/`oos_ate` da linha DEPLOY é o futuro — ainda não
+    aconteceu. Usá-los como limite da curva puxaria o fim do recorte para
+    além do último trade real."""
+    passos = [
+        {"step": 1, "oos_de": "2023-01-02", "oos_ate": "2023-07-01"},
+        {"step": 2, "oos_de": "2023-07-01", "oos_ate": "2024-01-01"},
+        {"step": "DEPLOY", "oos_de": "2024-01-01", "oos_ate": "2024-07-01"},
+    ]
+    assert candidata.limites_oos(passos) == ("2023-01-02", "2024-01-01")
+
+
+def test_limites_oos_sem_passos_devolve_none():
+    assert candidata.limites_oos([]) == (None, None)
+    assert candidata.limites_oos(None) == (None, None)
+    assert candidata.limites_oos(
+        [{"step": "DEPLOY", "oos_de": "x", "oos_ate": "y"}]) == (None, None)
+
+
+# ------------------------------------------- rodada de correção final: I2(c)
+
+
+def test_calcula_horizonte_com_deploy_usa_a_janela_projetada():
+    d = {"deploy": {"oos_de": "2024-01-01", "oos_ate": "2024-04-01"},
+        "oos_meses": 3}
+    assert candidata.calcula_horizonte(d) == wfa.pregoes("2024-01-01",
+                                                         "2024-04-01")
+
+
+def test_calcula_horizonte_sem_deploy_aproxima_por_oos_meses():
+    assert candidata.calcula_horizonte({"deploy": None, "oos_meses": 8}) == 168
+
+
+def test_calcula_horizonte_sem_deploy_e_sem_oos_meses_usa_piso_de_seis_meses():
+    assert candidata.calcula_horizonte({"deploy": None, "oos_meses": None}) \
+        == 126
+
+
+# ------------------------------------------- rodada de correção final: I1
+
+
+def test_pior_dos_recortes_escolhe_por_metrica_nao_por_recorte_inteiro():
+    """O bug que motivou a correção: só 'drawdown esperado' comparava os
+    dois recortes; 'perdas seguidas' e 'pregões abaixo do topo' liam sempre
+    `boot`. Aqui cada métrica tem o pior valor num recorte diferente — uma
+    implementação que escolhesse um único "recorte vencedor" (por exemplo,
+    pelo pior dd_p95) e aplicasse a mesma escolha às três métricas erraria
+    pelo menos uma. Os números de perdas seguidas são os do walk-forward #3
+    citados na correção: 15 na curva inteira, 17 nos últimos 12 meses."""
+    leitura = {
+        "boot": {"dd_p95": 500.0, "perdas_seguidas_p95": 15.0,
+                "submerso_p95": 80.0},
+        "boot_12m": {"dd_p95": 300.0, "perdas_seguidas_p95": 17.0,
+                    "submerso_p95": 40.0},
+    }
+    r = candidata.pior_dos_recortes(leitura)
+    assert r["dd_p95"] == {"valor": 500.0, "recorte": "curva inteira"}
+    assert r["perdas_seguidas_p95"] == \
+        {"valor": 17.0, "recorte": "últimos 12 meses"}
+    assert r["submerso_p95"] == {"valor": 80.0, "recorte": "curva inteira"}
+
+
+def test_pior_dos_recortes_usa_boot_quando_12m_vazio():
+    leitura = {"boot": {"dd_p95": 500.0, "perdas_seguidas_p95": 4.0,
+                       "submerso_p95": 80.0}, "boot_12m": {}}
+    r = candidata.pior_dos_recortes(leitura)
+    assert all(v["recorte"] == "curva inteira" for v in r.values())
+    assert r["dd_p95"]["valor"] == 500.0
+
+
 def test_limite_no_p95_deixa_cerca_de_cinco_por_cento_de_falso_desligamento():
     """É a razão de o número existir: desligar no p95 desliga uma estratégia
     sadia em 5% dos ciclos, e isso precisa estar escrito no plano."""

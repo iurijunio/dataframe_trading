@@ -309,6 +309,10 @@ def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
     return {
         "bloco": L, "n": n, "horizonte": H,
         "dd_p50": float(p[0]), "dd_p95": float(p[1]), "dd_p99": float(p[2]),
+        # p95 é o CASO RUIM, não o típico — o cartão que avisa "tipicamente
+        # não recupera o topo" lendo só o p95 estava chamando a cauda de
+        # normal. O p50 ao lado é o tempo submerso típico de verdade.
+        "submerso_p50": float(np.percentile(submersos, 50)),
         "submerso_p95": float(np.percentile(submersos, 95)),
         "perdas_seguidas_p95": float(np.percentile(seguidas, 95)),
         "final_p10": float(np.percentile(finais, 10)),

@@ -320,6 +320,15 @@ def test_bootstrap_submerso_e_perdas_em_pregoes_nao_em_fracao():
     assert b["perdas_seguidas_p95"] == pytest.approx(60.0)
 
 
+def test_bootstrap_devolve_submerso_p50_alem_do_p95():
+    """O cartão da Candidata chamava o p95 (pior caso) de comportamento
+    típico. Corrigido, ele mostra o p50 ao lado — o que exige esta chave."""
+    dia = np.array([-10.0] * 60)
+    b = rb.bootstrap(dia, 10_000.0, n=50, semente=1, bloco=1)
+    assert b["submerso_p50"] == pytest.approx(60.0)
+    assert b["submerso_p50"] <= b["submerso_p95"]
+
+
 def test_perdas_seguidas_operadas_ignora_pregao_sem_trade():
     """Um pregão sem trade (resultado zero) intercalado entre perdas não
     pode cortar a sequência: a versão antiga (`_maior_seq(serie < 0)`, sem
