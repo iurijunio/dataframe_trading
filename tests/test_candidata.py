@@ -543,3 +543,67 @@ def test_portao_poucos_dias_com_poucos_pregoes_nao_reprova():
     r = candidata.portao_poucos_dias(np.array([10.0, 20.0, 30.0]), quantos=5)
     assert r["ok"] is None
     assert r["valor"] == "poucos pregões para medir"
+
+
+# ------------------------------------------------------- tarefa 3: holdout
+
+
+def _serie(antes, depois, corte="2025-09-15"):
+    c = np.datetime64(corte)
+    d_antes = np.busday_offset(c, -np.arange(len(antes), 0, -1), roll="backward")
+    d_depois = np.busday_offset(c, np.arange(len(depois)), roll="forward")
+    return np.concatenate([d_antes, d_depois]), np.concatenate([antes, depois]), c
+
+
+def test_holdout_igual_ao_historico_passa():
+    rng = np.random.default_rng(3)
+    dias, pnl, corte = _serie(rng.normal(5, 40, 800), rng.normal(5, 40, 110))
+    assert candidata.portao_holdout(dias, pnl, corte, 10_000.0)["ok"] is True
+
+
+def test_holdout_muito_pior_que_o_historico_reprova():
+    rng = np.random.default_rng(3)
+    dias, pnl, corte = _serie(rng.normal(5, 40, 800), rng.normal(-15, 40, 110))
+    p = candidata.portao_holdout(dias, pnl, corte, 10_000.0)
+    assert p["ok"] is False and p["critico"] is True
+
+
+def test_holdout_melhor_que_o_historico_passa():
+    """Melhor que o esperado nunca reprova — o portão só pega o lado ruim."""
+    rng = np.random.default_rng(3)
+    dias, pnl, corte = _serie(rng.normal(5, 40, 800), rng.normal(30, 40, 110))
+    assert candidata.portao_holdout(dias, pnl, corte, 10_000.0)["ok"] is True
+
+
+def test_curva_sem_holdout_reprova_com_o_motivo():
+    rng = np.random.default_rng(3)
+    dias, pnl, corte = _serie(rng.normal(5, 40, 800), np.array([]))
+    p = candidata.portao_holdout(dias, pnl, corte, 10_000.0)
+    assert p["ok"] is False and "holdout" in p["valor"]
+
+
+def test_holdout_entre_p10_e_p50_passa_mas_reprovaria_com_p50():
+    """Prova que a régua é o p10, não a mediana: um holdout um pouco ABAIXO
+    do esperado (abaixo do p50) mas ainda acima do p10 tem que PASSAR — é
+    exatamente o caso que a regra "só o lado ruim reprova" existe para
+    proteger. Construímos o alvo exatamente entre p10 e p50 do próprio
+    bootstrap em vez de confiar no acaso de uma semente: assim o teste
+    reprova de forma estável se `portao_holdout` trocar `final_p10` por
+    `final_p50` (mutação do passo 4), o que a semente sozinha não garantia
+    de forma confiável."""
+    from core import robustez
+
+    rng = np.random.default_rng(3)
+    antes = rng.normal(5, 40, 800)
+    base = rng.normal(5, 40, 110)
+    boot = robustez.bootstrap(antes, CAP, n=2000, semente=7, horizonte=len(base))
+    alvo = (boot["final_p10"] + boot["final_p50"]) / 2
+    assert boot["final_p10"] < alvo < boot["final_p50"]
+    # mesma forma de `base`, deslocada por dia para a soma total cair
+    # exatamente no alvo (deslocar por dia, não só a soma final, preserva a
+    # variância diária em vez de jogar tudo o desvio num único pregão)
+    depois = base + (alvo - base.sum()) / len(base)
+    dias, pnl, corte = _serie(antes, depois)
+
+    p = candidata.portao_holdout(dias, pnl, corte, CAP)
+    assert p["ok"] is True

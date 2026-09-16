@@ -478,6 +478,42 @@ def alerta_poucos_trades(liquido, fracao: float = 0.01) -> dict:
         "reprova, mas diz que o resultado mora em poucas operações.")
 
 
+def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
+                   semente: int = 7) -> dict:
+    """O holdout confirma? Compara o que a estratégia fez nos meses do holdout
+    com o que a curva ANTES do corte fazia esperar para o mesmo número de
+    dias. Só o lado ruim reprova."""
+    from . import robustez
+    d = np.asarray(dias, dtype="datetime64[D]")
+    x = np.asarray(pnl, dtype=float)
+    c = np.datetime64(corte, "D")
+    antes, depois = x[d < c], x[d >= c]
+    nome = "O holdout confirma?"
+    dica = ("O holdout são os meses finais que ficaram de fora da mineração. "
+            "A plataforma simula 2.000 caminhos do mesmo tamanho usando só o "
+            "que a estratégia fez antes deles, e olha onde o resultado real do "
+            "holdout caiu. Reprova se ficar entre os 10% piores caminhos. "
+            "Resultado melhor que o esperado passa.")
+    base = {"lucro_mes_antes": None, "lucro_mes_holdout": None,
+            "esperado_p10": None, "pregoes_holdout": int(len(depois))}
+    if not len(depois):
+        return {**portao(nome, False, True,
+                         "sem holdout na curva — salve o walk-forward com o "
+                         "holdout marcado", "dentro do esperado", dica), **base}
+    boot = robustez.bootstrap(antes, capital, n=n, semente=semente,
+                              horizonte=len(depois))
+    if not boot:
+        return {**portao(nome, None, True, "histórico curto demais",
+                         "dentro do esperado", dica), **base}
+    real = float(depois.sum())
+    p10 = float(boot["final_p10"])
+    return {**portao(nome, real >= p10, True, round(real, 2),
+                     f"≥ {p10:,.2f} (10% piores)", dica),
+            "lucro_mes_antes": float(antes.sum()) / max(len(antes) / 21, 1e-9),
+            "lucro_mes_holdout": real / max(len(depois) / 21, 1e-9),
+            "esperado_p10": p10, "pregoes_holdout": int(len(depois))}
+
+
 def veredito(portoes: list[dict]) -> dict:
     """Crítico reprovado reprova. Crítico ainda não medido impede aprovar.
     Alerta reprovado aprova com ressalva."""
