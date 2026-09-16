@@ -203,6 +203,81 @@ def bloco_medio(por_dia: np.ndarray) -> int:
     return max(1, int(round((1 + rho) / (1 - rho))))
 
 
+def _maior_seq(mask: np.ndarray) -> int:
+    """O maior trecho seguido de True.
+
+    Usada duas vezes com sinais opostos: tempo submerso (eq < pico) e perdas
+    seguidas (dia < 0). Escrita uma vez só para não divergir.
+    """
+    m = np.asarray(mask, dtype=np.int8)
+    if not m.any():
+        return 0
+    d = np.diff(np.concatenate(([0], m, [0])))
+    return int((np.flatnonzero(d == -1) - np.flatnonzero(d == 1)).max())
+
+
+def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
+              semente: int = 7, bloco: int | None = None,
+              horizonte: int | None = None) -> dict:
+    """Bootstrap estacionário sobre o resultado DIÁRIO (Politis & Romano, 1994).
+
+    Três diferenças para `monte_carlo`, e cada uma corrige um viés:
+
+    1. **com reposição** — o lucro final varia. A permutação fixa o lucro e
+       responde só "e se a ordem fosse outra?", deixando de fora a incerteza
+       que domina: o edge medido não ser o verdadeiro.
+    2. **em blocos** — dias vizinhos viajam juntos, preservando o agrupamento
+       de volatilidade que produz o drawdown.
+    3. **com horizonte** — mede o drawdown no prazo em que a decisão vale
+       (até a próxima reotimização), não no comprimento inteiro do histórico.
+
+    O bloco tem comprimento aleatório (geométrico de média `bloco`); é isso
+    que torna o processo estacionário e evita que a emenda dos blocos crie
+    quebras sistemáticas.
+    """
+    x = np.asarray(por_dia, dtype=float)
+    if len(x) < 30:
+        return {}
+    L = int(bloco or bloco_medio(x))
+    H = int(horizonte or len(x))
+    rng = np.random.default_rng(semente)
+
+    # o índice de cada dia sorteado: começa um bloco novo com probabilidade
+    # 1/L, senão anda um dia à frente (circular) — é o bootstrap estacionário
+    # de Politis & Romano, vetorizado sobre os n caminhos de uma vez
+    t = np.arange(H)
+    novo = rng.random((n, H)) < (1.0 / L)
+    novo[:, 0] = True
+    inicio_em = np.maximum.accumulate(np.where(novo, t, 0), axis=1)
+    sorteado = rng.integers(0, len(x), size=(n, H))
+    base = np.take_along_axis(sorteado, inicio_em, axis=1)
+    idx = (base + (t - inicio_em)) % len(x)
+    series = x[idx]
+
+    quedas = np.empty(n)
+    submersos = np.empty(n)
+    seguidas = np.empty(n)
+    for i in range(n):
+        eq = np.concatenate(([capital], capital + np.cumsum(series[i])))
+        pico = np.maximum.accumulate(eq)
+        quedas[i] = float((pico - eq).max())
+        submersos[i] = _maior_seq(eq < pico)
+        seguidas[i] = _maior_seq(series[i] < 0)
+
+    finais = series.sum(axis=1)
+    p = np.percentile(quedas, [50, 95, 99])
+    return {
+        "bloco": L, "n": n, "horizonte": H,
+        "dd_p50": float(p[0]), "dd_p95": float(p[1]), "dd_p99": float(p[2]),
+        "submerso_p95": float(np.percentile(submersos, 95)),
+        "perdas_seguidas_p95": float(np.percentile(seguidas, 95)),
+        "final_p10": float(np.percentile(finais, 10)),
+        "final_p50": float(np.percentile(finais, 50)),
+        "final_p90": float(np.percentile(finais, 90)),
+        "quedas": quedas, "finais": finais,
+    }
+
+
 def correlacao_lr(liquido: np.ndarray, capital: float) -> dict:
     """Quão reta é a curva de capital — a mesma leitura do MT5.
 

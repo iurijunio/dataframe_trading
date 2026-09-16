@@ -240,3 +240,57 @@ def test_bloco_medio_guarda_serie_curta_com_dependencia():
     base = rng.normal(10, 50, 5)
     agrupada_curta = np.repeat(base, 3)  # 15 pontos: cada valor dura 3 pregões
     assert rb.bloco_medio(agrupada_curta) == 1
+
+
+# ------------------------------------------------------ bootstrap estacionario
+def test_bootstrap_faz_o_lucro_final_variar():
+    """A diferença que motivou a troca: na permutação o lucro final é
+    constante, então a incerteza que mais importa fica de fora."""
+    rng = np.random.default_rng(1)
+    dia = rng.normal(20, 150, 400)
+    b = rb.bootstrap(dia, 10_000.0, n=300, semente=5)
+    assert b["final_p10"] < b["final_p50"] < b["final_p90"]
+    perm = rb.monte_carlo(dia, 10_000.0, n=300)
+    assert perm["lucro_final"] == pytest.approx(float(dia.sum()))
+
+
+def test_bootstrap_com_bloco_1_fica_perto_da_permutacao():
+    """Sem dependência, os dois métodos medem a mesma coisa — a diferença
+    toda vem do bloco e da reposição."""
+    rng = np.random.default_rng(2)
+    dia = rng.normal(15, 100, 600)
+    b = rb.bootstrap(dia, 10_000.0, n=800, semente=4, bloco=1)
+    p = rb.monte_carlo(dia, 10_000.0, n=800)
+    assert b["dd_p95"] == pytest.approx(p["dd_p95"], rel=0.25)
+
+
+def test_bootstrap_em_serie_agrupada_acha_drawdown_maior():
+    """O que a permutação escondia: dias ruins vindo juntos afundam mais."""
+    rng = np.random.default_rng(7)
+    base = rng.normal(10, 120, 120)
+    dia = np.repeat(base, 5)
+    b = rb.bootstrap(dia, 10_000.0, n=500, semente=9)
+    p = rb.monte_carlo(dia, 10_000.0, n=500)
+    assert b["dd_p95"] > p["dd_p95"]
+
+
+def test_bootstrap_com_horizonte_curto_reduz_o_drawdown():
+    """O disjuntor precisa de horizonte: o p95 de cinco anos não é o p95 de
+    três meses, e desligar pelo primeiro é desligar estratégia sadia."""
+    rng = np.random.default_rng(11)
+    dia = rng.normal(10, 100, 1000)
+    inteiro = rb.bootstrap(dia, 10_000.0, n=400, semente=2)
+    curto = rb.bootstrap(dia, 10_000.0, n=400, semente=2, horizonte=60)
+    assert curto["dd_p95"] < inteiro["dd_p95"]
+    assert curto["horizonte"] == 60
+
+
+def test_bootstrap_conta_perdas_seguidas_e_tempo_submerso_em_pregoes():
+    dia = np.array([-10.0] * 7 + [100.0] * 30)
+    b = rb.bootstrap(dia, 10_000.0, n=200, semente=3, bloco=1)
+    assert b["perdas_seguidas_p95"] >= 1
+    assert b["submerso_p95"] >= 1
+
+
+def test_bootstrap_com_serie_curta_devolve_vazio():
+    assert rb.bootstrap(np.zeros(5), 10_000.0) == {}
