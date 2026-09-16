@@ -61,6 +61,8 @@ def test_risco_de_desligar_le_a_distribuicao_do_bootstrap():
     assert candidata.risco_de_desligar(boot, 250.0) == pytest.approx(50.0)
     assert candidata.risco_de_desligar(boot, 1000.0) == 0.0
     assert candidata.risco_de_desligar({}, 100.0) is None
+    # Igualdade importa: robô que encosta no limite foi desligado, não escapou
+    assert candidata.risco_de_desligar(boot, 200.0) == pytest.approx(75.0)
 
 
 def test_limite_no_p95_deixa_cerca_de_cinco_por_cento_de_falso_desligamento():
