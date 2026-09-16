@@ -39,7 +39,8 @@ def _passo_para_banco(p) -> dict:
 
 def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
            inteligencia, holdout, agregado, veredito, passos,
-           trades=None) -> int:
+           trades=None, profile=None, capital=None,
+           sharpes_matriz=None) -> int:
     """Grava um walk-forward e devolve o id.
 
     Um WFA por combinação de (mineração, IS, OOS, inteligência, holdout): se
@@ -70,8 +71,8 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
             "INSERT INTO wfa_runs (wfa_id, run_id, symbol, strategy, "
             "created_at, nome, is_meses, oos_meses, inteligencia, holdout, "
             "janelas, oos_lucro, oos_trades, wfe_global, consistencia, dd_oos, "
-            "veredito, passos, deploy) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "veredito, passos, deploy, profile, capital, sharpes_matriz) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [wfa_id, run_id, symbol, strategy, datetime.now(), nome or None,
              int(is_meses), int(oos_meses), inteligencia, bool(holdout),
              int(agregado.get("steps", 0)),
@@ -81,7 +82,10 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
              float(agregado.get("consistencia_lucro", 0.0)),
              float(agregado.get("dd_oos", 0.0)),
              (veredito or {}).get("estado"),
-             json.dumps(linhas), json.dumps(deploy)])
+             json.dumps(linhas), json.dumps(deploy),
+             json.dumps(profile) if profile else None,
+             float(capital) if capital is not None else None,
+             json.dumps(sharpes_matriz) if sharpes_matriz else None])
 
         # Os trades da curva OOS, um por linha. É o que o portfólio vai
         # consumir: correlação de verdade pede a série, e exposição
@@ -138,8 +142,9 @@ def detalhes(wfa_id: int) -> dict | None:
     with db.connect(read_only=True) as con:
         r = con.execute(
             "SELECT run_id, symbol, strategy, nome, is_meses, oos_meses, "
-            "inteligencia, holdout, passos, deploy FROM wfa_runs "
-            "WHERE wfa_id = ?", [wfa_id]).fetchone()
+            "inteligencia, holdout, passos, deploy, profile, capital, "
+            "sharpes_matriz FROM wfa_runs WHERE wfa_id = ?",
+            [wfa_id]).fetchone()
     if not r:
         return None
     return {
@@ -148,6 +153,10 @@ def detalhes(wfa_id: int) -> dict | None:
         "holdout": bool(r[7]),
         "passos": json.loads(r[8]) if r[8] else [],
         "deploy": json.loads(r[9]) if r[9] else None,
+        # None em registro antigo: a tela mostra "indisponível", não quebra
+        "profile": json.loads(r[10]) if r[10] else None,
+        "capital": float(r[11]) if r[11] is not None else None,
+        "sharpes_matriz": json.loads(r[12]) if r[12] else None,
     }
 
 

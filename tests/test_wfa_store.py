@@ -197,3 +197,26 @@ def test_walk_forward_sem_trades_ainda_grava_o_registro(banco):
     wid = _salvar(trades=None)
     assert st.detalhes(wid) is not None
     assert st.trades(wid) == []
+
+
+# --------------------------------------------------------------- Candidata
+def test_salvar_guarda_perfil_capital_e_sharpes(banco):
+    """A Candidata lê só wfa_runs + wfa_trades. Se o capital vier da
+    mineração, apagar a mineração derruba o dimensionamento."""
+    wid = _salvar(profile={"capital_inicial": 10_000.0, "timeframe": "M15"},
+                  capital=10_000.0, sharpes_matriz=[0.8, 1.1, 0.4])
+    d = st.detalhes(wid)
+
+    assert d["capital"] == 10_000.0
+    assert d["profile"]["timeframe"] == "M15"
+    assert d["sharpes_matriz"] == [0.8, 1.1, 0.4]
+
+
+def test_wfa_antigo_sem_as_colunas_novas_nao_quebra(banco):
+    """Os registros gravados antes desta tela existirem continuam abrindo —
+    a tela mostra 'indisponível', não um erro."""
+    wid = _salvar()
+    d = st.detalhes(wid)
+
+    assert d["capital"] is None and d["profile"] is None
+    assert d["sharpes_matriz"] is None

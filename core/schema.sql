@@ -178,6 +178,14 @@ CREATE TABLE IF NOT EXISTS wfa_runs (
     deploy        JSON       -- a combinacao que se colocaria para operar hoje
 );
 
+-- A Candidata (passo 10 da metodologia) lê só wfa_runs + wfa_trades: o
+-- capital e o perfil vinham da mineracao, e mineracao apagada derrubava o
+-- dimensionamento inteiro. Retrato, nao referencia.
+ALTER TABLE wfa_runs ADD COLUMN IF NOT EXISTS profile JSON;
+ALTER TABLE wfa_runs ADD COLUMN IF NOT EXISTS capital DOUBLE;
+-- os sharpes das 96 celulas da matriz: entrada do Sharpe Deflacionado
+ALTER TABLE wfa_runs ADD COLUMN IF NOT EXISTS sharpes_matriz JSON;
+
 -- Os TRADES da curva fora da amostra, um por linha.
 --
 -- O agregado por janela nao serve para portfolio: correlacao de verdade pede
