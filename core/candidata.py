@@ -393,3 +393,91 @@ def alerta_vizinho(perfil: dict, raio: int = 2) -> dict:
         "Valores do parâmetro a até 2 passos do escolhido que deram prejuízo "
         "na mineração. Um vizinho no vermelho não reprova, mas diz que um "
         "pequeno erro de ajuste já custa dinheiro.")
+
+
+# --------------------------------------- portões que saem dos dados salvos
+
+
+def t_diario(pnl: np.ndarray) -> float:
+    """Média diária dividida pelo seu erro, contando os dias parados. É o
+    teste do resultado por DIA, e não por trade: trades do mesmo pregão
+    andam juntos, e contá-los como independentes infla a firmeza."""
+    x = np.asarray(pnl, dtype=float)
+    if len(x) < 30:
+        return 0.0
+    desvio = float(x.std(ddof=1))
+    return float(x.mean() / (desvio / np.sqrt(len(x)))) if desvio > 0 else 0.0
+
+
+def portao_acaso(pnl, minimo: float = 2.0) -> dict:
+    t = t_diario(pnl)
+    return portao(
+        "O lucro não é acaso?", t >= minimo, True, round(t, 2), f"≥ {minimo:.1f}",
+        "Compara o ganho médio por dia com o quanto o resultado diário oscila. "
+        "Abaixo de 2, a média ainda pode ser zero e o lucro visto ser sorte. "
+        "Conta os dias parados como zero.")
+
+
+def portao_poucos_dias(pnl, quantos: int = 5) -> dict:
+    x = np.asarray(pnl, dtype=float)
+    sobra = float(x.sum() - np.sort(x)[::-1][:quantos].sum())
+    return portao(
+        "O lucro não depende de poucos dias?", sobra > 0, True, round(sobra, 2),
+        f"> 0 sem os {quantos} melhores",
+        f"O lucro total tirando os {quantos} melhores dias. Se ficar negativo, "
+        "a estratégia viveu de alguns dias de sorte — que podem não se repetir.")
+
+
+def portao_custo(lucro_liquido: float, contratos, tick_value: float) -> dict:
+    extra = 2.0 * float(np.sum(contratos)) * tick_value
+    sobra = float(lucro_liquido - extra)
+    return portao(
+        "Aguenta custo maior?", sobra > 0, True, round(sobra, 2),
+        "> 0 com +1 tick por ponta",
+        "O lucro depois de pagar 1 tick a mais na entrada e na saída de cada "
+        "trade. No mini índice 1 tick vale mais que a corretagem inteira, e "
+        "ordem a mercado na hora da pressa costuma escorregar isso. Se o lucro "
+        "some, a estratégia vive no limite do custo.")
+
+
+def portao_capital(perda_esperada: float, contratos_por_trade: float,
+                   capital: float, teto_pct: float = 20.0) -> dict:
+    por_contrato = perda_esperada / max(float(contratos_por_trade), 1.0)
+    pct_ = por_contrato / capital * 100 if capital else float("inf")
+    return portao(
+        "O capital comporta 1 contrato?", pct_ <= teto_pct, True,
+        round(pct_, 1), f"≤ {teto_pct:.0f}% do capital",
+        "A perda esperada operando só 1 contrato, em % do capital. Se nem o "
+        "mínimo cabe, não é a estratégia que está errada — é o capital que não "
+        "comporta o instrumento.")
+
+
+def alerta_poucos_trades(liquido, fracao: float = 0.01) -> dict:
+    x = np.sort(np.asarray(liquido, dtype=float))[::-1]
+    k = max(1, int(np.ceil(len(x) * fracao)))
+    sobra = float(x.sum() - x[:k].sum())
+    return portao(
+        "Depende do 1% melhor dos trades?", sobra > 0, False, round(sobra, 2),
+        "> 0 sem eles",
+        "O lucro tirando o 1% de trades que mais ganharam. Negativo não "
+        "reprova, mas diz que o resultado mora em poucas operações.")
+
+
+def veredito(portoes: list[dict]) -> dict:
+    """Crítico reprovado reprova. Crítico ainda não medido impede aprovar.
+    Alerta reprovado aprova com ressalva."""
+    reprovados = [p for p in portoes if p["critico"] and p["ok"] is False]
+    pendentes = [p for p in portoes if p["critico"] and p["ok"] is None]
+    ressalvas = [p for p in portoes if not p["critico"] and p["ok"] is False]
+    if reprovados:
+        estado, cor = "reprovada", "neg"
+    elif pendentes:
+        estado, cor = "aguardando testes completos", "warn"
+    elif ressalvas:
+        estado, cor = "aprovada com ressalva", "warn"
+    else:
+        estado, cor = "aprovada", "pos"
+    return {"portoes": portoes, "estado": estado, "cor": cor,
+            "n_ok": sum(1 for p in portoes if p["ok"] is True),
+            "n_portoes": len(portoes), "reprovados": reprovados,
+            "ressalvas": ressalvas, "pendentes": pendentes}

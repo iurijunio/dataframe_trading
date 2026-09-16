@@ -455,3 +455,62 @@ def test_alerta_vizinho_com_prejuizo():
     p = _perfil_com([5, 5, 5, -1, 5, 5, 5], 4)
     assert candidata.alerta_vizinho(p)["ok"] is False
     assert candidata.alerta_vizinho(_perfil_com([5] * 7, 3))["ok"] is True
+
+
+# ------------------------------------------- portões que saem dos dados
+
+
+def test_t_diario_conta_os_dias_parados():
+    """Dias sem trade entram como zero: sem eles quem opera pouco parece firme.
+
+    `t_diario` só calcula com 30 dias ou mais (amostra menor devolve 0.0 —
+    é o próprio jeito da função de dizer "não dá para afirmar nada aqui").
+    Por isso os dias OPERADOS de referência precisam ser >= 30: com só 4
+    (como no rascunho original), `so_operados` cairia nesse piso e voltaria
+    0.0 sempre, e a comparação pedida (com zeros fica pior que sem eles)
+    nunca teria como falhar de verdade. Repetimos o mesmo padrão de
+    variação (10, 12, 9, 11) até ter amostra suficiente — sem inventar
+    outros números."""
+    base = np.array([10.0, 12.0, 9.0, 11.0])
+    so_operados = np.tile(base, 8)                    # 32 dias operados
+    com_parados = np.concatenate([so_operados, np.zeros(40)])
+    assert candidata.t_diario(com_parados) < candidata.t_diario(so_operados)
+
+
+def test_portao_acaso():
+    firme = np.full(250, 10.0) + np.random.default_rng(1).normal(0, 5, 250)
+    ruido = np.random.default_rng(2).normal(0, 50, 250)
+    assert candidata.portao_acaso(firme)["ok"] is True
+    assert candidata.portao_acaso(ruido)["ok"] is False
+
+
+def test_portao_poucos_dias():
+    """Lucro que vive de 5 dias bons não é um sistema."""
+    dependente = np.array([-2.0] * 100 + [60.0] * 5)
+    espalhado = np.array([3.0] * 100 + [10.0] * 5)
+    assert candidata.portao_poucos_dias(dependente)["ok"] is False
+    assert candidata.portao_poucos_dias(espalhado)["ok"] is True
+
+
+def test_portao_custo_um_tick_por_ponta():
+    """510 trades de 1 contrato, 1 tick = R$ 1: custo extra R$ 1.020."""
+    contratos = np.ones(510)
+    assert candidata.portao_custo(1500.0, contratos, 1.0)["ok"] is True
+    assert candidata.portao_custo(1000.0, contratos, 1.0)["ok"] is False
+
+
+def test_portao_capital_por_contrato():
+    """Perda de R$ 3.000 operando 2 contratos = R$ 1.500 por contrato."""
+    assert candidata.portao_capital(3000.0, 2.0, 10_000.0)["ok"] is True
+    assert candidata.portao_capital(3000.0, 1.0, 10_000.0)["ok"] is False
+
+
+def test_veredito_pendente_nao_aprova():
+    ok = candidata.portao("a", True, True, 1, "", "")
+    pend = candidata.portao("b", None, True, None, "", "")
+    alerta = candidata.portao("c", False, False, 1, "", "")
+    reprova = candidata.portao("d", False, True, 1, "", "")
+    assert candidata.veredito([ok, pend])["estado"] == "aguardando testes completos"
+    assert candidata.veredito([ok, pend, reprova])["estado"] == "reprovada"
+    assert candidata.veredito([ok, alerta])["estado"] == "aprovada com ressalva"
+    assert candidata.veredito([ok])["estado"] == "aprovada"
