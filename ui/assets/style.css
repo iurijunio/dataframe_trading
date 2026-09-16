@@ -910,4 +910,21 @@ body{
 .dd-wfa{flex:0 1 400px;min-width:240px;}
 .cand-resumo{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);}
 .cand-portoes,.cand-blocos{min-height:0;}
-.cand-secoes{display:flex;flex-direction:column;gap:6px;}
+/* os números em tabela: lado a lado quando cabe, empilhados quando não.
+   A cor fica só na célula do valor — é o que se lê de relance */
+.cand-tabelas{display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));
+  gap:18px;align-items:start;}
+.cand-tab-bloco{display:flex;flex-direction:column;gap:8px;min-width:0;}
+.cand-tab-rola{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface);}
+.cand-tab{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px;}
+.cand-tab td{padding:7px 12px;border-top:1px solid var(--line);white-space:nowrap;}
+.cand-tab tr:first-child td{border-top:none;}
+.ct-nome{color:var(--ink-2);}
+.ct-nome .dica-mark{margin-left:6px;}
+.ct-valor{color:var(--ink);font-weight:600;text-align:right;
+  font-variant-numeric:tabular-nums;}
+.ct-nota{color:var(--muted);font-size:11.5px;white-space:normal;}
+.ct-valor.tom-bom{background:rgba(0,245,160,.16);color:var(--pos);}
+.ct-valor.tom-medio{background:rgba(255,201,60,.13);color:var(--warn);}
+.ct-valor.tom-ruim{background:rgba(255,77,125,.16);color:var(--neg);}

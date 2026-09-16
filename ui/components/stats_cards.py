@@ -39,12 +39,22 @@ def cartoes(m: dict, dicas: dict[str, str] | None = None) -> dict[str, html.Div]
     Devolver um dicionário deixa quem consome escolher a ordem e intercalar
     cartões próprios sem reescrever nenhum destes.
     """
-    dicas = dicas or {}
-    saida: dict[str, html.Div] = {}
+    return {i["rotulo"]: card(i["rotulo"], i["valor"], i["explica"],
+                              i["sinal"], i["nota"], largo=i["largo"])
+            for i in itens(m, dicas)}
 
-    def c(rotulo, valor, explica=None, *args, **kw):
-        saida[rotulo] = card(rotulo, valor, dicas.get(rotulo, explica),
-                             *args, **kw)
+
+def itens(m: dict, dicas: dict[str, str] | None = None) -> list[dict]:
+    """Os mesmos números dos cartões, como dados: rótulo, valor, explicação,
+    sinal, nota e largura. É o que a tela Candidata usa para montar a sua
+    tabela — os textos do (?) ficam num lugar só."""
+    dicas = dicas or {}
+    saida: list[dict] = []
+
+    def c(rotulo, valor, explica=None, sinal=None, nota=None, largo=False):
+        saida.append({"rotulo": rotulo, "valor": valor,
+                      "explica": dicas.get(rotulo, explica), "sinal": sinal,
+                      "nota": nota, "largo": largo})
 
     pf = m["profit_factor"]
     pf_txt = "∞" if pf == float("inf") else num(pf)
