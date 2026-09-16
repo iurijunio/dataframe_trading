@@ -89,6 +89,9 @@ def leitura_robustez(trades: list[dict], capital: float,
         "ordenacao": robustez.monte_carlo(liq, capital),
         "concentracao": robustez.concentracao(liq),
         "pregoes": len(dias),
+        # a régua de comparação do p95 simulado: quantos pregões operados
+        # perdedores seguidos a curva real, sem sorteio nenhum, já teve
+        "perdas_seguidas_reais": robustez.perdas_seguidas_operadas(pnl),
     }
 
 

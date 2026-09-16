@@ -38,6 +38,19 @@ def bloco_robustez(leitura: dict, capital: float):
     pior, janela_pior = ((dd, "curva inteira") if dd >= dd12
                          else (dd12, "últimos 12 meses"))
     pior_pct = pior / capital * 100 if capital else 0.0
+    horizonte = int(b.get("horizonte") or 1)
+
+    # o "risco de ordenação" embaralha os 551 trades da curva INTEIRA
+    # (~4 anos) — prazo diferente do bootstrap, que roda no horizonte da
+    # próxima reotimização. Comparar os dois números direto é comparar
+    # drawdown de 6 meses com drawdown de 4 anos: o achado que motivou este
+    # bloco de correção. Cada cartão agora diz o prazo que mede.
+    pregoes_total = int(leitura.get("pregoes", 0))
+    ordenacao_pct = (o.get("dd_p95", 0.0) / capital * 100) if capital else 0.0
+
+    perdas_reais = int(leitura.get("perdas_seguidas_reais", 0))
+    submerso_p95 = b.get("submerso_p95", 0.0)
+    submerso_pct = (submerso_p95 / horizonte * 100) if horizonte else 0.0
 
     resumo = html.Div(
         list(stats_cards.cartoes(leitura["resumo"], DICAS_OOS).values()),
@@ -55,34 +68,55 @@ def bloco_robustez(leitura: dict, capital: float):
             cartao.card(
                 "drawdown esperado", brl(pior),
                 explica="O p95 de 2.000 trajetórias sorteadas em blocos de "
-                        "pregão, com reposição — o lucro final varia entre "
+                        "pregão, com reposição, no horizonte da próxima "
+                        "reotimização — o lucro final varia entre "
                         "trajetórias, então a incerteza do próprio edge "
                         "entra na conta. Vale o pior entre a curva inteira e "
                         "os últimos 12 meses. Bom: até 10% do capital. Ruim: "
                         "acima de 20%.",
                 sinal=cartao.faixa(pior_pct, 10, 20),
                 nota=f"{pct(pior_pct, 1)} do capital · {janela_pior} · "
-                     f"blocos de {inteiro(int(b.get('bloco', 1)))} pregões"),
+                     f"horizonte de {inteiro(horizonte)} pregões, vale até a "
+                     f"próxima reotimização · blocos de "
+                     f"{inteiro(int(b.get('bloco', 1)))} pregões"),
             cartao.card(
                 "perdas seguidas",
                 inteiro(int(round(b.get("perdas_seguidas_p95", 0.0)))),
-                explica="O p95 da maior sequência de pregões negativos "
-                        "seguidos e do maior tempo abaixo do topo anterior, "
-                        "nas mesmas trajetórias sorteadas. É o que você vai "
-                        "viver antes de o disjuntor disparar. Até 5 pregões "
-                        "seguidos é tolerável; acima de 10, vale perguntar "
-                        "se você aguentaria operar até lá.",
-                nota=f"{inteiro(int(round(b.get('submerso_p95', 0.0))))} "
-                     "pregões no fundo"),
+                explica="O p95 da maior sequência de pregões OPERADOS e "
+                        "negativos seguidos, nas mesmas trajetórias "
+                        "sorteadas — pregão sem trade não conta nem corta a "
+                        "sequência. É o que você vai viver antes de o "
+                        "disjuntor disparar. Compare com a sequência real ao "
+                        "lado: se o p95 simulado for bem maior que ela, a "
+                        "curva real teve sorte — o azar ainda não apareceu.",
+                nota=f"curva real: {inteiro(perdas_reais)} pregões "
+                     "perdedores seguidos"),
+            cartao.card(
+                "pregões abaixo do topo",
+                inteiro(int(round(submerso_p95))),
+                explica="O p95 do maior tempo, em pregões, que a trajetória "
+                        "simulada passa abaixo do topo anterior antes de "
+                        "fazer um novo topo — não é 'no fundo', é qualquer "
+                        "ponto ainda devendo o pico. Até 50% do horizonte é "
+                        "tolerável; acima de 90%, a estratégia tipicamente "
+                        "não recupera o topo dentro do próprio horizonte.",
+                sinal=cartao.faixa(submerso_pct, 50, 90),
+                nota=(f"{pct(submerso_pct, 0)} do horizonte de "
+                      f"{inteiro(horizonte)} pregões"
+                      + (" · tipicamente não recupera o topo dentro do "
+                         "horizonte" if submerso_pct > 90 else ""))),
             cartao.card(
                 "risco de ordenação", brl(o.get("dd_p95", 0.0)),
-                explica="Os MESMOS trades embaralhados: o lucro final não "
-                        "muda, só o caminho. Mede azar de sequência, não "
-                        "incerteza do resultado — por isso não é o "
-                        "disjuntor. Se for bem menor que o drawdown esperado "
-                        "ao lado, a diferença entre os dois é a incerteza de "
-                        "o edge medido não ser o verdadeiro.",
-                nota="mesma carteira, outra ordem"),
+                explica="Os MESMOS trades embaralhados, na curva INTEIRA "
+                        "(não no horizonte do cartão de drawdown esperado — "
+                        "os dois medem prazos diferentes e não se comparam "
+                        "diretamente). O lucro final não muda, só o "
+                        "caminho: mede azar de sequência, não incerteza do "
+                        "resultado — por isso não é o disjuntor. Bom: até "
+                        "10% do capital. Ruim: acima de 20%.",
+                sinal=cartao.faixa(ordenacao_pct, 10, 20),
+                nota=f"mesma carteira, outra ordem · curva inteira · "
+                     f"{inteiro(pregoes_total)} pregões"),
         ],
     )
 

@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core import candidata  # noqa: E402
+from core import candidata, wfa  # noqa: E402
 
 CAP = 10_000.0
 
@@ -83,6 +83,12 @@ def test_leitura_robustez_usa_o_bootstrap_e_nao_a_permutacao():
     assert r["boot"]["bloco"] >= 1
     # a permutação continua, mas como leitura à parte
     assert r["ordenacao"]["dd_p95"] > 0
+    # o que discrimina permutação de bootstrap: SEM reposição, o lucro final
+    # não muda — trocar `ordenacao` por outro bootstrap passaria pelas
+    # asserções de cima (ambas têm "dd_p95") mas falharia aqui, porque
+    # bootstrap faz o lucro final VARIAR entre trajetórias.
+    liq_total = sum(x["liquido"] for x in t)
+    assert r["ordenacao"]["lucro_final"] == pytest.approx(liq_total)
     assert r["resumo"]["trades"] == len(t)
 
 
@@ -93,10 +99,20 @@ def test_leitura_robustez_traz_o_recorte_de_12_meses():
     `<=` deixava passar uma implementação que usasse a curva inteira nos
     dois recortes (os dois horizontes empatam em 519 pregões nos trades
     falsos daqui) — só o `<` estrito acusa que o corte de 12 meses foi
-    esquecido.
+    esquecido. Mas `<` sozinho também deixa passar um recorte de 6 meses no
+    lugar de 12 (também seria menor que o total): por isso comparamos com o
+    número de pregões que `wfa.pregoes` — o mesmo contador que o resto da
+    plataforma usa — dá para uma janela de exatamente um ano, com uma folga
+    pequena para a borda do calendário.
     """
-    r = candidata.leitura_robustez(_trades_falsos(), CAP)
+    t = _trades_falsos()
+    r = candidata.leitura_robustez(t, CAP)
     assert r["boot_12m"]["horizonte"] < r["boot"]["horizonte"]
+
+    ultimo = max(np.datetime64(x["exit_ts"], "D") for x in t)
+    corte = ultimo - np.timedelta64(365, "D")
+    esperado = wfa.pregoes(str(corte), str(ultimo + np.timedelta64(1, "D")))
+    assert abs(r["boot_12m"]["horizonte"] - esperado) <= 2
 
 
 def test_leitura_robustez_recusa_amostra_pequena():

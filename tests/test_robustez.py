@@ -320,6 +320,17 @@ def test_bootstrap_submerso_e_perdas_em_pregoes_nao_em_fracao():
     assert b["perdas_seguidas_p95"] == pytest.approx(60.0)
 
 
+def test_perdas_seguidas_operadas_ignora_pregao_sem_trade():
+    """Um pregão sem trade (resultado zero) intercalado entre perdas não
+    pode cortar a sequência: a versão antiga (`_maior_seq(serie < 0)`, sem
+    tirar os zeros primeiro) trata cada pregão parado como um corte e dá 1;
+    a sequência real, nos pregões OPERADOS, é 4."""
+    serie = np.array([-10.0, 0.0, -10.0, 0.0, -10.0, 0.0, -10.0])
+    assert rb.perdas_seguidas_operadas(serie) == 4
+    # a conta antiga, para registrar o que ela dava e por que era o bug
+    assert rb._maior_seq(serie < 0) == 1
+
+
 def test_bootstrap_inclui_o_capital_como_ponto_de_partida_do_pico():
     """O pico tem que nascer no capital, não no primeiro dia já debitado —
     senão uma sequência só de perdas mede metade do drawdown real. Série

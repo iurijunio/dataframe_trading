@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dash import Input, Output, no_update
 
-from core import candidata, wfa_store
+from core import candidata, wfa, wfa_store
 
 from .components import candidata_panel as CP
 
@@ -59,7 +59,16 @@ def register(app):
                             "salve o walk-forward de novo para analisá-lo.")
         trades = wfa_store.trades(int(wfa_id))
         # o disjuntor vale até a próxima reotimização, não até o fim dos
-        # tempos: o horizonte é o OOS da configuração escolhida
-        horizonte = int(d.get("oos_meses", 6) * 21)
+        # tempos: o horizonte é o OOS da configuração escolhida. Preferimos
+        # os pregões ÚTEIS de verdade (`wfa.pregoes`, o mesmo que o resto da
+        # plataforma usa) à aproximação de 21 pregões/mês — a janela OOS real
+        # tem 129 a 132 pregões, não os 126 que a conta aproximada dava. Sem
+        # `deploy` gravado (registro antigo), caímos na aproximação; e
+        # `oos_meses` pode vir `None`, daí o `or 6` antes de multiplicar.
+        deploy = d.get("deploy") or {}
+        if deploy.get("oos_de") and deploy.get("oos_ate"):
+            horizonte = wfa.pregoes(deploy["oos_de"], deploy["oos_ate"])
+        else:
+            horizonte = int((d.get("oos_meses") or 6) * 21)
         return CP.bloco_robustez(
             candidata.leitura_robustez(trades, capital, horizonte), capital)

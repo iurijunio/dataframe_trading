@@ -231,6 +231,21 @@ def _maior_seq(mask: np.ndarray) -> int:
     return int((np.flatnonzero(d == -1) - np.flatnonzero(d == 1)).max())
 
 
+def perdas_seguidas_operadas(serie: np.ndarray) -> int:
+    """A maior sequência de PREGÕES OPERADOS e negativos seguidos.
+
+    Um pregão sem trade (resultado exatamente zero) não é vitória disfarçada
+    e não corta a sequência de perdas real: ele simplesmente não foi
+    operado. Medir direto sobre `serie < 0`, sem tirar os zeros antes,
+    contava cada pregão parado como corte — numa curva onde 64% dos pregões
+    não têm trade, isso mostrava "5" onde a sequência real, nos pregões
+    OPERADOS, era 12.
+    """
+    serie = np.asarray(serie, dtype=float)
+    operados = serie[serie != 0]
+    return _maior_seq(operados < 0)
+
+
 def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
               semente: int = 7, bloco: int | None = None,
               horizonte: int | None = None) -> dict:
@@ -286,7 +301,8 @@ def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
         pico = np.maximum.accumulate(eq)
         quedas[i] = float((pico - eq).max())
         submersos[i] = _maior_seq(eq < pico)
-        seguidas[i] = _maior_seq(series[i] < 0)
+        # zero é pregão sem trade, não é corte de sequência - ver docstring
+        seguidas[i] = perdas_seguidas_operadas(series[i])
 
     finais = series.sum(axis=1)
     p = np.percentile(quedas, [50, 95, 99])
