@@ -282,7 +282,7 @@ def register(app):
     # ------------------------------------------------- backtest ou mineração
     @app.callback(
         Output("painel-backtest", "style"), Output("painel-mineracao", "style"),
-        Output("painel-wfa", "style"),
+        Output("painel-wfa", "style"), Output("painel-candidata", "style"),
         Output("acao-backtest", "style"), Output("sec-mineracao", "style"),
         Output("sidebar", "style"),
         Input("modo", "value"),
@@ -309,6 +309,7 @@ def register(app):
         # inteligência de seleção. Deixar os campos na tela convidaria a
         # editá-los achando que mudam alguma coisa.
         return (v(qual == "backtest"), v(qual == "mineracao"), v(qual == "wfa"),
+                v(qual == "candidata"),
                 VISIVEL if qual == "backtest" else OCULTO,
                 VISIVEL if qual == "mineracao" else OCULTO,
                 # BLOCK, e não flex: a barra lateral é um <aside> comum com
@@ -1782,3 +1783,6 @@ def register(app):
                      "nonce": f"{janela['de']}|{janela['ate']}|{tf}"}
         return (charts.price_series(dados, marcas, linhas), enquadrar, info,
                 f"{dados['timeframe']} · {len(dados['candles'])} candles")
+
+    from ui import callbacks_candidata
+    callbacks_candidata.register(app)

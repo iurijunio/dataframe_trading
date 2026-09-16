@@ -20,8 +20,8 @@ from dash import Dash, dcc, html
 
 from ui import data as D
 from ui import theme as T
-from ui.components import (analytics_charts, controls, mining,
-                           results_grid, stats_cards, wfa_panel)
+from ui.components import (analytics_charts, candidata_panel, controls,
+                           mining, results_grid, stats_cards, wfa_panel)
 
 # O simbolo NAO mora mais no codigo: vem do banco. Este e so o padrao de
 # arranque, o primeiro instrumento com barras.
@@ -57,7 +57,8 @@ def topbar(simbolo):
                         id="modo", value="backtest", className="modo",
                         options=[{"label": "Backtest", "value": "backtest"},
                                  {"label": "Mineração", "value": "mineracao"},
-                                 {"label": "Walk-Forward", "value": "wfa"}],
+                                 {"label": "Walk-Forward", "value": "wfa"},
+                                 {"label": "Candidata", "value": "candidata"}],
                     ),
                 ],
                 className="brand-wrap",
@@ -156,6 +157,13 @@ def painel(inicio, fim):
             # largura natural, deixando um vazio à direita.
             html.Div(id="painel-wfa", className="modo-bloco",
                      children=wfa_panel.painel(), style={"display": "none"}),
+
+            # `candidata_panel.painel()` já é o `html.Div#painel-candidata`
+            # (classe `modo-bloco cand`) — envolvê-lo em outro Div com o
+            # mesmo id duplicaria o id e o Dash recusa o layout na primeira
+            # requisição (`DuplicateIdError`), diferente do padrão do WFA
+            # acima, cujo `painel()` devolve uma LISTA de filhos, sem id.
+            candidata_panel.painel(),
         ],
         className="main",
     )

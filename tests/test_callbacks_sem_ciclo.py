@@ -126,6 +126,13 @@ def test_o_app_nao_tem_ciclo_entre_callbacks():
     assert ciclo is None, "ciclo: " + " → ".join(ciclo)
 
 
+def test_o_modo_candidata_existe_e_tem_painel():
+    app = build()
+    texto = str(app.layout)
+    assert "'Candidata'" in texto and "'candidata'" in texto
+    assert "painel-candidata" in texto
+
+
 def test_os_ciclos_conhecidos_ainda_existem():
     """Quando um deles for desfeito, este teste falha para lembrar de tirá-lo
     da lista — senão a lista vira um lugar para esconder ciclos novos."""

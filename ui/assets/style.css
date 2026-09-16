@@ -901,3 +901,11 @@ body{
 .pp-rotulo.pp-borda{color:var(--warn);}
 .pp-marca.pp-perto{background:transparent;border:2px solid var(--warn);}
 .pp-rotulo.pp-perto{color:var(--warn);opacity:.8;}
+
+/* --------------------------------------------------------- modo Candidata
+   ainda vazio nesta tarefa: só o seletor do WFA salvo e o resumo. Os portões
+   e os blocos ganham conteúdo nas tarefas seguintes. */
+.cand-topo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.dd-wfa{flex:1;min-width:260px;}
+.cand-resumo{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);}
+.cand-portoes,.cand-blocos{min-height:0;}
