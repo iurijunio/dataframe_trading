@@ -208,3 +208,25 @@ def test_custo_que_zera_e_a_folga():
 
 def test_custo_sem_contratos_nao_quebra():
     assert rb.custo_que_zera(100.0, np.array([]), 1.0) == {}
+
+
+# --------------------------------------------------------- tamanho do bloco
+def test_bloco_medio_e_um_em_serie_independente():
+    """Sem dependência entre dias, o bootstrap em blocos tem que degenerar
+    para o sorteio dia a dia."""
+    rng = np.random.default_rng(3)
+    assert rb.bloco_medio(rng.normal(10, 100, 500)) == 1
+
+
+def test_bloco_medio_cresce_quando_os_dias_andam_juntos():
+    """Volatilidade agrupada: bons e maus vêm em sequência, que é o que
+    produz drawdown de verdade."""
+    rng = np.random.default_rng(3)
+    base = rng.normal(10, 100, 100)
+    agrupada = np.repeat(base, 5)               # cada valor dura 5 pregões
+    assert rb.bloco_medio(agrupada) >= 4
+
+
+def test_bloco_medio_nao_quebra_com_serie_curta_ou_constante():
+    assert rb.bloco_medio(np.array([1.0, 2.0])) == 1
+    assert rb.bloco_medio(np.zeros(200)) == 1

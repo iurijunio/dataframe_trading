@@ -182,6 +182,27 @@ def teste_runs(liquido: np.ndarray) -> dict:
     }
 
 
+def bloco_medio(por_dia: np.ndarray) -> int:
+    """De quantos pregões é o bloco do bootstrap.
+
+    Permutar dia a dia supõe que o resultado de hoje nada diz sobre o de
+    amanhã. Em day trade isso é falso: regime, volatilidade e notícia duram
+    mais que um pregão, e é justamente essa dependência que produz o
+    drawdown. O comprimento sai da autocorrelação de defasagem 1, pela
+    razão (1+ρ)/(1−ρ) — a mesma que descreve a perda de amostra efetiva.
+    """
+    x = np.asarray(por_dia, dtype=float)
+    if len(x) < 30:
+        return 1
+    x = x - x.mean()
+    den = float((x * x).sum())
+    if den <= 0:
+        return 1
+    rho = float((x[:-1] * x[1:]).sum() / den)
+    rho = min(max(rho, 0.0), 0.95)              # dependência negativa não alonga bloco
+    return max(1, int(round((1 + rho) / (1 - rho))))
+
+
 def correlacao_lr(liquido: np.ndarray, capital: float) -> dict:
     """Quão reta é a curva de capital — a mesma leitura do MT5.
 
