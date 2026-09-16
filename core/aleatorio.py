@@ -25,16 +25,49 @@ class EntradaAleatoria:
     def __init__(self, n_sinais: int, horarios: dict | None,
                  p_compra: float, semente: int):
         self.n_sinais = int(n_sinais)
-        self.horarios = horarios
+        self.horarios = self._normalizar_horarios(horarios)
         self.p_compra = float(p_compra)
         self.semente = int(semente)
+
+    @staticmethod
+    def _normalizar_horarios(horarios: dict | None) -> dict | None:
+        """Aceita peso como fração OU como contagem bruta do histograma real
+        (ex.: "40 entradas às 9h, 60 às 10h") — normalizar pela soma evita
+        que quem chama tenha que fazer a conta, e sem isso um dict de
+        contagens (que não soma 1) sortearia milhares de sinais em vez de
+        `n_sinais`."""
+        if not horarios:
+            return None
+        if any(p < 0 for p in horarios.values()):
+            raise ValueError(
+                "horarios: peso negativo não faz sentido — pesos são "
+                "fração (ou contagem) de sinais, nunca negativos."
+            )
+        soma = sum(horarios.values())
+        if soma <= 0:
+            raise ValueError(
+                "horarios: soma dos pesos é zero; não há como distribuir "
+                "nenhum sinal entre as horas pedidas."
+            )
+        return {h: p / soma for h, p in horarios.items()}
 
     def signals(self, bars: dict, params: dict) -> Signals:
         n = len(bars["close"])
         rng = np.random.default_rng(self.semente)
 
         if self.horarios:
-            horas = bars["ts"].astype("datetime64[h]").astype(object)
+            # `bars["ts"]` é o RÓTULO da barra do timeframe da estratégia —
+            # `execution.resample` carimba com o FIM do período (uma M15
+            # fecha aos 14/29/44/59 do minuto). O kernel só abre posição na
+            # barra M1 SEGUINTE ao sinal (kernel.py, "sinais desta barra,
+            # para a próxima"), então uma barra rotulada 09:59 entra às
+            # 10:00. Estratificar pelo rótulo estratificaria pela hora
+            # ERRADA sempre que o rótulo cair no último minuto da hora — e
+            # em H1 isso desloca o histograma inteiro em uma hora. O
+            # histograma real (`entry_ts`) mede a hora de EXECUÇÃO, não a
+            # do rótulo, então é isso que tem que bater aqui.
+            execucao = bars["ts"] + np.timedelta64(1, "m")
+            horas = execucao.astype("datetime64[h]").astype(object)
             horas = np.array([h.hour for h in horas])
             idx = self._sorteio_estratificado(horas, rng)
         else:
@@ -92,6 +125,14 @@ def calibrar(rodar, alvo_trades: int, tentativas: int = 8,
     nem 4x o alvo em sinais entrega o número de trades pedido (o motor
     satura, por exemplo pelo limite diário) nunca vai convergir — a função
     tem que devolver o melhor `n` já visto em vez de girar sem parar.
+
+    A assinatura continua `int` mesmo nesse caso de não convergência — não
+    há um segundo valor de retorno avisando "não bati o alvo". Por isso:
+    QUEM CHAMA `calibrar` TEM QUE CONFERIR o número de trades que `n`
+    produziu contra `alvo_trades` antes de usar o sorteio na comparação. Um
+    `n` que fica muito aquém do alvo silenciosamente faz o aleatório operar
+    menos que a real, o que empurra a comparação a favor da real por um
+    motivo que não é o sinal.
     """
     baixo, alto = alvo_trades, max(alvo_trades * 4, alvo_trades + 10)
     melhor, erro_melhor = alto, float("inf")
@@ -115,6 +156,16 @@ def p_valor(real: float, sorteados: np.ndarray) -> float:
 
     O percentil empírico cru daria zero quando nenhum sorteio bate o real —
     e "probabilidade zero" não é uma conclusão que B sorteios sustentam.
+
+    Não-finito é tratado sempre do lado que NÃO favorece a aprovação: um
+    REAL não finito (métrica indefinida, ex.: Sharpe com desvio zero) não
+    prova mérito nenhum e devolve o pior p-valor (1.0), nunca o melhor. Um
+    SORTEIO não finito (aquela repetição quebrou) conta como se tivesse
+    BATIDO o real — do contrário, sorteios que falharam desapareceriam da
+    contagem e inflariam a aparência de significância artificialmente.
     """
+    if not np.isfinite(real):
+        return 1.0
     s = np.asarray(sorteados, dtype=float)
-    return float((1 + int((s >= real).sum())) / (1 + len(s)))
+    bate = ~np.isfinite(s) | (s >= real)
+    return float((1 + int(bate.sum())) / (1 + len(s)))
