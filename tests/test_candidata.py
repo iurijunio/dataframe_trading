@@ -375,8 +375,8 @@ def test_perfil_plato_abstem_quando_o_centro_da_prejuizo():
 
 
 CHAVES_PERFIL = {"pontos", "centro_fr", "ausentes", "largura_esq",
-                 "largura_dir", "borda_esq", "borda_dir", "abstem",
-                 "motivo", "parametro"}
+                 "largura_dir", "borda_esq", "borda_dir", "parada_esq",
+                 "parada_dir", "abstem", "motivo", "parametro"}
 
 
 def test_perfil_plato_devolve_sempre_o_mesmo_conjunto_de_chaves():
@@ -415,3 +415,43 @@ def test_perfil_plato_devolve_sempre_o_mesmo_conjunto_de_chaves():
         assert set(p.keys()) == CHAVES_PERFIL
         # contrato explícito: motivo só é None quando não há abstenção
         assert (p["motivo"] is None) == (not p["abstem"])
+
+
+# --------------------------------- rodada de correção 2: platô e vizinho
+
+
+def _perfil_com(fr, deploy_idx, ausentes=()):
+    valores = list(range(40, 40 + len(fr)))
+    trials = [{"params": {"p": v}, "lucro": f * 100.0, "dd": 100.0}
+              for i, (v, f) in enumerate(zip(valores, fr)) if i not in ausentes]
+    return candidata.perfil_plato(trials, {"p": valores},
+                                  {"p": float(valores[deploy_idx])})
+
+
+def test_parada_distingue_queda_borda_e_buraco():
+    p = _perfil_com([1, 5, 5, 5, 5], deploy_idx=3, ausentes=(1,))
+    assert p["parada_dir"] == "borda"
+    assert p["parada_esq"] == "buraco"
+    q = _perfil_com([5, 1, 5, 5, 5, 5], deploy_idx=3)
+    assert q["parada_esq"] == "queda"
+
+
+def test_plato_reprova_so_por_queda_real():
+    """Queda a um passo do centro reprova. Fim da faixa testada e ponto não
+    minerado não reprovam — viram alerta."""
+    queda = candidata.portoes_plato(_perfil_com([5, 1, 5, 5, 5, 5], 3))
+    assert queda[0]["critico"] and queda[0]["ok"] is False
+    borda = candidata.portoes_plato(_perfil_com([5, 5, 5, 5, 5], 3))
+    assert borda[0]["ok"] is True
+    assert borda[1]["critico"] is False and borda[1]["ok"] is False
+
+
+def test_plato_largo_dos_dois_lados_passa_sem_alerta():
+    p = candidata.portoes_plato(_perfil_com([5] * 9, 4))
+    assert p[0]["ok"] is True and p[1]["ok"] is True
+
+
+def test_alerta_vizinho_com_prejuizo():
+    p = _perfil_com([5, 5, 5, -1, 5, 5, 5], 4)
+    assert candidata.alerta_vizinho(p)["ok"] is False
+    assert candidata.alerta_vizinho(_perfil_com([5] * 7, 3))["ok"] is True

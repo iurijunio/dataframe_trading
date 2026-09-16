@@ -204,7 +204,8 @@ PLATO_PISO = 0.6            # o vizinho segura 60% do FR do centro
 
 
 def _perfil(pontos=None, centro_fr=None, ausentes=0, largura_esq=0,
-           largura_dir=0, borda_esq=False, borda_dir=False, abstem=False,
+           largura_dir=0, borda_esq=False, borda_dir=False,
+           parada_esq=None, parada_dir=None, abstem=False,
            motivo=None, parametro=None) -> dict:
     """Monta o retorno de `perfil_plato` com o contrato sempre completo.
 
@@ -215,7 +216,8 @@ def _perfil(pontos=None, centro_fr=None, ausentes=0, largura_esq=0,
     return {"pontos": pontos or [], "centro_fr": centro_fr,
             "ausentes": ausentes, "largura_esq": largura_esq,
             "largura_dir": largura_dir, "borda_esq": borda_esq,
-            "borda_dir": borda_dir, "abstem": abstem, "motivo": motivo,
+            "borda_dir": borda_dir, "parada_esq": parada_esq,
+            "parada_dir": parada_dir, "abstem": abstem, "motivo": motivo,
             "parametro": parametro}
 
 
@@ -234,14 +236,19 @@ def perfil_plato(trials: list[dict], espaco: dict, deploy: dict) -> dict:
     "2k vizinhos" vira duas amostras — por isso o perfil olha a faixa
     inteira, não uma vizinhança fixa.
 
-    `borda_esq`/`borda_dir` dizem POR QUE a caminhada parou daquele lado:
-    `True` quando parou porque a grade acabou (nenhum ponto caiu abaixo do
-    piso, só faltou mineração mais longe), `False` quando parou porque um
-    ponto caiu abaixo do piso ou está ausente. Sem essa distinção, uma
-    mineração que parou cedo (a #40 termina em 80, e o DEPLOY testado fica a
-    só dois passos dali) parece "platô confirmado até a borda" para quem lê
-    só o número — quando o correto é "não testamos mais longe". Largura
-    grande com borda batida é região não explorada, não região comprovada.
+    `parada_esq`/`parada_dir` dizem POR QUE a caminhada parou daquele lado:
+    `"borda"` quando a grade acabou (nenhum ponto caiu abaixo do piso, só
+    faltou mineração mais longe), `"buraco"` quando o próximo ponto não foi
+    minerado (`fr is None`), `"queda"` quando o próximo ponto foi minerado e
+    caiu abaixo do piso — a única razão que reprova de verdade. Confundir
+    "buraco" ou "borda" com "queda" faz um ponto nunca medido reprovar a
+    estratégia por falta de dado, não por resultado ruim. `borda_esq` e
+    `borda_dir` continuam existindo como atalho (`parada == "borda"`) para
+    quem só quer saber se a grade acabou. Sem essa distinção, uma mineração
+    que parou cedo (a #40 termina em 80, e o DEPLOY testado fica a só dois
+    passos dali) parece "platô confirmado até a borda" para quem lê só o
+    número — quando o correto é "não testamos mais longe". Largura grande
+    com borda batida é região não explorada, não região comprovada.
 
     O centro pode ficar sem fator de recuperação por dois motivos que o
     motivo do retorno precisa distinguir: o DEPLOY não está na grade
@@ -306,20 +313,83 @@ def perfil_plato(trials: list[dict], espaco: dict, deploy: dict) -> dict:
                 and pontos[k]["fr"] >= piso:
             n += 1
             k += passo
-        # k saiu do intervalo da grade sem nunca falhar o piso: a caminhada
-        # não provou platô até a borda, só ficou sem grade para continuar
-        borda = not (0 <= k < len(pontos))
-        return n, borda
+        # por que a caminhada parou: grade acabou ("borda"), o próximo ponto
+        # não foi minerado ("buraco") ou foi minerado e caiu abaixo do piso
+        # ("queda") — só esta última é reprovação de verdade
+        if not (0 <= k < len(pontos)):
+            motivo = "borda"
+        elif pontos[k]["fr"] is None:
+            motivo = "buraco"
+        else:
+            motivo = "queda"
+        return n, motivo
 
-    largura_esq, borda_esq = anda(-1)
-    largura_dir, borda_dir = anda(1)
+    largura_esq, parada_esq = anda(-1)
+    largura_dir, parada_dir = anda(1)
     abstem_buraco = ausentes * 3 > len(pontos)
     return _perfil(
         pontos=pontos, centro_fr=centro_fr, ausentes=ausentes,
         largura_esq=largura_esq, largura_dir=largura_dir,
-        borda_esq=borda_esq, borda_dir=borda_dir, abstem=abstem_buraco,
+        borda_esq=parada_esq == "borda", borda_dir=parada_dir == "borda",
+        parada_esq=parada_esq, parada_dir=parada_dir, abstem=abstem_buraco,
         motivo=("buraco grande demais na grade minerada: mais de um terço "
                 "dos pontos não tem fator de recuperação, e portão que "
                 "decide sobre grade furada decide sobre nada"
                 ) if abstem_buraco else None,
         parametro=nome)
+
+
+def portao(nome, ok, critico, valor, exigido, dica) -> dict:
+    """A forma comum de todo portão da tela Candidata: nome do teste, se
+    passou, se reprova a estratégia (ou é só alerta), o valor medido, o que
+    era exigido e a dica de por que isso importa — tudo em português simples
+    para quem lê a tela sem saber o jargão por trás da conta."""
+    return {"nome": nome, "ok": ok, "critico": critico, "valor": valor,
+            "exigido": exigido, "dica": dica}
+
+
+def portoes_plato(perfil: dict, passos_min: int = 2) -> list[dict]:
+    """A região do parâmetro é larga? Só reprova com queda de verdade perto
+    do centro: faixa testada que acaba ou ponto não minerado são falta de
+    medição, e falta de medição vira alerta, não reprovação."""
+    nome = "O parâmetro está numa região larga?"
+    dica = ("Mede quantos valores vizinhos do parâmetro escolhido, para cada "
+            "lado, continuam dando pelo menos 60% do resultado dele (lucro "
+            "dividido pela maior queda). Precisa de pelo menos 2 de cada "
+            "lado: um parâmetro que só funciona num valor exato é sorte, não "
+            "estratégia.")
+    if perfil.get("abstem"):
+        return [portao(nome, True, True, "não medido", f"≥ {passos_min} por lado", dica),
+                portao("A região foi medida por inteiro?", False, False,
+                       perfil.get("motivo") or "não foi possível medir", "medida",
+                       "Sem dados suficientes da mineração para medir a região.")]
+    lados = [(perfil["largura_esq"], perfil["parada_esq"]),
+             (perfil["largura_dir"], perfil["parada_dir"])]
+    queda = any(n < passos_min and m == "queda" for n, m in lados)
+    faltou = [m for n, m in lados if n < passos_min and m != "queda"]
+    valor = f"{perfil['largura_esq']} à esquerda · {perfil['largura_dir']} à direita"
+    critico = portao(nome, not queda, True, valor, f"≥ {passos_min} por lado", dica)
+    alerta = portao(
+        "A faixa testada cobre a região?", not faltou, False,
+        ("termina perto do parâmetro" if "borda" in faltou
+         else "há valores não minerados perto" if faltou else "sim"),
+        "cobre",
+        "Quando a faixa minerada termina (ou tem buracos) a menos de 2 passos "
+        "do parâmetro escolhido, não dá para saber se a região continua boa "
+        "daquele lado. Amplie a mineração para confirmar.")
+    return [critico, alerta]
+
+
+def alerta_vizinho(perfil: dict, raio: int = 2) -> dict:
+    """Algum valor a até `raio` passos do escolhido dá prejuízo?"""
+    pontos = perfil.get("pontos") or []
+    i = next((k for k, p in enumerate(pontos) if p.get("atual")), None)
+    ruins = [] if i is None else [
+        p for p in pontos[max(0, i - raio): i + raio + 1]
+        if p.get("lucro") is not None and p["lucro"] < 0]
+    return portao(
+        "Algum vizinho dá prejuízo?", not ruins, False,
+        f"{len(ruins)} com prejuízo" if ruins else "nenhum", "nenhum",
+        "Valores do parâmetro a até 2 passos do escolhido que deram prejuízo "
+        "na mineração. Um vizinho no vermelho não reprova, mas diz que um "
+        "pequeno erro de ajuste já custa dinheiro.")
