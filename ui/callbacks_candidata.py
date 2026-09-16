@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from dash import Input, Output, no_update
 
-from core import wfa_store
+from core import candidata, wfa_store
+
+from .components import candidata_panel as CP
 
 
 def register(app):
@@ -41,3 +43,23 @@ def register(app):
         return (f"{d.get('strategy', '—')} · {d.get('symbol', '—')} · "
                 f"IS{d.get('is_meses')}/OOS{d.get('oos_meses')} · "
                 f"{d.get('inteligencia', '—')}")
+
+    @app.callback(
+        Output("cand-blocos", "children"),
+        Input("cand-wfa", "value"),
+    )
+    def cand_blocos(wfa_id):
+        if not wfa_id:
+            return CP.vazio("escolha um walk-forward salvo para analisar")
+        d = wfa_store.detalhes(int(wfa_id)) or {}
+        capital = d.get("capital")
+        if capital is None:
+            return CP.vazio("este walk-forward foi salvo antes desta tela: "
+                            "não tem capital nem perfil gravados. Rode e "
+                            "salve o walk-forward de novo para analisá-lo.")
+        trades = wfa_store.trades(int(wfa_id))
+        # o disjuntor vale até a próxima reotimização, não até o fim dos
+        # tempos: o horizonte é o OOS da configuração escolhida
+        horizonte = int(d.get("oos_meses", 6) * 21)
+        return CP.bloco_robustez(
+            candidata.leitura_robustez(trades, capital, horizonte), capital)

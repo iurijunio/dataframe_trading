@@ -65,6 +65,47 @@ def test_risco_de_desligar_le_a_distribuicao_do_bootstrap():
     assert candidata.risco_de_desligar(boot, 200.0) == pytest.approx(75.0)
 
 
+def _trades_falsos(n=400, semente=1):
+    rng = np.random.default_rng(semente)
+    dias = np.arange(np.datetime64("2024-01-01"), np.datetime64("2025-12-31"))
+    dias = dias[np.is_busday(dias)]
+    escolha = np.sort(rng.choice(len(dias), size=n, replace=True))
+    return [{"exit_ts": dias[i].astype("datetime64[s]").item(),
+             "entry_ts": dias[i].astype("datetime64[s]").item(),
+             "liquido": float(v), "custo": 3.5, "contratos": 1}
+            for i, v in zip(escolha, rng.normal(15, 120, n))]
+
+
+def test_leitura_robustez_usa_o_bootstrap_e_nao_a_permutacao():
+    t = _trades_falsos()
+    r = candidata.leitura_robustez(t, CAP)
+    assert r["boot"]["dd_p95"] > 0
+    assert r["boot"]["bloco"] >= 1
+    # a permutação continua, mas como leitura à parte
+    assert r["ordenacao"]["dd_p95"] > 0
+    assert r["resumo"]["trades"] == len(t)
+
+
+def test_leitura_robustez_traz_o_recorte_de_12_meses():
+    """O índice dobrou de escala dentro da amostra: o risco do regime atual
+    não é o risco médio de cinco anos.
+
+    `<=` deixava passar uma implementação que usasse a curva inteira nos
+    dois recortes (os dois horizontes empatam em 519 pregões nos trades
+    falsos daqui) — só o `<` estrito acusa que o corte de 12 meses foi
+    esquecido.
+    """
+    r = candidata.leitura_robustez(_trades_falsos(), CAP)
+    assert r["boot_12m"]["horizonte"] < r["boot"]["horizonte"]
+
+
+def test_leitura_robustez_recusa_amostra_pequena():
+    """Rótulo de 'amostra pequena' ao lado de um número preciso perde para o
+    número — abaixo de 100 trades a tela não calcula."""
+    assert candidata.leitura_robustez(_trades_falsos(n=80), CAP) == \
+        {"erro": "menos de 100 trades fora da amostra"}
+
+
 def test_limite_no_p95_deixa_cerca_de_cinco_por_cento_de_falso_desligamento():
     """É a razão de o número existir: desligar no p95 desliga uma estratégia
     sadia em 5% dos ciclos, e isso precisa estar escrito no plano."""
