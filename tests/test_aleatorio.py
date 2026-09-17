@@ -209,3 +209,152 @@ def test_estratificacao_usa_a_hora_de_execucao_nao_a_do_rotulo_m15():
     execucao = (bars_m15["ts"][s.entry_long] + np.timedelta64(1, "m")
                ).astype("datetime64[h]").astype(object)
     assert {h.hour for h in execucao} == {10}
+
+
+# ------------------------------------------------------ teste_janelas (portão 3)
+def _rodar_barato(taxa=0.7, lucro_por_trade=1.0):
+    """`rodar_janela` falso: `taxa` dos sinais viram trade, cada trade dá
+    `lucro_por_trade` de lucro — barato o bastante para 1.000 repetições x
+    várias janelas rodarem em milissegundos no teste."""
+    def rodar(janela, n_sinais, semente):
+        n_trades = int(n_sinais * taxa)
+        return n_trades, n_trades * lucro_por_trade
+    return rodar
+
+
+def test_sorteio_que_sempre_perde_da_p_pequeno():
+    """Se o sorteio nunca chega perto do lucro real, `p` tem que ficar
+    pequeno — é o caso em que a estratégia claramente bate o acaso."""
+    rodar = _rodar_barato(lucro_por_trade=1.0)     # sorteio sempre lucra ~700
+    r = aleatorio.teste_janelas(rodar, ["w1"], [700], lucro_real=10_000.0,
+                                n=50, semente=7)
+    assert r["p"] == pytest.approx(1 / 51)         # nenhum sorteio bate
+
+
+def test_sorteio_igual_ao_real_da_p_alto():
+    """Se o sorteio empata com a real toda vez, `p` tem que ficar no teto —
+    não há evidência de que a real bate o acaso. `lucro_real` é o que a
+    PRÓPRIA calibração desta janela produz (a calibração raramente bate o
+    alvo de trades exatamente, só dentro de 5% — ver `calibrar`), não o
+    alvo de trades em si."""
+    rodar = _rodar_barato(taxa=1.0, lucro_por_trade=1.0)
+    n_sinais = aleatorio.calibrar(lambda n: rodar("w1", n, 7)[0], 700)
+    _, lucro_calibrado = rodar("w1", n_sinais, 7)
+
+    r = aleatorio.teste_janelas(rodar, ["w1"], [700], lucro_real=lucro_calibrado,
+                                n=50, semente=7)
+    assert r["p"] == pytest.approx(1.0)
+
+
+def test_calibracao_chamada_uma_vez_por_janela_nao_por_repeticao():
+    """Se a calibração rodasse dentro do laço de repetições, o número de
+    chamadas com a semente de calibração escalaria com `n`. Aqui a semente
+    de calibração (`semente`, nunca `semente + 1 + rep`) só pode aparecer
+    `calibrar.tentativas` vezes por janela, não importa quantas repetições
+    rodam depois."""
+    chamadas = []
+
+    def rodar(janela, n_sinais, semente):
+        chamadas.append(semente)
+        n_trades = int(n_sinais * 0.7)
+        return n_trades, float(n_trades)
+
+    janelas, alvos = ["w1", "w2"], [700, 700]
+
+    chamadas.clear()
+    aleatorio.teste_janelas(rodar, janelas, alvos, lucro_real=100.0,
+                            n=5, semente=7)
+    calib_5 = sum(1 for s in chamadas if s == 7)
+
+    chamadas.clear()
+    aleatorio.teste_janelas(rodar, janelas, alvos, lucro_real=100.0,
+                            n=200, semente=7)
+    calib_200 = sum(1 for s in chamadas if s == 7)
+
+    assert calib_5 == calib_200
+    assert 0 < calib_5 <= len(janelas) * 8    # <= tentativas de calibrar, por janela
+
+
+def test_soma_o_lucro_de_todas_as_janelas_nao_so_da_ultima():
+    """Cada repetição soma o lucro sorteado de TODAS as janelas — se
+    somasse só a última, o resultado ficaria preso ao lucro daquela janela
+    e ignoraria as outras duas."""
+    lucro_fixo = {"w1": 10.0, "w2": 100.0, "w3": 1000.0}
+
+    def rodar(janela, n_sinais, semente):
+        return n_sinais, lucro_fixo[janela]        # trades = sinais: calibra de cara
+
+    r = aleatorio.teste_janelas(rodar, ["w1", "w2", "w3"], [5, 5, 5],
+                                lucro_real=0.0, n=3, semente=1)
+    assert r["sorteados"][0] == pytest.approx(sum(lucro_fixo.values()))
+
+
+def test_parar_interrompe_e_devolve_dict_vazio():
+    r = aleatorio.teste_janelas(_rodar_barato(), ["w1"], [700],
+                                lucro_real=700.0, n=1000, semente=7,
+                                parar=lambda: True)
+    assert r == {}
+
+
+def test_progresso_e_chamado_a_cada_repeticao():
+    feitos = []
+    aleatorio.teste_janelas(_rodar_barato(), ["w1"], [700], lucro_real=700.0,
+                            n=4, semente=7, progresso=lambda f, t: feitos.append((f, t)))
+    assert feitos == [(1, 4), (2, 4), (3, 4), (4, 4)]
+
+
+def test_calibracao_ok_falso_quando_alvo_e_inatingivel():
+    """A real tão ativa que nem a maior tentativa de `calibrar` bate o alvo
+    (motor satura, ex.: limite diário) não pode aprovar a calibração em
+    silêncio."""
+    def rodar(janela, n_sinais, semente):
+        n_trades = min(int(n_sinais * 0.1), 50)    # nunca chega a 700 trades
+        return n_trades, float(n_trades)
+
+    r = aleatorio.teste_janelas(rodar, ["w1"], [700], lucro_real=10.0,
+                                n=5, semente=7)
+    assert r["calibracao_ok"] is False
+
+
+def test_calibracao_ok_verdadeiro_quando_todas_as_janelas_batem_o_alvo():
+    r = aleatorio.teste_janelas(_rodar_barato(taxa=0.7), ["w1", "w2"],
+                                [700, 700], lucro_real=10.0, n=5, semente=7)
+    assert r["calibracao_ok"] is True
+
+
+def test_janelas_e_alvos_de_tamanhos_diferentes_e_erro():
+    with pytest.raises(ValueError):
+        aleatorio.teste_janelas(_rodar_barato(), ["w1", "w2"], [700],
+                                lucro_real=0.0, n=1, semente=1)
+
+
+# --------------------------------------------- rodador_do_motor (motor de verdade)
+def test_rodador_do_motor_liga_o_sorteio_ao_motor_de_verdade():
+    """Teste de integração curto: garante que a fatia por janela OOS, o
+    histograma de horário e a proporção compra/venda vindos dos trades
+    reais chegam inteiros até `run_strategy` e voltam sem quebrar — o
+    mérito estatístico já está coberto pelos testes de `teste_janelas` com
+    `rodar_janela` falso."""
+    from core import wfa
+
+    bars = _bars_m1_dias(3)
+    instrumento = {"point_value": 1.0, "tick_size": 1}
+    perfil = exe.ExecutionProfile(entrada_inicio="00:00", entrada_fim="23:59",
+                                  fechamento="23:59",
+                                  dias_semana=(1, 2, 3, 4, 5, 6, 7))
+    trades_reais = [
+        {"entry_ts": "2024-01-02T10:05", "side": 1},
+        {"entry_ts": "2024-01-03T10:10", "side": 1},
+        {"entry_ts": "2024-01-03T11:00", "side": -1},
+    ]
+    janela = wfa.Janela(step=1,
+                        is_de=np.datetime64("2024-01-01T00:00", "s"),
+                        is_ate=np.datetime64("2024-01-02T00:00", "s"),
+                        oos_de=np.datetime64("2024-01-02T00:00", "s"),
+                        oos_ate=np.datetime64("2024-01-05T00:00", "s"))
+
+    rodar_janela = aleatorio.rodador_do_motor(bars, None, perfil, instrumento,
+                                              trades_reais)
+    n_trades, lucro = rodar_janela(janela, n_sinais=20, semente=1)
+    assert isinstance(n_trades, int)
+    assert isinstance(lucro, float)
