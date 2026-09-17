@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import aleatorio  # noqa: E402
+from core import candidata  # noqa: E402
 from core.engine import execution as exe  # noqa: E402
 
 
@@ -508,3 +509,47 @@ def test_rodador_do_motor_recusa_trade_real_sem_step():
     with pytest.raises(ValueError):
         aleatorio.rodador_do_motor(bars, None, perfil, instrumento,
                                    trades_sem_step)
+
+
+# ------------------------------------------------------------ portao_aleatorio
+def test_portao_aleatorio_passa_com_p_baixo():
+    r = candidata.portao_aleatorio({"p": 0.02, "calibracao_ok": True})
+    assert r["ok"] and r["critico"] and r["valor"] == 0.02
+
+
+def test_portao_aleatorio_reprova_com_p_alto():
+    r = candidata.portao_aleatorio({"p": 0.4, "calibracao_ok": True})
+    assert r["ok"] is False and r["critico"]
+
+
+def test_portao_aleatorio_no_limite_passa():
+    r = candidata.portao_aleatorio({"p": 0.05, "calibracao_ok": True})
+    assert r["ok"]
+
+
+def test_portao_aleatorio_sem_resultado_fica_pendente():
+    """`{}` é o que `teste_janelas` devolve quando a thread é interrompida
+    antes de terminar — falta de dado, não reprovação."""
+    r = candidata.portao_aleatorio({})
+    assert r["ok"] is None and r["critico"]
+
+
+def test_portao_aleatorio_com_erro_mostra_o_motivo():
+    r = candidata.portao_aleatorio({"erro": "motor indisponível"})
+    assert r["ok"] is None and r["valor"] == "motor indisponível"
+
+
+def test_portao_aleatorio_calibracao_ruim_fica_pendente_mesmo_com_p():
+    """Mesmo com um `p` calculado, calibração fora dos 5% em alguma janela
+    faz o sorteio não ser confiável — o portão não pode aprovar nem
+    reprovar por um número que não bate o alvo de trades."""
+    r = candidata.portao_aleatorio({"p": 0.01, "calibracao_ok": False})
+    assert r["ok"] is None and r["critico"]
+    assert "calibração" in r["valor"] or "sorteio" in r["valor"]
+
+
+def test_portao_aleatorio_exigido_sem_numero_cru():
+    r = candidata.portao_aleatorio({"p": 0.02, "calibracao_ok": True},
+                                   maximo=0.10)
+    assert "10%" in r["exigido"]
+    assert "0.1" not in r["exigido"]

@@ -19,6 +19,7 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime
 
 import numpy as np
 
@@ -42,6 +43,17 @@ TETO_MB = 400.0
 # `wfa.trades_oos_campos` sem mexer em mais nada.
 CAMPOS = {"entry_ts": "datetime64[s]", "exit_ts": "datetime64[s]",
           "liquido": np.float64, "custo": np.float64}
+
+# Os campos de execução (camada 4) que a mineração também pode varrer —
+# fonte única do NOME dos campos: `ui/callbacks.py:SCHEMA_EXECUCAO` decora
+# cada um com o passo do slider da tela em cima destes nomes, e
+# `argumentos_da_mineracao`/`trades_oos_detalhados` usam os mesmos nomes
+# para separar campo de execução de campo de estratégia. Duas listas
+# hardcoded divergindo é exatamente o defeito que `chave` (`core/candidata.py`)
+# evita para valor de parâmetro — aqui é o mesmo cuidado para o NOME dele.
+CAMPOS_EXECUCAO_NOMES = ("alvo_pontos", "stop_pontos", "breakeven_pct",
+                        "step_gatilho_pct", "step_distancia_pct",
+                        "trailing_pontos")
 
 
 def _sem_trades() -> dict:
@@ -255,6 +267,59 @@ class Varredura:
         finally:
             if viva():
                 e["rodando"] = False
+
+
+def _span(symbol: str) -> tuple[str, str]:
+    """Início e fim da base gravada para o símbolo — lidos do mesmo espelho
+    Parquet que os workers da varredura usam (`_init`, acima), e não do
+    DuckDB que `ui/data.py:span` usa para as outras telas: `core/` não pode
+    importar `ui/`, e isto evita a dependência sem duplicar o motivo de
+    fundo (DuckDB aceita vários leitores OU um escritor)."""
+    d = db.read_bars_parquet(symbol, None, None)
+    ts = np.asarray(d["ts"], dtype="datetime64[s]")
+    return str(ts[0]), str(ts[-1])
+
+
+def argumentos_da_mineracao(run_id: int, ativo: str | None = None) -> dict:
+    """Os argumentos de `Varredura.iniciar` para reproduzir a mineração
+    salva `run_id` — fonte única entre o botão Executar da aba Walk-Forward
+    e o executor de testes completos da Candidata (`core/candidata_runner.py`),
+    que não podem divergir na leitura de uma mineração salva.
+
+    `perfil_base` e `campos_execucao_nomes` (aqui, `CAMPOS_EXECUCAO_NOMES`)
+    também são a fonte única de que a tela Candidata precisa para montar o
+    `ExecutionProfile` de cada janela do walk-forward, do mesmo jeito que
+    `trades_oos_detalhados` (abaixo) já faz.
+
+    `ativo` é o valor da tela (dropdown de instrumento) usado só como reserva
+    quando a mineração salva não gravou o próprio símbolo (registro salvo
+    antes da coluna existir) — a mineração salva é sempre a fonte de verdade
+    quando ela sabe o símbolo.
+    """
+    from . import optimizer
+
+    d = optimizer.detalhes_salva(run_id)
+    if not d:
+        raise ValueError("mineração não encontrada — ela pode ter sido excluída")
+    simbolo = d.get("symbol") or ativo
+    if not simbolo:
+        raise ValueError(
+            "mineração salva antes de gravar o símbolo, e nenhum ativo "
+            "informado para servir de reserva")
+    base_de, base_ate = _span(simbolo)
+    corte = d.get("corte") or d.get("holdout_de")
+    if not corte:
+        raise ValueError("mineração sem corte de holdout gravado")
+    ate_holdout = datetime.fromisoformat(str(corte)[:10]).replace(
+        hour=23, minute=59, second=59)
+    return {
+        "symbol": simbolo, "estrategia_nome": d["estrategia"],
+        "espaco": {k: list(x) for k, x in d["espaco"].items()},
+        "perfil_base": d["perfil"], "de": base_de, "ate": base_ate,
+        "ate_holdout": ate_holdout,
+        "campos_execucao_nomes": set(CAMPOS_EXECUCAO_NOMES),
+        "run_id": run_id, "workers": 8,
+    }
 
 
 VARREDURA = Varredura()

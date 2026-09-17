@@ -19,6 +19,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core import candidata  # noqa: E402
 from core import wfa  # noqa: E402
 
 CAP = 10_000.0
@@ -622,6 +623,31 @@ def test_percentil_do_wfa_na_faixa():
     assert wfa.percentil_na_faixa(faixa, 250.0) == pytest.approx(50.0)
     assert wfa.percentil_na_faixa(faixa, 50.0) == 0.0
     assert wfa.percentil_na_faixa({}, 10.0) is None
+
+
+# ------------------------------------------------------- alerta_reotimizar
+def test_alerta_reotimizar_passa_no_percentil_50():
+    r = candidata.alerta_reotimizar(50.0)
+    assert r["ok"] and not r["critico"]        # é alerta, não portão crítico
+
+
+def test_alerta_reotimizar_reprova_abaixo_de_50():
+    r = candidata.alerta_reotimizar(49.9)
+    assert r["ok"] is False and not r["critico"]
+
+
+def test_alerta_reotimizar_passa_acima_de_50():
+    r = candidata.alerta_reotimizar(90.0)
+    assert r["ok"] and r["valor"] == pytest.approx(90.0)
+
+
+def test_alerta_reotimizar_sem_percentil_fica_pendente():
+    """Sem combinações fixas suficientes para montar a faixa
+    (`wfa.faixa_fixas` devolveu `{}`), `percentil_na_faixa` volta `None` —
+    falta de dado, não reprovação."""
+    r = candidata.alerta_reotimizar(None)
+    assert r["ok"] is None
+    assert "não foi possível medir" in r["valor"]
 
 
 # ---------------------------------------------------- semestres positivos

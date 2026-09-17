@@ -544,6 +544,74 @@ def portao_tentativas(resultado_spa: dict, maximo: float = 0.05) -> dict:
     return portao(nome, p <= maximo, True, p, exigido, dica)
 
 
+def portao_aleatorio(resultado: dict, maximo: float = 0.05) -> dict:
+    """O portão 2: ganha de entradas sorteadas ao acaso?
+
+    Recebe o dicionário de `aleatorio.teste_janelas` — troca as entradas da
+    estratégia por entradas sorteadas ao acaso (mesmo horário, mesma
+    proporção compra/venda), mantendo toda a gestão de saída da estratégia
+    real, janela a janela do walk-forward. Se o resultado real não se
+    destaca do sorteio, o mérito é da gestão de saída, não do sinal.
+
+    Sem resultado (a thread foi interrompida antes de terminar e
+    `teste_janelas` devolveu `{}`, ou faltou algum dado) o portão fica
+    pendente, com o motivo no lugar do valor — falta de dado não é
+    reprovação.
+
+    A calibração (quantos sinais sortear até o número de trades bater o da
+    real, dentro de 5%) precisa ter dado certo em TODAS as janelas. Se
+    alguma não bateu, o sorteio operou mais ou menos que a real por um
+    motivo que não é o sinal, e o p-valor não serve para nada — o portão
+    fica pendente mesmo que `p` exista.
+    """
+    nome = "Ganha de entradas sorteadas ao acaso?"
+    exigido = f"até {maximo:.0%} de chance de o sorteio ter ganhado à toa"
+    dica = ("Troca as entradas da estratégia por entradas sorteadas ao "
+            "acaso, no mesmo horário, e deixa toda a gestão de saída (stop, "
+            "alvo e as demais regras) exatamente como a real. Se o "
+            "resultado real não se destacar do sorteio, quem está ganhando "
+            f"é a gestão, não o sinal de entrada. Reprova acima de "
+            f"{maximo:.0%} de chance de o sorteio ter ganhado por acaso.")
+    if not resultado or "erro" in resultado:
+        motivo = resultado.get("erro") if resultado else "não foi possível medir"
+        return portao(nome, None, True, motivo, exigido, dica)
+    if not resultado.get("calibracao_ok", False):
+        return portao(
+            nome, None, True,
+            "o sorteio não conseguiu imitar o número de trades em alguma janela",
+            exigido, dica)
+    p = resultado["p"]
+    return portao(nome, p <= maximo, True, p, exigido, dica)
+
+
+def alerta_reotimizar(percentil: float | None) -> dict:
+    """O alerta: reotimizar a cada janela compensou?
+
+    Compara a curva do walk-forward (que troca de parâmetros a cada janela)
+    com o resultado de ter deixado cada combinação minerada FIXA do início
+    ao fim do mesmo período (`wfa.faixa_fixas` + `wfa.percentil_na_faixa`).
+    Passa a partir do percentil 50: abaixo disso, mais da metade das
+    combinações fixas — escolhidas sem nenhuma inteligência, só por estarem
+    na grade — teriam feito melhor que o walk-forward, e o trabalho de
+    reotimizar não se pagou.
+
+    `percentil None` (walk-forward sem combinações fixas suficientes para
+    montar a faixa de comparação) deixa o alerta pendente — falta de dado,
+    não reprovação.
+    """
+    nome = "Reotimizar compensou?"
+    exigido = "percentil 50 ou mais entre as combinações fixas"
+    dica = ("Compara a curva do walk-forward, que troca de parâmetros a "
+            "cada janela, com o resultado de ter deixado cada combinação "
+            "minerada fixa do início ao fim do mesmo período. Se o "
+            "walk-forward termina abaixo de metade dessas combinações "
+            "fixas, escolher uma delas ao acaso teria feito melhor na "
+            "maioria das vezes — reotimizar não valeu o trabalho.")
+    if percentil is None:
+        return portao(nome, None, False, "não foi possível medir", exigido, dica)
+    return portao(nome, percentil >= 50, False, round(percentil, 1), exigido, dica)
+
+
 def veredito(portoes: list[dict]) -> dict:
     """Crítico reprovado reprova. Crítico ainda não medido impede aprovar.
     Alerta reprovado aprova com ressalva."""

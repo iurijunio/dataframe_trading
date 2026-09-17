@@ -100,8 +100,11 @@ def _br(iso: str) -> str:
     p = (iso or "").split("-")
     return f"{p[2]}/{p[1]}/{p[0]}" if len(p) == 3 else (iso or "")
 
-# schema dos campos da camada 4 que a mineracao tambem pode varrer
-SCHEMA_EXECUCAO = {
+# schema dos campos da camada 4 que a mineracao tambem pode varrer. Os
+# NOMES vêm de `wfa_runner.CAMPOS_EXECUCAO_NOMES` — fonte única com
+# `argumentos_da_mineracao`/`trades_oos_detalhados`; aqui só se decora cada
+# nome com o passo do slider e o tipo que a tela usa.
+_SCHEMA_EXECUCAO_META = {
     "alvo_pontos": {"default": 600, "step": 10, "tipo": "int"},
     "stop_pontos": {"default": 300, "step": 10, "tipo": "int"},
     "breakeven_pct": {"default": 0, "step": 5, "tipo": "float"},
@@ -109,6 +112,8 @@ SCHEMA_EXECUCAO = {
     "step_distancia_pct": {"default": 0, "step": 5, "tipo": "float"},
     "trailing_pontos": {"default": 0, "step": 10, "tipo": "int"},
 }
+SCHEMA_EXECUCAO = {nome: _SCHEMA_EXECUCAO_META[nome]
+                   for nome in wfa_runner.CAMPOS_EXECUCAO_NOMES}
 
 # Campos da camada 4 na tela <-> chaves do ExecutionProfile gravado.
 # No topo do modulo, e nao dentro de register(), para o teste poder
@@ -1269,19 +1274,13 @@ def register(app):
                          if e.get("run_id") not in (None, run_id)
                          else "clique em Executar para varrer esta mineração"),
                         *vazio)
-            # a mineração salva não guarda a data inicial — ela sempre varreu
-            # da base inteira. O começo e o fim vêm do próprio instrumento.
-            base_de, base_ate = D.span(simbolo)
             # A varredura vai até o FIM DA BASE, inclusive sobre o holdout:
             # ter os trades em memória faz o botão "estender ao holdout"
-            # responder na hora, sem varredura nova.
-            VARREDURA.iniciar(
-                symbol=simbolo, estrategia_nome=d["estrategia"],
-                espaco={k: list(x) for k, x in d["espaco"].items()},
-                perfil_base=d["perfil"], de=base_de, ate=base_ate,
-                ate_holdout=_dt(str(d.get("corte") or d["holdout_de"])[:10], True),
-                campos_execucao_nomes=set(SCHEMA_EXECUCAO), run_id=run_id,
-                workers=8)
+            # responder na hora, sem varredura nova. `argumentos_da_mineracao`
+            # é a mesma função que o executor de testes completos da
+            # Candidata usa para reproduzir esta mineração — uma fonte só.
+            VARREDURA.iniciar(**wfa_runner.argumentos_da_mineracao(
+                run_id, ativo=simbolo))
             # a geração da varredura faz o Store MUDAR — é isso que acorda o
             # relógio; um valor repetido não acordaria nada
             return ("", *vazio[:-1],
