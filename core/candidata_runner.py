@@ -134,13 +134,22 @@ class TestesCompletos:
                                     else calcular_percentil)
 
         self.estado = {"rodando": False, "fase": "", "pct": 0, "geracao": 0,
-                       "wfa_id": None, "resultado": None, "erro": None}
+                       "wfa_id": None, "resultado": None, "erro": None,
+                       # o run_id de uma varredura de OUTRA mineração que
+                       # este executor substituiu na aba Walk-Forward (ou
+                       # `None`, quando não havia nada para substituir) —
+                       # ver `_garantir_varredura`
+                       "varredura_substituida": None}
         # resultado guardado em memória por wfa_id — não no banco nesta etapa
         self._resultados: dict[int, dict] = {}
         self._lock = threading.Lock()
         self._parar = threading.Event()
         self._thread: threading.Thread | None = None
         self._geracao = 0
+        # true só quando ESTE executor chamou `varredura.iniciar()` na
+        # rodada corrente — `parar()` só pode derrubar a varredura da aba
+        # Walk-Forward se foi ele quem a começou (ver `_garantir_varredura`)
+        self._iniciei_a_varredura = False
 
     def resultado_de(self, wfa_id: int) -> dict | None:
         return self._resultados.get(wfa_id)
@@ -162,7 +171,7 @@ class TestesCompletos:
             geracao = self._geracao
             self.estado.update(rodando=True, fase="preparando", pct=0,
                                geracao=geracao, wfa_id=wfa_id, resultado=None,
-                               erro=None)
+                               erro=None, varredura_substituida=None)
         self._thread = threading.Thread(
             target=self._rodar, daemon=True,
             args=(wfa_id, geracao, n_sorteio, semente, workers))
@@ -174,6 +183,7 @@ class TestesCompletos:
         e = self.estado
         viva = lambda: geracao == self._geracao
         parou = lambda: self._parar.is_set() or not viva()
+        self._iniciei_a_varredura = False
         try:
             detalhes = wfa_store.detalhes(wfa_id)
             if not detalhes:
@@ -188,12 +198,20 @@ class TestesCompletos:
             # só daqui, sem uma segunda fonte (ver `wfa_runner.argumentos_da_mineracao`)
             args_mineracao = wfa_runner.argumentos_da_mineracao(run_id)
 
+            # Sem cache não há o que medir em NENHUM dos três testes — uma
+            # varredura que não vinga (recusada por colidir com a mineração
+            # da aba, interrompida, ou que terminou vazia) é uma falha só,
+            # publicada uma vez em `erro`, sem resultado nenhum. Diferente
+            # de uma fase que roda com o cache pronto e falha sozinha
+            # (abaixo): aí sim o que já saiu das outras fases fica de pé.
             e["fase"] = "refazendo a varredura"
+            e["pct"] = 0
             cache = self._garantir_varredura(run_id, args_mineracao, workers, parou)
             if parou():
                 return
             if not cache:
                 raise ValueError("a varredura não produziu combinação com trades")
+            e["pct"] = 40
 
             janelas = _janelas_validas(passos)
             passos_validos = [p for p in passos
@@ -202,34 +220,49 @@ class TestesCompletos:
             perfil_por_step = _perfil_por_step(
                 passos_validos, args_mineracao["perfil_base"],
                 args_mineracao["campos_execucao_nomes"])
+            lucro_real = float(sum(t["liquido"] for t in trades_wfa))
 
+            # A partir daqui, cada fase tem o cache que precisa — uma delas
+            # explodindo (motor, spa, o que for) não pode apagar o que as
+            # outras já mediram: cada uma vira um portão pendente com o
+            # motivo, e as demais seguem rodando.
             e["fase"] = "testando tentativas"
-            e["pct"] = 30
-            matriz = _matriz_tentativas(cache, trades_wfa, passos, capital)
-            resultado_spa = (self._spa_teste(matriz) if matriz is not None
-                             else {"erro": "sem janela real para medir"})
+            e["pct"] = 45
+            try:
+                matriz = _matriz_tentativas(cache, trades_wfa, passos, capital)
+                resultado_spa = (self._spa_teste(matriz) if matriz is not None
+                                 else {"erro": "sem janela real para medir"})
+            except Exception as erro:
+                resultado_spa = {"erro": f"não rodou: {erro}"}
             if parou():
                 return
 
             e["fase"] = "comparando com parâmetros fixos"
             e["pct"] = 55
-            lucro_real = float(sum(t["liquido"] for t in trades_wfa))
-            percentil = self._calcular_percentil(cache, janelas, capital, lucro_real)
+            motivo_fixas = None
+            try:
+                percentil = self._calcular_percentil(cache, janelas, capital, lucro_real)
+            except Exception as erro:
+                percentil = None
+                motivo_fixas = f"não rodou: {erro}"
             if parou():
                 return
 
             e["fase"] = "sorteando entradas"
             e["pct"] = 60
-            resultado_aleatorio = self._rodar_aleatorio(
-                janelas, trades_wfa, perfil_por_step, args_mineracao,
-                n_sorteio, semente, lucro_real, parou)
+            try:
+                resultado_aleatorio = self._rodar_aleatorio(
+                    janelas, trades_wfa, perfil_por_step, args_mineracao,
+                    n_sorteio, semente, lucro_real, parou)
+            except Exception as erro:
+                resultado_aleatorio = {"erro": f"não rodou: {erro}"}
             if parou():
                 return
 
             portoes = [
                 candidata.portao_aleatorio(resultado_aleatorio),
                 candidata.portao_tentativas(resultado_spa),
-                candidata.alerta_reotimizar(percentil),
+                candidata.alerta_reotimizar(percentil, motivo=motivo_fixas),
             ]
             resultado = {
                 "portoes": portoes,
@@ -257,23 +290,64 @@ class TestesCompletos:
         """Reusa `self._varredura.cache` quando o `estado` mostra o mesmo
         `run_id` e ela não está rodando; senão inicia com os argumentos de
         `argumentos_da_mineracao` e espera, checando `parar` a cada meio
-        segundo."""
+        segundo — atualizando `pct` (0 a 40) pelo `feitos`/`total` dela.
+
+        Duas situações que a rodada de correção 1 trouxe:
+
+        - A varredura já pode estar rodando por conta da aba Walk-Forward.
+          Se for para OUTRA mineração, esperar o fim inteiro só para
+          descobrir no final que ela não serve é lento e maltrata a aba —
+          recusa NA HORA, com mensagem simples. Se for para a MESMA
+          mineração, é sorte: só espera, sem chamar `iniciar()` de novo.
+        - `parar()` só pode derrubar a varredura quando foi ESTE executor
+          quem a começou (`self._iniciei_a_varredura`) — senão um "parar" na
+          Candidata derrubaria uma varredura que a aba Walk-Forward está
+          usando para outra coisa.
+        """
         v = self._varredura
         serve = (v.estado.get("pronto") and v.estado.get("run_id") == run_id
                 and not v.estado.get("rodando"))
-        if not serve:
+        if serve:
+            return v.cache
+
+        if v.estado.get("rodando"):
+            if v.estado.get("run_id") != run_id:
+                raise RuntimeError(
+                    "a aba Walk-Forward está refazendo a varredura de "
+                    "outra mineração — espere ela terminar e rode os "
+                    "testes de novo")
+            # mesma mineração, já rodando por fora (por exemplo, a aba
+            # pediu esta varredura antes de nós): só espera, sem ter
+            # iniciado nada aqui — `self._iniciei_a_varredura` fica falso
+        else:
+            antigo = v.estado.get("run_id")
+            # registrado fora do lock, como `fase`/`pct` — é só progresso
+            # publicado para a tela, não uma transição que precise de
+            # atomicidade com um `iniciar()` concorrente
+            self.estado["varredura_substituida"] = antigo if antigo != run_id else None
             args = dict(args_mineracao)
             args["workers"] = workers
-            v.iniciar(**args)
-            while v.estado.get("rodando"):
-                if parou():
-                    v.parar()
-                    return []
-                time.sleep(0.5)
-            if v.estado.get("run_id") != run_id or not v.estado.get("pronto"):
+            if not v.iniciar(**args):
                 raise RuntimeError(
-                    v.estado.get("erro")
-                    or "a varredura terminou sem produzir esta mineração")
+                    "não foi possível iniciar a varredura — outra pode "
+                    "estar em andamento; espere terminar e rode os testes "
+                    "de novo")
+            self._iniciei_a_varredura = True
+
+        while v.estado.get("rodando"):
+            if parou():
+                if self._iniciei_a_varredura:
+                    v.parar()
+                return []
+            feitos, total = v.estado.get("feitos") or 0, v.estado.get("total") or 0
+            if total:
+                self.estado["pct"] = int(40 * min(feitos, total) / total)
+            time.sleep(0.5)
+
+        if v.estado.get("run_id") != run_id or not v.estado.get("pronto"):
+            raise RuntimeError(
+                v.estado.get("erro")
+                or "a varredura terminou sem produzir esta mineração")
         return v.cache
 
     def _rodar_aleatorio(self, janelas, trades_wfa, perfil_por_step,

@@ -88,11 +88,12 @@ class FakeVarredura:
     """Contrato mínimo de `wfa_runner.Varredura` que o executor consulta:
     `estado`, `cache` e `iniciar()`/`parar()`."""
 
-    def __init__(self, cache, run_id=None, pronto=False):
-        self.estado = {"pronto": pronto, "rodando": False, "run_id": run_id,
+    def __init__(self, cache, run_id=None, pronto=False, rodando=False):
+        self.estado = {"pronto": pronto, "rodando": rodando, "run_id": run_id,
                        "erro": None}
         self._cache = cache
         self.chamadas_iniciar: list[dict] = []
+        self.parar_chamado = False
 
     @property
     def cache(self):
@@ -105,7 +106,19 @@ class FakeVarredura:
         return True
 
     def parar(self):
+        self.parar_chamado = True
         self.estado["rodando"] = False
+
+
+class FakeVarreduraRecusaIniciar(FakeVarredura):
+    """Simula uma corrida rara: `iniciar()` devolve `False` sem que
+    `estado["rodando"]` estivesse `True` no instante em que o executor
+    conferiu — o motivo exato não importa, só que o retorno falso não pode
+    ser ignorado (IMPORTANTE 2 da rodada de correção 1)."""
+
+    def iniciar(self, **kwargs):
+        self.chamadas_iniciar.append(kwargs)
+        return False
 
 
 class FakeVarreduraLenta(FakeVarredura):
@@ -131,6 +144,29 @@ class FakeVarreduraLenta(FakeVarredura):
     def parar(self):
         self.parar_chamado = True
         self.estado["rodando"] = False
+
+
+class FakeVarreduraProgresso(FakeVarredura):
+    """Avança `feitos`/`total` de verdade ao longo de uma corrida curta, para
+    provar que `_garantir_varredura` acompanha o progresso dela em `pct`."""
+
+    def __init__(self, passos=10, intervalo=0.03):
+        super().__init__(cache=_cache())
+        self._passos = passos
+        self._intervalo = intervalo
+
+    def iniciar(self, **kwargs):
+        self.chamadas_iniciar.append(kwargs)
+        self.estado.update(rodando=True, pronto=False, run_id=kwargs["run_id"],
+                           feitos=0, total=self._passos)
+
+        def avancar():
+            for i in range(1, self._passos + 1):
+                time.sleep(self._intervalo)
+                self.estado["feitos"] = i
+            self.estado.update(rodando=False, pronto=True)
+        threading.Thread(target=avancar, daemon=True).start()
+        return True
 
 
 def _montar_rodador_fake(bars, mod, perfil, inst, trades_reais):
@@ -281,27 +317,88 @@ def test_interrupcao_nao_publica_resultado_e_nao_trava_o_proximo_uso():
     assert t.estado["resultado"] is not None
 
 
-def test_erro_e_publicado_sem_derrubar_a_thread():
-    def spa_quebrado(matriz):
-        raise RuntimeError("spa explodiu")
+def test_erro_e_publicado_sem_derrubar_a_thread(monkeypatch):
+    """Uma falha ANTES de haver cache (aqui, `argumentos_da_mineracao`
+    quebrada) não tem como virar portão pendente — nenhuma das três fases
+    tem o que medir. Diferente de uma fase falhar DEPOIS do cache pronto
+    (`test_erro_no_sorteio_nao_apaga_os_portoes_ja_calculados`, abaixo),
+    onde as outras fases seguem e o resultado fica parcial."""
+    def argumentos_quebrado(run_id, ativo=None):
+        raise RuntimeError("mineração corrompida")
+    monkeypatch.setattr(CR.wfa_runner, "argumentos_da_mineracao", argumentos_quebrado)
 
     v = FakeVarredura(cache=_cache(), run_id=99, pronto=True)
-    t = CR.TestesCompletos(varredura=v, montar_rodador=_montar_rodador_fake,
-                           spa_teste=spa_quebrado, calcular_percentil=_percentil_fake)
+    t = _executor(v)
     t.iniciar(7)
     _esperar(t)
 
     e = t.estado
     assert not e["rodando"]
-    assert e["erro"] and "spa explodiu" in e["erro"]
+    assert e["erro"] and "mineração corrompida" in e["erro"]
     assert e["resultado"] is None
 
     # a thread não travou o objeto: uma nova rodada continua funcionando
-    t._spa_teste = _spa_fake
+    monkeypatch.setattr(CR.wfa_runner, "argumentos_da_mineracao", _argumentos_fake)
     assert t.iniciar(7)
     _esperar(t)
     assert not t.estado["erro"]
     assert t.estado["resultado"] is not None
+
+
+def test_erro_no_sorteio_nao_apaga_os_portoes_ja_calculados():
+    """MENOR (c): o motor levantando exceção na fase de sorteio não pode
+    apagar o que as fases de tentativas e de parâmetros fixos já mediram —
+    só o portão do sorteio fica pendente, com o motivo."""
+    def montar_rodador_quebrado(bars, mod, perfil, inst, trades_reais):
+        raise RuntimeError("motor explodiu no sorteio")
+
+    v = FakeVarredura(cache=_cache(), run_id=99, pronto=True)
+    t = CR.TestesCompletos(varredura=v, montar_rodador=montar_rodador_quebrado,
+                           spa_teste=_spa_fake, calcular_percentil=_percentil_fake)
+    t.iniciar(7)
+    _esperar(t)
+
+    e = t.estado
+    assert not e["rodando"]
+    assert e["erro"] is None       # não é uma falha do executor, é uma fase pendente
+    r = e["resultado"]
+    assert r is not None
+    por_nome = {p["nome"]: p for p in r["portoes"]}
+
+    tentativas = por_nome["Aguenta o desconto por muitas tentativas?"]
+    fixas = por_nome["Reotimizar compensou?"]
+    aleatorio_ = por_nome["Ganha de entradas sorteadas ao acaso?"]
+
+    assert tentativas["ok"] is True and tentativas["valor"] == pytest.approx(0.02)
+    assert fixas["ok"] is True and fixas["valor"] == pytest.approx(70.0)
+    assert aleatorio_["ok"] is None
+    assert "não rodou" in aleatorio_["valor"] and "motor explodiu" in aleatorio_["valor"]
+    assert r["leituras"]["p_aleatorio"] is None
+    assert r["leituras"]["calibracao_ok"] is None
+
+
+def test_erro_nas_fixas_nao_apaga_tentativas_nem_aleatorio():
+    """A mesma isolação, agora quebrando só o cálculo do percentil das
+    combinações fixas."""
+    def percentil_quebrado(cache, janelas, capital, lucro_real):
+        raise RuntimeError("faixa explodiu")
+
+    v = FakeVarredura(cache=_cache(), run_id=99, pronto=True)
+    t = CR.TestesCompletos(varredura=v, montar_rodador=_montar_rodador_fake,
+                           spa_teste=_spa_fake, calcular_percentil=percentil_quebrado)
+    t.iniciar(7)
+    _esperar(t)
+
+    r = t.estado["resultado"]
+    assert r is not None
+    por_nome = {p["nome"]: p for p in r["portoes"]}
+    # o valor exato do portão aleatório depende da matemática da fake de
+    # sorteio (não é o que este teste prova) — só importa que ele RODOU
+    assert por_nome["Ganha de entradas sorteadas ao acaso?"]["ok"] is not None
+    assert por_nome["Aguenta o desconto por muitas tentativas?"]["ok"] is True
+    fixas = por_nome["Reotimizar compensou?"]
+    assert fixas["ok"] is None and "não rodou" in fixas["valor"]
+    assert r["leituras"]["percentil_fixas"] is None
 
 
 def test_uma_rodada_em_curso_recusa_outro_iniciar():
@@ -339,14 +436,141 @@ def test_geracao_antiga_descartada_como_a_varredura():
     assert t.estado["resultado"] is None
 
 
-def test_matriz_de_tentativas_confere_o_eixo_de_dias():
-    passos = PASSOS
-    cache_com_bug = _cache()
-    # uma coluna com um trade a mais nos dados de origem não muda o eixo de
-    # dias, mas confirma que a função não lança nada com o cenário normal
-    matriz = CR._matriz_tentativas(cache_com_bug, _trades_wfa(), passos, CAPITAL)
+# -------------------------------------------- IMPORTANTE 1 (rodada de correção 1)
+def test_parar_nao_derruba_varredura_iniciada_pela_aba():
+    """A varredura já está rodando (a aba Walk-Forward a começou), com o
+    MESMO run_id que o executor precisa — ele só espera, sem chamar
+    `iniciar()`. `parar()` no executor não pode derrubar uma varredura que
+    ele não começou."""
+    v = FakeVarredura(cache=[], run_id=99, pronto=False, rodando=True)
+    t = _executor(v)
+    assert t.iniciar(7)
+    time.sleep(0.1)
+    t.parar()
+    _esperar(t, limite=3)
+
+    assert not v.parar_chamado
+    assert v.estado["rodando"] is True     # a varredura da aba segue viva
+    assert t.estado["rodando"] is False
+    assert t.estado["resultado"] is None
+    assert v.chamadas_iniciar == []        # nunca tentamos iniciar por cima
+
+
+# -------------------------------------------- IMPORTANTE 2 (rodada de correção 1)
+def test_varredura_rodando_com_outra_mineracao_recusa_na_hora():
+    v = FakeVarredura(cache=[], run_id=123, pronto=False, rodando=True)
+    t = _executor(v)
+    t.iniciar(7)
+    _esperar(t, limite=3)
+
+    e = t.estado
+    assert not e["rodando"]
+    assert e["erro"] and "outra mineração" in e["erro"]
+    assert e["resultado"] is None
+    assert v.chamadas_iniciar == []        # recusou na hora, sem esperar nada
+
+
+def test_iniciar_falso_por_outro_motivo_recusa_com_mensagem_clara():
+    v = FakeVarreduraRecusaIniciar(cache=[], run_id=None, pronto=False)
+    t = _executor(v)
+    t.iniciar(7)
+    _esperar(t, limite=3)
+
+    e = t.estado
+    assert not e["rodando"]
+    assert e["erro"] and "não foi possível iniciar a varredura" in e["erro"]
+    assert e["resultado"] is None
+    assert len(v.chamadas_iniciar) == 1
+
+
+# -------------------------------------------- MENOR (a): varredura_substituida
+def test_varredura_substituida_registra_o_run_id_antigo():
+    v = FakeVarredura(cache=_cache(), run_id=42, pronto=True)   # outra mineração
+    t = _executor(v)
+    t.iniciar(7)
+    _esperar(t)
+    assert t.estado["varredura_substituida"] == 42
+
+
+def test_varredura_substituida_fica_none_quando_reusa_o_cache():
+    v = FakeVarredura(cache=_cache(), run_id=99, pronto=True)   # já é a nossa
+    t = _executor(v)
+    t.iniciar(7)
+    _esperar(t)
+    assert t.estado["varredura_substituida"] is None
+
+
+def test_varredura_substituida_fica_none_quando_nao_havia_nenhuma_antes():
+    v = FakeVarredura(cache=[], run_id=None, pronto=False)      # nunca rodou
+    t = _executor(v)
+    t.iniciar(7)
+    _esperar(t)
+    assert t.estado["varredura_substituida"] is None
+    assert len(v.chamadas_iniciar) == 1
+
+
+# -------------------------------------------- MENOR (b): pct da varredura
+def test_pct_acompanha_o_progresso_da_varredura_entre_0_e_40():
+    # o executor só reconfere feitos/total a cada 0,5s (ver `_garantir_varredura`);
+    # a varredura falsa precisa durar mais que isso para o teste enxergar
+    # mais de uma leitura de progresso
+    v = FakeVarreduraProgresso(passos=6, intervalo=0.3)
+    t = _executor(v)
+    t.iniciar(7)
+
+    vistos = set()
+    while t.estado["rodando"]:
+        if t.estado["fase"] == "refazendo a varredura":
+            vistos.add(t.estado["pct"])
+        time.sleep(0.05)
+
+    assert all(0 <= p <= 40 for p in vistos)
+    assert len(vistos) > 1                 # realmente avançou, não ficou parado
+
+
+# -------------------------------------------- MENOR (d): eixo de dias da matriz
+def test_matriz_de_tentativas_tem_uma_coluna_por_combinacao_mais_o_wfa():
+    matriz = CR._matriz_tentativas(_cache(), _trades_wfa(), PASSOS, CAPITAL)
     assert matriz is not None
-    assert matriz.shape[1] == len(cache_com_bug) + 1  # +1 da curva do WFA
+    assert matriz.shape[1] == len(_cache()) + 1    # +1 da curva do WFA
+
+
+def test_matriz_de_tentativas_recusa_coluna_do_cache_com_eixo_diferente(monkeypatch):
+    """Prova a proteção: se uma coluna do CACHE sair com um número de dias
+    diferente das outras (só aconteceria com um bug em `por_pregao`/`de`-`ate`
+    divergindo entre chamadas), `_matriz_tentativas` recusa com um erro
+    claro em vez de deixar `spa.teste` comparar colunas desalinhadas."""
+    real = CR.candidata.por_pregao
+    chamadas = {"n": 0}
+
+    def por_pregao_bugado(exit_ts, liquido, de=None, ate=None):
+        dias, pnl = real(exit_ts, liquido, de, ate)
+        chamadas["n"] += 1
+        if chamadas["n"] == 2:             # a segunda coluna do cache
+            return dias[:-1], pnl[:-1]     # um dia a menos, de propósito
+        return dias, pnl
+
+    monkeypatch.setattr(CR.candidata, "por_pregao", por_pregao_bugado)
+    with pytest.raises(ValueError, match="tamanhos diferentes"):
+        CR._matriz_tentativas(_cache(), _trades_wfa(), PASSOS, CAPITAL)
+
+
+def test_matriz_de_tentativas_recusa_curva_do_wfa_com_eixo_diferente(monkeypatch):
+    """A mesma proteção, agora na última coluna (a curva do walk-forward),
+    que é montada separado do laço do cache."""
+    real = CR.candidata.por_pregao
+    chamadas = {"n": 0}
+
+    def por_pregao_bugado(exit_ts, liquido, de=None, ate=None):
+        dias, pnl = real(exit_ts, liquido, de, ate)
+        chamadas["n"] += 1
+        if chamadas["n"] == len(_cache()) + 1:      # a coluna do WFA
+            return dias[:-1], pnl[:-1]
+        return dias, pnl
+
+    monkeypatch.setattr(CR.candidata, "por_pregao", por_pregao_bugado)
+    with pytest.raises(ValueError, match="eixo de dias diferente do cache"):
+        CR._matriz_tentativas(_cache(), _trades_wfa(), PASSOS, CAPITAL)
 
 
 def test_janelas_validas_ignora_deploy_fora_do_mercado_e_sem_parametros():

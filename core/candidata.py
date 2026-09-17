@@ -584,7 +584,7 @@ def portao_aleatorio(resultado: dict, maximo: float = 0.05) -> dict:
     return portao(nome, p <= maximo, True, p, exigido, dica)
 
 
-def alerta_reotimizar(percentil: float | None) -> dict:
+def alerta_reotimizar(percentil: float | None, motivo: str | None = None) -> dict:
     """O alerta: reotimizar a cada janela compensou?
 
     Compara a curva do walk-forward (que troca de parâmetros a cada janela)
@@ -596,8 +596,12 @@ def alerta_reotimizar(percentil: float | None) -> dict:
     reotimizar não se pagou.
 
     `percentil None` (walk-forward sem combinações fixas suficientes para
-    montar a faixa de comparação) deixa o alerta pendente — falta de dado,
-    não reprovação.
+    montar a faixa de comparação, OU a fase que calcularia o percentil não
+    chegou a rodar) deixa o alerta pendente — falta de dado, não reprovação.
+    `motivo` troca a mensagem padrão "não foi possível medir" por uma mais
+    específica (ex.: "não rodou: <erro>", quando é `core/candidata_runner.py`
+    quem publica um alerta pendente por causa de uma exceção numa fase
+    anterior, não pela falta natural de combinações fixas).
     """
     nome = "Reotimizar compensou?"
     exigido = "percentil 50 ou mais entre as combinações fixas"
@@ -608,7 +612,8 @@ def alerta_reotimizar(percentil: float | None) -> dict:
             "fixas, escolher uma delas ao acaso teria feito melhor na "
             "maioria das vezes — reotimizar não valeu o trabalho.")
     if percentil is None:
-        return portao(nome, None, False, "não foi possível medir", exigido, dica)
+        return portao(nome, None, False, motivo or "não foi possível medir",
+                      exigido, dica)
     return portao(nome, percentil >= 50, False, round(percentil, 1), exigido, dica)
 
 
