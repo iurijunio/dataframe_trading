@@ -17,7 +17,7 @@ import numpy as np
 
 from strategies.base import Signals
 from . import metrics
-from .engine.execution import run_strategy
+from .engine.execution import TIMEFRAMES, run_strategy
 
 
 class EntradaAleatoria:
@@ -25,11 +25,18 @@ class EntradaAleatoria:
     params_schema: dict = {}
 
     def __init__(self, n_sinais: int, horarios: dict | None,
-                 p_compra: float, semente: int):
+                 p_compra: float, semente: int,
+                 janela_valida: tuple[np.datetime64, np.datetime64] | None = None):
         self.n_sinais = int(n_sinais)
         self.horarios = self._normalizar_horarios(horarios)
         self.p_compra = float(p_compra)
         self.semente = int(semente)
+        # (de, ate): quando dado, só sorteia (e portanto só abre trade) em
+        # barras cuja EXECUÇÃO cai em [de, ate) — é o que permite fatiar com
+        # uma margem de aquecimento de indicador ANTES da janela OOS sem que
+        # o sorteio vaze entradas para dentro dessa margem (ver
+        # `rodador_do_motor`, correção da rodada 1).
+        self.janela_valida = janela_valida
 
     @staticmethod
     def _normalizar_horarios(horarios: dict | None) -> dict | None:
@@ -57,23 +64,29 @@ class EntradaAleatoria:
         n = len(bars["close"])
         rng = np.random.default_rng(self.semente)
 
+        # `bars["ts"]` é o RÓTULO da barra do timeframe da estratégia —
+        # `execution.resample` carimba com o FIM do período (uma M15 fecha
+        # aos 14/29/44/59 do minuto). O kernel só abre posição na barra M1
+        # SEGUINTE ao sinal (kernel.py, "sinais desta barra, para a
+        # próxima"), então uma barra rotulada 09:59 entra às 10:00. É essa
+        # hora de EXECUÇÃO — não a do rótulo — que estratifica o histograma
+        # E que decide se a barra cai dentro de `janela_valida`.
+        execucao = bars["ts"] + np.timedelta64(1, "m")
+
+        if self.janela_valida is not None:
+            de, ate = self.janela_valida
+            valido = (execucao >= de) & (execucao < ate)
+        else:
+            valido = np.ones(n, dtype=np.bool_)
+
         if self.horarios:
-            # `bars["ts"]` é o RÓTULO da barra do timeframe da estratégia —
-            # `execution.resample` carimba com o FIM do período (uma M15
-            # fecha aos 14/29/44/59 do minuto). O kernel só abre posição na
-            # barra M1 SEGUINTE ao sinal (kernel.py, "sinais desta barra,
-            # para a próxima"), então uma barra rotulada 09:59 entra às
-            # 10:00. Estratificar pelo rótulo estratificaria pela hora
-            # ERRADA sempre que o rótulo cair no último minuto da hora — e
-            # em H1 isso desloca o histograma inteiro em uma hora. O
-            # histograma real (`entry_ts`) mede a hora de EXECUÇÃO, não a
-            # do rótulo, então é isso que tem que bater aqui.
-            execucao = bars["ts"] + np.timedelta64(1, "m")
             horas = execucao.astype("datetime64[h]").astype(object)
             horas = np.array([h.hour for h in horas])
-            idx = self._sorteio_estratificado(horas, rng)
+            idx = self._sorteio_estratificado(horas, valido, rng)
         else:
-            idx = rng.choice(n, size=min(self.n_sinais, n), replace=False)
+            universo = np.flatnonzero(valido)
+            idx = rng.choice(universo, size=min(self.n_sinais, len(universo)),
+                             replace=False)
 
         compra = rng.random(len(idx)) < self.p_compra
         el = np.zeros(n, dtype=np.bool_)
@@ -84,8 +97,8 @@ class EntradaAleatoria:
                        exit_long=np.zeros(n, dtype=np.bool_),
                        exit_short=np.zeros(n, dtype=np.bool_))
 
-    def _sorteio_estratificado(self, horas: np.ndarray, rng: np.random.Generator
-                               ) -> np.ndarray:
+    def _sorteio_estratificado(self, horas: np.ndarray, valido: np.ndarray,
+                               rng: np.random.Generator) -> np.ndarray:
         """Cota por hora via maior resto (Hamilton), não arredondamento cru.
 
         `int(round(n_sinais * peso))` somado hora a hora quase nunca fecha
@@ -108,7 +121,7 @@ class EntradaAleatoria:
 
         escolhidas = []
         for h in horas_pedidas:
-            cand = np.flatnonzero(horas == h)
+            cand = np.flatnonzero((horas == h) & valido)
             quantas = min(cotas[h], len(cand))
             if quantas > 0:
                 escolhidas.append(rng.choice(cand, size=quantas, replace=False))
@@ -284,6 +297,13 @@ def _proporcao_compra(trades: list[dict]) -> float:
     return compras / len(trades)
 
 
+# Piso da margem de aquecimento do ATR: pelo menos um pregão inteiro (24h em
+# barras M1), mesmo quando `periodo_atr x timeframe x 3` dá um número menor —
+# um piso curto demais deixaria o ATR de janelas com timeframe pequeno
+# aquecer com poucas barras de verdade (ver correção 1, rodada 1).
+PISO_MARGEM_ATR_M1 = 1440
+
+
 def rodador_do_motor(bars: dict, estrategia_real, perfil, instrumento: dict,
                      trades_reais: list[dict]):
     """Liga `EntradaAleatoria` ao motor de verdade para UMA janela do WFA.
@@ -295,11 +315,39 @@ def rodador_do_motor(bars: dict, estrategia_real, perfil, instrumento: dict,
     reusado ao montar o `rodador_do_motor` de cada janela do walk-forward
     (ver decisão 1 do brief da tarefa 5: ler o Parquet ou rodar o motor
     sobre 1,2 milhão de barras em cada uma das milhares de chamadas não cabe
-    no tempo). Cada chamada de `rodar_janela` fatia `bars` para o intervalo
-    `[janela.oos_de, janela.oos_ate)` por índice (`np.searchsorted` em
-    `ts`, O(log n) e sem cópia de dado fora da fatia) e roda o motor só
-    sobre essa fatia pequena — a estratégia falsa não tem indicador para
-    aquecer, então não há warm-up para perder ao cortar fora da janela.
+    no tempo). Cada chamada de `rodar_janela` fatia `bars` por índice
+    (`np.searchsorted` em `ts`, O(log n) e sem cópia de dado fora da fatia)
+    e roda o motor só sobre essa fatia pequena.
+
+    MARGEM DE AQUECIMENTO DO ATR (correção 1, rodada 1). A fatia não começa
+    exatamente em `janela.oos_de`: quando o perfil usa stop ou alvo por ATR,
+    as primeiras barras de uma fatia que começasse ali teriam ATR ainda não
+    aquecido (`execution.atr` só produz valor depois de `periodo` barras), e
+    ATR não aquecido vira 0 — 0 significa "sem stop e sem alvo" em
+    `execution._nivel`, uma gestão que a estratégia REAL nunca operou com.
+    A fatia então começa `periodo_atr x barras_do_timeframe x 3` barras M1
+    antes de `oos_de` (arredondado para trás até a meia-noite do dia, para
+    o `resample` de qualquer timeframe fechar grupos inteiros exatamente
+    como fecharia no histórico completo), com piso de `PISO_MARGEM_ATR_M1`
+    (um pregão inteiro). `execution.atr` é média móvel SIMPLES — uma vez
+    aquecido, o valor em cada barra só depende das `periodo` barras
+    anteriores a ela, nunca de barras mais antigas — então essa margem
+    reproduz EXATAMENTE o ATR que o histórico completo daria a partir de
+    `oos_de`, não uma aproximação. Perfil só em pontos (`stop_tipo` e
+    `alvo_tipo` != "atr") não precisa de margem nenhuma: pontos fixos não
+    aquecem.
+
+    A margem é só para o INDICADOR aquecer: o sorteio em si (`EntradaAleatoria
+    .janela_valida`) só abre entrada com EXECUÇÃO dentro de
+    `[janela.oos_de, janela.oos_ate)`, e os trades contados/somados aqui são
+    filtrados pela mesma regra — a margem nunca contribui um trade.
+
+    CONFERE A JANELA (correção 2, rodada 1). Este `rodar_janela` foi montado
+    com o perfil e os `trades_reais` de UMA janela (o `step` deles). Chamá-lo
+    com o `janela` de outro step aplicaria o perfil e o histograma ERRADOS
+    sem aviso nenhum — por isso `rodar_janela` primeiro confere
+    `janela.step` contra o step de `trades_reais` e recusa com `ValueError`
+    se não bater.
 
     `estrategia_real` não entra na chamada a `run_strategy`: quem gera o
     sinal aqui é sempre `EntradaAleatoria`, nunca a estratégia real. O
@@ -315,19 +363,64 @@ def rodador_do_motor(bars: dict, estrategia_real, perfil, instrumento: dict,
     horarios = _histograma_horario_execucao(trades_reais)
     p_compra = _proporcao_compra(trades_reais)
 
+    steps = {t.get("step") for t in trades_reais}
+    if len(steps) > 1:
+        raise ValueError(
+            f"trades_reais mistura mais de um step ({sorted(steps)}) — "
+            "rodador_do_motor serve UMA janela; filtre por step antes de "
+            "montar."
+        )
+    step_esperado = next(iter(steps), None)
+
+    periodo_atr = 0
+    if perfil.stop_tipo == "atr":
+        periodo_atr = max(periodo_atr, int(perfil.stop_atr_periodo))
+    if perfil.alvo_tipo == "atr":
+        periodo_atr = max(periodo_atr, int(perfil.alvo_atr_periodo))
+    minutos_tf = TIMEFRAMES.get(perfil.timeframe, 1)
+    margem_m1 = (max(periodo_atr * minutos_tf * 3, PISO_MARGEM_ATR_M1)
+                if periodo_atr > 0 else 0)
+
     def rodar_janela(janela, n_sinais: int, semente: int) -> tuple[int, float]:
+        if step_esperado is not None and janela.step != step_esperado:
+            raise ValueError(
+                f"rodador_do_motor foi montado com os trades reais do step "
+                f"{step_esperado!r}, mas recebeu a janela do step "
+                f"{janela.step!r} — cada rodador serve UMA janela só; "
+                "monte um rodador por janela e despache pelo próprio "
+                "objeto `janela`, não reuse este para outra."
+            )
+
         ts = bars["ts"]
         de = np.datetime64(janela.oos_de).astype(ts.dtype)
         ate = np.datetime64(janela.oos_ate).astype(ts.dtype)
-        i0 = int(np.searchsorted(ts, de))
+
+        if margem_m1:
+            de_com_margem = de - np.timedelta64(int(margem_m1), "m")
+            # trunca pro início do dia: garante que o `resample` desta
+            # fatia fecha os mesmos grupos de timeframe que o histórico
+            # completo fecharia a partir daí — cortar no MEIO de um grupo
+            # deixaria esse grupo com open/high/low incompletos, e o ATR
+            # dele (e dos `periodo_atr` seguintes) sairia diferente do
+            # histórico completo.
+            de_com_margem = de_com_margem.astype("datetime64[D]").astype(ts.dtype)
+        else:
+            de_com_margem = de
+
+        i0 = int(np.searchsorted(ts, de_com_margem))
         i1 = int(np.searchsorted(ts, ate))
         barras_janela = {k: v[i0:i1] for k, v in bars.items()}
 
-        estrategia = EntradaAleatoria(n_sinais, horarios, p_compra, semente)
+        estrategia = EntradaAleatoria(n_sinais, horarios, p_compra, semente,
+                                      janela_valida=(de, ate))
         res = run_strategy(barras_janela, estrategia, {}, perfil, instrumento)
         if res.n_trades == 0:
             return 0, 0.0
-        liquido = metrics.monetize(res)["liquido"]
-        return int(res.n_trades), float(liquido.sum())
+
+        dentro = (res.trades["entry_ts"] >= de) & (res.trades["entry_ts"] < ate)
+        if not np.any(dentro):
+            return 0, 0.0
+        liquido = metrics.monetize(res)["liquido"][dentro]
+        return int(dentro.sum()), float(liquido.sum())
 
     return rodar_janela
