@@ -625,16 +625,44 @@ def test_holdout_exigido_sem_numero_formatado_a_americana():
     assert p["esperado_p10"] is not None
 
 
-def test_holdout_historico_curto_demais_nao_mede():
+def test_holdout_historico_curto_demais_vira_alerta_nao_pendente():
     """Menos de 30 pregões antes do corte não dá para o bootstrap montar
     2.000 caminhos de verdade (`robustez.bootstrap` devolve `{}` com menos
-    de 30 pontos) — o portão fica pendente (`ok=None`), não reprovado:
-    falta de dado não é resultado ruim."""
+    de 30 pontos) — e não tem "rodar de novo" que resolva isso, a base é a
+    que é. Correção da rodada 1 da tarefa 7: antes ficava pendente
+    (`ok=None`, crítico), o que travava o veredito em "aguardando testes
+    completos" para sempre, já que nenhum teste completo recalcula este
+    portão. Vira alerta (`ok=False`, `critico=False`), mesma régua do
+    platô para lacuna de medição sem conserto possível."""
     rng = np.random.default_rng(3)
     dias, pnl, corte = _serie(rng.normal(5, 40, 20), rng.normal(5, 40, 40))
     p = candidata.portao_holdout(dias, pnl, corte, CAP)
-    assert p["ok"] is None
-    assert p["valor"] == "histórico curto demais"
+    assert p["ok"] is False and p["critico"] is False
+    assert p["valor"] == "histórico antes do corte curto demais para comparar"
+
+
+def test_veredito_com_holdout_historico_curto_fica_ressalva_nao_aguardando():
+    """Com todos os outros portões passando e só o holdout como alerta por
+    histórico curto demais, o veredito tem que sair "aprovada com
+    ressalva" — não "aguardando testes completos", que travaria para
+    sempre (nada recalcula este portão)."""
+    rng = np.random.default_rng(3)
+    dias, pnl, corte = _serie(rng.normal(5, 40, 20), rng.normal(5, 40, 40))
+    holdout = candidata.portao_holdout(dias, pnl, corte, CAP)
+    ok = candidata.portao("a", True, True, 1, "", "")
+    ver = candidata.veredito([ok, holdout])
+    assert ver["estado"] == "aprovada com ressalva"
+    assert holdout in ver["ressalvas"]
+
+
+def test_holdout_sem_corte_diz_que_a_mineracao_nao_tem_holdout():
+    """`corte=None` (a mineração nunca marcou holdout) é um motivo diferente
+    de "sem holdout na curva" (que sugere resalvar o WFA) — aqui não há o
+    que resalvar, é a mineração que não separou nada."""
+    p = candidata.portao_holdout(np.array([]), np.array([]), None, CAP)
+    assert p["ok"] is False and p["critico"] is True
+    assert p["valor"] == "esta mineração não tem holdout separado"
+    assert p["pregoes_holdout"] == 0
 
 
 # --------------------------------------------------- tarefa 7: a faixa na tela
@@ -701,14 +729,16 @@ def test_portoes_rapidos_monta_na_ordem_da_tarefa_7():
 
 def test_portoes_rapidos_sem_corte_de_holdout_nao_quebra():
     """Mineração sem holdout marcado (`corte=None`): o portão do holdout
-    entra como "sem holdout na curva", não explode em `np.datetime64(None)`."""
+    entra como "esta mineração não tem holdout separado", não explode em
+    `np.datetime64(None)`."""
     trials, espaco, deploy = _grade_plato([5] * 9, 4)
     trades = _trades_rapidos()
     gates = candidata.portoes_rapidos(
         trades, _leitura_rapida(), trials, espaco, deploy,
         corte=None, tick_value=1.0, capital=CAP)
     holdout = next(g for g in gates if g["nome"] == "O holdout confirma?")
-    assert holdout["ok"] is False and "holdout" in holdout["valor"]
+    assert holdout["ok"] is False
+    assert holdout["valor"] == "esta mineração não tem holdout separado"
 
 
 def test_portoes_rapidos_le_contratos_e_liquido_dos_trades_crus():

@@ -154,3 +154,89 @@ def test_estado_testes_pronto_quando_ha_resultado_e_nao_esta_rodando():
 def test_estado_testes_ocioso_por_padrao():
     est = CP.estado_testes({"rodando": False, "erro": None, "resultado": None})
     assert est["fase"] == "ocioso"
+
+
+def test_estado_testes_de_outro_wfa_fica_ocioso_mesmo_pronto():
+    """`TESTES` é um singleton só: os testes prontos do #8 não podem
+    aparecer como "testes completos" enquanto a tela mostra o #3 — cada
+    walk-forward tem seu próprio "aguardando" até rodar de novo."""
+    e = {"rodando": False, "erro": None, "resultado": {"portoes": []},
+         "wfa_id": 8}
+    assert CP.estado_testes(e, wfa_id=3)["fase"] == "ocioso"
+    assert CP.estado_testes(e, wfa_id=None)["fase"] == "ocioso"
+    assert CP.estado_testes(e, wfa_id=8)["fase"] == "pronto"
+    assert CP.estado_testes(e, wfa_id="8")["fase"] == "pronto"   # tipos batem
+
+
+def test_estado_testes_rodando_de_outro_wfa_tambem_fica_ocioso():
+    e = {"rodando": True, "fase": "sorteando entradas", "pct": 40,
+         "erro": None, "wfa_id": 8}
+    assert CP.estado_testes(e, wfa_id=3)["fase"] == "ocioso"
+    assert CP.estado_testes(e, wfa_id=8)["fase"] == "rodando"
+
+
+def test_estado_testes_sem_wfa_id_no_estado_nao_filtra():
+    """Antes do primeiro `iniciar()`, `TESTES.estado` não tem `wfa_id` —
+    nada a comparar, comportamento de sempre."""
+    e = {"rodando": False, "erro": None, "resultado": None}
+    assert CP.estado_testes(e, wfa_id=8)["fase"] == "ocioso"
+
+
+# ------------------------------------- tarefa 7, rodada 1: o relógio próprio
+
+
+def test_relogio_liga_enquanto_roda():
+    assert CP.relogio_ligado({"rodando": True, "geracao": 1}, None) is True
+
+
+def test_relogio_desliga_quando_nunca_rodou_nada():
+    e = {"rodando": False, "resultado": None, "erro": None, "geracao": 0}
+    assert CP.relogio_ligado(e, None) is False
+    assert CP.relogio_ligado(e, {"g": 0}) is False
+
+
+def test_relogio_fica_ligado_ate_o_store_alcancar_a_geracao():
+    e = {"rodando": False, "resultado": {"portoes": []}, "erro": None,
+         "geracao": 3}
+    assert CP.relogio_ligado(e, None) is True
+    assert CP.relogio_ligado(e, {"g": 2}) is True          # geração velha
+    assert CP.relogio_ligado(e, {"g": 3}) is False          # alcançou
+
+
+def test_relogio_fica_ligado_com_erro_tambem():
+    e = {"rodando": False, "resultado": None, "erro": "deu ruim",
+         "geracao": 1}
+    assert CP.relogio_ligado(e, None) is True
+    assert CP.relogio_ligado(e, {"g": 1}) is False
+
+
+def test_relogio_prova_a_ordem_que_travava_o_selo():
+    """A ordem exata do bug da rodada de correção 1: `cand_fim_dos_testes`
+    lê "rodando" (não anuncia nada), a thread termina, e só DEPOIS
+    `cand_botao_testes` lê o estado. Antes da correção, o botão via
+    `rodando=False` e desligava o relógio direto (`not e["rodando"]`) sem
+    o Store nunca ter recebido a geração — travando o selo em "aguardando"
+    para sempre. Com `relogio_ligado`, o relógio continua ligado até o
+    Store alcançar."""
+    estado = {"rodando": True, "resultado": None, "erro": None,
+             "geracao": 5, "wfa_id": 8}
+    store = None
+
+    # 1) cand_fim_dos_testes roda enquanto ainda está "rodando": não anuncia
+    pronto = estado.get("resultado") is not None or estado.get("erro")
+    anuncia_agora = not estado["rodando"] and pronto and \
+        (store or {}).get("g") != estado.get("geracao")
+    assert anuncia_agora is False           # ainda rodando, nada a anunciar
+
+    # 2) a thread termina ENTRE as duas leituras
+    estado = {**estado, "rodando": False, "resultado": {"portoes": []}}
+
+    # 3) cand_botao_testes lê o estado agora — a régua antiga (`not
+    #    e["rodando"]`) desligaria o relógio aqui; a nova mantém ligado
+    #    porque o Store (`store`) ainda não tem a geração 5
+    assert CP.relogio_ligado(estado, store) is True
+
+    # 4) só na próxima batida, depois de `cand_fim_dos_testes` finalmente
+    #    anunciar (agora que "rodando" já é False), o relógio pode desligar
+    store = {"g": estado["geracao"]}
+    assert CP.relogio_ligado(estado, store) is False

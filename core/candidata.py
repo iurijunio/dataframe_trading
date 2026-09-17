@@ -482,12 +482,24 @@ def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
                    semente: int = 7) -> dict:
     """O holdout confirma? Compara o que a estratégia fez nos meses do holdout
     com o que a curva ANTES do corte fazia esperar para o mesmo número de
-    dias. Só o lado ruim reprova."""
+    dias. Só o lado ruim reprova.
+
+    Três jeitos de não medir, cada um com o motivo certo — e só dois deles
+    bloqueiam de verdade. `corte=None` é a MINERAÇÃO nunca ter marcado
+    holdout: não há corte nenhum para comparar, e não existe "rodar de novo"
+    que resolva — mas ainda assim é uma lacuna real da candidata (crítico).
+    Sem pregão nenhum DEPOIS do corte é este WALK-FORWARD específico não ter
+    sido salvo com "estender ao holdout" — resalvar com a caixa marcada
+    resolve, então continua crítico. Histórico ANTES do corte curto demais
+    para o bootstrap (`boot` vazio) é o único dos três que TAMBÉM não tem
+    conserto (a base é a que é, rodar os testes completos de novo não muda
+    isso) — por isso vira ALERTA (`ok=False`, `critico=False`), não
+    `ok=None`: um crítico pendente para sempre travava o veredito em
+    "aguardando testes completos" pra sempre, e falta de medição que nada
+    resolve segue a mesma régua do platô (`portoes_plato`): não é
+    reprovação, mas também não fica pendurada feito pendente eterno.
+    """
     from . import robustez
-    d = np.asarray(dias, dtype="datetime64[D]")
-    x = np.asarray(pnl, dtype=float)
-    c = np.datetime64(corte, "D")
-    antes, depois = x[d < c], x[d >= c]
     nome = "O holdout confirma?"
     dica = ("O holdout são os meses finais que ficaram de fora da mineração. "
             "A plataforma simula 2.000 caminhos do mesmo tamanho usando só o "
@@ -495,7 +507,16 @@ def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
             "holdout caiu. Reprova se ficar entre os 10% piores caminhos. "
             "Resultado melhor que o esperado passa.")
     base = {"lucro_mes_antes": None, "lucro_mes_holdout": None,
-            "esperado_p10": None, "pregoes_holdout": int(len(depois))}
+            "esperado_p10": None, "pregoes_holdout": 0}
+    if corte is None:
+        return {**portao(nome, False, True,
+                         "esta mineração não tem holdout separado",
+                         "dentro do esperado", dica), **base}
+    d = np.asarray(dias, dtype="datetime64[D]")
+    x = np.asarray(pnl, dtype=float)
+    c = np.datetime64(corte, "D")
+    antes, depois = x[d < c], x[d >= c]
+    base["pregoes_holdout"] = int(len(depois))
     if not len(depois):
         return {**portao(nome, False, True,
                          "sem holdout na curva — salve o walk-forward com o "
@@ -503,7 +524,8 @@ def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
     boot = robustez.bootstrap(antes, capital, n=n, semente=semente,
                               horizonte=len(depois))
     if not boot:
-        return {**portao(nome, None, True, "histórico curto demais",
+        return {**portao(nome, False, False,
+                         "histórico antes do corte curto demais para comparar",
                          "dentro do esperado", dica), **base}
     real = float(depois.sum())
     p10 = float(boot["final_p10"])
@@ -649,11 +671,6 @@ def portoes_rapidos(trades: list[dict], leitura: dict, trials: list[dict],
     perda_esperada = pior["dd_p95"]["valor"]
     contratos_por_trade = float(np.median(contratos)) if len(contratos) else 1.0
     lucro_liquido = float((leitura.get("resumo") or {}).get("lucro_liquido", 0.0))
-    # sem corte de holdout gravado (mineração sem holdout marcado): um corte
-    # no futuro distante deixa "depois" sempre vazio, e `portao_holdout` já
-    # sabe dizer "sem holdout na curva" para essa mesma situação — sem
-    # duplicar aqui a checagem de data
-    corte_efetivo = corte or "9999-12-31"
 
     return [
         *portoes_plato(perfil),
@@ -661,7 +678,10 @@ def portoes_rapidos(trades: list[dict], leitura: dict, trials: list[dict],
         portao_poucos_dias(pnl),
         portao_custo(lucro_liquido, contratos, tick_value),
         portao_capital(perda_esperada, contratos_por_trade, capital),
-        portao_holdout(dias, pnl, corte_efetivo, capital),
+        # `corte=None` (mineração sem holdout marcado) vai direto para
+        # `portao_holdout`, que sabe dizer "esta mineração não tem holdout
+        # separado" — sem sentinela de data aqui
+        portao_holdout(dias, pnl, corte, capital),
         alerta_vizinho(perfil),
         alerta_poucos_trades(liquido),
     ]

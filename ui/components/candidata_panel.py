@@ -226,7 +226,7 @@ def bloco_robustez(leitura: dict, capital: float, holdout: bool = False,
                     className="cand-tabelas")
 
 
-def estado_testes(e: dict) -> dict:
+def estado_testes(e: dict, wfa_id=None) -> dict:
     """Traduz `candidata_runner.TESTES.estado` para o que a barra mostra.
 
     Função pura, testável sem servidor — no mesmo desenho de
@@ -234,7 +234,19 @@ def estado_testes(e: dict) -> dict:
     fase pode falhar e deixar `erro` preenchido com `rodando` já `False`
     (ver `TestesCompletos._rodar`), e é o erro que a tela precisa mostrar,
     não uma barra "ociosa" como se nada tivesse acontecido.
+
+    `TESTES` é um singleton só, sem noção de "por walk-forward": sem este
+    confronto, trocar do #8 (testes prontos) para outro walk-forward
+    continuava mostrando "testes completos" do #8 enquanto o selo do outro
+    já dizia "aguardando" — dois lugares da mesma tela contando histórias
+    diferentes. `wfa_id=None` (chamada sem saber qual está aberto, como nos
+    testes antigos desta função) não filtra nada.
     """
+    if (e.get("wfa_id") is not None
+            and (wfa_id is None or int(wfa_id) != int(e["wfa_id"]))):
+        return dict(fase="ocioso", txt="escolha um walk-forward e clique em "
+                                       "\"Rodar testes completos\"",
+                    pct=0, ocupado=False)
     if e.get("erro"):
         return dict(fase="erro", txt=e["erro"], pct=100, ocupado=False)
     if e.get("rodando"):
@@ -246,6 +258,33 @@ def estado_testes(e: dict) -> dict:
     return dict(fase="ocioso", txt="escolha um walk-forward e clique em "
                                    "\"Rodar testes completos\"",
                 pct=0, ocupado=False)
+
+
+def relogio_ligado(estado: dict, store: dict | None) -> bool:
+    """Decide se `cand-tick` continua ligado — função pura, extraída para
+    ser testável sem montar o app, na ordem exata que travava o selo.
+
+    `cand_botao_testes` e `cand_fim_dos_testes` escutam o MESMO `cand-tick`
+    e cada um lê `TESTES.estado` na sua hora: se `cand_fim_dos_testes` lê
+    "rodando" um instante antes de a thread terminar (e não anuncia nada
+    nesta batida) e, logo depois, `cand_botao_testes` já lê "parado", ele
+    desligava o relógio sem o Store `cand-testes` nunca ter recebido a
+    geração nova — e sem relógio não há próxima batida para
+    `cand_fim_dos_testes` tentar de novo. O selo ficava preso em
+    "aguardando testes completos" para sempre.
+
+    A regra: enquanto está rodando, liga. Quando termina (resultado ou
+    erro), só desliga depois que o Store já tiver a MESMA geração do
+    `TESTES.estado` — ou seja, depois que `cand_fim_dos_testes` já
+    conseguiu anunciar esta rodada. Nunca rodou nada (nem resultado nem
+    erro) não é "terminou esperando anúncio": fica desligado, como sempre.
+    """
+    if estado.get("rodando"):
+        return True
+    pronto = estado.get("resultado") is not None or estado.get("erro")
+    if not pronto:
+        return False
+    return (store or {}).get("g") != estado.get("geracao")
 
 
 def bloco_testes() -> html.Div:

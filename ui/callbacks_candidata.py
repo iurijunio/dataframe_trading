@@ -195,8 +195,9 @@ def register(app):
         Input("cand-wfa", "value"),
         Input("cand-tick", "n_intervals"),
         State("btn-cand-testes", "children"),
+        State("cand-testes", "data"),
     )
-    def cand_botao_testes(_n, wfa_id, _t, rotulo):
+    def cand_botao_testes(_n, wfa_id, _t, rotulo, store_testes):
         """O botão e o relógio PRÓPRIO da Candidata (`cand-tick`).
 
         O `dcc.Interval` `tick` já tem dono único (`pulso`, em
@@ -214,6 +215,14 @@ def register(app):
         continuar rodando no servidor (mesmo desenho de
         `wfa_runner.Varredura`), e é este disparo no carregamento que
         corrige o botão e o relógio para o estado real.
+
+        O relógio (`cand-tick.disabled`) nunca é `not e["rodando"]` direto
+        — passa por `CP.relogio_ligado`, que só deixa desligar depois que
+        `cand-testes` (o Store que `cand_fim_dos_testes` escreve) já tem a
+        geração atual. Rodada de correção 1: sem isso, este callback podia
+        ler "parado" um instante depois de `cand_fim_dos_testes` ler
+        "rodando" na MESMA batida do relógio — o relógio desligava antes do
+        anúncio, e o selo ficava preso em "aguardando" para sempre.
         """
         e = TESTES.estado
         gatilho = ctx.triggered_id
@@ -234,9 +243,10 @@ def register(app):
                         "isto refaz a varredura e a aba Walk-Forward vai "
                         "pedir para executar de novo")
             TESTES.iniciar(wid)
-            # `iniciar` já deixou `rodando=True` (chamada síncrona): o
-            # relógio liga nesta mesma resposta, sem esperar o próximo tick
-            return "Rodando…", True, False, ""
+            # `iniciar` já deixou `rodando=True` (chamada síncrona):
+            # `relogio_ligado` já enxerga isso e liga o relógio nesta mesma
+            # resposta, sem esperar o próximo tick
+            return "Rodando…", True, not CP.relogio_ligado(e, store_testes), ""
 
         # troca de walk-forward ou batida do relógio: só reflete o estado
         # atual dos testes — nenhum dos dois dispara nada sozinho
@@ -244,7 +254,7 @@ def register(app):
         texto = "Rodando…" if rodando else "Rodar testes completos"
         desabilitado = rodando or not wfa_id
         aviso = "" if gatilho == "cand-wfa" else no_update
-        return texto, desabilitado, not rodando, aviso
+        return texto, desabilitado, not CP.relogio_ligado(e, store_testes), aviso
 
     @app.callback(
         Output("cand-prog", "className"),
@@ -255,7 +265,7 @@ def register(app):
         Input("cand-wfa", "value"),
     )
     def cand_progresso(_t, _wfa):
-        est = CP.estado_testes(TESTES.estado)
+        est = CP.estado_testes(TESTES.estado, _wfa)
         pct_txt = f"{est['pct']:.0f}%" if est["ocupado"] else ""
         return (f"wfa-prog {est['fase']}", est["txt"], pct_txt,
                 {"width": f"{est['pct']:.0f}%"})
