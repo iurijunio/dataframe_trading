@@ -18,7 +18,7 @@ from dash import dcc, html
 from core import candidata
 
 from . import cartao, stats_cards
-from .cartao import brl, faixa, inteiro, pct
+from .cartao import brl, dica, faixa, inteiro, pct
 from .wfa_panel import DICAS_OOS, _br
 
 
@@ -71,8 +71,37 @@ def _tons_do_resultado(m: dict, capital: float) -> dict:
     }
 
 
+def _linha_holdout(holdout_gate: dict | None) -> dict:
+    """A linha "holdout" da tabela de resultado fora da amostra.
+
+    Os mesmos números que o portão "O holdout confirma?" já calculou — não
+    roda o bootstrap uma segunda vez, só lê `lucro_mes_holdout` e
+    `lucro_mes_antes` que `candidata.portao_holdout` devolve junto do
+    portão. Sem cor: aqui é leitura do que aconteceu, quem reprova é o
+    portão ao lado, no selo.
+    """
+    explica = ("Quanto a curva rendeu por mês nos meses do HOLDOUT (o "
+               "trecho final que nenhuma combinação minerada enxergou) "
+               "contra quanto rendia por mês ANTES do corte. É a mesma "
+               "curva do portão \"O holdout confirma?\", só em reais por "
+               "mês em vez de caminhos simulados — quem decide passa ou "
+               "reprova é aquele portão, não esta linha.")
+    tem_holdout = (holdout_gate and holdout_gate.get("pregoes_holdout")
+                  and holdout_gate.get("lucro_mes_holdout") is not None)
+    if not tem_holdout:
+        return {"nome": "holdout", "valor": "sem holdout nesta curva",
+                "nota": "", "tom": None, "explica": explica}
+    return {
+        "nome": "holdout",
+        "valor": f"{brl(holdout_gate['lucro_mes_holdout'])}/mês no holdout",
+        "nota": f"{brl(holdout_gate['lucro_mes_antes'])}/mês antes do corte",
+        "tom": None, "explica": explica,
+    }
+
+
 def linhas(leitura: dict, capital: float, holdout: bool = False,
-           de=None, ate=None) -> list[tuple[str, str, list[dict]]]:
+           de=None, ate=None, holdout_gate: dict | None = None
+           ) -> list[tuple[str, str, list[dict]]]:
     """Os grupos da tabela: (título, explicação, linhas).
 
     Cada linha tem nome, valor, nota, explicação do (?) e tom
@@ -87,6 +116,7 @@ def linhas(leitura: dict, capital: float, holdout: bool = False,
                   "nota": i["nota"] or "", "explica": i["explica"],
                   "tom": tons.get(i["rotulo"])}
                  for i in stats_cards.itens(m, DICAS_OOS)]
+    resultado.append(_linha_holdout(holdout_gate))
 
     o = leitura["ordenacao"]
     pior = candidata.pior_dos_recortes(leitura)
@@ -156,7 +186,9 @@ def linhas(leitura: dict, capital: float, holdout: bool = False,
          "A plataforma sorteia 2.000 caminhos possíveis para a estratégia, "
          "usando os dias reais que ela já operou em outra ordem e combinação. "
          "Os números dizem o que acontece nos caminhos ruins — não no que "
-         "você viu, que é só um deles.",
+         "você viu, que é só um deles. Cada linha é o pior caminho PARA "
+         "AQUELA métrica: os números ruins de linhas diferentes não "
+         "aconteceram todos juntos, no mesmo caminho sorteado.",
          aguenta),
     ]
 
@@ -180,7 +212,7 @@ def _tabela(titulo: str, explica: str, itens: list[dict]):
 
 
 def bloco_robustez(leitura: dict, capital: float, holdout: bool = False,
-                   de=None, ate=None):
+                   de=None, ate=None, holdout_gate: dict | None = None):
     """A tabela da tela: o resultado fora da amostra e quanto ele aguenta.
 
     Cada número de risco é calculado duas vezes — na curva inteira e só nos
@@ -190,8 +222,56 @@ def bloco_robustez(leitura: dict, capital: float, holdout: bool = False,
     if leitura.get("erro"):
         return vazio(leitura["erro"])
     return html.Div([_tabela(*g) for g in linhas(leitura, capital, holdout,
-                                                  de, ate)],
+                                                  de, ate, holdout_gate)],
                     className="cand-tabelas")
+
+
+def estado_testes(e: dict) -> dict:
+    """Traduz `candidata_runner.TESTES.estado` para o que a barra mostra.
+
+    Função pura, testável sem servidor — no mesmo desenho de
+    `wfa_panel.estado_progresso`. Erro tem prioridade sobre rodando: uma
+    fase pode falhar e deixar `erro` preenchido com `rodando` já `False`
+    (ver `TestesCompletos._rodar`), e é o erro que a tela precisa mostrar,
+    não uma barra "ociosa" como se nada tivesse acontecido.
+    """
+    if e.get("erro"):
+        return dict(fase="erro", txt=e["erro"], pct=100, ocupado=False)
+    if e.get("rodando"):
+        return dict(fase="rodando", txt=e.get("fase") or "preparando",
+                    pct=e.get("pct") or 0, ocupado=True)
+    if e.get("resultado") is not None:
+        return dict(fase="pronto", txt="testes completos", pct=100,
+                    ocupado=False)
+    return dict(fase="ocioso", txt="escolha um walk-forward e clique em "
+                                   "\"Rodar testes completos\"",
+                pct=0, ocupado=False)
+
+
+def bloco_testes() -> html.Div:
+    """O botão que dispara os três testes demorados (aleatório, tentativas,
+    reotimizar) e a barra de progresso deles.
+
+    Mesmo desenho da varredura da aba Walk-Forward, com relógio PRÓPRIO
+    (`cand-tick`, desligado por padrão): o `dcc.Interval` `tick` já tem dono
+    único (`pulso`, em `ui/callbacks.py`), e ligar nele faria o progresso da
+    Candidata reagir a toda batida da mineração e da varredura, sem
+    relação nenhuma com os testes completos.
+    """
+    return html.Div([
+        html.Button("Rodar testes completos", id="btn-cand-testes",
+                    n_clicks=0, className="btn-ghost", disabled=True),
+        html.Div([
+            html.Div([html.Span(id="cand-prog-txt", className="wfa-prog-txt"),
+                      html.Span(id="cand-prog-pct", className="wfa-prog-pct")],
+                     className="wfa-prog-linha"),
+            html.Div(html.Div(id="cand-prog-bar", className="prog-bar"),
+                     className="prog wfa-prog-trilho"),
+        ], id="cand-prog", className="wfa-prog ocioso"),
+        html.Span(id="cand-aviso-testes", className="wfa-prog-aviso"),
+        dcc.Interval(id="cand-tick", interval=800, disabled=True),
+        dcc.Store(id="cand-testes"),
+    ], className="cand-testes-linha")
 
 
 def painel():
@@ -211,6 +291,7 @@ def painel():
                 ],
                 className="cand-topo",
             ),
+            bloco_testes(),
             html.Div(id="cand-portoes", className="cand-portoes"),
             html.Div(id="cand-blocos", className="cand-blocos"),
         ],

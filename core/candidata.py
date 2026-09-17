@@ -617,6 +617,73 @@ def alerta_reotimizar(percentil: float | None, motivo: str | None = None) -> dic
     return portao(nome, percentil >= 50, False, round(percentil, 1), exigido, dica)
 
 
+def portoes_rapidos(trades: list[dict], leitura: dict, trials: list[dict],
+                    espaco: dict, deploy: dict, corte, tick_value: float,
+                    capital: float, de=None, ate=None) -> list[dict]:
+    """Os portões e alertas que respondem NA HORA, ao escolher o
+    walk-forward — tudo o que não depende dos três testes demorados
+    (aleatório, tentativas, reotimizar compensou), que vivem em
+    `candidata_runner.TestesCompletos` e levam cerca de um minuto.
+
+    Recebe os TRADES crus, não só `leitura`: o portão de custo e o de
+    capital precisam de CONTRATOS por trade, número que `leitura_robustez`
+    não carrega adiante (ela vira pregão a pregão e o trade individual some).
+    `de`/`ate` são os limites da curva fora da amostra segundo o WFA
+    (`limites_oos`) — os MESMOS que produziram `leitura`, para o pregão a
+    pregão calculado aqui bater com o `pior_dos_recortes` que lê de lá.
+    Primeiro/último trade em vez das janelas já divergiu em pregões noutro
+    lugar desta tela (ver o comentário de `por_pregao`).
+
+    Ordem fixa, decidida na tarefa 7: platô (crítico e alerta de faixa),
+    acaso, poucos dias, custo, capital, holdout, alerta de vizinho, alerta
+    de 1% dos trades. Os três testes demorados entram depois desta lista —
+    este módulo não sabe (e não precisa saber) se eles já rodaram.
+    """
+    saida = np.array([t["exit_ts"] for t in trades], dtype="datetime64[s]")
+    liquido = np.array([t["liquido"] for t in trades], dtype=float)
+    contratos = np.array([t.get("contratos") or 1 for t in trades], dtype=float)
+    dias, pnl = por_pregao(saida, liquido, de=de, ate=ate)
+
+    perfil = perfil_plato(trials, espaco, deploy)
+    pior = pior_dos_recortes(leitura)
+    perda_esperada = pior["dd_p95"]["valor"]
+    contratos_por_trade = float(np.median(contratos)) if len(contratos) else 1.0
+    lucro_liquido = float((leitura.get("resumo") or {}).get("lucro_liquido", 0.0))
+    # sem corte de holdout gravado (mineração sem holdout marcado): um corte
+    # no futuro distante deixa "depois" sempre vazio, e `portao_holdout` já
+    # sabe dizer "sem holdout na curva" para essa mesma situação — sem
+    # duplicar aqui a checagem de data
+    corte_efetivo = corte or "9999-12-31"
+
+    return [
+        *portoes_plato(perfil),
+        portao_acaso(pnl),
+        portao_poucos_dias(pnl),
+        portao_custo(lucro_liquido, contratos, tick_value),
+        portao_capital(perda_esperada, contratos_por_trade, capital),
+        portao_holdout(dias, pnl, corte_efetivo, capital),
+        alerta_vizinho(perfil),
+        alerta_poucos_trades(liquido),
+    ]
+
+
+def portoes_pendentes() -> list[dict]:
+    """Os três portões demorados, com `ok=None` e valor "aguardando",
+    enquanto `candidata_runner.TESTES` não tem resultado para este
+    walk-forward.
+
+    Usa as próprias funções de produção com entrada vazia — elas já
+    devolvem `ok=None` sozinhas (dado faltando não reprova); só o `valor`
+    troca pelo texto que a tela mostra igual para os três, no lugar do
+    motivo específico de "sem dado" que cada uma escreveria por conta
+    própria (motivo que aqui nunca se aplica: os dados existem, só não
+    rodaram ainda).
+    """
+    return [{**p, "valor": "aguardando"}
+            for p in (portao_aleatorio({}), portao_tentativas({}),
+                     alerta_reotimizar(None))]
+
+
 def veredito(portoes: list[dict]) -> dict:
     """Crítico reprovado reprova. Crítico ainda não medido impede aprovar.
     Alerta reprovado aprova com ressalva."""

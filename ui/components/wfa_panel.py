@@ -758,11 +758,49 @@ def painel():
 
 
 # ------------------------------------------------------- portões do WFA
+# Os portões da Candidata cujo NOME contém "lucro" só de pergunta ("O lucro
+# não é acaso?" é um teste-t, não dinheiro) ou cujo EXIGIDO contém um "%"
+# que não descreve o VALOR ("fora dos 10% piores caminhos" é o limiar do
+# holdout, e o valor medido é uma soma em reais) enganariam a heurística
+# genérica abaixo — que foi desenhada para os portões do WFA, cujos nomes e
+# limiares nunca colidem assim. Nome exato, e não mais uma regra por
+# substring, resolve os dois sem arriscar um terceiro portão futuro cair no
+# mesmo buraco.
+_CANDIDATA_NUMERICO = {
+    "O lucro não é acaso?": lambda v: num(v, 2),
+    "O lucro não depende de poucos dias?": brl,
+    "Aguenta custo maior?": brl,
+    "O holdout confirma?": brl,
+    "Depende do 1% melhor dos trades?": brl,
+    # `portao_aleatorio`/`portao_tentativas` guardam o p-valor como FRAÇÃO
+    # (0,03 = 3%), igual ao limiar deles ("até 5% de chance..."). A regra
+    # genérica do "%" no exigido, mais abaixo, assume um valor JÁ em 0–100
+    # (como o do portão de capital) — sem este par aqui, 0,03 virava
+    # "0,0%" na tela em vez de "3,0%".
+    "Ganha de entradas sorteadas ao acaso?": lambda v: f"{num(v * 100, 1)}%",
+    "Aguenta o desconto por muitas tentativas?": lambda v: f"{num(v * 100, 1)}%",
+}
+
+
 def _fmt_portao(p) -> str:
     v = p["valor"]
+    if p["ok"] is None:
+        # pendente: nunca reformata o motivo/"aguardando" que o portão já
+        # escreveu em português — só cai em "—" quando nem isso veio
+        return v if isinstance(v, str) else "—"
     if v is None:
         return "—"
+    if isinstance(v, str):
+        # portões da Candidata escrevem o próprio valor em português quando
+        # não é um número — o platô ("18 à esquerda · 22 à direita"), o
+        # vizinho ("3 com prejuízo") e o holdout sem dado ("sem holdout na
+        # curva — salve..."), este último com `ok=False`, não pendente.
+        # Sem este desvio, `inteiro(int(v))` quebrava com ValueError na
+        # primeira vez que um destes chegou ao selo.
+        return v
     nome = p["nome"]
+    if nome in _CANDIDATA_NUMERICO:
+        return _CANDIDATA_NUMERICO[nome](v)
     # o WFE vem em FRAÇÃO (1,04) e o limiar dele é escrito em porcento
     # ("≥ 70%"). Testar o "%" do limiar antes do nome fazia 1,04 virar
     # "1,0%" na tela — o portão aprovava e o número dizia o contrário.
@@ -777,13 +815,23 @@ def _fmt_portao(p) -> str:
     return inteiro(int(v))
 
 
-def selo(ver: dict) -> html.Div:
-    """O carimbo do walk-forward, na gramática da Porteira da mineração."""
+def selo(ver: dict, titulo: str = "veredito do walk-forward") -> html.Div:
+    """O carimbo do walk-forward, na gramática da Porteira da mineração.
+
+    `titulo` deixa a Candidata reusar o mesmo carimbo com a pergunta dela
+    ("a estratégia está pronta para a incubação?") sem duplicar o HTML — a
+    aba Walk-Forward continua com o título de sempre, que é o padrão.
+    """
     if not ver:
         return html.Div()
 
     if ver["reprovados"]:
         motivo = "reprovado em: " + " · ".join(p["nome"] for p in ver["reprovados"])
+    elif ver.get("pendentes"):
+        # `.get`, não `ver["pendentes"]`: o veredito do WFA
+        # (`wfa.portoes_wfa`) não tem essa chave — só o da Candidata
+        # (`candidata.veredito`), que é quem tem portão com `ok=None`
+        motivo = "aguardando: " + " · ".join(p["nome"] for p in ver["pendentes"])
     elif ver["ressalvas"]:
         motivo = "ressalvas em: " + " · ".join(p["nome"] for p in ver["ressalvas"])
     else:
@@ -791,8 +839,12 @@ def selo(ver: dict) -> html.Div:
 
     linhas = []
     for p in ver["portoes"]:
-        marca = "✓" if p["ok"] else ("✕" if p["critico"] else "!")
-        classe = "ok" if p["ok"] else ("falha" if p["critico"] else "alerta")
+        if p["ok"] is None:
+            marca, classe = "…", "pendente"
+        elif p["ok"]:
+            marca, classe = "✓", "ok"
+        else:
+            marca, classe = ("✕", "falha") if p["critico"] else ("!", "alerta")
         linhas.append(html.Div([
             html.Span(marca, className=f"portao-marca {classe}"),
             html.Span([p["nome"], dica(p["dica"])], className="portao-nome"),
@@ -805,7 +857,7 @@ def selo(ver: dict) -> html.Div:
     return html.Div([
         html.Div([
             html.Div([
-                html.Span(["veredito do walk-forward",
+                html.Span([titulo,
                            dica("O carimbo sobre o PROCESSO, não sobre um "
                                 "número. Reprovado significa que escolher "
                                 "parâmetro desta forma não funciona em dado "

@@ -664,9 +664,11 @@ body{
 .portao-marca{font-size:13px;font-weight:700;text-align:center;}
 .portao-marca.ok{color:var(--pos);} .portao-marca.falha{color:var(--neg);}
 .portao-marca.alerta{color:var(--warn);}
+.portao-marca.pendente{color:var(--muted);}
 .portao-nome{color:var(--ink-2);display:flex;align-items:center;min-width:0;}
 .portao-valor{text-align:right;font-weight:600;color:var(--ink);}
 .portao-valor.falha{color:var(--neg);} .portao-valor.alerta{color:var(--warn);}
+.portao-valor.pendente{color:var(--muted);font-weight:400;}
 .portao-exigido{text-align:right;color:var(--muted);font-size:11.5px;}
 .portao-tipo{font-size:10px;text-transform:uppercase;letter-spacing:.09em;
   color:#3c4762;text-align:right;}
@@ -718,9 +720,13 @@ body{
 .wfa-prog-aviso{font-family:var(--mono);font-size:11px;color:var(--warn);}
 .wfa-prog-aviso:empty{display:none;}
 .wfa-prog.ocioso .wfa-prog-txt{color:var(--muted);}
-.wfa-prog.varrendo,.wfa-prog.montando{border-color:var(--accent-dim);
+/* "rodando" é o mesmo estado "em andamento" dos três testes demorados da
+   Candidata — reusa a cor e o pulsar da varredura do Walk-Forward em vez
+   de duplicar as regras */
+.wfa-prog.varrendo,.wfa-prog.montando,.wfa-prog.rodando{border-color:var(--accent-dim);
   box-shadow:0 0 18px rgba(34,228,255,.12);}
-.wfa-prog.montando .prog-bar{animation:pulsar 1s ease-in-out infinite;}
+.wfa-prog.montando .prog-bar,.wfa-prog.rodando .prog-bar{
+  animation:pulsar 1s ease-in-out infinite;}
 .wfa-prog.pronto .prog-bar{background:var(--pos);box-shadow:0 0 10px rgba(0,245,160,.45);}
 .wfa-prog.pronto .wfa-prog-txt strong{color:var(--pos);}
 .wfa-prog.erro{border-color:rgba(255,77,125,.45);}
@@ -909,7 +915,18 @@ body{
 .dd-cand-est{flex:0 0 220px;}
 .dd-wfa{flex:0 1 400px;min-width:240px;}
 .cand-resumo{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);}
-.cand-portoes,.cand-blocos{min-height:0;}
+/* SEM min-height:0 aqui de propósito: o painel Candidata não tem uma seção
+   de altura fixa com scroll próprio (como o WFA, que dá `flex:1;
+   overflow-y:auto` a `#painel-wfa` e altura fixa a cada gráfico) — quem
+   rola é a `.main` de fora. Com `min-height:0`, o selo (12 portões, ficou
+   bem mais alto nesta tarefa) e a tabela eram ESPREMIDOS pelo flex column
+   até caber na viewport, e o conteúdo restante vazava por cima do bloco
+   seguinte em vez de simplesmente rolar. */
+/* o botão dos três testes demorados e a barra deles, na mesma linha */
+.cand-testes-linha{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin:2px 0 4px;}
+.cand-testes-linha .wfa-prog{flex:1 1 320px;min-width:220px;}
+.cand-testes-linha .wfa-prog-aviso{flex:0 0 auto;}
 /* os números em tabela: lado a lado quando cabe, empilhados quando não.
    A cor fica só na célula do valor — é o que se lê de relance */
 .cand-tabelas{display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));

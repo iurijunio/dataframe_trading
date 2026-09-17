@@ -7,11 +7,21 @@ para um lugar pequeno quando algo trava.
 
 from __future__ import annotations
 
-from dash import Input, Output, State, no_update
+from dash import Input, Output, State, ctx, html, no_update
+from dash.exceptions import PreventUpdate
 
-from core import candidata, wfa_store
+from core import candidata, wfa_runner, wfa_store
+from core import db_manager as db
+from core import optimizer
+from core.candidata_runner import TESTES
 
 from .components import candidata_panel as CP
+from .components import wfa_panel as WP
+
+# o selo compartilha o HTML da aba Walk-Forward (`wfa_panel.selo`), só com
+# uma pergunta diferente no título — a aba Walk-Forward continua com o
+# título padrão dela
+TITULO_SELO = "a estratégia está pronta para a incubação?"
 
 
 def _texto_resumo(d: dict) -> str:
@@ -49,6 +59,45 @@ def _valor_do_seletor(atual, ids: set, aberto_no_wfa, padrao=None):
     if aberto_no_wfa in ids:
         return aberto_no_wfa
     return padrao
+
+
+def _gates_e_leitura(wfa_id: int, d: dict):
+    """A leitura de robustez e a lista de portões (rápidos + os três
+    demorados, prontos ou pendentes) deste walk-forward.
+
+    Compartilhado pela tabela e pelo selo: os dois nascem do MESMO cálculo,
+    para a linha "holdout" da tabela não rodar o bootstrap do portão do
+    holdout (`candidata.portao_holdout`) uma segunda vez — são 2.000
+    caminhos simulados, caro para pagar duas vezes por clique.
+
+    `gates` vem `None` quando `leitura_robustez` recusou a amostra (menos
+    de 100 trades fora da amostra): sem leitura não há platô, capital nem
+    holdout para montar o resto dos portões.
+    """
+    capital = d.get("capital")
+    trades = wfa_store.trades(wfa_id)
+    horizonte = candidata.calcula_horizonte(d)
+    de, ate = candidata.limites_oos(d.get("passos"))
+    leitura = candidata.leitura_robustez(trades, capital, horizonte, de=de, ate=ate)
+    if leitura.get("erro"):
+        return leitura, None, de, ate
+
+    run_id = d["run_id"]
+    detalhes_mine = optimizer.detalhes_salva(run_id) or {}
+    trials = optimizer.carregar_salva(run_id)
+    espaco = detalhes_mine.get("espaco") or {}
+    corte = detalhes_mine.get("holdout_de")
+    deploy = (d.get("deploy") or {}).get("params") or {}
+    # o mesmo carregador de YAML que o backtest usa — não o cache de
+    # `ui/data.py`, que existe para as barras, não para o instrumento
+    tick_value = float(db.load_instrument_yaml(d["symbol"]).get("tick_value") or 0.0)
+
+    rapidos = candidata.portoes_rapidos(
+        trades, leitura, trials, espaco, deploy, corte, tick_value, capital,
+        de=de, ate=ate)
+    resultado = TESTES.resultado_de(wfa_id)
+    lentos = resultado["portoes"] if resultado else candidata.portoes_pendentes()
+    return leitura, rapidos + lentos, de, ate
 
 
 def register(app):
@@ -104,24 +153,126 @@ def register(app):
 
     @app.callback(
         Output("cand-blocos", "children"),
+        Output("cand-portoes", "children"),
         Input("cand-wfa", "value"),
+        # o Store que `cand_fim_dos_testes` escreve UMA vez por geração: é
+        # ele, e não o relógio, quem faz o selo ser recalculado com o
+        # resultado novo dos três testes demorados
+        Input("cand-testes", "data"),
     )
-    def cand_blocos(wfa_id):
+    def cand_conteudo(wfa_id, _testes):
         if not wfa_id:
-            return CP.vazio("escolha um walk-forward salvo para analisar")
-        d = wfa_store.detalhes(int(wfa_id)) or {}
+            vazio = CP.vazio("escolha um walk-forward salvo para analisar")
+            return vazio, html.Div()
+        wid = int(wfa_id)
+        d = wfa_store.detalhes(wid) or {}
         capital = d.get("capital")
         if capital is None:
-            return CP.vazio("este walk-forward foi salvo antes desta tela: "
-                            "não tem capital nem perfil gravados. Rode e "
-                            "salve o walk-forward de novo para analisá-lo.")
-        trades = wfa_store.trades(int(wfa_id))
-        # a perda esperada vale até a próxima reotimização; a contagem de
-        # pregões segue a extensão das janelas, igual à aba Walk-Forward
-        horizonte = candidata.calcula_horizonte(d)
-        de, ate = candidata.limites_oos(d.get("passos"))
-        leitura = candidata.leitura_robustez(trades, capital, horizonte,
-                                             de=de, ate=ate)
-        return CP.bloco_robustez(leitura, capital,
-                                 holdout=bool(d.get("holdout")),
-                                 de=de, ate=ate)
+            vazio = CP.vazio(
+                "este walk-forward foi salvo antes desta tela: não tem "
+                "capital nem perfil gravados. Rode e salve o walk-forward "
+                "de novo para analisá-lo.")
+            return vazio, html.Div()
+
+        leitura, gates, de, ate = _gates_e_leitura(wid, d)
+        holdout_gate = (next((g for g in gates if g["nome"] == "O holdout confirma?"),
+                             None) if gates else None)
+        blocos = CP.bloco_robustez(leitura, capital, holdout=bool(d.get("holdout")),
+                                   de=de, ate=ate, holdout_gate=holdout_gate)
+        if gates is None:
+            return blocos, CP.vazio(leitura.get("erro") or
+                                    "sem dado suficiente para medir os portões")
+        ver = candidata.veredito(gates)
+        return blocos, WP.selo(ver, titulo=TITULO_SELO)
+
+    # ------------------------------------------ os três testes demorados
+    @app.callback(
+        Output("btn-cand-testes", "children"),
+        Output("btn-cand-testes", "disabled"),
+        Output("cand-tick", "disabled"),
+        Output("cand-aviso-testes", "children"),
+        Input("btn-cand-testes", "n_clicks"),
+        Input("cand-wfa", "value"),
+        Input("cand-tick", "n_intervals"),
+        State("btn-cand-testes", "children"),
+    )
+    def cand_botao_testes(_n, wfa_id, _t, rotulo):
+        """O botão e o relógio PRÓPRIO da Candidata (`cand-tick`).
+
+        O `dcc.Interval` `tick` já tem dono único (`pulso`, em
+        `ui/callbacks.py`); ligar nele faria a barra da Candidata reagir a
+        toda batida da mineração e da varredura do Walk-Forward, sem
+        relação nenhuma com os testes completos.
+
+        Clicar sobre uma varredura pronta de OUTRA mineração pede
+        confirmação — mesmo padrão de dois cliques da exclusão de mineração
+        e de walk-forward salvo, em `ui/callbacks.py`: rodar os testes vai
+        substituir aquele cache, e a aba Walk-Forward vai precisar rodar de
+        novo.
+
+        Sem `prevent_initial_call`: depois de um F5, os testes podem
+        continuar rodando no servidor (mesmo desenho de
+        `wfa_runner.Varredura`), e é este disparo no carregamento que
+        corrige o botão e o relógio para o estado real.
+        """
+        e = TESTES.estado
+        gatilho = ctx.triggered_id
+        if gatilho == "btn-cand-testes":
+            if not wfa_id or e["rodando"]:
+                raise PreventUpdate
+            wid = int(wfa_id)
+            d = wfa_store.detalhes(wid) or {}
+            v = wfa_runner.VARREDURA
+            # "há cache de outra mineração": pronta e de um run_id diferente
+            # do desta — rodando para outro run_id já dá erro sozinho
+            # dentro de `TESTES` (`_garantir_varredura`), sem precisar de
+            # aviso prévio aqui
+            colide = (v.estado.get("run_id") not in (None, d.get("run_id"))
+                     and v.estado.get("pronto"))
+            if colide and rotulo != "Confirmar?":
+                return ("Confirmar?", False, True,
+                        "isto refaz a varredura e a aba Walk-Forward vai "
+                        "pedir para executar de novo")
+            TESTES.iniciar(wid)
+            # `iniciar` já deixou `rodando=True` (chamada síncrona): o
+            # relógio liga nesta mesma resposta, sem esperar o próximo tick
+            return "Rodando…", True, False, ""
+
+        # troca de walk-forward ou batida do relógio: só reflete o estado
+        # atual dos testes — nenhum dos dois dispara nada sozinho
+        rodando = e["rodando"]
+        texto = "Rodando…" if rodando else "Rodar testes completos"
+        desabilitado = rodando or not wfa_id
+        aviso = "" if gatilho == "cand-wfa" else no_update
+        return texto, desabilitado, not rodando, aviso
+
+    @app.callback(
+        Output("cand-prog", "className"),
+        Output("cand-prog-txt", "children"),
+        Output("cand-prog-pct", "children"),
+        Output("cand-prog-bar", "style"),
+        Input("cand-tick", "n_intervals"),
+        Input("cand-wfa", "value"),
+    )
+    def cand_progresso(_t, _wfa):
+        est = CP.estado_testes(TESTES.estado)
+        pct_txt = f"{est['pct']:.0f}%" if est["ocupado"] else ""
+        return (f"wfa-prog {est['fase']}", est["txt"], pct_txt,
+                {"width": f"{est['pct']:.0f}%"})
+
+    @app.callback(
+        Output("cand-testes", "data"),
+        Input("cand-tick", "n_intervals"),
+        State("cand-testes", "data"),
+        prevent_initial_call=True,
+    )
+    def cand_fim_dos_testes(_t, anunciado):
+        """Anuncia o fim dos testes completos UMA vez por geração — sucesso
+        ou erro. É este Store, e não o relógio, quem `cand_conteudo` ouve
+        para recalcular o selo (mesmo padrão de `wfa_fim_da_varredura`, em
+        `ui/callbacks.py`)."""
+        e = TESTES.estado
+        pronto = e.get("resultado") is not None or e.get("erro")
+        if e["rodando"] or not pronto or (anunciado or {}).get("g") == e.get("geracao"):
+            raise PreventUpdate
+        return {"g": e.get("geracao")}

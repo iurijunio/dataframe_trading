@@ -635,3 +635,125 @@ def test_holdout_historico_curto_demais_nao_mede():
     p = candidata.portao_holdout(dias, pnl, corte, CAP)
     assert p["ok"] is None
     assert p["valor"] == "histórico curto demais"
+
+
+# --------------------------------------------------- tarefa 7: a faixa na tela
+
+
+def _trades_rapidos(n=150, semente=11, contratos=1):
+    """Trades sintéticos com folga para passar em quase todos os portões
+    rápidos — o objetivo destes testes é a MONTAGEM (ordem, nomes, quantos
+    portões), não recalcular a robustez inteira."""
+    rng = np.random.default_rng(semente)
+    dias = np.busday_offset(np.datetime64("2024-01-02"), np.arange(n))
+    liquido = rng.normal(12.0, 8.0, n)
+    return [
+        {"exit_ts": str(d) + "T15:00:00", "liquido": float(v),
+         "contratos": contratos}
+        for d, v in zip(dias, liquido)
+    ]
+
+
+def _leitura_rapida(lucro_liquido=1800.0, dd_p95=800.0):
+    """Uma `leitura` mínima — só os campos que `portoes_rapidos` de fato
+    lê (`resumo.lucro_liquido` e o `dd_p95` que `pior_dos_recortes`
+    escolhe). Evita rodar o bootstrap de verdade, que é caro e não é o que
+    este teste está checando."""
+    boot = {"dd_p95": dd_p95, "perdas_seguidas_p95": 5.0, "submerso_p95": 20.0}
+    return {"resumo": {"lucro_liquido": lucro_liquido}, "boot": boot,
+            "boot_12m": {}}
+
+
+def _grade_plato(fr, deploy_idx):
+    """Um espaço/trials/deploy que passam limpo no portão do platô — mesma
+    forma de `_perfil_com`, mas devolvendo os três argumentos crus que
+    `portoes_rapidos` (e não `perfil_plato` direto) recebe."""
+    valores = list(range(40, 40 + len(fr)))
+    trials = [{"params": {"p": v}, "lucro": f * 100.0, "dd": 100.0}
+              for v, f in zip(valores, fr)]
+    return trials, {"p": valores}, {"p": float(valores[deploy_idx])}
+
+
+NOMES_RAPIDOS = [
+    "O parâmetro está numa região larga?",
+    "A faixa testada cobre a região?",
+    "O lucro não é acaso?",
+    "O lucro não depende de poucos dias?",
+    "Aguenta custo maior?",
+    "O capital comporta 1 contrato?",
+    "O holdout confirma?",
+    "Algum vizinho dá prejuízo?",
+    "Depende do 1% melhor dos trades?",
+]
+
+
+def test_portoes_rapidos_monta_na_ordem_da_tarefa_7():
+    """Ordem travada: platô (crítico e alerta de faixa), acaso, poucos
+    dias, custo, capital, holdout, alerta de vizinho, alerta de 1%."""
+    trials, espaco, deploy = _grade_plato([5] * 9, 4)
+    trades = _trades_rapidos()
+    gates = candidata.portoes_rapidos(
+        trades, _leitura_rapida(), trials, espaco, deploy,
+        corte="2024-06-01", tick_value=1.0, capital=CAP)
+    assert [g["nome"] for g in gates] == NOMES_RAPIDOS
+    assert len(gates) == 9
+
+
+def test_portoes_rapidos_sem_corte_de_holdout_nao_quebra():
+    """Mineração sem holdout marcado (`corte=None`): o portão do holdout
+    entra como "sem holdout na curva", não explode em `np.datetime64(None)`."""
+    trials, espaco, deploy = _grade_plato([5] * 9, 4)
+    trades = _trades_rapidos()
+    gates = candidata.portoes_rapidos(
+        trades, _leitura_rapida(), trials, espaco, deploy,
+        corte=None, tick_value=1.0, capital=CAP)
+    holdout = next(g for g in gates if g["nome"] == "O holdout confirma?")
+    assert holdout["ok"] is False and "holdout" in holdout["valor"]
+
+
+def test_portoes_rapidos_le_contratos_e_liquido_dos_trades_crus():
+    """O portão de custo soma os CONTRATOS de cada trade — 2 contratos por
+    trade dobra o custo extra simulado e derruba o portão que passaria com
+    1."""
+    trials, espaco, deploy = _grade_plato([5] * 9, 4)
+    trades_1c = _trades_rapidos(contratos=1)
+    trades_2c = _trades_rapidos(contratos=2)
+    leitura = _leitura_rapida(lucro_liquido=250.0)
+    g1 = candidata.portoes_rapidos(trades_1c, leitura, trials, espaco, deploy,
+                                   corte=None, tick_value=1.0, capital=CAP)
+    g2 = candidata.portoes_rapidos(trades_2c, leitura, trials, espaco, deploy,
+                                   corte=None, tick_value=1.0, capital=CAP)
+    custo1 = next(g for g in g1 if g["nome"] == "Aguenta custo maior?")
+    custo2 = next(g for g in g2 if g["nome"] == "Aguenta custo maior?")
+    assert custo1["valor"] > custo2["valor"]
+
+
+def test_portoes_pendentes_tem_ok_none_e_valor_aguardando():
+    pendentes = candidata.portoes_pendentes()
+    assert len(pendentes) == 3
+    assert all(p["ok"] is None for p in pendentes)
+    assert all(p["valor"] == "aguardando" for p in pendentes)
+    assert [p["nome"] for p in pendentes] == [
+        "Ganha de entradas sorteadas ao acaso?",
+        "Aguenta o desconto por muitas tentativas?",
+        "Reotimizar compensou?",
+    ]
+
+
+def test_veredito_com_pendentes_fica_aguardando_testes_completos():
+    """A lista completa (rápidos + os três pendentes) tem que dar o estado
+    "aguardando testes completos" sem nenhum código extra: os dois
+    pendentes críticos (aleatório e tentativas) bastam para isso em
+    `veredito` — desde que os portões rápidos passem todos (holdout
+    incluso: por isso o corte cai bem dentro da série, com folga de dados
+    dos dois lados, em vez de `None`, que reprovaria por falta de holdout
+    e mascararia o que este teste quer provar)."""
+    trials, espaco, deploy = _grade_plato([5] * 9, 4)
+    trades = _trades_rapidos()
+    corte = trades[100]["exit_ts"][:10]        # 100 antes, 50 depois
+    gates = candidata.portoes_rapidos(
+        trades, _leitura_rapida(), trials, espaco, deploy,
+        corte=corte, tick_value=1.0, capital=CAP) + candidata.portoes_pendentes()
+    ver = candidata.veredito(gates)
+    assert ver["estado"] == "aguardando testes completos"
+    assert len(ver["pendentes"]) == 2          # aleatório e tentativas

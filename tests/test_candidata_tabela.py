@@ -98,3 +98,59 @@ def test_lucro_negativo_fica_vermelho():
                                                   expectativa=-0.6)), CAP))
     assert linhas["lucro líquido"]["tom"] == "ruim"
     assert linhas["expectativa"]["tom"] == "ruim"
+
+
+# ------------------------------------------ tarefa 7: linha "holdout"
+
+
+def test_sem_holdout_gate_mostra_texto_fixo_sem_cor():
+    linha = _por_nome(CP.linhas(_leitura(), CAP))["holdout"]
+    assert linha["valor"] == "sem holdout nesta curva"
+    assert linha["tom"] is None
+
+
+def test_holdout_gate_sem_pregoes_tambem_conta_como_sem_holdout():
+    """O portão do holdout roda mesmo sem holdout marcado (corte no futuro
+    distante — ver `candidata.portoes_rapidos`) e devolve
+    `pregoes_holdout=0`: a linha não pode ler isso como "R$ 0/mês"."""
+    gate = {"pregoes_holdout": 0, "lucro_mes_holdout": None,
+            "lucro_mes_antes": None}
+    linha = _por_nome(CP.linhas(_leitura(), CAP, holdout_gate=gate))["holdout"]
+    assert linha["valor"] == "sem holdout nesta curva"
+
+
+def test_holdout_gate_com_numeros_formata_os_dois_em_reais_sem_cor():
+    gate = {"pregoes_holdout": 42, "lucro_mes_holdout": 850.0,
+            "lucro_mes_antes": 620.0}
+    linha = _por_nome(CP.linhas(_leitura(), CAP, holdout_gate=gate))["holdout"]
+    assert "850" in linha["valor"] and "no holdout" in linha["valor"]
+    assert "620" in linha["nota"] and "antes do corte" in linha["nota"]
+    assert linha["tom"] is None
+
+
+# ------------------------------------------ tarefa 7: barra dos testes
+
+
+def test_estado_testes_erro_tem_prioridade_sobre_rodando():
+    est = CP.estado_testes({"rodando": False, "erro": "deu ruim",
+                            "resultado": None})
+    assert est["fase"] == "erro" and est["txt"] == "deu ruim"
+    assert est["ocupado"] is False
+
+
+def test_estado_testes_rodando_mostra_a_fase_e_o_percentual():
+    est = CP.estado_testes({"rodando": True, "fase": "sorteando entradas",
+                            "pct": 63, "erro": None})
+    assert est["fase"] == "rodando" and est["txt"] == "sorteando entradas"
+    assert est["pct"] == 63 and est["ocupado"] is True
+
+
+def test_estado_testes_pronto_quando_ha_resultado_e_nao_esta_rodando():
+    est = CP.estado_testes({"rodando": False, "erro": None,
+                            "resultado": {"portoes": []}})
+    assert est["fase"] == "pronto" and est["ocupado"] is False
+
+
+def test_estado_testes_ocioso_por_padrao():
+    est = CP.estado_testes({"rodando": False, "erro": None, "resultado": None})
+    assert est["fase"] == "ocioso"
