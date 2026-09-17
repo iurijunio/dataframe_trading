@@ -519,16 +519,19 @@ def portao_tentativas(resultado_spa: dict, maximo: float = 0.10) -> dict:
 
     Recebe o dicionário de `spa.teste` (a Superior Predictive Ability de
     Hansen, 2005, aplicada às combinações mineradas). Sem resultado (dado
-    faltando ou nenhuma coluna sobrou na conta) o portão fica pendente, não
-    reprovado — falta de dado não é a mesma coisa que resultado ruim."""
+    faltando, ou `spa.teste` devolveu `{"erro": ...}` porque faltou pregão,
+    reamostragem ou coluna com desvio para medir) o portão fica pendente,
+    não reprovado — falta de dado não é a mesma coisa que resultado ruim, e
+    o motivo vem no `valor` para a tela explicar por que não mediu."""
     nome = "Aguenta o desconto por muitas tentativas?"
-    dica = ("Foram testadas muitas combinações; alguma sempre sai bem por "
-            "sorte. Este teste mede se a melhor delas continua sendo melhor "
-            "que não operar depois de descontar isso. Reprova acima de "
-            "10%.")
+    dica = (f"Foram testadas muitas combinações; alguma sempre sai bem por "
+            f"sorte. Este teste mede se a melhor delas continua sendo "
+            f"melhor que não operar depois de descontar isso. Reprova "
+            f"acima de {maximo:.0%}.")
     exigido = f"até {maximo:.0%} de chance de ser sorte"
-    if not resultado_spa:
-        return portao(nome, None, True, "não foi possível medir", exigido, dica)
+    if not resultado_spa or "erro" in resultado_spa:
+        motivo = resultado_spa["erro"] if resultado_spa else "não foi possível medir"
+        return portao(nome, None, True, motivo, exigido, dica)
     p = resultado_spa["p"]
     return portao(nome, p <= maximo, True, p, exigido, dica)
 

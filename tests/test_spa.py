@@ -47,8 +47,22 @@ def test_mesma_semente_mesmo_p():
     assert spa.teste(m, n=300, semente=9)["p"] == spa.teste(m, n=300, semente=9)["p"]
 
 
-def test_matriz_curta_devolve_vazio():
-    assert spa.teste(np.zeros((5, 3))) == {}
+def test_matriz_curta_devolve_erro_com_motivo():
+    """Sem pregão suficiente não é `{}` mudo: vem o motivo, para quem chama
+    (e a tela, via `portao_tentativas`) saber por que não mediu."""
+    r = spa.teste(np.zeros((5, 3)))
+    assert "erro" in r and "p" not in r
+    assert "30" in r["erro"]
+
+
+def test_n_insuficiente_devolve_erro_com_motivo():
+    r = spa.teste(np.zeros((100, 3)), n=1)
+    assert "erro" in r and "p" not in r
+
+
+def test_matriz_sem_coluna_devolve_erro_com_motivo():
+    r = spa.teste(np.zeros((100, 0)))
+    assert "erro" in r and "p" not in r
 
 
 def test_coluna_constante_sai_da_conta_sem_quebrar():
@@ -61,9 +75,10 @@ def test_coluna_constante_sai_da_conta_sem_quebrar():
     assert r and r["melhor"] != 2
 
 
-def test_todas_as_colunas_constantes_devolve_vazio():
+def test_todas_as_colunas_constantes_devolve_erro_com_motivo():
     m = np.full((200, 4), 3.0)
-    assert spa.teste(m, n=100) == {}
+    r = spa.teste(m, n=100)
+    assert "erro" in r and "p" not in r
 
 
 def test_bloco_explicito_e_usado_sem_quebrar():
@@ -76,6 +91,41 @@ def test_bloco_explicito_e_usado_sem_quebrar():
 def test_bloco_invalido_e_rejeitado():
     with pytest.raises(ValueError):
         spa.teste(np.zeros((100, 3)), bloco=0)
+
+
+# ------------------------------------------------- tamanho do bloco padrão
+def _ar1(g, phi, T, K):
+    """Painel AR(1) por coluna: cada dia depende do anterior com força
+    `phi`; sem `phi` (0.0) é ruído independente. Usado só para provar que o
+    bloco automático precisa de um piso — não é código de produção."""
+    e = g.normal(0, 30, (T, K))
+    x = np.empty_like(e)
+    x[0] = e[0] / np.sqrt(1 - phi ** 2)
+    for t in range(1, T):
+        x[t] = phi * x[t - 1] + e[t]
+    return x
+
+
+def test_bloco_so_por_bloco_medio_deixaria_a_rejeicao_alta_demais():
+    """`bloco_medio` sozinho arredonda pra 1~3 até φ=0,4 (a fórmula
+    `(1+ρ)/(1−ρ)` cresce devagar nessa faixa) e um bloco tão curto sorteia
+    dias soltos demais para captar a dependência real: em ruído SEM ganho
+    nenhum, o teste rejeita (`p<=0,10`) bem mais que os 10% nominais.
+    O piso `ceil(T**(1/3))` (o que `spa.teste` usa quando `bloco=None`)
+    reduz bastante essa distorção. n e simulações pequenos de propósito,
+    para rodar em frações de segundo."""
+    R, n, T, K = 40, 150, 250, 8
+    ps_com_piso, ps_so_bloco_medio = [], []
+    for r in range(R):
+        g = np.random.default_rng(2000 + r)
+        m = _ar1(g, 0.4, T, K)
+        L_antigo = rb.bloco_medio(m.mean(axis=1))          # a regra de antes
+        ps_com_piso.append(spa.teste(m, n=n, semente=r)["p"])            # bloco=None: usa o piso
+        ps_so_bloco_medio.append(spa.teste(m, n=n, semente=r, bloco=L_antigo)["p"])
+    taxa_com_piso = float((np.array(ps_com_piso) <= 0.10).mean())
+    taxa_so_bloco_medio = float((np.array(ps_so_bloco_medio) <= 0.10).mean())
+    assert taxa_com_piso < taxa_so_bloco_medio
+    assert taxa_so_bloco_medio >= 0.25
 
 
 # -------------------------------- prova de discriminação (quebrar e ver cair)
@@ -125,14 +175,17 @@ def test_sortear_por_coluna_perde_a_correlacao_entre_elas():
 
 
 # --------------------------------------------------- indices_estacionarios
-def test_indices_estacionarios_extraido_bate_com_o_bootstrap():
-    """A extração não pode mudar nenhum número: os mesmos parâmetros e a
-    mesma semente têm que produzir o mesmo bootstrap de antes."""
-    dia = np.random.default_rng(1).normal(10, 100, 400)
-    a = rb.bootstrap(dia, 10_000.0, n=50, semente=5, bloco=3)
-    b = rb.bootstrap(dia, 10_000.0, n=50, semente=5, bloco=3)
-    assert a["dd_p95"] == b["dd_p95"]
-    assert a["final_p50"] == b["final_p50"]
+def test_indices_estacionarios_extraido_bate_com_numeros_fixos_do_codigo_antigo():
+    """A extração não pode mudar nenhum número. Em vez de comparar o código
+    novo contra ele mesmo (o que não prova nada sobre a extração), os
+    valores abaixo foram gerados pelo `bootstrap` de ANTES da extração
+    (commit `123ab05`, com o sorteio de índices ainda inline), para a mesma
+    série/semente/bloco — e travados aqui como números fixos."""
+    dia = np.random.default_rng(42).normal(12, 80, 120)
+    b = rb.bootstrap(dia, 10_000.0, n=60, semente=13, bloco=4)
+    assert b["dd_p95"] == pytest.approx(878.4266463625283)
+    assert b["final_p50"] == pytest.approx(844.4884646270443)
+    assert b["submerso_p95"] == pytest.approx(92.29999999999998)
 
 
 def test_indices_estacionarios_forma_e_faixa():
@@ -179,6 +232,16 @@ def test_portao_tentativas_no_limite_passa():
 def test_portao_tentativas_sem_resultado_fica_pendente():
     r = candidata.portao_tentativas({})
     assert r["ok"] is None
+    assert r["valor"] == "não foi possível medir"
+
+
+def test_portao_tentativas_com_erro_do_spa_mostra_o_motivo():
+    """`spa.teste` devolve `{"erro": "..."}` quando falta pregão, reamostragem
+    ou coluna com desvio; o portão tem que ficar pendente e mostrar ESSE
+    motivo no valor, não um texto genérico."""
+    r = candidata.portao_tentativas({"erro": "menos de 30 pregões para medir (12)"})
+    assert r["ok"] is None
+    assert r["valor"] == "menos de 30 pregões para medir (12)"
 
 
 def test_portao_tentativas_exigido_sem_sigla_e_sem_numero_cru():
@@ -186,3 +249,13 @@ def test_portao_tentativas_exigido_sem_sigla_e_sem_numero_cru():
     assert "SPA" not in r["nome"] and "Hansen" not in r["nome"]
     assert "SPA" not in r["dica"] and "Hansen" not in r["dica"]
     assert r["exigido"] == "até 10% de chance de ser sorte"
+
+
+def test_portao_tentativas_dica_e_exigido_seguem_o_maximo_informado():
+    """A dica e o `exigido` não podem ter "10%" fixo no texto: precisam
+    refletir o `maximo` recebido, senão um portão chamado com outro limite
+    mostraria um número que não é o dele."""
+    r = candidata.portao_tentativas({"p": 0.03, "estatistica": 1, "melhor": 0, "n": 100},
+                                    maximo=0.20)
+    assert r["exigido"] == "até 20% de chance de ser sorte"
+    assert "20%" in r["dica"] and "10%" not in r["dica"]

@@ -45,34 +45,54 @@ def teste(matriz: np.ndarray, n: int = 1000, semente: int = 7,
     3. Estatística observada: `max(0, max_k sqrt(T)·d_k / w_k)`.
     4. Recentragem: `g_k = d_k` para quem ainda parece competitiva
        (`sqrt(T)·d_k/w_k ≥ −sqrt(2·log(log(T)))`), senão `g_k = 0`. Sem
-       isso, toda coluna claramente ruim entraria nas reamostragens com sua
-       própria média negativa e puxaria a distribuição de referência para
-       baixo — inflando artificialmente quão "fácil" é superar a estatística
-       observada e dando p-valor baixo demais.
+       isso, toda coluna claramente ruim entraria nas reamostragens
+       centrada na PRÓPRIA média (e não em zero) — competindo pelo máximo
+       como se fosse tão boa quanto qualquer outra. Isso INFLA a
+       distribuição de referência (o `T*_b` fica maior, não menor) e o
+       p-valor sai ALTO demais, escondendo um ganho real atrás de
+       concorrência artificial de coluna ruim (a mutação provada em
+       `tests/test_spa.py` leva um caso de `p=0.01` a `p=0.99`).
     5. Em cada reamostragem `b`: `Z_k = sqrt(T)·(média*_k − g_k)/w_k`;
        `T*_b = max(0, max_k Z_k)`.
     6. `p = média(T*_b ≥ observada)`.
 
     Colunas com desvio `w_k = 0` (sem variação nenhuma entre reamostragens,
-    caso de uma coluna constante) saem da conta; se não sobrar nenhuma,
-    devolve `{}`.
+    caso de uma coluna constante) saem da conta; se não sobrar nenhuma, ou
+    se faltar dado para medir (menos de 30 pregões, `n` insuficiente),
+    devolve `{"erro": "<motivo>"}` em vez de `{}` — para quem chama saber
+    POR QUE, não só que não deu.
 
     Memória: nunca materializa o array `(n, T, K)` inteiro — os índices
     sorteados são só `(n, T)` (um sorteio de linha, não um valor por
     célula), e as médias reamostradas por coluna são acumuladas em lotes de
     `LOTE` reamostragens de cada vez.
     """
-    m = np.asarray(matriz, dtype=float)
-    if m.ndim != 2 or m.shape[0] < 30 or m.shape[1] < 1:
-        return {}
-    T, K = m.shape
-    d = m.mean(axis=0)
     if bloco is not None and bloco < 1:
         raise ValueError("bloco tem que ser um inteiro >= 1")
+    m = np.asarray(matriz, dtype=float)
+    if m.ndim != 2 or m.shape[1] < 1:
+        return {"erro": "matriz sem colunas para medir"}
+    T, K = m.shape
+    if T < 30:
+        return {"erro": f"menos de 30 pregões para medir ({T})"}
+    if n < 2:
+        return {"erro": "número de reamostragens insuficiente (n < 2)"}
+    d = m.mean(axis=0)
     # um bloco só para a matriz inteira: a reamostragem sorteia LINHAS (o
     # mesmo pregão para todas as colunas), então o comprimento de dependência
-    # sai da série que representa o conjunto — a média entre as colunas
-    L = int(bloco) if bloco is not None else robustez.bloco_medio(m.mean(axis=1))
+    # sai da série que representa o conjunto — a média entre as colunas.
+    # `bloco_medio` sozinho arredonda pra 1 com correlação entre dias de até
+    # ~0,2 (a fórmula (1+ρ)/(1−ρ) fica abaixo de 1,5 nessa faixa), e bloco 1
+    # sorteia dias soltos, subestimando a oscilação da média e deixando o
+    # teste aprovar sorte com dependência real (medido pelo revisor: 21,5% a
+    # 30,5% de rejeição a 10% com ruído puro dependente, contra a meta de
+    # 16%). O piso `T**(1/3)` é a ordem de grandeza recomendada para o
+    # tamanho de bloco do bootstrap da média (Politis & Romano); usar o
+    # MAIOR dos dois nunca deixa o bloco cair abaixo desse piso.
+    if bloco is not None:
+        L = int(bloco)
+    else:
+        L = max(robustez.bloco_medio(m.mean(axis=1)), math.ceil(T ** (1 / 3)))
 
     rng = np.random.default_rng(semente)
     idx = robustez.indices_estacionarios(T, T, n, L, rng)   # (n, T), não (n, T, K)
@@ -87,7 +107,7 @@ def teste(matriz: np.ndarray, n: int = 1000, semente: int = 7,
     w = medias.std(axis=0, ddof=1) * raiz_t
     validas = w > 0
     if not validas.any():
-        return {}
+        return {"erro": "nenhuma coluna com desvio para medir (todas constantes)"}
     indices_originais = np.flatnonzero(validas)
     d, w, medias = d[validas], w[validas], medias[:, validas]
 
