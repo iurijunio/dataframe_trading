@@ -175,3 +175,28 @@ def test_gates_e_leitura_preenche_os_tres_lentos_quando_ja_rodaram(monkeypatch):
     assert gates[-3:] == prontos
     assert all(g["ok"] is not None for g in gates[-3:])
     assert [g["nome"] for g in gates[-3:]] == NOMES_LENTOS
+
+
+# ------------------------------- nomes de tela (bug relatado pelo operador)
+
+
+def test_resumo_mostra_o_nome_da_inteligencia_nao_a_chave():
+    """O banco guarda `ulcer` e `vizinhanca`; quem escolheu na aba
+    Walk-Forward escolheu "Estabilidade de Drawdown" e "Platô Pessimista".
+    Mostrar a chave faz parecer outra inteligência."""
+    d = {"strategy": "rompimento_canal", "symbol": "WIN$N", "is_meses": 12,
+         "oos_meses": 6, "inteligencia": "ulcer", "holdout": False}
+    texto = CC._texto_resumo(d)
+    assert "Estabilidade de Drawdown" in texto and "ulcer" not in texto
+    assert "Platô Pessimista" in CC._nome_da_inteligencia("vizinhanca")
+
+
+def test_resumo_mostra_o_nome_da_estrategia_nao_o_do_arquivo():
+    """`rompimento_canal` é o arquivo; a tela mostra o nome declarado pela
+    estratégia, o mesmo das outras abas."""
+    d = {"strategy": "rompimento_canal", "symbol": "WIN$N", "is_meses": 12,
+         "oos_meses": 6, "inteligencia": "sharpe", "holdout": False}
+    assert "rompimento_canal" not in CC._texto_resumo(d)
+    # estratégia que não existe mais no disco continua aparecendo pelo módulo
+    assert CC._nome_da_estrategia("nao_existe") == "nao_existe"
+    assert CC._nome_da_estrategia(None) == "—"

@@ -347,9 +347,9 @@ def test_perfil_plato_motivo_diferencia_deploy_ausente_de_fr_indefinido():
                                       {"periodo_canal": 50})
     assert fora["centro_fr"] is None and fora["abstem"]
     assert presente["centro_fr"] is None and presente["abstem"]
-    assert "não está na grade" in fora["motivo"]
-    assert "não está na grade" not in presente["motivo"]
-    assert "fator de recuperação" in presente["motivo"]
+    assert "não está na faixa minerada" in fora["motivo"]
+    assert "não está na faixa minerada" not in presente["motivo"]
+    assert "maior queda" in presente["motivo"]
     assert fora["motivo"] != presente["motivo"]
 
 
@@ -375,6 +375,7 @@ def test_perfil_plato_abstem_quando_o_centro_da_prejuizo():
 
 
 CHAVES_PERFIL = {"pontos", "centro_fr", "ausentes", "largura_esq",
+                 "eixos",
                  "largura_dir", "borda_esq", "borda_dir", "parada_esq",
                  "parada_dir", "abstem", "motivo", "parametro"}
 
@@ -460,32 +461,55 @@ def test_alerta_vizinho_com_prejuizo():
 # --------------------------------------------- correção final (16/09/2026)
 
 
-def test_portoes_plato_abstencao_nunca_fica_verde():
-    """C1: hoje o portão crítico do platô volta `ok=True` na abstenção — um
-    visto VERDE sem nada ter sido medido, contado no "11/12" da tela. É o
-    caso real dos walk-forwards #10 e #11 do banco, cuja mineração varre
-    dois parâmetros (`len(varridos) != 1`). O desenho manda o contrário
-    (§4.2 do PLANO-CANDIDATA: "abstém, cinza, não verde"): a abstenção vira
-    ALERTA (`critico=False`, `ok=False`), com o motivo em linguagem de
-    operador, não a frase de programador "perfil só existe com um
-    parâmetro varrido"."""
-    perfil = candidata.perfil_plato(
-        _trials([40, 50], [1.0, 2.0]),
-        {"periodo_canal": [40, 50], "alvo_pontos": [600, 700]},
-        {"periodo_canal": 40, "alvo_pontos": 600})
-    assert perfil["abstem"] is True
+def test_plato_mede_cada_parametro_e_vale_o_pior():
+    """Mineração com dois parâmetros varridos não pode deixar de ser medida:
+    a plataforma anda pela faixa de CADA parâmetro com os outros presos no
+    valor escolhido, e o portão vale o eixo mais frágil. Antes disso, o caso
+    (o mais comum na prática, como os walk-forwards #10 e #11 do banco) se
+    abstinha e a tela mostrava duas ressalvas sobre nada.
+    """
+    # eixo A larga (5 valores bons), eixo B estreito (queda ao lado)
+    trials = []
+    for a in (10, 20, 30, 40, 50):
+        trials.append({"params": {"a": a, "b": 100}, "lucro": 500.0, "dd": 100.0})
+    trials.append({"params": {"a": 30, "b": 90}, "lucro": 50.0, "dd": 100.0})
+    trials.append({"params": {"a": 30, "b": 110}, "lucro": 50.0, "dd": 100.0})
+    espaco = {"a": [10, 20, 30, 40, 50], "b": [90, 100, 110]}
+    perfil = candidata.perfil_plato(trials, espaco, {"a": 30, "b": 100})
 
+    assert perfil["abstem"] is False
+    assert [e["parametro"] for e in perfil["eixos"]] == ["a", "b"]
+    assert perfil["parametro"] == "b"          # o mais frágil vence
+    assert perfil["largura_esq"] == 0 and perfil["parada_esq"] == "queda"
+
+    critico, _ = candidata.portoes_plato(perfil)
+    assert critico["critico"] is True and critico["ok"] is False
+    assert "b:" in critico["valor"] and "mais frágil de 2" in critico["valor"]
+
+
+def test_plato_com_dois_parametros_largos_passa():
+    """O mesmo caminho, com os dois eixos largos: passa, e o valor diz de
+    qual parâmetro veio o número."""
+    trials = []
+    for a in (10, 20, 30, 40, 50):
+        trials.append({"params": {"a": a, "b": 100}, "lucro": 500.0, "dd": 100.0})
+    for b in (80, 90, 110, 120):
+        trials.append({"params": {"a": 30, "b": b}, "lucro": 500.0, "dd": 100.0})
+    espaco = {"a": [10, 20, 30, 40, 50], "b": [80, 90, 100, 110, 120]}
+    perfil = candidata.perfil_plato(trials, espaco, {"a": 30, "b": 100})
     critico, cobertura = candidata.portoes_plato(perfil)
-    assert critico["critico"] is False
-    assert critico["ok"] is False
-    assert critico["valor"] == ("não medido: a mineração varreu mais de um "
-                                "parâmetro")
-    assert "perfil só existe" not in critico["valor"]
-    # o segundo portão (cobertura da faixa) continua como estava
-    assert cobertura["critico"] is False and cobertura["ok"] is False
+    assert critico["ok"] is True and cobertura["ok"] is True
 
-    ver = candidata.veredito([critico, cobertura])
-    assert ver["estado"] == "aprovada com ressalva"
+
+def test_plato_sem_parametro_varrido_vira_alerta_nao_verde():
+    """Falta de medição de verdade (nenhum parâmetro varrido) não pode virar
+    visto verde: vira alerta, com o motivo em linguagem de operador."""
+    perfil = candidata.perfil_plato([], {"a": [10], "b": [20]}, {"a": 10, "b": 20})
+    assert perfil["abstem"] is True
+    critico, cobertura = candidata.portoes_plato(perfil)
+    assert critico["critico"] is False and critico["ok"] is False
+    assert "não varreu nenhum parâmetro" in critico["valor"]
+    assert cobertura["ok"] is False
 
 
 def test_alerta_vizinho_sem_ponto_para_examinar_nao_mede():
@@ -775,8 +799,8 @@ def _grade_plato(fr, deploy_idx):
 
 
 NOMES_RAPIDOS = [
-    "O parâmetro está numa região larga?",
-    "A faixa testada cobre a região?",
+    "Os parâmetros estão numa região larga?",
+    "A faixa minerada cobre a região?",
     "O lucro não é acaso?",
     "O lucro não depende de poucos dias?",
     "Aguenta custo maior?",

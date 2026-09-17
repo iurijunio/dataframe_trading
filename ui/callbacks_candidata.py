@@ -10,10 +10,12 @@ from __future__ import annotations
 from dash import Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
-from core import candidata, wfa_runner, wfa_store
+from core import candidata, wfa, wfa_runner, wfa_store
 from core import db_manager as db
 from core import optimizer
 from core.candidata_runner import TESTES
+
+from strategies import registry
 
 from .components import candidata_panel as CP
 from .components import wfa_panel as WP
@@ -24,15 +26,44 @@ from .components import wfa_panel as WP
 TITULO_SELO = "a estratégia está pronta para a incubação?"
 
 
+def _nome_da_estrategia(modulo: str | None) -> str:
+    """O nome que a estratégia mostra na tela, não o do arquivo.
+
+    O banco guarda o módulo (`rompimento_canal`); a tela toda mostra o nome
+    declarado pela estratégia (`label`/`name`), e os dois precisam bater —
+    ler "rompimento_canal" aqui e "Rompimento de Canal" nas outras abas faz
+    o operador duvidar se está olhando a mesma coisa.
+    """
+    if not modulo:
+        return "—"
+    for e in registry.descobrir():
+        if e["modulo"] == modulo:
+            return e.get("label") or modulo
+    return modulo
+
+
+def _nome_da_inteligencia(chave: str | None) -> str:
+    """O rótulo da inteligência de seleção, como aparece no Walk-Forward.
+
+    O banco guarda a chave (`ulcer`, `vizinhanca`); quem escolheu na aba
+    Walk-Forward escolheu "Estabilidade de Drawdown" e "Platô Pessimista".
+    Mostrar a chave aqui parece outra inteligência.
+    """
+    if not chave:
+        return "—"
+    return dict((q, r) for r, q in wfa.INTELIGENCIAS).get(chave, chave)
+
+
 def _texto_resumo(d: dict) -> str:
     """O cabeçalho ao lado do seletor, em palavras de quem opera.
 
     Avisa quando o walk-forward foi salvo com o holdout incluído: a curva
     que a tela analisa contém esses meses.
     """
-    base = (f"{d.get('strategy', '—')} · {d.get('symbol', '—')} · "
+    base = (f"{_nome_da_estrategia(d.get('strategy'))} · "
+            f"{d.get('symbol', '—')} · "
             f"IS {d.get('is_meses')} meses / OOS {d.get('oos_meses')} meses · "
-            f"inteligência {d.get('inteligencia', '—')}")
+            f"inteligência {_nome_da_inteligencia(d.get('inteligencia'))}")
     return base + (" · holdout incluído" if d.get("holdout") else "")
 
 
@@ -126,7 +157,9 @@ def register(app):
         nomes = wfa_store.estrategias()
         valor = _valor_do_seletor(atual, set(nomes), na_aba_wfa,
                                   padrao=nomes[0] if nomes else None)
-        return ([{"label": n, "value": n} for n in nomes],
+        # o valor é o módulo (o que o banco guarda); o rótulo é o nome que
+        # a estratégia mostra nas outras abas
+        return ([{"label": _nome_da_estrategia(n), "value": n} for n in nomes],
                 no_update if valor == atual else valor)
 
     @app.callback(
