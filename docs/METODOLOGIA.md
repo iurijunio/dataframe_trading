@@ -213,7 +213,7 @@ diferente:
 | Significância (t, p) | a expectativa difere de zero? | ✅ |
 | Correlação LR | a curva é reta ou um degrau? | ✅ |
 | SQN (Van Tharp) | quão regular é o resultado por trade | ✅ |
-| **Vizinhança do parâmetro** | **o ponto escolhido é estável** | ✅ |
+| **Vizinhança do parâmetro** | **o ponto escolhido é estável** | ⚠️ |
 | **Entrada aleatória** | **o mérito é do sinal** | ✅ |
 | **Outro ativo / outro período** | **o padrão é do mercado, não da série** | ❌ |
 
@@ -225,6 +225,12 @@ final, uma pergunta só — a estratégia está pronta para a incubação (passo
 11)? O veredito é **aprovada**, **aprovada com ressalva**, **reprovada** ou
 **aguardando testes completos**, sempre visível num selo. Contas de cada
 portão, uma a uma, em [CALCULOS-CANDIDATA.md](CALCULOS-CANDIDATA.md).
+
+**Vizinhança do parâmetro é ⚠️, não ✅**, porque só é medida quando a
+mineração varia **um único** parâmetro por vez — com dois ou mais variando
+juntos não existe "vizinho a um passo" para comparar. É o caso da maioria
+das minerações de hoje: o portão vira alerta ("não medido"), sem contar como
+teste passado nem como reprovação.
 
 ---
 

@@ -236,6 +236,19 @@ def test_roda_os_tres_testes_e_publica_o_resultado():
     assert t.resultado_de(7) == r
 
 
+def test_resultado_de_nao_confunde_um_wfa_com_outro():
+    """I2: sem teste de chaveamento, um defeito que devolvesse o resultado
+    de QUALQUER walk-forward (em vez do pedido) passaria batido — a tela
+    mostraria o selo de um walk-forward com o resultado dos testes
+    demorados de outro. Guardar o resultado do #8 e pedir o do #9 tem que
+    devolver `None`."""
+    t = CR.TestesCompletos()
+    resultado_8 = {"portoes": ["resultado do #8"]}
+    t._resultados[8] = resultado_8
+    assert t.resultado_de(8) == resultado_8
+    assert t.resultado_de(9) is None
+
+
 def test_reusa_o_cache_quando_o_run_id_bate():
     """Varredura já pronta com o run_id certo: não chama `iniciar` de novo."""
     v = FakeVarredura(cache=_cache(), run_id=99, pronto=True)

@@ -264,8 +264,14 @@ def perfil_plato(trials: list[dict], espaco: dict, deploy: dict) -> dict:
     """
     varridos = [k for k, v in espaco.items() if len(set(v)) > 1]
     if len(varridos) != 1:
-        return _perfil(abstem=True,
-                       motivo="perfil só existe com um parâmetro varrido")
+        # linguagem de operador, não de programador: é o que a tela mostra
+        # no lugar do valor do portão (ver `portoes_plato`) — caso real dos
+        # walk-forwards #10 e #11 do banco, cuja mineração varre dois
+        # parâmetros de uma vez
+        motivo = ("não medido: a mineração varreu mais de um parâmetro"
+                  if len(varridos) > 1 else
+                  "não medido: a mineração não varreu nenhum parâmetro")
+        return _perfil(abstem=True, motivo=motivo)
     nome = varridos[0]
     grade = sorted({_valor(v) for v in espaco[nome]})
 
@@ -359,9 +365,14 @@ def portoes_plato(perfil: dict, passos_min: int = 2) -> list[dict]:
             "lado: um parâmetro que só funciona num valor exato é sorte, não "
             "estratégia.")
     if perfil.get("abstem"):
-        return [portao(nome, True, True, "não medido", f"≥ {passos_min} por lado", dica),
+        # C1: abstenção é falta de MEDIÇÃO, não reprovação nem aprovação —
+        # `ok=True` aqui (o comportamento antigo) dava visto VERDE sem nada
+        # ter sido medido, contado no "11/12" da tela. O desenho manda o
+        # contrário (§4.2 do PLANO-CANDIDATA: "abstém, cinza, não verde").
+        motivo = perfil.get("motivo") or "não foi possível medir"
+        return [portao(nome, False, False, motivo, f"≥ {passos_min} por lado", dica),
                 portao("A região foi medida por inteiro?", False, False,
-                       perfil.get("motivo") or "não foi possível medir", "medida",
+                       motivo, "medida",
                        "Sem dados suficientes da mineração para medir a região.")]
     lados = [(perfil["largura_esq"], perfil["parada_esq"]),
              (perfil["largura_dir"], perfil["parada_dir"])]
@@ -382,17 +393,23 @@ def portoes_plato(perfil: dict, passos_min: int = 2) -> list[dict]:
 
 def alerta_vizinho(perfil: dict, raio: int = 2) -> dict:
     """Algum valor a até `raio` passos do escolhido dá prejuízo?"""
+    dica = ("Valores do parâmetro a até 2 passos do escolhido que deram "
+            "prejuízo na mineração. Um vizinho no vermelho não reprova, mas "
+            "diz que um pequeno erro de ajuste já custa dinheiro.")
     pontos = perfil.get("pontos") or []
     i = next((k for k, p in enumerate(pontos) if p.get("atual")), None)
-    ruins = [] if i is None else [
-        p for p in pontos[max(0, i - raio): i + raio + 1]
-        if p.get("lucro") is not None and p["lucro"] < 0]
+    if i is None:
+        # C2: sem ponto para examinar (lista vazia, ou o parâmetro do
+        # DEPLOY fora da grade minerada) não há vizinho nenhum olhado — o
+        # comportamento antigo (`ok=True`, "nenhum") dizia "nenhum vizinho
+        # deu prejuízo" quando na verdade nenhum foi sequer checado.
+        return portao("Algum vizinho dá prejuízo?", None, False,
+                      "não medido", "nenhum", dica)
+    ruins = [p for p in pontos[max(0, i - raio): i + raio + 1]
+             if p.get("lucro") is not None and p["lucro"] < 0]
     return portao(
         "Algum vizinho dá prejuízo?", not ruins, False,
-        f"{len(ruins)} com prejuízo" if ruins else "nenhum", "nenhum",
-        "Valores do parâmetro a até 2 passos do escolhido que deram prejuízo "
-        "na mineração. Um vizinho no vermelho não reprova, mas diz que um "
-        "pequeno erro de ajuste já custa dinheiro.")
+        f"{len(ruins)} com prejuízo" if ruins else "nenhum", "nenhum", dica)
 
 
 # --------------------------------------- portões que saem dos dados salvos
@@ -410,12 +427,21 @@ def t_diario(pnl: np.ndarray) -> float:
 
 
 def portao_acaso(pnl, minimo: float = 2.0) -> dict:
+    nome = "O lucro não é acaso?"
+    exigido = f"≥ {minimo:.1f}"
+    dica = ("Compara o ganho médio por dia com o quanto o resultado diário "
+            "oscila. Abaixo de 2, a média ainda pode ser zero e o lucro "
+            "visto ser sorte. Conta os dias parados como zero.")
+    if len(np.asarray(pnl)) < 30:
+        # I1: `t_diario` devolve 0.0 com menos de 30 pregões — o jeito da
+        # própria função dizer "não dá para afirmar nada aqui". Sem este
+        # desvio, 0.0 virava a MEDIDA na tela e reprovava mostrando "0,00",
+        # como se fosse um resultado ruim de verdade em vez de falta de
+        # pregão — os portões irmãos (poucos dias, capital) já seguem esta
+        # régua de "não medido" em vez de reprovar por falta de dado.
+        return portao(nome, None, True, "poucos pregões para medir", exigido, dica)
     t = t_diario(pnl)
-    return portao(
-        "O lucro não é acaso?", t >= minimo, True, round(t, 2), f"≥ {minimo:.1f}",
-        "Compara o ganho médio por dia com o quanto o resultado diário oscila. "
-        "Abaixo de 2, a média ainda pode ser zero e o lucro visto ser sorte. "
-        "Conta os dias parados como zero.")
+    return portao(nome, t >= minimo, True, round(t, 2), exigido, dica)
 
 
 def portao_poucos_dias(pnl, quantos: int = 5) -> dict:
@@ -436,16 +462,21 @@ def portao_poucos_dias(pnl, quantos: int = 5) -> dict:
         exigido, dica)
 
 
-def portao_custo(lucro_liquido: float, contratos, tick_value: float) -> dict:
+def portao_custo(lucro_liquido: float, contratos, tick_value: float | None) -> dict:
+    nome = "Aguenta custo maior?"
+    exigido = "> 0 com +1 tick por ponta"
+    dica = ("O lucro depois de pagar 1 tick a mais na entrada e na saída de "
+            "cada trade. No mini índice 1 tick vale mais que a corretagem "
+            "inteira, e ordem a mercado na hora da pressa costuma escorregar "
+            "isso. Se o lucro some, a estratégia vive no limite do custo.")
+    if tick_value is None:
+        # menor: sem `tick_value` no YAML do instrumento, o chamador não
+        # pode fingir tick zero (custo extra some e o portão passa à toa) —
+        # sem o dado, o portão fica pendente, não aprovado
+        return portao(nome, None, True, "não medido", exigido, dica)
     extra = 2.0 * float(np.sum(contratos)) * tick_value
     sobra = float(lucro_liquido - extra)
-    return portao(
-        "Aguenta custo maior?", sobra > 0, True, round(sobra, 2),
-        "> 0 com +1 tick por ponta",
-        "O lucro depois de pagar 1 tick a mais na entrada e na saída de cada "
-        "trade. No mini índice 1 tick vale mais que a corretagem inteira, e "
-        "ordem a mercado na hora da pressa costuma escorregar isso. Se o lucro "
-        "some, a estratégia vive no limite do custo.")
+    return portao(nome, sobra > 0, True, round(sobra, 2), exigido, dica)
 
 
 def portao_capital(perda_esperada: float, contratos_por_trade: float,
@@ -640,7 +671,7 @@ def alerta_reotimizar(percentil: float | None, motivo: str | None = None) -> dic
 
 
 def portoes_rapidos(trades: list[dict], leitura: dict, trials: list[dict],
-                    espaco: dict, deploy: dict, corte, tick_value: float,
+                    espaco: dict, deploy: dict, corte, tick_value: float | None,
                     capital: float, de=None, ate=None) -> list[dict]:
     """Os portões e alertas que respondem NA HORA, ao escolher o
     walk-forward — tudo o que não depende dos três testes demorados

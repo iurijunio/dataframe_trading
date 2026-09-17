@@ -178,7 +178,7 @@ docs/METODOLOGIA.md        o processo: da ideia ao dinheiro real
 docs/PLANO-WFA.md          plano e decisões do Walk-Forward
 docs/CALCULOS-WFA.md       as contas do Walk-Forward, uma a uma
 docs/CALCULOS-CANDIDATA.md as contas dos 12 portões da tela Candidata
-tests/                     179 testes
+tests/                     590 testes
 ```
 
 ## O dashboard

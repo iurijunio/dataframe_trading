@@ -457,6 +457,54 @@ def test_alerta_vizinho_com_prejuizo():
     assert candidata.alerta_vizinho(_perfil_com([5] * 7, 3))["ok"] is True
 
 
+# --------------------------------------------- correção final (16/09/2026)
+
+
+def test_portoes_plato_abstencao_nunca_fica_verde():
+    """C1: hoje o portão crítico do platô volta `ok=True` na abstenção — um
+    visto VERDE sem nada ter sido medido, contado no "11/12" da tela. É o
+    caso real dos walk-forwards #10 e #11 do banco, cuja mineração varre
+    dois parâmetros (`len(varridos) != 1`). O desenho manda o contrário
+    (§4.2 do PLANO-CANDIDATA: "abstém, cinza, não verde"): a abstenção vira
+    ALERTA (`critico=False`, `ok=False`), com o motivo em linguagem de
+    operador, não a frase de programador "perfil só existe com um
+    parâmetro varrido"."""
+    perfil = candidata.perfil_plato(
+        _trials([40, 50], [1.0, 2.0]),
+        {"periodo_canal": [40, 50], "alvo_pontos": [600, 700]},
+        {"periodo_canal": 40, "alvo_pontos": 600})
+    assert perfil["abstem"] is True
+
+    critico, cobertura = candidata.portoes_plato(perfil)
+    assert critico["critico"] is False
+    assert critico["ok"] is False
+    assert critico["valor"] == ("não medido: a mineração varreu mais de um "
+                                "parâmetro")
+    assert "perfil só existe" not in critico["valor"]
+    # o segundo portão (cobertura da faixa) continua como estava
+    assert cobertura["critico"] is False and cobertura["ok"] is False
+
+    ver = candidata.veredito([critico, cobertura])
+    assert ver["estado"] == "aprovada com ressalva"
+
+
+def test_alerta_vizinho_sem_ponto_para_examinar_nao_mede():
+    """C2: hoje, sem ponto para examinar (lista de pontos vazia, ou o
+    parâmetro do DEPLOY fora da grade), `alerta_vizinho` devolve `ok=True`
+    e "nenhum" — como se tivesse olhado os vizinhos e nenhum deu prejuízo.
+    Sem ponto nenhum, não foi medido nada: o alerta tem que sair `ok=None`
+    com o valor "não medido", nunca "nenhum" com `ok=True`."""
+    sem_pontos = candidata.alerta_vizinho({"pontos": []})
+    assert sem_pontos["ok"] is None
+    assert sem_pontos["valor"] == "não medido"
+
+    fora_da_grade = candidata.alerta_vizinho(
+        {"pontos": [{"valor": 40, "lucro": 10.0, "atual": False},
+                    {"valor": 50, "lucro": 20.0, "atual": False}]})
+    assert fora_da_grade["ok"] is None
+    assert fora_da_grade["valor"] == "não medido"
+
+
 # ------------------------------------------- portões que saem dos dados
 
 
@@ -484,6 +532,19 @@ def test_portao_acaso():
     assert candidata.portao_acaso(ruido)["ok"] is False
 
 
+def test_portao_acaso_com_poucos_pregoes_nao_mede_e_nao_reprova():
+    """I1: `t_diario` devolve 0.0 com menos de 30 pregões — o próprio jeito
+    da função dizer "não dá para afirmar nada aqui". Hoje `portao_acaso`
+    engolia esse 0.0 como se fosse a medida de verdade e reprovava exibindo
+    "0,00", igual a uma estratégia realmente ruim. Os portões irmãos
+    (poucos dias, capital) já viram "não medido" neste caso — este tem que
+    seguir a mesma régua: `ok=None`, sem reprovar por falta de pregão."""
+    poucos = np.array([10.0, -5.0, 20.0, 8.0, -3.0])
+    r = candidata.portao_acaso(poucos)
+    assert r["ok"] is None
+    assert r["valor"] == "poucos pregões para medir"
+
+
 def test_portao_poucos_dias():
     """Lucro que vive de 5 dias bons não é um sistema."""
     dependente = np.array([-2.0] * 100 + [60.0] * 5)
@@ -497,6 +558,17 @@ def test_portao_custo_um_tick_por_ponta():
     contratos = np.ones(510)
     assert candidata.portao_custo(1500.0, contratos, 1.0)["ok"] is True
     assert candidata.portao_custo(1000.0, contratos, 1.0)["ok"] is False
+
+
+def test_portao_custo_sem_tick_declarado_nao_mede():
+    """Menor incluído: sem `tick_value` no YAML do instrumento, o callback
+    não pode fingir tick zero — isso fazia o portão de custo passar sem
+    cobrar tick nenhum. Sem tick declarado, o portão sai "não medido"
+    (`ok=None`), nunca aprovado à toa."""
+    contratos = np.ones(510)
+    r = candidata.portao_custo(1500.0, contratos, None)
+    assert r["ok"] is None
+    assert r["valor"] == "não medido"
 
 
 def test_portao_capital_por_contrato():

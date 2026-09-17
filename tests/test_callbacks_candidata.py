@@ -9,8 +9,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core import candidata  # noqa: E402
 from ui import callbacks_candidata as CC  # noqa: E402
 
 
@@ -83,3 +86,92 @@ def test_valor_sem_escolha_nem_aberto_usa_o_padrao():
     lista, cai na primeira que tem walk-forward — nunca numa lista vazia."""
     assert CC._valor_do_seletor(atual=None, ids={"a", "b"}, aberto_no_wfa="x",
                                 padrao="a") == "a"
+
+
+# --------------------------------------------------- I2: `_gates_e_leitura`
+
+
+def _trades_completos(n=150, semente=11, contratos=1):
+    """Trades sintéticos que passam pela `leitura_robustez` (>= 100 trades
+    fora da amostra) sem precisar do banco real — mesmo padrão de
+    `tests/test_candidata.py::_trades_rapidos`."""
+    rng = np.random.default_rng(semente)
+    dias = np.busday_offset(np.datetime64("2024-01-02"), np.arange(n))
+    liquido = rng.normal(12.0, 8.0, n)
+    return [
+        {"exit_ts": str(d) + "T15:00:00", "liquido": float(v),
+         "contratos": contratos}
+        for d, v in zip(dias, liquido)
+    ]
+
+
+def _grade_plato_limpa(fr=(5,) * 9, deploy_idx=4):
+    """Espaço/trials/deploy de um único parâmetro varrido, sem abstenção —
+    o que interessa aqui é a MONTAGEM da lista de portões, não o platô."""
+    valores = list(range(40, 40 + len(fr)))
+    trials = [{"params": {"p": v}, "lucro": f * 100.0, "dd": 100.0}
+              for v, f in zip(valores, fr)]
+    return trials, {"p": valores}, {"p": float(valores[deploy_idx])}
+
+
+NOMES_LENTOS = ["Ganha de entradas sorteadas ao acaso?",
+               "Aguenta o desconto por muitas tentativas?",
+               "Reotimizar compensou?"]
+
+
+def _detalhes_wfa():
+    trials, espaco, deploy_params = _grade_plato_limpa()
+    d = {"capital": 10_000.0, "run_id": 1, "symbol": "WIN$N",
+         "deploy": {"params": deploy_params}, "passos": None}
+    return d, trials, espaco
+
+
+def _injeta_banco_falso(monkeypatch, trials, espaco):
+    """Troca tudo que `_gates_e_leitura` leria do banco real por dados
+    falsos — nenhum destes testes abre o banco de verdade."""
+    monkeypatch.setattr(CC.wfa_store, "trades",
+                        lambda wfa_id: _trades_completos())
+    monkeypatch.setattr(CC.optimizer, "detalhes_salva",
+                        lambda run_id: {"espaco": espaco, "holdout_de": None})
+    monkeypatch.setattr(CC.optimizer, "carregar_salva", lambda run_id: trials)
+    monkeypatch.setattr(CC.db, "load_instrument_yaml",
+                        lambda symbol: {"tick_value": 1.0})
+
+
+def test_gates_e_leitura_monta_os_12_portoes_pendentes_antes_de_rodar(monkeypatch):
+    """I2: sem este teste, `_gates_e_leitura` podia devolver só os nove
+    portões rápidos e a tela mostraria "aprovada 9/9" — verde — sem nunca
+    ter rodado os três testes demorados (aleatório, tentativas, reotimizar
+    compensou). Antes de rodar, são 12 no total e os três últimos ficam
+    pendentes, sem resultado."""
+    d, trials, espaco = _detalhes_wfa()
+    _injeta_banco_falso(monkeypatch, trials, espaco)
+    monkeypatch.setattr(CC.TESTES, "resultado_de", lambda wfa_id: None)
+
+    leitura, gates, de, ate = CC._gates_e_leitura(7, d)
+    assert not leitura.get("erro")
+    assert len(gates) == 12
+    lentos = gates[-3:]
+    assert [g["nome"] for g in lentos] == NOMES_LENTOS
+    assert all(g["ok"] is None and g["valor"] == "aguardando" for g in lentos)
+
+
+def test_gates_e_leitura_preenche_os_tres_lentos_quando_ja_rodaram(monkeypatch):
+    """Mesmo cenário, mas com `TESTES.resultado_de` já publicado — os três
+    últimos portões precisam vir com o resultado de verdade, não mais
+    "aguardando"."""
+    d, trials, espaco = _detalhes_wfa()
+    _injeta_banco_falso(monkeypatch, trials, espaco)
+    prontos = [
+        candidata.portao_aleatorio({"p": 0.01, "calibracao_ok": True}),
+        candidata.portao_tentativas({"p": 0.02}),
+        candidata.alerta_reotimizar(70.0),
+    ]
+    monkeypatch.setattr(CC.TESTES, "resultado_de",
+                        lambda wfa_id: {"portoes": prontos})
+
+    _, gates, _, _ = CC._gates_e_leitura(7, d)
+    assert len(gates) == 12
+    assert gates[-3:] == prontos
+    assert all(g["ok"] is not None for g in gates[-3:])
+    assert [g["nome"] for g in gates[-3:]] == NOMES_LENTOS

@@ -90,7 +90,12 @@ def _gates_e_leitura(wfa_id: int, d: dict):
     deploy = (d.get("deploy") or {}).get("params") or {}
     # o mesmo carregador de YAML que o backtest usa — não o cache de
     # `ui/data.py`, que existe para as barras, não para o instrumento
-    tick_value = float(db.load_instrument_yaml(d["symbol"]).get("tick_value") or 0.0)
+    #
+    # `... or 0.0` fingia tick zero quando o YAML não declara `tick_value` —
+    # o portão de custo passava sem cobrar tick nenhum. Sem o dado, `None`
+    # segue adiante e `candidata.portao_custo` fica pendente, não aprovado.
+    tick_value_yaml = db.load_instrument_yaml(d["symbol"]).get("tick_value")
+    tick_value = float(tick_value_yaml) if tick_value_yaml is not None else None
 
     rapidos = candidata.portoes_rapidos(
         trades, leitura, trials, espaco, deploy, corte, tick_value, capital,

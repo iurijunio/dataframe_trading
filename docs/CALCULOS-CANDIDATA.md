@@ -67,6 +67,14 @@ saber se a região continua boa mais além, só que ninguém testou.
 **Por que existe:** um parâmetro que só funciona num valor exato é sorte, não
 estratégia. Uma região larga aguenta o mercado se mover um pouco sem quebrar.
 
+**Quando não dá para medir:** o perfil só existe variando **um** parâmetro
+por vez — com dois ou mais variando juntos não há "vizinho a um passo" para
+medir. A maioria das minerações de hoje varre mais de um parâmetro ao mesmo
+tempo (é o caso dos walk-forwards #10 e #11 do banco), e nesses casos o
+portão crítico não é medido: vira alerta ("não medido: a mineração varreu
+mais de um parâmetro"), cinza na tela, nunca verde — não reprova sozinho,
+mas também não conta como testado.
+
 **O número do #8:** `periodo_canal` escolhido foi **58**, numa faixa testada
 de **40 a 80**. A caminhada segura **18 passos à esquerda e 22 à direita** —
 bem acima do mínimo de 2. Nos dois lados ela termina porque a faixa testada
@@ -235,8 +243,11 @@ sorteio empatou ou superou o resultado real.
 **Por que existe:** se entradas jogadas ao acaso ganham quase tanto quanto o
 sinal de verdade, quem está ganhando é a gestão de saída, não o sinal.
 
-**O número do #8:** só **1 em 1.000** sorteios igualou a estratégia real
-(**0,1%**, máximo 5%). **Passa.**
+**O número do #8:** **nenhum** dos 1.000 sorteios igualou ou superou a
+estratégia real. A fração mostrada não é 0% — é **0,1%** — porque a conta
+soma um sorteio e um total conservadores por padrão (`(1 + 0) / (1 + 1.000)`),
+para não afirmar "impossível por acaso" de uma amostra finita. Ainda assim,
+bem abaixo do máximo de 5%. **Passa.**
 
 ---
 
