@@ -329,59 +329,64 @@ def test_janelas_e_alvos_de_tamanhos_diferentes_e_erro():
 
 
 # --------------------------------------------- rodador_do_motor (motor de verdade)
-def test_rodador_do_motor_liga_o_sorteio_ao_motor_de_verdade():
-    """Teste de integração curto: garante que a fatia por janela OOS, o
-    histograma de horário e a proporção compra/venda vindos dos trades
-    reais chegam inteiros até `run_strategy` e voltam sem quebrar — o
-    mérito estatístico já está coberto pelos testes de `teste_janelas` com
-    `rodar_janela` falso.
+def test_rodador_do_motor_bate_com_referencia_independente():
+    """Teste de integração: a saída REAL de `rodar_janela` — não uma
+    reconstrução à parte — tem que bater com uma referência calculada por
+    fora (rodar o motor no histórico INTEIRO com a mesma semente e contar
+    só as entradas dentro da janela).
 
-    Reforço da rodada de correção 1: confere também, inspecionando os
-    trades do mesmo mecanismo que `rodar_janela` usa por dentro (a
-    interface pública só devolve o resumo `(n_trades, lucro)`), que nenhum
-    trade sorteado entra fora da janela e que a proporção de compra do
-    sorteio acompanha a dos trades reais (aqui, 3 compras em 4 = 0,75)."""
-    from core import wfa
+    Isto corrige a versão anterior (rodada de correção 1): lá, "nenhum
+    trade fora da janela" e "proporção de compra" eram conferidos sobre um
+    `EntradaAleatoria` + `run_strategy` montados à parte, e da saída de
+    `rodar_janela` só se conferiam os TIPOS do retorno. O revisor deslocou
+    `i0`/`i1` em +2 dias dentro de `rodar_janela` (sem mexer em `de`/`ate`)
+    e aquele teste continuou passando, porque nunca comparava com nada.
 
-    bars = _bars_m1_dias(3)
+    A janela usada aqui NÃO começa no primeiro dia dos dados (`bars` cobre
+    8 dias, a janela é o dia 5-7): só assim deslocar a fatia dentro de
+    `rodar_janela` muda o resultado — numa janela que já começasse no
+    início dos dados um deslocamento "pra trás" não teria pra onde ir e o
+    bug passaria batido de qualquer jeito."""
+    from core import metrics, wfa
+
+    bars = _bars_m1_dias(n_dias=8)                  # 2024-01-02 .. 2024-01-09
     instrumento = {"point_value": 1.0, "tick_size": 1}
     perfil = exe.ExecutionProfile(entrada_inicio="00:00", entrada_fim="23:59",
                                   fechamento="23:59",
                                   dias_semana=(1, 2, 3, 4, 5, 6, 7))
     trades_reais = [
-        {"step": 1, "entry_ts": "2024-01-02T10:05", "side": 1},
-        {"step": 1, "entry_ts": "2024-01-03T10:10", "side": 1},
-        {"step": 1, "entry_ts": "2024-01-03T14:00", "side": 1},
-        {"step": 1, "entry_ts": "2024-01-03T11:00", "side": -1},
+        {"step": 1, "entry_ts": "2024-01-06T10:05", "side": 1},
+        {"step": 1, "entry_ts": "2024-01-07T10:10", "side": 1},
+        {"step": 1, "entry_ts": "2024-01-07T14:00", "side": 1},
+        {"step": 1, "entry_ts": "2024-01-07T11:00", "side": -1},
     ]
     janela = wfa.Janela(step=1,
-                        is_de=np.datetime64("2024-01-01T00:00", "s"),
-                        is_ate=np.datetime64("2024-01-02T00:00", "s"),
-                        oos_de=np.datetime64("2024-01-02T00:00", "s"),
-                        oos_ate=np.datetime64("2024-01-05T00:00", "s"))
+                        is_de=np.datetime64("2024-01-02T00:00", "s"),
+                        is_ate=np.datetime64("2024-01-06T00:00", "s"),
+                        oos_de=np.datetime64("2024-01-06T00:00", "s"),
+                        oos_ate=np.datetime64("2024-01-08T00:00", "s"))
 
     rodar_janela = aleatorio.rodador_do_motor(bars, None, perfil, instrumento,
                                               trades_reais)
     n_trades, lucro = rodar_janela(janela, n_sinais=200, semente=1)
-    assert isinstance(n_trades, int)
-    assert isinstance(lucro, float)
 
-    # reforço: mesmo mecanismo de `rodar_janela`, mas inspecionando os
-    # trades individuais em vez do resumo agregado.
+    # referência independente: histórico INTEIRO (não a fatia que
+    # `rodar_janela` monta), mesma semente/histograma/proporção, contando
+    # só as entradas dentro da janela.
     de = np.datetime64(janela.oos_de).astype(bars["ts"].dtype)
     ate = np.datetime64(janela.oos_ate).astype(bars["ts"].dtype)
     horarios = aleatorio._histograma_horario_execucao(trades_reais)
     p_compra = aleatorio._proporcao_compra(trades_reais)
-    assert p_compra == pytest.approx(0.75)
-
     estrategia = aleatorio.EntradaAleatoria(200, horarios, p_compra, 1,
                                             janela_valida=(de, ate))
     res = exe.run_strategy(bars, estrategia, {}, perfil, instrumento)
-    assert res.n_trades > 0
-    assert np.all(res.trades["entry_ts"] >= de)
-    assert np.all(res.trades["entry_ts"] < ate)
-    fracao_compra = float((res.trades["side"] == 1).mean())
-    assert 0.55 <= fracao_compra <= 0.95   # p_compra real é 0,75
+    dentro = (res.trades["entry_ts"] >= de) & (res.trades["entry_ts"] < ate)
+    n_ref = int(dentro.sum())
+    lucro_ref = float(metrics.monetize(res)["liquido"][dentro].sum())
+
+    assert n_ref > 0                # o cenário precisa gerar trade de verdade
+    assert n_trades == n_ref
+    assert lucro == pytest.approx(lucro_ref)
 
 
 def _bars_com_volatilidade(n_dias=6, semente=0):
@@ -484,3 +489,22 @@ def test_rodador_do_motor_rejeita_janela_de_outro_step():
 
     with pytest.raises(ValueError):
         rodar_janela(janela_de_outro_step, n_sinais=10, semente=1)
+
+
+def test_rodador_do_motor_recusa_trade_real_sem_step():
+    """Aperto da rodada de correção 2: sem o campo `step` em algum trade
+    real, a checagem da correção 2 não tem contra o que conferir — antes
+    isso ficava mudo (`t.get("step")` vira `None`, desliga a proteção sem
+    avisar); agora `rodador_do_motor` recusa na hora da montagem, porque
+    `wfa_store.trades` sempre grava o `step` e um trade sem ele indica que
+    quem chamou não filtrou (ou montou) os dados como devia."""
+    bars = _bars_m1_dias(3)
+    instrumento = {"point_value": 1.0, "tick_size": 1}
+    perfil = exe.ExecutionProfile(entrada_inicio="00:00", entrada_fim="23:59",
+                                  fechamento="23:59",
+                                  dias_semana=(1, 2, 3, 4, 5, 6, 7))
+    trades_sem_step = [{"entry_ts": "2024-01-02T10:05", "side": 1}]
+
+    with pytest.raises(ValueError):
+        aleatorio.rodador_do_motor(bars, None, perfil, instrumento,
+                                   trades_sem_step)

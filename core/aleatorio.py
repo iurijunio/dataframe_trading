@@ -342,12 +342,17 @@ def rodador_do_motor(bars: dict, estrategia_real, perfil, instrumento: dict,
     `[janela.oos_de, janela.oos_ate)`, e os trades contados/somados aqui são
     filtrados pela mesma regra — a margem nunca contribui um trade.
 
-    CONFERE A JANELA (correção 2, rodada 1). Este `rodar_janela` foi montado
-    com o perfil e os `trades_reais` de UMA janela (o `step` deles). Chamá-lo
-    com o `janela` de outro step aplicaria o perfil e o histograma ERRADOS
-    sem aviso nenhum — por isso `rodar_janela` primeiro confere
-    `janela.step` contra o step de `trades_reais` e recusa com `ValueError`
-    se não bater.
+    CONFERE A JANELA (correção 2, rodada 1; aperto na rodada 2). Este
+    `rodar_janela` foi montado com o perfil e os `trades_reais` de UMA
+    janela (o `step` deles). Chamá-lo com o `janela` de outro step aplicaria
+    o perfil e o histograma ERRADOS sem aviso nenhum — por isso
+    `rodar_janela` primeiro confere `janela.step` contra o step de
+    `trades_reais` e recusa com `ValueError` se não bater. Essa checagem só
+    protege de verdade se o campo existir: `trades_reais` sem `step` em
+    algum trade é recusado já na MONTAGEM (não em silêncio, assumindo "sem
+    step para conferir") — `wfa_store.trades(wfa_id)` sempre grava o step,
+    então a ausência dele indica que quem chamou não filtrou os dados
+    direito.
 
     `estrategia_real` não entra na chamada a `run_strategy`: quem gera o
     sinal aqui é sempre `EntradaAleatoria`, nunca a estratégia real. O
@@ -363,7 +368,15 @@ def rodador_do_motor(bars: dict, estrategia_real, perfil, instrumento: dict,
     horarios = _histograma_horario_execucao(trades_reais)
     p_compra = _proporcao_compra(trades_reais)
 
-    steps = {t.get("step") for t in trades_reais}
+    sem_step = [t for t in trades_reais if "step" not in t]
+    if sem_step:
+        raise ValueError(
+            f"{len(sem_step)} trade(s) real(is) sem o campo 'step' — "
+            "trades_reais precisa vir de wfa_store.trades(wfa_id), que "
+            "sempre grava o step. Sem ele, rodar_janela não tem como "
+            "conferir se recebeu a janela certa (correção 2, rodada 1)."
+        )
+    steps = {t["step"] for t in trades_reais}
     if len(steps) > 1:
         raise ValueError(
             f"trades_reais mistura mais de um step ({sorted(steps)}) — "
