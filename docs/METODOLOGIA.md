@@ -217,9 +217,10 @@ diferente:
 | **Entrada aleatória** | **o mérito é do sinal** | ✅ |
 | **Outro ativo / outro período** | **o padrão é do mercado, não da série** | ❌ |
 
-Os três últimos — vizinhança, entrada aleatória e mais sete testes (custo,
-capital, holdout, muitas tentativas, poucos dias, poucos trades,
-reotimização) — viraram a tela **Candidata**: 12 portões que respondem, no
+Os três últimos — vizinhança, entrada aleatória e mais oito testes (o lucro
+não é acaso, custo, capital, holdout, muitas tentativas, poucos dias, poucos
+trades, reotimização) — viraram a tela **Candidata**: 12 portões que
+respondem, no
 final, uma pergunta só — a estratégia está pronta para a incubação (passo
 11)? O veredito é **aprovada**, **aprovada com ressalva**, **reprovada** ou
 **aguardando testes completos**, sempre visível num selo. Contas de cada

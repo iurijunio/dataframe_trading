@@ -2,7 +2,9 @@
 
 O que cada teste da tela Candidata faz, em palavras simples, com o número
 real do walk-forward **#8** (`rompimento_canal`, WIN$N, IS 12 meses / OOS 6
-meses, inteligência Ulcer, holdout incluído, capital R$ 10.000).
+meses, inteligência Ulcer, holdout incluído, capital R$ 10.000). O #8 nasce
+da mineração **#40**, a mesma usada como exemplo em
+[CALCULOS-WFA.md](CALCULOS-WFA.md).
 
 Onde está no código: `core/candidata.py` (os portões), `core/aleatorio.py`
 (a entrada sorteada), `core/spa.py` (o teste de muitas tentativas),
@@ -70,8 +72,8 @@ de **40 a 80**. A caminhada segura **18 passos à esquerda e 22 à direita** —
 bem acima do mínimo de 2. Nos dois lados ela termina porque a faixa testada
 acaba, não porque o resultado cai — a estratégia nunca foi testada além
 disso. **Passa** o crítico; o alerta de cobertura também passa, porque a
-régua só cobra mais mineração quando a largura mínima (2 passos) não é
-alcançada, e aqui ela foi alcançada com folga.
+régua só pede mais mineração quando a largura fica abaixo do mínimo de 2
+passos, e aqui ela passou bem disso, com folga.
 
 ---
 
@@ -244,11 +246,13 @@ sinal de verdade, quem está ganhando é a gestão de saída, não o sinal.
 não operar, depois de descontar que **dezenas de combinações** foram
 testadas e alguma sempre sai bem só por sorte?
 
-**O que o teste faz:** reamostra o histórico de todas as combinações
-mineradas muitas vezes e compara, em cada reamostragem, a melhor coluna
-**daquela** reamostragem com o que se observou de verdade (um método
-chamado **SPA de Hansen**, de 2005). O resultado é a fração das
-reamostragens em que o acaso teria produzido algo igual ou melhor.
+**O que o teste faz:** sorteia dias de todas as combinações mineradas, muitas
+vezes seguidas — sempre o mesmo dia sorteado para todas as combinações ao
+mesmo tempo, porque colunas que operam o mesmo mercado sobem e descem
+juntas. Em cada sorteio, compara a melhor combinação **daquele sorteio** com
+o que aconteceu de verdade (um método chamado **SPA de Hansen**, de 2005). O
+resultado é a fração dos sorteios em que o acaso teria produzido um
+resultado igual ou melhor.
 
 **A regra:** essa fração não pode passar de **5%**.
 
@@ -276,21 +280,23 @@ valeu o trabalho, comparado com ter escolhido uma combinação qualquer da
 mineração e deixado **fixa** do início ao fim do mesmo período?
 
 **O que o teste faz:** pega todas as combinações da mineração, roda cada
-uma **sem reotimizar** durante o mesmo intervalo, e vê em que posição
-(percentil) a curva do walk-forward termina entre elas.
+uma **sem reotimizar** durante o mesmo intervalo, e conta quantas dessas
+combinações fixas fizeram mais dinheiro que o walk-forward e quantas fizeram
+menos (a posição do walk-forward nessa fila é o que se chama de
+**percentil**).
 
-**A regra:** precisa terminar no percentil **50 ou mais** — ou seja, pelo
-menos metade das combinações fixas tem que ter feito **pior**.
+**A regra:** o walk-forward precisa ficar à frente de pelo menos metade das
+combinações fixas.
 
 **Por que existe:** se mais da metade das combinações fixas — escolhidas ao
 acaso, sem inteligência nenhuma — fez mais dinheiro que o walk-forward, o
 trabalho de reotimizar a cada janela não se pagou, e operar com parâmetro
 fixo seria mais simples e mais barato.
 
-**O número do #8: percentil 39** — só **39% das combinações fixas fizeram
-menos** que o walk-forward, ou seja, **61% fizeram mais** no mesmo período.
-**Não passa** — é o único item que fica de fora dos 12, e é por isso que o
-walk-forward #8 sai **aprovado com ressalva**, não aprovado liso.
+**O número do #8:** o walk-forward ficou **atrás de 61% das combinações
+fixas** — só 39% delas fizeram menos que ele. **Não passa** — é o único item
+que fica de fora dos 12, e é por isso que o walk-forward #8 sai **aprovado
+com ressalva**, não aprovado liso.
 
 ---
 
