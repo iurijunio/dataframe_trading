@@ -59,6 +59,43 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
   - 445 testes (eram 372). Toda conta que vira número de disjuntor tem teste
     que **falha quando a implementação é quebrada de propósito** — dez de doze
     versões defeituosas do bootstrap passavam nos testes da primeira versão.
+- **Modo Candidata, parte 2** (`core/candidata.py`, `core/aleatorio.py`,
+  `core/spa.py`, `core/candidata_runner.py`): a tela passa a **aprovar ou
+  reprovar** — os 12 portões da etapa 2 do plano. Contas detalhadas, uma a
+  uma, em [docs/CALCULOS-CANDIDATA.md](docs/CALCULOS-CANDIDATA.md).
+  - **Selo com quatro estados**: aprovada, aprovada com ressalva, reprovada
+    ou aguardando testes completos (enquanto os três testes demorados —
+    entrada sorteada, muitas tentativas e reotimizar compensou — não
+    rodaram). Um crítico reprovado reprova; só alertas dão ressalva.
+  - **Nove portões saem na hora**, lendo o que já está gravado: a região do
+    parâmetro (platô), o lucro não é acaso, não depende de poucos dias,
+    aguenta custo maior, o capital comporta 1 contrato, o holdout confirma,
+    e os alertas de vizinho com prejuízo e de depender do 1% melhor dos
+    trades.
+  - **Três portões são pesados** e rodam em segundo plano, com barra de
+    progresso: `core/aleatorio.py` sorteia entradas no lugar do sinal real
+    (mesma gestão de saída, mesmo horário, calibrado até bater o número de
+    trades) para responder se o mérito é do sinal; `core/spa.py` aplica a
+    **Superior Predictive Ability de Hansen (2005)** para medir se a melhor
+    combinação minerada ainda vence depois de descontar quantas foram
+    testadas; e um terceiro compara o walk-forward com todas as combinações
+    da mineração deixadas fixas no mesmo período. No walk-forward #8, os
+    três juntos levam **~43 segundos** (varredura: 1,6 s; sorteio: 41 s).
+  - **O limite do teste de muitas tentativas caiu de 10% para 5%.** Medido
+    com 200 simulações sem vantagem real nenhuma, o corte de 10% deixava
+    passar sorte em 16–18% das vezes quando os dias de mercado dependem uns
+    dos outros (o caso normal) — quase o dobro do pretendido. O de 5% aprova
+    sorte em 7,5–9,5% das vezes, o que "até cerca de 1 em 10" realmente
+    queria dizer.
+  - **Holdout com histórico curto demais antes do corte vira alerta, não
+    trava a aprovação.** Falta de dado que nenhuma nova rodada resolve segue
+    a mesma régua do platô: não é reprovação, mas também não fica pendurada
+    como pendente para sempre.
+  - Rodado de ponta a ponta no walk-forward #8 (`rompimento_canal`, WIN$N,
+    IS 12/OOS 6, inteligência Ulcer): **aprovada com ressalva, 11 de 12** —
+    só o alerta de reotimização não passou (percentil 39: 61% das
+    combinações fixas fizeram mais no mesmo período).
+  - 583 testes (eram 445).
 
 ### Corrigido
 - **Sharpe da matriz agregado pelo dia de saída.** O cálculo novo nasceu

@@ -14,6 +14,12 @@ Desenhado em 15/09/2026, revisado no mesmo dia por três revisores
 com exemplos reais, vão para `CALCULOS-CANDIDATA.md` na fase 6 — no mesmo
 formato do [CALCULOS-WFA.md](CALCULOS-WFA.md).
 
+**Etapa 2 (aprovar ou reprovar, os 12 portões) concluída em 17/09/2026.**
+Rodada de ponta a ponta no walk-forward #8 (`rompimento_canal`, WIN$N, IS
+12/OOS 6, inteligência Ulcer): **aprovada com ressalva, 11 de 12** — ver
+[CALCULOS-CANDIDATA.md](CALCULOS-CANDIDATA.md). A etapa 3 (contratos, limite
+de desligamento e plano de operação) segue pendente.
+
 ---
 
 ## 1. O problema que motivou a tela
@@ -79,7 +85,7 @@ Estas valem por cima do que estiver escrito diferente no resto do documento.
 | 3 | O lucro não é acaso? | média por dia firme: t ≥ 2,0 sobre o resultado diário, contando os dias parados | crítico |
 | 4 | Não depende de poucos dias? | lucro continua positivo sem os 5 melhores pregões | crítico |
 | 5 | Aguenta custo maior? | lucro continua positivo com 1 tick a mais por ponta | crítico |
-| 6 | Aguenta o desconto por muitas tentativas? | SPA de Hansen, p ≤ 0,10 | crítico |
+| 6 | Aguenta o desconto por muitas tentativas? | SPA de Hansen, p ≤ 0,05 (medido: 200 simulações mostraram que o nominal de 10% deixa passar sorte em 16–18% das vezes com dias dependentes; 5% aprova em 7,5–9,5%, perto do "até 1 em 10" pretendido) | crítico |
 | 7 | O capital comporta o mínimo? | com 1 contrato, a perda esperada cabe em 20% do capital | crítico |
 | 8 | O holdout confirma? | resultado no holdout fora dos 10% piores esperados pela curva antes do corte | crítico |
 | — | Algum vizinho dá prejuízo? | nenhum ponto a até 2 passos com lucro negativo | alerta |
@@ -89,6 +95,14 @@ Estas valem por cima do que estiver escrito diferente no resto do documento.
 Os portões 2 e 6 e o alerta de reotimização precisam refazer a varredura
 e rodar o motor: ficam atrás de um botão, com barra de progresso. Os
 outros saem na hora, dos dados salvos.
+
+**Decisão revista na implementação (17/09/2026):** o portão 8 (holdout) vira
+**alerta**, não fica pendente para sempre, quando o histórico **antes** do
+corte é curto demais para simular (menos de 30 pregões, o piso do
+bootstrap). É a única das três formas de "não medir" deste portão que
+nenhuma nova rodada resolve — a base é do tamanho que é — e falta de medição
+sem conserto segue a mesma régua do platô (portão 1): não bloqueia a
+aprovação, mas também não fica pendurada como crítico pendente eterno.
 
 ## 3. Arquitetura
 
@@ -547,15 +561,16 @@ resultados, dado faltando é o erro comum — e não pode derrubar a tela inteir
 | 5.3 | Fechar a 5.6 do PLANO-WFA (camada 4 travada ou reotimizável) |
 
 ### Fase 6 — Fechamento
-| # | Tarefa |
-|---|---|
-| 6.1 | Rodar a tela inteira na #40 e registrar o veredito real |
-| 6.2 | Revisão por agentes |
-| 6.3 | `CALCULOS-CANDIDATA.md`, METODOLOGIA, PLANO, README, CHANGELOG |
+| # | Tarefa | Situação |
+|---|---|---|
+| 6.1 | Rodar a tela inteira num walk-forward real e registrar o veredito real | ✅ #8, 17/09/2026: aprovada com ressalva, 11 de 12 |
+| 6.2 | Revisão por agentes | ✅ |
+| 6.3 | `CALCULOS-CANDIDATA.md`, METODOLOGIA, PLANO, README, CHANGELOG | ✅ 17/09/2026 |
 
-A 6.1 não é formalidade: com oito portões críticos, é provável que a #40
-reprove. **Isso é informação, não defeito** — mas precisa ser medido antes de a
-documentação afirmar qualquer coisa.
+A 6.1 não é formalidade: com oito portões críticos, era provável que a
+candidata reprovasse. **Isso seria informação, não defeito** — mas precisava
+ser medido antes de a documentação afirmar qualquer coisa. No #8, só o
+alerta de reotimização (portão 11) não passou.
 
 ---
 

@@ -17,6 +17,7 @@ F4 dispersão.
 | [docs/METODOLOGIA.md](docs/METODOLOGIA.md) | o processo: da ideia ao dinheiro real |
 | [docs/PLANO-WFA.md](docs/PLANO-WFA.md) | o plano e as decisões da aba Walk-Forward |
 | [docs/CALCULOS-WFA.md](docs/CALCULOS-WFA.md) | **como cada número do Walk-Forward é calculado**, com exemplos da #40 |
+| [docs/CALCULOS-CANDIDATA.md](docs/CALCULOS-CANDIDATA.md) | **como cada portão da tela Candidata decide**, com o exemplo real do #8 |
 | [CHANGELOG.md](CHANGELOG.md) | o que mudou e quando |
 
 ## Por que banco, e não planilha
@@ -176,6 +177,7 @@ docs/PLANO.md              decisões e razões
 docs/METODOLOGIA.md        o processo: da ideia ao dinheiro real
 docs/PLANO-WFA.md          plano e decisões do Walk-Forward
 docs/CALCULOS-WFA.md       as contas do Walk-Forward, uma a uma
+docs/CALCULOS-CANDIDATA.md as contas dos 12 portões da tela Candidata
 tests/                     179 testes
 ```
 

@@ -213,9 +213,17 @@ diferente:
 | Significância (t, p) | a expectativa difere de zero? | ✅ |
 | Correlação LR | a curva é reta ou um degrau? | ✅ |
 | SQN (Van Tharp) | quão regular é o resultado por trade | ✅ |
-| **Vizinhança do parâmetro** | **o ponto escolhido é estável** | parcial |
-| **Entrada aleatória** | **o mérito é do sinal** | ❌ |
+| **Vizinhança do parâmetro** | **o ponto escolhido é estável** | ✅ |
+| **Entrada aleatória** | **o mérito é do sinal** | ✅ |
 | **Outro ativo / outro período** | **o padrão é do mercado, não da série** | ❌ |
+
+Os três últimos — vizinhança, entrada aleatória e mais sete testes (custo,
+capital, holdout, muitas tentativas, poucos dias, poucos trades,
+reotimização) — viraram a tela **Candidata**: 12 portões que respondem, no
+final, uma pergunta só — a estratégia está pronta para a incubação (passo
+11)? O veredito é **aprovada**, **aprovada com ressalva**, **reprovada** ou
+**aguardando testes completos**, sempre visível num selo. Contas de cada
+portão, uma a uma, em [CALCULOS-CANDIDATA.md](CALCULOS-CANDIDATA.md).
 
 ---
 
@@ -361,7 +369,7 @@ já não funcionou.
 | 7 Critério de validação | ✅ sete limiares, gargalo e lista de aprovadas |
 | 8 Salvar mineração | ✅ explícito, com nome |
 | 9 Carregar salva | ✅ restauração completa, com teste |
-| 10 Testes de robustez | ✅ dez testes · ❌ vizinhança, aleatório, outro ativo |
+| 10 Testes de robustez | ✅ dez testes do Backtest · tela **Candidata** aprova, aprova com ressalva ou reprova a estratégia para a incubação, com 12 portões ([contas](CALCULOS-CANDIDATA.md)) · ❌ outro ativo |
 | 11 Incubação | ❌ |
 | 12 Portfólio | ❌ |
 | 13–15 Live | ❌ falta integração com o MT5 |
