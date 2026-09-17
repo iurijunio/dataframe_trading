@@ -224,9 +224,17 @@ def test_portao_tentativas_reprova_com_p_alto():
 
 
 def test_portao_tentativas_no_limite_passa():
-    """p exatamente igual ao máximo passa — só reprova ACIMA de 10%."""
-    r = candidata.portao_tentativas({"p": 0.10, "estatistica": 1.0, "melhor": 0, "n": 500})
+    """p exatamente igual ao máximo passa — só reprova ACIMA do limite."""
+    r = candidata.portao_tentativas({"p": 0.05, "estatistica": 1.0, "melhor": 0, "n": 500})
     assert r["ok"] is True
+
+
+def test_portao_tentativas_p_007_reprova_no_padrao_novo():
+    """O padrão de `maximo` caiu de 0,10 para 0,05 (rodada de correção 2):
+    um p de 0,07 passaria no limite antigo e agora reprova — é exatamente
+    a mudança de comportamento que a calibração pretendia."""
+    r = candidata.portao_tentativas({"p": 0.07, "estatistica": 1.5, "melhor": 2, "n": 500})
+    assert r["ok"] is False
 
 
 def test_portao_tentativas_sem_resultado_fica_pendente():
@@ -248,7 +256,7 @@ def test_portao_tentativas_exigido_sem_sigla_e_sem_numero_cru():
     r = candidata.portao_tentativas({"p": 0.03, "estatistica": 2.1, "melhor": 3, "n": 500})
     assert "SPA" not in r["nome"] and "Hansen" not in r["nome"]
     assert "SPA" not in r["dica"] and "Hansen" not in r["dica"]
-    assert r["exigido"] == "até 10% de chance de ser sorte"
+    assert r["exigido"] == "até 5% de chance de ser sorte"
 
 
 def test_portao_tentativas_dica_e_exigido_seguem_o_maximo_informado():

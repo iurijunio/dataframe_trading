@@ -514,7 +514,7 @@ def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
             "esperado_p10": p10, "pregoes_holdout": int(len(depois))}
 
 
-def portao_tentativas(resultado_spa: dict, maximo: float = 0.10) -> dict:
+def portao_tentativas(resultado_spa: dict, maximo: float = 0.05) -> dict:
     """O portão 6: aguenta o desconto por muitas tentativas?
 
     Recebe o dicionário de `spa.teste` (a Superior Predictive Ability de
@@ -522,7 +522,15 @@ def portao_tentativas(resultado_spa: dict, maximo: float = 0.10) -> dict:
     faltando, ou `spa.teste` devolveu `{"erro": ...}` porque faltou pregão,
     reamostragem ou coluna com desvio para medir) o portão fica pendente,
     não reprovado — falta de dado não é a mesma coisa que resultado ruim, e
-    o motivo vem no `valor` para a tela explicar por que não mediu."""
+    o motivo vem no `valor` para a tela explicar por que não mediu.
+
+    `maximo` default é 0,05, não 0,10: com dependência entre dias o sorteio
+    em blocos rejeita acima do nível nominal (o bloco mínimo precisa de um
+    piso — ver `spa.teste` — e isso custa precisão). Medido com 200
+    simulações (matriz 600×20, sem ganho nenhum real): o nível nominal de
+    10% deixava passar sorte em 16,5%–18% das vezes para φ ≤ 0,2; pedindo
+    5% nominal, a passagem de sorte cai para 7,5%–9,5% — perto do "até
+    cerca de 1 em 10" que a regra pretendia."""
     nome = "Aguenta o desconto por muitas tentativas?"
     dica = (f"Foram testadas muitas combinações; alguma sempre sai bem por "
             f"sorte. Este teste mede se a melhor delas continua sendo "
