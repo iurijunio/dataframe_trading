@@ -706,6 +706,10 @@ def excluir_salva(run_id: int) -> bool:
         # `wfa_runs` deixava todos os trades órfãos (551 na #40)
         con.execute("DELETE FROM wfa_trades WHERE wfa_id IN "
                     "(SELECT wfa_id FROM wfa_runs WHERE run_id = ?)", [run_id])
+        # e os planos de operacao dos mesmos walk-forwards: a regra travada
+        # com o usuario e que apagar mineracao apaga tudo que nasceu dela
+        con.execute("DELETE FROM planos_operacao WHERE wfa_id IN "
+                    "(SELECT wfa_id FROM wfa_runs WHERE run_id = ?)", [run_id])
         con.execute("DELETE FROM wfa_runs WHERE run_id = ?", [run_id])
         con.execute("DELETE FROM mining_runs WHERE run_id = ?", [run_id])
     return True

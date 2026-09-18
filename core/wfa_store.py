@@ -172,6 +172,10 @@ def detalhes(wfa_id: int) -> dict | None:
 def excluir(wfa_id: int) -> bool:
     with db.connect_write() as con, db.transacao(con):
         con.execute("DELETE FROM wfa_trades WHERE wfa_id = ?", [wfa_id])
+        # o plano de operação vai junto: sem isto ele fica apontando para um
+        # walk-forward que não existe mais, e a tela mostraria plano sem
+        # origem — o mesmo acidente dos trades órfãos, uma tabela adiante
+        con.execute("DELETE FROM planos_operacao WHERE wfa_id = ?", [wfa_id])
         con.execute("DELETE FROM wfa_runs WHERE wfa_id = ?", [wfa_id])
     return True
 

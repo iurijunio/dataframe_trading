@@ -218,6 +218,43 @@ CREATE TABLE IF NOT EXISTS wfa_trades (
     PRIMARY KEY (wfa_id, n)
 );
 
+-- ------------------------------------------------------ plano de operacao
+-- O fim do passo 10: o que a incubacao vai ler e o que a operacao vai
+-- obedecer. Tudo aqui e RETRATO, nao referencia - mineracao apagada nao pode
+-- mudar o tamanho de posicao de quem ja esta operando.
+--
+-- Sem UNIQUE por wfa_id de proposito: dois planos do mesmo walk-forward com
+-- risco diferente sao duas DECISOES, e ambas sao historico. Plano nao se
+-- edita: aposenta-se (estado) e grava-se outro.
+CREATE TABLE IF NOT EXISTS planos_operacao (
+    plano_id        BIGINT PRIMARY KEY,
+    wfa_id          BIGINT,
+    run_id          BIGINT,
+    symbol          VARCHAR,
+    strategy        VARCHAR,
+    nome            VARCHAR,
+    created_at      TIMESTAMP,
+    params          JSON,     -- retrato dos parametros que vao operar
+    profile         JSON,     -- retrato da camada 4
+    capital         DOUBLE,
+    contratos       INTEGER,
+    risco_pedido_pct  DOUBLE, -- por PREGAO, nao por operacao
+    risco_efetivo_pct DOUBLE, -- o do inteiro escolhido
+    perda_referencia  DOUBLE,
+    de_onde         VARCHAR,  -- qual leitura dimensionou
+    margem          DOUBLE,
+    uso_margem_pct  DOUBLE,
+    camada4_travada BOOLEAN,
+    disjuntor       JSON,     -- os dois niveis e as taxas de alarme falso
+    expectativa     JSON,     -- faixa p10-p90 em 3, 6 e 12 meses
+    reotimizacao    JSON,     -- a receita inteira, nao so a data
+    definicoes      JSON,     -- novo topo, reentrada, posicao aberta...
+    regua           JSON,     -- limiares congelados + resultado do holdout
+    estado          VARCHAR   -- 'ativo' | 'aposentado'
+);
+
+CREATE SEQUENCE IF NOT EXISTS seq_plano_id START 1;
+
 CREATE SEQUENCE IF NOT EXISTS seq_wfa_id START 1;
 
 CREATE SEQUENCE IF NOT EXISTS seq_ingest_id START 1;

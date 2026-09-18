@@ -619,21 +619,29 @@ git commit -m "feat(tamanho): disjuntor em dois niveis, escalado pelos contratos
 
 ---
 
-## Tarefa 4: a tabela `planos_operacao` e `core/plano.py`
+## Tarefa 4: a tabela `planos_operacao` e `core/plano.py` ✅ (18/09/2026)
 
 **Arquivos:**
-- Modificar: `core/schema.sql`, `core/wfa_store.py:171-176`, `core/optimizer.py`
+- Modificar: `core/schema.sql`, `core/wfa_store.py`, `core/optimizer.py`
 - Criar: `core/plano.py`
-- Testar: `tests/test_plano.py`
+- Testar: `tests/test_plano.py` — 9 testes, 8 mutações provadas
 
 **Interfaces produzidas:**
 ```python
 plano.salvar(**campos) -> int          # devolve plano_id
-plano.listar(wfa_id=None) -> list[dict]
+plano.listar(wfa_id=None, apenas_ativos=False) -> list[dict]
 plano.detalhes(plano_id) -> dict | None
 plano.excluir(plano_id) -> bool
 plano.aposentar(plano_id) -> bool      # estado 'ativo' -> 'aposentado'
 ```
+Campos de `salvar`: `wfa_id`, `run_id`, `symbol`, `strategy`, `nome`,
+`params`, `profile`, `capital`, `contratos`, `risco_pedido_pct`,
+`risco_efetivo_pct`, `perda_referencia`, `de_onde`, `margem`,
+`uso_margem_pct`, `camada4_travada`, `disjuntor`, `expectativa`,
+`reotimizacao`, `definicoes`, `regua`.
+
+A tabela nasce sozinha na subida do app (`init_schema`, com `CREATE TABLE IF
+NOT EXISTS`) — banco existente não precisa de migração à mão.
 
 ### As decisões
 
