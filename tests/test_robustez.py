@@ -329,6 +329,32 @@ def test_bootstrap_devolve_submerso_p50_alem_do_p95():
     assert b["submerso_p50"] <= b["submerso_p95"]
 
 
+def test_bootstrap_devolve_a_faixa_do_acumulado_pregao_a_pregao():
+    """O disjuntor precisa perguntar 'no pregão 40, este acumulado já está
+    pior que 90% dos caminhos?'. Comparar só o total do fim do prazo só
+    responde quando o prazo acabou — e aí a reotimização já venceu.
+
+    Série constante de -10 por dia e horizonte de 5: todo caminho acumula
+    -10, -20, -30, -40, -50, então as três faixas são iguais e conhecidas.
+    """
+    b = rb.bootstrap(np.full(60, -10.0), 10_000.0, n=20, semente=1, bloco=1,
+                     horizonte=5)
+    assert len(b["envelope_p10"]) == 5
+    assert list(b["envelope_p50"]) == [-10.0, -20.0, -30.0, -40.0, -50.0]
+    assert b["envelope_p10"][-1] == pytest.approx(b["final_p10"])
+
+
+def test_faixa_do_acumulado_abre_com_o_tempo():
+    """Numa série que varia, o pior décimo tem que ficar cada vez mais
+    abaixo do típico: a incerteza cresce com o prazo. Faixa que não abre é
+    faixa calculada errado."""
+    rng = np.random.default_rng(3)
+    b = rb.bootstrap(rng.normal(0, 100, 300), 10_000.0, n=200, semente=1,
+                     bloco=1, horizonte=60)
+    dist = b["envelope_p50"] - b["envelope_p10"]
+    assert dist[-1] > dist[9] > 0
+
+
 def test_perdas_seguidas_operadas_ignora_pregao_sem_trade():
     """Um pregão sem trade (resultado zero) intercalado entre perdas não
     pode cortar a sequência: a versão antiga (`_maior_seq(serie < 0)`, sem

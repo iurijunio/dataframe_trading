@@ -154,6 +154,128 @@ def trava_do_indice(preco_indice: float | None, point_value: float | None,
     return float(preco_indice) * pct / 100.0 * float(point_value)
 
 
+# Com que frequência cada nível pode disparar numa estratégia SADIA. É este
+# o número que se escolhe — não o percentil. Desligar à toa em 5% dos ciclos
+# é o preço aceito pelo disjuntor; reduzir posição é barato e reversível, por
+# isso pode ser mais frequente. O limite em reais sai daqui, e não o
+# contrário: assim a pergunta "e se eu apertar o limite?" tem resposta.
+ALARME_REDUZIR = 20.0
+ALARME_DESLIGAR = 5.0
+
+
+def limite_por_alarme(quedas, alarme_pct: float) -> float | None:
+    """A queda que só `alarme_pct` dos caminhos sadios atingem.
+
+    Sorteados 2.000 caminhos de uma estratégia que continua funcionando como
+    funcionou, `alarme_pct = 5` devolve a queda que 5% deles encostam: parar
+    ali desliga uma estratégia viva em 5% dos ciclos.
+    """
+    q = np.asarray((quedas if quedas is not None else []), dtype=float)
+    if not len(q) or not 0 < alarme_pct < 100:
+        return None
+    return float(np.percentile(q, 100.0 - alarme_pct))
+
+
+def disjuntor(leitura: dict, capital: float, n_contratos: int, perfil: dict,
+              alarme_reduzir: float = ALARME_REDUZIR,
+              alarme_desligar: float = ALARME_DESLIGAR) -> dict:
+    """Quando reduzir a posição e quando desligar a estratégia.
+
+    Dois níveis, porque gatilho único é mau detector: parando só na queda
+    ruim, desliga-se uma estratégia **sadia** em 5% dos ciclos, e uma morta
+    só depois de um quinto do capital ter ido.
+
+    | nível | gatilho | ação |
+    |---|---|---|
+    | 1 | a queda passa do limite de reduzir, a sequência de dias perdendo passa do p95, ou o acumulado sai por baixo da faixa esperada | reduzir para 1 contrato |
+    | 2 | a queda chega ao limite de desligar | desligar e reotimizar |
+
+    **Escolhe-se a taxa de alarme falso, não o percentil.** Antes o nível 2
+    era o p95 do sorteio e a "chance de desligar à toa" era calculada contra
+    o mesmo sorteio: dava 5% sempre, por construção, e um número que não
+    varia não calibra nada. Agora o caminho é o inverso — a taxa aceita
+    define o limite em reais — e mexer no dial muda os dois de verdade. Pelo
+    mesmo motivo o nível 1 saiu da queda típica: metade dos caminhos de uma
+    estratégia sadia passa dela, e reduzir posição viraria cara ou coroa a
+    cada ciclo.
+
+    Tudo **multiplicado pelos contratos escolhidos**, porque o sorteio mede
+    um contrato. As quedas vêm do recorte (curva inteira ou últimos 12 meses)
+    que tiver a queda ruim maior, para os dois níveis saírem da mesma régua.
+    Já "dias perdendo seguidos" e "dias sem novo topo" valem o pior recorte
+    **daquela métrica**, que é a regra do bloco 1: são leituras
+    independentes, não limites que precisam ficar em ordem entre si.
+
+    Os limites do dia saem da camada 4 multiplicados pelos contratos. Zero
+    significa desligado no motor — vira `None`, "não definido", porque
+    mostrar "R$ 0" prometeria uma trava que não existe.
+    """
+    from . import candidata
+
+    vazio = {"nivel1": {"queda": None, "perdas_seguidas": None,
+                        "lucro_no_prazo": None, "faixa_por_pregao": None,
+                        "alarme_pct": alarme_reduzir,
+                        "acao": "reduzir para 1 contrato"},
+             "nivel2": {"queda": None, "pct": None,
+                        "acao": "desligar e reotimizar",
+                        "alarme_pct": alarme_desligar,
+                        "risco_de_desligar_pct": None},
+             "recorte": None, "dias_sem_topo": None, "limite_dia_reais": None,
+             "limite_dia_trades": None, "horizonte": None}
+    if not n_contratos or int(n_contratos) <= 0:
+        return {**vazio, "motivo": ("sem número de contratos não há limite "
+                                    "de desligamento para calcular")}
+    boot = leitura.get("boot") or {}
+    if not boot:
+        return {**vazio, "motivo": ("a curva é curta demais para sortear "
+                                    "caminhos; sem eles não há limite")}
+
+    pior = candidata.pior_dos_recortes(leitura)
+    recorte = pior["dd_p95"]["recorte"]
+    b = ((leitura.get("boot_12m") if recorte == "últimos 12 meses" else boot)
+         or boot)
+    quedas = b.get("quedas")
+    if quedas is None or not len(np.asarray(quedas)):
+        return {**vazio, "motivo": ("o sorteio não guardou as quedas; sem "
+                                    "elas não dá para calibrar o limite")}
+
+    n = int(n_contratos)
+    reduzir = (limite_por_alarme(quedas, alarme_reduzir) or 0.0) * n
+    desligar = (limite_por_alarme(quedas, alarme_desligar) or 0.0) * n
+    faixa = b.get("envelope_p10")
+    faixa = [float(v) * n for v in faixa] if faixa is not None and len(faixa) \
+        else None
+    lim_reais = float((perfil or {}).get("limite_perda_contrato") or 0.0) * n
+    trades_dia = int((perfil or {}).get("max_trades_dia") or 0)
+    return {
+        "nivel1": {
+            "queda": reduzir or None,
+            "perdas_seguidas": int(round(
+                pior["perdas_seguidas_p95"]["valor"])) or None,
+            # o acumulado esperado no pior décimo, pregão a pregão: é com ele
+            # que se compara o resultado de hoje, sem esperar o prazo acabar
+            "faixa_por_pregao": faixa,
+            "lucro_no_prazo": (faixa[-1] if faixa else None),
+            "alarme_pct": alarme_reduzir,
+            "acao": "reduzir para 1 contrato"},
+        "nivel2": {
+            "queda": desligar or None,
+            "pct": (desligar / capital * 100 if capital and desligar
+                    else None),
+            "acao": "desligar e reotimizar",
+            "alarme_pct": alarme_desligar,
+            "risco_de_desligar_pct": (
+                candidata.risco_de_desligar(b, desligar / n)
+                if desligar else None)},
+        "recorte": recorte,
+        "dias_sem_topo": int(round(pior["submerso_p95"]["valor"])) or None,
+        "limite_dia_reais": lim_reais or None,
+        "limite_dia_trades": trades_dia or None,
+        "horizonte": int(boot.get("horizonte") or 0) or None,
+        "motivo": None,
+    }
+
+
 def contratos(capital, risco_pct, perda_ref, margem=None,
               uso_margem_pct: float = USO_MARGEM) -> dict:
     """Quantos contratos operar: o menor entre três contas.

@@ -457,8 +457,21 @@ Um gatilho único de nível é mau detector: em `dd_p95` desliga-se uma estraté
 
 | nível | gatilho | ação |
 |---|---|---|
-| 1 | equity sai do p10 do envelope, **ou** sequência de perdas > p95 | reduzir para 1 contrato |
-| 2 | `dd_p95(H)` atingido | desligar |
+| 1 | queda passa do limite de reduzir, sequência de perdas > p95, **ou** o acumulado sai por baixo da faixa do pior décimo | reduzir para 1 contrato |
+| 2 | queda chega ao limite de desligar | desligar |
+
+**Escolhe-se a taxa de alarme falso, não o percentil** (corrigido em
+18/09/2026). O limite em reais é consequência dela: 5% para desligar, 20% para
+reduzir, os dois editáveis. Fixar o limite no p95 e depois medir a chance de
+desligar à toa contra o mesmo sorteio dava **5% sempre, por construção** — um
+número que não varia não calibra nada. E o nível 1 não pode ser a queda típica:
+metade dos caminhos de uma estratégia sadia passa dela, e reduzir posição
+viraria cara ou coroa a cada ciclo.
+
+**A faixa é dia a dia, não só do fim.** `robustez.bootstrap` passa a guardar
+`envelope_p10/p50/p90`, o acumulado pregão a pregão — comparar só o total do
+fim do prazo só responde quando o prazo acabou, e aí a reotimização já venceu.
+É a mesma faixa que §4.5 exige no plano em 3, 6 e 12 meses.
 
 ### 6.4 A receita da reotimização, não só a data
 

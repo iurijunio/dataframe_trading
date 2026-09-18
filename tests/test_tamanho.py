@@ -328,6 +328,147 @@ def test_risco_efetivo_nunca_passa_do_pedido():
                 assert r["risco_efetivo_pct"] <= pedido + 1e-9
 
 
+# ----------------------------------------------- quando reduzir e desligar
+def _leitura(quedas=None, seguidas=8.0, submerso=30.0, h=126, boot12=None):
+    """Uma leitura de robustez como a produção monta: os percentis saem da
+    distribuição de quedas, não são números soltos ao lado dela.
+
+    `quedas` de 0 a 2.000 em 1.001 passos: o limite de 5% de alarme falso é
+    R$ 1.900, o de 20% é R$ 1.600, e a conta é conferível no papel.
+    """
+    q = np.linspace(0, 2000, 1001) if quedas is None else np.asarray(quedas)
+    boot = {"dd_p50": float(np.percentile(q, 50)),
+            "dd_p95": float(np.percentile(q, 95)),
+            "perdas_seguidas_p95": seguidas, "submerso_p95": submerso,
+            "horizonte": h, "quedas": q,
+            # a faixa do acumulado, pregão a pregão, no pior décimo
+            "envelope_p10": np.linspace(-10.0, -200.0, h)}
+    return {"boot": boot, "boot_12m": boot12 or {}}
+
+
+def _boot12(quedas, seguidas=12.0, submerso=40.0, h=126):
+    q = np.asarray(quedas)
+    return {"dd_p50": float(np.percentile(q, 50)),
+            "dd_p95": float(np.percentile(q, 95)),
+            "perdas_seguidas_p95": seguidas, "submerso_p95": submerso,
+            "horizonte": h, "quedas": q,
+            "envelope_p10": np.linspace(-50.0, -900.0, h)}
+
+
+def test_limite_sai_da_taxa_de_alarme_falso_escolhida():
+    """Escolhe-se com que frequência o disjuntor pode disparar numa
+    estratégia sadia; o valor em reais é consequência. O contrário — fixar o
+    percentil e depois medir a chance contra o mesmo sorteio — dava sempre
+    o mesmo número e não calibrava nada."""
+    q = np.linspace(0, 2000, 1001)
+    assert tamanho.limite_por_alarme(q, 5.0) == pytest.approx(1900.0)
+    assert tamanho.limite_por_alarme(q, 20.0) == pytest.approx(1600.0)
+    assert tamanho.limite_por_alarme([], 5.0) is None
+    assert tamanho.limite_por_alarme(q, 0.0) is None
+
+
+def test_disjuntor_escala_com_os_contratos():
+    """O sorteio mede 1 contrato. Operando 3, os limites são 3× — senão o
+    disjuntor dispara no primeiro tropeço."""
+    d = tamanho.disjuntor(_leitura(), 100_000.0, 3, {})
+    assert d["nivel2"]["queda"] == pytest.approx(5700.0)     # 1.900 × 3
+    assert d["nivel2"]["pct"] == pytest.approx(5.7)
+    assert d["nivel1"]["queda"] == pytest.approx(4800.0)     # 1.600 × 3
+    assert d["nivel1"]["faixa_por_pregao"][-1] == pytest.approx(-600.0)
+
+
+def test_apertar_o_alarme_aperta_o_limite_de_verdade():
+    """O dial precisa mexer no número: com 1% de alarme falso o limite sobe,
+    com 40% desce. Era isso que o desenho antigo não conseguia mostrar."""
+    solto = tamanho.disjuntor(_leitura(), 100_000.0, 1, {},
+                              alarme_desligar=1.0)
+    apertado = tamanho.disjuntor(_leitura(), 100_000.0, 1, {},
+                                 alarme_desligar=40.0)
+    assert solto["nivel2"]["queda"] > apertado["nivel2"]["queda"]
+    assert solto["nivel2"]["risco_de_desligar_pct"] == pytest.approx(1.0, abs=0.5)
+    assert apertado["nivel2"]["risco_de_desligar_pct"] == pytest.approx(40.0, abs=0.5)
+
+
+def test_reduzir_dispara_antes_de_desligar():
+    """Reduzir é barato e reversível, desligar não: o nível 1 tem que vir
+    antes, e com alarme falso mais frequente."""
+    d = tamanho.disjuntor(_leitura(), 100_000.0, 2, {})
+    assert d["nivel1"]["queda"] < d["nivel2"]["queda"]
+    assert d["nivel1"]["alarme_pct"] > d["nivel2"]["alarme_pct"]
+
+
+def test_os_dois_limites_saem_do_mesmo_recorte():
+    """Tirar o limite de reduzir de um recorte e o de desligar do outro pode
+    inverter os níveis. Aqui o recorte de 12 meses é o pior, e é dele que os
+    DOIS limites e a faixa por pregão têm de vir."""
+    d = tamanho.disjuntor(_leitura(boot12=_boot12(np.linspace(0, 3000, 1001))),
+                          100_000.0, 1, {})
+    assert d["recorte"] == "últimos 12 meses"
+    assert d["nivel2"]["queda"] == pytest.approx(2850.0)     # 95% de 3.000
+    assert d["nivel1"]["queda"] == pytest.approx(2400.0)     # 80% de 3.000
+    assert d["nivel1"]["faixa_por_pregao"][-1] == pytest.approx(-900.0)
+
+
+def test_leituras_independentes_valem_o_pior_recorte_de_cada_uma():
+    """'Dias perdendo seguidos' e 'dias sem novo topo' não são limites que
+    precisam ficar em ordem entre si: valem o pior de cada métrica, que é a
+    regra do bloco 1 — mesmo quando a queda ruim veio do outro recorte."""
+    boot12 = _boot12(np.linspace(0, 500, 1001), seguidas=12.0, submerso=40.0)
+    d = tamanho.disjuntor(_leitura(boot12=boot12), 100_000.0, 1, {})
+    assert d["recorte"] == "curva inteira"      # a queda ruim veio daqui
+    assert d["nivel1"]["perdas_seguidas"] == 12  # e estas, do outro recorte
+    assert d["dias_sem_topo"] == 40
+
+
+def test_limites_do_dia_zerados_no_perfil_viram_nao_definido():
+    """Zero é limite desligado no motor: mostrar 'R$ 0' faria a tela prometer
+    uma trava que não existe."""
+    perfil = {"limite_perda_contrato": 0.0, "max_trades_dia": 0}
+    d = tamanho.disjuntor(_leitura(), 100_000.0, 2, perfil)
+    assert d["limite_dia_reais"] is None and d["limite_dia_trades"] is None
+
+
+def test_limites_do_dia_multiplicam_pelos_contratos():
+    perfil = {"limite_perda_contrato": 150.0, "max_trades_dia": 3}
+    d = tamanho.disjuntor(_leitura(), 100_000.0, 2, perfil)
+    assert d["limite_dia_reais"] == pytest.approx(300.0)
+    assert d["limite_dia_trades"] == 3
+
+
+def test_sem_contratos_nao_ha_disjuntor():
+    """Zero e negativo: número de contratos inválido produzia limite
+    negativo, ou seja, 'desligar quando ganhar'."""
+    for n in (0, -3):
+        d = tamanho.disjuntor(_leitura(), 100_000.0, n, {})
+        assert d["nivel2"]["queda"] is None and d["motivo"]
+
+
+def test_sem_sorteio_nao_inventa_limite():
+    """Leitura sem bootstrap (curva curta demais): não há limite para
+    calcular, e zero seria desligar antes de começar."""
+    d = tamanho.disjuntor({"boot": {}, "boot_12m": {}}, 100_000.0, 2, {})
+    assert d["nivel2"]["queda"] is None and d["motivo"]
+
+
+def test_sorteio_sem_as_quedas_guardadas_tambem_recusa():
+    leitura = {"boot": {"dd_p95": 1000.0, "horizonte": 126}, "boot_12m": {}}
+    d = tamanho.disjuntor(leitura, 100_000.0, 2, {})
+    assert d["nivel2"]["queda"] is None and "quedas" in d["motivo"]
+
+
+def test_quedas_todas_zero_nao_viram_limite_zero():
+    """Curva sem queda nenhuma no sorteio: prometer 'desligar quando a queda
+    chegar a R$ 0' é desligar antes do primeiro trade."""
+    d = tamanho.disjuntor(_leitura(quedas=np.zeros(100)), 100_000.0, 2, {})
+    assert d["nivel2"]["queda"] is None and d["nivel2"]["pct"] is None
+    assert d["nivel2"]["risco_de_desligar_pct"] is None
+
+
+def test_disjuntor_sem_capital_nao_divide_por_zero():
+    d = tamanho.disjuntor(_leitura(), 0.0, 2, None)
+    assert d["nivel2"]["queda"] is not None and d["nivel2"]["pct"] is None
+
+
 def test_sem_perda_de_referencia_nao_inventa_contratos():
     r = tamanho.contratos(100_000.0, 1.0, None)
     assert r["n"] == 0 and r["risco_efetivo_pct"] is None and r["motivo"]

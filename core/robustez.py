@@ -314,9 +314,19 @@ def bootstrap(por_dia: np.ndarray, capital: float, n: int = 2000,
         # zero é pregão sem trade, não é corte de sequência - ver docstring
         seguidas[i] = perdas_seguidas_operadas(series[i])
 
+    # A faixa DIA A DIA do lucro acumulado, não só a do fim do prazo. É ela
+    # que permite perguntar "hoje, no pregão 40, este acumulado já está pior
+    # que 90% dos caminhos?" — comparar só o total final só serve quando o
+    # prazo acabou, e aí a reotimização já venceu. Custa um percentil sobre
+    # uma matriz que o laço acima já percorre.
+    acumulado = np.cumsum(series, axis=1)
+    faixa = np.percentile(acumulado, [10, 50, 90], axis=0)
+
     finais = series.sum(axis=1)
     p = np.percentile(quedas, [50, 95, 99])
     return {
+        "envelope_p10": faixa[0], "envelope_p50": faixa[1],
+        "envelope_p90": faixa[2],
         "bloco": L, "n": n, "horizonte": H,
         "dd_p50": float(p[0]), "dd_p95": float(p[1]), "dd_p99": float(p[2]),
         # p95 é o CASO RUIM, não o típico — o cartão que avisa "tipicamente

@@ -444,43 +444,59 @@ git commit -m "feat(tamanho): contratos pelo pior entre risco e margem, com risc
 
 ---
 
-## Tarefa 3: o disjuntor em dois níveis
+## Tarefa 3: o disjuntor em dois níveis ✅ (18/09/2026)
 
 **Arquivos:**
-- Modificar: `core/tamanho.py`
-- Testar: `tests/test_tamanho.py`
+- Modificar: `core/tamanho.py`, `core/robustez.py` (a faixa por pregão)
+- Testar: `tests/test_tamanho.py`, `tests/test_robustez.py` — 95 testes nos
+  dois arquivos, 6 mutações provadas nesta tarefa
 
 **Interfaces produzidas:**
 ```python
-def disjuntor(leitura: dict, capital: float, n_contratos: int, perfil: dict) -> dict
+def limite_por_alarme(quedas, alarme_pct: float) -> float | None
+def disjuntor(leitura, capital, n_contratos, perfil,
+              alarme_reduzir=20.0, alarme_desligar=5.0) -> dict
 ```
-devolve
-```python
-{"nivel1": {"queda": float|None, "perdas_seguidas": int|None, "acao": str},
- "nivel2": {"queda": float|None, "pct": float|None, "acao": str,
-            "risco_de_desligar_pct": float|None},
- "dias_sem_topo": int|None, "limite_dia_reais": float|None,
- "limite_dia_trades": int|None, "horizonte": int|None, "motivo": str|None}
-```
+`nivel1` traz `queda`, `perdas_seguidas`, `faixa_por_pregao`, `lucro_no_prazo`,
+`alarme_pct` e `acao`; `nivel2` traz `queda`, `pct`, `alarme_pct`,
+`risco_de_desligar_pct` e `acao`; fora deles, `recorte`, `dias_sem_topo`,
+`limite_dia_reais`, `limite_dia_trades`, `horizonte` e `motivo`.
+`robustez.bootstrap` ganhou `envelope_p10/p50/p90`.
 
-### Por que dois níveis
+### Escolhe-se a taxa de alarme falso, não o percentil
 
 Gatilho único é mau detector: no `dd_p95` desliga-se uma estratégia **sadia**
 em ~5% dos ciclos, e uma morta só depois de 20% do capital ter ido.
 
 | nível | gatilho | ação |
 |---|---|---|
-| 1 | queda passa do valor típico (p50 do sorteio) **ou** a sequência de dias perdendo passa do p95 | reduzir para 1 contrato |
-| 2 | queda chega ao p95 do sorteio | desligar e reotimizar |
+| 1 | queda passa do limite de reduzir (20% de alarme falso), sequência de dias perdendo passa do p95, ou o acumulado sai por baixo da faixa do pior décimo | reduzir para 1 contrato |
+| 2 | queda chega ao limite de desligar (5% de alarme falso) | desligar e reotimizar |
 
-Tudo **multiplicado pelos contratos escolhidos** e vindo do **pior dos dois
-recortes** (curva inteira e últimos 12 meses), que é a régua do bloco 1. A
-chance de o nível 2 disparar com a estratégia viva (`risco_de_desligar`) vai
-junto: sem ela o limite está chutado, não calibrado.
+**O limite em reais é consequência da taxa escolhida.** O desenho anterior
+fixava o nível 2 no p95 do sorteio e media a chance de desligar à toa contra o
+mesmo sorteio: dava **5% sempre, por construção**, e um número que não varia
+não calibra nada. Invertida a ordem, mexer no dial muda os dois de verdade.
+Pelo mesmo motivo o nível 1 saiu da queda típica — metade dos caminhos de uma
+estratégia sadia passa dela, e reduzir posição viraria cara ou coroa.
+
+**A faixa é dia a dia.** `robustez.bootstrap` guarda o acumulado por pregão nos
+percentis 10, 50 e 90. O gatilho do desenho ("a equity sai do p10 do
+envelope") só funciona assim: comparar o total do fim do prazo só responde
+quando o prazo acabou. Custa um percentil sobre a matriz que o laço já
+percorre, e é a mesma faixa que §4.5 exige no plano em 3, 6 e 12 meses.
+
+**Mesma régua nos dois níveis.** Os dois limites e a faixa saem do recorte
+(curva inteira ou últimos 12 meses) com a queda ruim maior; tirar um de cada
+recorte pode inverter os níveis. Já "dias perdendo seguidos" e "dias sem novo
+topo" valem o pior recorte **de cada métrica**, que é a regra do bloco 1: são
+leituras independentes, não limites que precisam ficar em ordem entre si.
 
 Os limites do dia saem do perfil de execução (camada 4), multiplicados pelos
 contratos: `limite_perda_contrato × n` e `max_trades_dia`. Zero significa
-desligado no motor — vira `None`, "não definido", e não 0.
+desligado no motor — vira `None`, "não definido", e não 0. Contratos zero ou
+negativos, sorteio ausente, sorteio sem as quedas guardadas e quedas todas
+zeradas viram "não medido" com motivo, nunca limite zero ou negativo.
 
 - [ ] **Passo 1: o teste que falha**
 
