@@ -311,33 +311,44 @@ git commit -m "feat(tamanho): perda de referencia por contrato, o pior de tres l
 
 ---
 
-## Tarefa 2: contratos, risco efetivo e margem
+## Tarefa 2: contratos, risco efetivo e margem ✅ (18/09/2026)
 
 **Arquivos:**
 - Modificar: `core/tamanho.py`
-- Testar: `tests/test_tamanho.py`
+- Testar: `tests/test_tamanho.py` — 40 testes, 12 mutações provadas
 
 **Interfaces produzidas:**
 ```python
 def contratos(capital, risco_pct, perda_ref, margem=None, uso_margem_pct=50.0) -> dict
 ```
-devolve `{"n": int, "por_risco": int|None, "por_margem": int|None,
-"limite": str, "risco_pedido_pct": float, "risco_efetivo_pct": float|None,
-"perda_ref": float|None, "margem_usada": float|None, "motivo": str|None}`.
+devolve `{"n", "por_risco", "por_margem", "por_folga", "limite",
+"risco_pedido_pct", "risco_efetivo_pct", "perda_ref", "margem",
+"uso_margem_pct", "motivo"}`.
 
 ### As decisões
 
+- **O risco é por PREGÃO, não por operação.** A perda de referência é de um dia
+  inteiro; quem digita 1% está aceitando 1% no dia. Chamar de "risco por trade"
+  — como este plano e o §4.5 chamavam — faria quem opera três vezes por dia
+  achar que aceitou o triplo. Vale para o campo da tela, o (?) e as mensagens.
+- **Três contas, vale a menor:** risco, garantia, e **garantia mais prejuízo do
+  dia juntos** (`capital ≥ n × (margem + perda_ref)`). Sem a terceira, nada
+  impede a garantia comer 45% do capital e o prejuízo do mesmo dia pedir mais
+  do que os 55% que sobraram.
 - **Piso inteiro, e todas as contas seguintes usam o inteiro.** Entre 1 e 2
   contratos o risco dobra; "1%" vira ficção se a tela guardar o fracionário.
-- **`n = 0` não é erro: é reprovação por capital insuficiente**, dita com
-  todas as letras, e o `motivo` explica qual das duas contas zerou.
-- **Margem trava junto.** Sem dinheiro para a garantia intradiária o número de
-  contratos não existe, por melhor que seja o risco. Margem não informada
-  (`None`) não bloqueia: `por_margem` fica `None` e o limite passa a ser o
-  risco, com a tela avisando que a margem não foi conferida.
-- **`uso_margem_pct`** é quanto do capital pode virar garantia. Padrão 50%:
-  usar 100% do capital como margem deixa a conta sem folga para o prejuízo do
-  próprio dia.
+  Invariante testada: o risco efetivo nunca passa do pedido.
+- **`n = 0` não é erro: é reprovação por capital insuficiente**, e o `motivo`
+  diz **todas** as contas que zeraram — culpar só uma manda o usuário mexer num
+  dial que não resolve.
+- **Empate aparece no `limite`** ("risco e margem"): dizer só uma faria o
+  usuário subir o risco e não ver contrato a mais, sem explicação.
+- **Margem em branco não bloqueia** e não vira zero: as contas 2 e 3 ficam de
+  fora, e a tela avisa que a garantia não foi conferida. Garantia negativa e
+  folga fora de 0–100% são recusadas com motivo, em vez de virar número.
+- **`uso_margem_pct`** (padrão 50%) vira dial na tela (tarefa 6) e vai gravado
+  no plano. A tela precisa dizer **qual** margem digitar: intradiária ou cheia
+  mudam o número de contratos em 10 a 30 vezes.
 
 - [ ] **Passo 1: o teste que falha**
 

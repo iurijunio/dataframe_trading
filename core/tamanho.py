@@ -3,7 +3,8 @@
 Separado de `candidata.py` de propósito. Lá moram os portões, que respondem
 uma pergunta fechada — a estratégia passa ou não. Aqui mora o
 dimensionamento, que só faz sentido DEPOIS de aprovada e que tem dial: o
-usuário escolhe o risco por trade e informa a margem da corretora.
+usuário escolhe quanto aceita perder num pregão ruim e informa a garantia
+que a corretora exige por contrato.
 
 Nada aqui importa Dash.
 """
@@ -28,6 +29,11 @@ CAUDA = 0.05
 # 100 operações fora da amostra): essa conta operações e mora em quem chama.
 # Aqui é só a guarda contra entrada degenerada.
 MIN_PREGOES = 21
+
+# Quanto do capital pode virar garantia na corretora. Usar 100% deixa a conta
+# sem folga para o prejuízo do próprio dia — a garantia fica presa enquanto a
+# posição está aberta, e é nela que o prejuízo do dia é debitado.
+USO_MARGEM = 50.0
 
 
 def por_contrato(pnl_dia, contratos: int):
@@ -148,7 +154,90 @@ def trava_do_indice(preco_indice: float | None, point_value: float | None,
     return float(preco_indice) * pct / 100.0 * float(point_value)
 
 
-def perda_referencia(pnl_dia, contratos, perfil, point_value, *,
+def contratos(capital, risco_pct, perda_ref, margem=None,
+              uso_margem_pct: float = USO_MARGEM) -> dict:
+    """Quantos contratos operar: o menor entre três contas.
+
+    1. **risco**: o risco que você aceita perder num PREGÃO ruim dividido
+       pela perda de referência de um contrato;
+    2. **margem**: quanto do capital pode virar garantia, dividido pela
+       garantia de um contrato;
+    3. **garantia mais prejuízo do dia**: o capital precisa pagar as duas
+       coisas ao mesmo tempo — `capital ≥ n × (margem + perda de um dia
+       ruim)`. Sem esta, nada impede a garantia comer 45% do capital e o
+       prejuízo do mesmo dia pedir mais do que os 55% que sobraram.
+
+    `risco_pct` é **por pregão, não por operação**. A perda de referência é
+    de um dia inteiro (a média dos 5% piores pregões, ou um dia ruim de
+    execução com todos os stops), então quem digita 1% está aceitando 1% no
+    dia. Chamar isso de "risco por trade" — como o desenho chamava — faz
+    quem opera três vezes por dia achar que aceitou o triplo.
+
+    Sempre **piso inteiro**, e todas as contas seguintes usam esse inteiro:
+    entre 1 e 2 contratos o risco dobra, e guardar o fracionário faria "1%"
+    virar ficção. Por isso o risco efetivo do inteiro volta junto e vai para
+    a tela ao lado do pedido.
+
+    `n = 0` não é erro: é **reprovação por capital insuficiente**, e o
+    `motivo` diz quais contas zeraram — senão o usuário mexe num dial e não
+    resolve, porque o outro também zerou. Margem em branco é dado que falta,
+    não garantia de graça: as contas 2 e 3 ficam de fora, voltam `None`, e a
+    tela avisa que a garantia não foi conferida.
+    """
+    base = {"por_risco": None, "por_margem": None, "por_folga": None,
+            "limite": None, "risco_pedido_pct": float(risco_pct or 0.0),
+            "risco_efetivo_pct": None, "perda_ref": perda_ref,
+            "margem": margem or None, "uso_margem_pct": uso_margem_pct}
+    if not perda_ref or perda_ref <= 0:
+        return {**base, "n": 0,
+                "motivo": ("sem perda de referência não dá para dizer "
+                           "quantos contratos cabem")}
+    if not capital or capital <= 0 or not risco_pct or risco_pct <= 0:
+        return {**base, "n": 0,
+                "motivo": ("sem capital e risco por pregão informados não "
+                           "dá para dimensionar")}
+    if margem is not None and margem < 0:
+        return {**base, "n": 0,
+                "motivo": "a garantia por contrato não pode ser negativa"}
+    if not 0 < uso_margem_pct <= 100:
+        return {**base, "n": 0,
+                "motivo": ("a parte do capital reservada para garantia "
+                           "precisa estar entre 0% e 100%")}
+
+    contas = {"risco": int(capital * float(risco_pct) / 100.0 // perda_ref)}
+    if margem:
+        contas["margem"] = int(capital * uso_margem_pct / 100.0 // margem)
+        contas["garantia mais prejuízo do dia"] = int(
+            capital // (float(margem) + perda_ref))
+    n = min(contas.values())
+    # empate manda junto: dizer só "risco" quando a margem também travou faz
+    # o usuário subir o risco e não ver contrato nenhum a mais, sem explicação
+    limite = " e ".join(k for k, v in contas.items() if v == n)
+    motivo = None
+    if n <= 0:
+        zeradas = [k for k, v in contas.items() if v <= 0]
+        motivo = ("o capital não comporta nem 1 contrato: "
+                  + " e ".join(_POR_QUE_ZEROU[k] for k in zeradas))
+    return {**base, "n": max(n, 0), "por_risco": contas["risco"],
+            "por_margem": contas.get("margem"),
+            "por_folga": contas.get("garantia mais prejuízo do dia"),
+            "limite": limite,
+            "risco_efetivo_pct": (n * perda_ref / capital * 100
+                                  if n > 0 else None),
+            "motivo": motivo}
+
+
+_POR_QUE_ZEROU = {
+    "risco": "1 contrato já arrisca mais do que o limite pedido",
+    "margem": ("a garantia exigida por contrato é maior que a parte do "
+               "capital reservada para ela"),
+    "garantia mais prejuízo do dia": ("o capital não paga a garantia e o "
+                                      "prejuízo de um dia ruim ao mesmo "
+                                      "tempo"),
+}
+
+
+def perda_referencia(pnl_dia, contratos_backtest, perfil, point_value, *,
                      piso: float | None = None,
                      custo_por_trade: float = 0.0,
                      trades_no_dia: int | None = None) -> dict:
@@ -180,7 +269,7 @@ def perda_referencia(pnl_dia, contratos, perfil, point_value, *,
                 "motivo": ("o backtest rodou com posição variável: a perda "
                            "de um contrato não sai de uma divisão simples")}
 
-    um = por_contrato(pnl_dia, contratos)
+    um = por_contrato(pnl_dia, contratos_backtest)
     c = cvar_pregao(um)
     ruim = dia_ruim(p, point_value, custo_por_trade, trades_no_dia)
     # o pior pregão e o dia ruim continuam valendo mesmo quando a cauda é

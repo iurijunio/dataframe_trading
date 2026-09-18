@@ -303,8 +303,12 @@ otimização — e a plataforma perde para sempre o único dado limpo que tinha.
 unidade de risco operacional é o pregão.
 
     CVaR₅ = média dos 5% piores PREGÕES, por contrato
-    contratos = piso( capital × risco% / |CVaR₅| )
+    contratos = piso( capital × risco% do PREGÃO / |CVaR₅| )
 
+- **O risco% é por pregão, não por operação** (corrigido em 18/09/2026). A
+  perda de referência é de um dia inteiro: quem digita 1% aceita 1% no dia, e
+  o rótulo antigo ("risco por trade") faria quem opera três vezes por dia
+  achar que aceitou o triplo.
 - **`contratos = 0` reprova** por capital insuficiente, explicitamente.
 - O **risco efetivo do inteiro** escolhido é exibido e gravado: entre 1 e 2
   contratos o risco dobra, e "1%" vira ficção.
@@ -312,7 +316,14 @@ unidade de risco operacional é o pregão.
 - O (?) diz o que "1% com CVaR" significa: 1% do capital é a **média** da cauda,
   não o teto dela. Metade das perdas da cauda será maior.
 - Piso de estresse: dimensiona-se pelo **pior** entre o CVaR do pregão e um
-  cenário de gap/trava, e trava-se também pela **margem intradiária** exigida.
+  **dia ruim de execução** (todos os stops do dia, o último com o dobro do
+  tamanho), e trava-se também pela **margem intradiária** exigida. O pior
+  pregão já ocorrido é leitura, não candidato — uma média nunca passa do pior
+  do grupo, e deixá-lo concorrer desligaria o CVaR. A trava de 10% do índice
+  aparece como aviso, sem dimensionar (decisões de 18/09/2026).
+- Terceira trava, do mesmo tamanho de importância: o capital precisa pagar a
+  **garantia e o prejuízo do dia ao mesmo tempo** — `capital ≥ n × (margem +
+  perda de referência)`.
 
 **Risco de desligamento, não "ruína".** A pergunta operacional não é "caio X%
 antes de dobrar" (fração fixa, de Vince, com capital composto — a curva aqui é
@@ -325,7 +336,7 @@ que o bootstrap já calcula e o plano já tem o horizonte para definir.
 |---|---|
 | identidade | `wfa_id`, `run_id`, símbolo, estratégia, nome, data |
 | retratos | `params`, `profile`, `capital` — cópias, não referências |
-| tamanho | contratos, risco por trade pedido, **risco efetivo**, margem exigida, capital livre |
+| tamanho | contratos, risco **por pregão** pedido, **risco efetivo**, margem exigida, parte do capital reservada para garantia, capital livre |
 | disjuntor | drawdown de desligamento, **nível de redução** (§6.3), sequência máxima de perdas, prazo sem novo topo, limite diário em R$ e em trades |
 | definições | o que é "novo topo", DD sobre capital inicial ou corrente, posição aberta conta ou não, regra de reentrada e quarentena |
 | expectativa | faixa p10–p90 em 3, 6 e 12 meses, e o minTRL ao lado |

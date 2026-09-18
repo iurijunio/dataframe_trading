@@ -210,3 +210,130 @@ def test_perda_referencia_minuscula_e_recusada_pelo_piso():
     curva = np.concatenate([np.full(5, -0.01), np.full(95, 10.0)])
     r = tamanho.perda_referencia(curva, 1, {}, 0.20, piso=1.0)
     assert r["valor"] is None and "sem sentido" in r["motivo"]
+
+
+# ------------------------------------------------------ quantos contratos
+def test_contratos_pelo_risco_arredonda_para_baixo():
+    """R$ 100.000 com 1% são R$ 1.000 de risco; perda de referência de
+    R$ 300 por contrato dá 3,33 — operam-se 3, nunca 4."""
+    r = tamanho.contratos(100_000.0, 1.0, 300.0)
+    assert r["n"] == 3 and r["por_risco"] == 3 and r["limite"] == "risco"
+    # e 3,75 também são 3: arredondar para o mais perto passaria do risco
+    # pedido, que é justamente o número que não pode ser ultrapassado
+    assert tamanho.contratos(100_000.0, 1.0, 266.67)["n"] == 3
+
+
+def test_risco_efetivo_e_do_inteiro_nao_do_fracionario():
+    """3 contratos × R$ 300 = R$ 900, que são 0,9% do capital. Mostrar o 1%
+    pedido seria mentira confortável: entre 1 e 2 contratos o risco dobra."""
+    r = tamanho.contratos(100_000.0, 1.0, 300.0)
+    assert r["risco_efetivo_pct"] == pytest.approx(0.9)
+    assert r["risco_pedido_pct"] == 1.0
+
+
+def test_margem_pode_ser_o_limite_e_a_tela_precisa_saber_qual_foi():
+    """O risco daria 3 contratos; com metade de R$ 100.000 disponível para
+    garantia e margem de R$ 20.000 por contrato, só cabem 2."""
+    r = tamanho.contratos(100_000.0, 1.0, 300.0, margem=20_000.0)
+    assert r["n"] == 2 and r["por_margem"] == 2 and r["limite"] == "margem"
+    assert r["risco_efetivo_pct"] == pytest.approx(0.6)
+
+
+def test_margem_nao_informada_nao_vira_zero_nem_bloqueia():
+    """Margem em branco é dado que falta, não garantia de graça: o limite
+    passa a ser o risco, e a tela avisa que a margem não foi conferida."""
+    for vazia in (None, 0.0):
+        r = tamanho.contratos(100_000.0, 1.0, 300.0, margem=vazia)
+        assert r["por_margem"] is None and r["n"] == 3
+        assert r["limite"] == "risco"
+
+
+def test_folga_de_margem_e_metade_do_capital_por_padrao():
+    """Usar 100% do capital como garantia deixa a conta sem folga para o
+    prejuízo do próprio dia. Com margem de R$ 25.000, cabem 2, não 4."""
+    r = tamanho.contratos(100_000.0, 5.0, 300.0, margem=25_000.0)
+    assert r["por_margem"] == 2
+    r_cheio = tamanho.contratos(100_000.0, 5.0, 300.0, margem=25_000.0,
+                                uso_margem_pct=100.0)
+    assert r_cheio["por_margem"] == 4
+
+
+def test_zero_contratos_pelo_risco_e_reprovacao_explicita():
+    """R$ 5.000 com 1% são R$ 50, contra perda de referência de R$ 300: nem
+    o contrato mínimo cabe. Não é erro, é reprovação por capital."""
+    r = tamanho.contratos(5_000.0, 1.0, 300.0)
+    assert r["n"] == 0 and r["risco_efetivo_pct"] is None
+    assert "1 contrato já arrisca" in r["motivo"]
+
+
+def test_zero_contratos_pela_margem_diz_que_foi_a_garantia():
+    """O risco comportaria 3; a garantia exigida é maior que a parte do
+    capital reservada para ela. O motivo precisa dizer qual das duas contas
+    zerou, senão o usuário mexe no dial errado."""
+    r = tamanho.contratos(100_000.0, 1.0, 300.0, margem=60_000.0)
+    assert r["n"] == 0 and "garantia" in r["motivo"]
+
+
+def test_capital_precisa_pagar_garantia_e_prejuizo_do_dia_juntos():
+    """R$ 100.000, garantia de R$ 8.000 e perda de referência de R$ 2.000:
+    risco (5%) daria 2, margem daria 6, mas 2 contratos pedem R$ 16.000 de
+    garantia mais R$ 4.000 de prejuízo — cabe. Com garantia de R$ 45.000, as
+    duas contas separadas ainda dariam 1, e o capital não paga os dois."""
+    r = tamanho.contratos(100_000.0, 5.0, 2_000.0, margem=8_000.0)
+    assert r["por_folga"] == 10 and r["n"] == 2
+    apertado = tamanho.contratos(100_000.0, 60.0, 60_000.0, margem=45_000.0)
+    assert apertado["por_risco"] == 1 and apertado["por_margem"] == 1
+    assert apertado["n"] == 0 and "ao mesmo tempo" in apertado["motivo"]
+
+
+def test_empate_entre_as_contas_aparece_no_limite():
+    """Dizer só 'risco' quando a margem também travou faz o usuário subir o
+    risco e não ver contrato nenhum a mais, sem explicação."""
+    r = tamanho.contratos(100_000.0, 1.0, 300.0, margem=16_000.0)
+    assert r["por_risco"] == 3 and r["por_margem"] == 3
+    assert "risco" in r["limite"] and "margem" in r["limite"]
+
+
+def test_quando_as_duas_contas_zeram_o_motivo_fala_das_duas():
+    """Culpar só a garantia manda o usuário mexer num dial que não resolve,
+    porque o risco também zerou."""
+    r = tamanho.contratos(5_000.0, 1.0, 300.0, margem=60_000.0)
+    assert r["n"] == 0
+    assert "arrisca mais" in r["motivo"] and "garantia" in r["motivo"]
+
+
+def test_garantia_negativa_e_recusada_em_vez_de_virar_numero():
+    """Entrada inválida produzia 'por_margem: -500' na tela."""
+    r = tamanho.contratos(100_000.0, 1.0, 300.0, margem=-100.0)
+    assert r["n"] == 0 and r["por_margem"] is None
+    assert "negativa" in r["motivo"]
+
+
+def test_folga_de_garantia_fora_da_faixa_e_recusada():
+    """Com 0% a conta da margem zera e a mensagem culparia a corretora,
+    quando a culpa é do dial."""
+    for pct in (0.0, 120.0):
+        r = tamanho.contratos(100_000.0, 1.0, 300.0, margem=1_000.0,
+                              uso_margem_pct=pct)
+        assert r["n"] == 0 and "entre 0% e 100%" in r["motivo"]
+
+
+def test_risco_efetivo_nunca_passa_do_pedido():
+    """Invariante que pega uma classe inteira de erro: o inteiro é piso, e
+    piso nunca ultrapassa o limite pedido."""
+    for perda in (37.0, 300.0, 1_234.56, 4_999.0):
+        for pedido in (0.5, 1.0, 2.5):
+            r = tamanho.contratos(100_000.0, pedido, perda)
+            if r["n"] > 0:
+                assert r["risco_efetivo_pct"] <= pedido + 1e-9
+
+
+def test_sem_perda_de_referencia_nao_inventa_contratos():
+    r = tamanho.contratos(100_000.0, 1.0, None)
+    assert r["n"] == 0 and r["risco_efetivo_pct"] is None and r["motivo"]
+
+
+def test_sem_capital_ou_sem_risco_pedido_nao_mede():
+    assert tamanho.contratos(0.0, 1.0, 300.0)["n"] == 0
+    assert tamanho.contratos(100_000.0, 0.0, 300.0)["motivo"]
+    assert tamanho.contratos(100_000.0, -1.0, 300.0)["n"] == 0
