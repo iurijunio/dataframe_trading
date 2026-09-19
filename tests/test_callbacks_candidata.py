@@ -6,10 +6,11 @@ poderem ser testados direto.
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -200,3 +201,108 @@ def test_resumo_mostra_o_nome_da_estrategia_nao_o_do_arquivo():
     # estratégia que não existe mais no disco continua aparecendo pelo módulo
     assert CC._nome_da_estrategia("nao_existe") == "nao_existe"
     assert CC._nome_da_estrategia(None) == "—"
+
+
+# ------------------------------------------------ dimensionar (bloco 5)
+def _trades(n=200, liquido=-50.0, dia_inicial=2):
+    """Operações com saída em pregões seguidos, uma por dia."""
+    return [{"n": i, "exit_ts": datetime(2024, 1, 1) + timedelta(days=i),
+             "liquido": liquido if i % 4 else 120.0, "custo": 1.0}
+            for i in range(n)]
+
+
+def _wfa(perfil=None, capital=100_000.0):
+    return {"symbol": "WIN$N", "capital": capital,
+            "profile": perfil if perfil is not None else {
+                "contratos": 1, "stop_tipo": "pontos", "stop_pontos": 300,
+                "max_trades_dia": 2}}
+
+
+def test_dimensionar_entrega_as_tres_partes(monkeypatch):
+    """A função existe para ser testada sem montar o app Dash: junta trades,
+    perfil e instrumento e devolve referência, contratos e disjuntor."""
+    monkeypatch.setattr(CC.db, "load_instrument_yaml",
+                        lambda s: {"point_value": 0.20, "tick_value": 1.0})
+    leitura = {"boot": {"dd_p95": 900.0, "dd_p50": 300.0, "quedas":
+                        np.linspace(0, 2000, 1001), "perdas_seguidas_p95": 8.0,
+                        "submerso_p95": 30.0, "horizonte": 126,
+                        "envelope_p10": np.linspace(-10, -200, 126)},
+               "boot_12m": {}}
+    ref, dim, disj = CC._dimensionar(_trades(), _wfa(), leitura, None, None,
+                                     1.0, None, 50.0)
+    assert ref["valor"] is not None and ref["de_onde"]
+    assert dim["n"] >= 1 and dim["risco_efetivo_pct"] <= 1.0
+    assert disj["nivel2"]["queda"] > disj["nivel1"]["queda"]
+
+
+def test_dimensionar_com_perfil_sem_contratos_nao_divide_por_zero(monkeypatch):
+    """Registro antigo, sem `contratos` no perfil: a curva vale 1 contrato,
+    não zero."""
+    monkeypatch.setattr(CC.db, "load_instrument_yaml",
+                        lambda s: {"point_value": 0.20, "tick_value": 1.0})
+    leitura = {"boot": {}, "boot_12m": {}}
+    ref, dim, _ = CC._dimensionar(_trades(), _wfa(perfil={}), leitura,
+                                  None, None, 1.0, None, 50.0)
+    assert ref["valor"] is not None and dim["n"] >= 1
+
+
+def test_dimensionar_sem_capital_nao_inventa_contratos(monkeypatch):
+    monkeypatch.setattr(CC.db, "load_instrument_yaml",
+                        lambda s: {"point_value": 0.20, "tick_value": 1.0})
+    _, dim, disj = CC._dimensionar(_trades(), _wfa(capital=None),
+                                   {"boot": {}, "boot_12m": {}},
+                                   None, None, 1.0, None, 50.0)
+    assert dim["n"] == 0 and dim["motivo"]
+    assert disj["nivel2"]["queda"] is None
+
+
+def test_dimensionar_sem_valor_do_ponto_ainda_mede_a_cauda(monkeypatch):
+    """Instrumento sem `point_value` no YAML: o dia ruim de execução não é
+    medido, e a conta segue com a média dos dias ruins."""
+    monkeypatch.setattr(CC.db, "load_instrument_yaml", lambda s: {})
+    ref, dim, _ = CC._dimensionar(_trades(), _wfa(), {"boot": {}, "boot_12m": {}},
+                                  None, None, 1.0, None, 50.0)
+    assert ref["dia_ruim"] is None
+    assert ref["de_onde"] == "a média dos 5% piores pregões"
+
+
+def test_pregao_movimentado_conta_so_dentro_da_janela(monkeypatch):
+    """O dia mais movimentado alimenta o "dia ruim de execução" quando o
+    perfil não tem limite diário. Ele precisa sair do MESMO recorte que
+    produziu o resto da conta: um pregão cheio fora da janela do walk-forward
+    inflaria a perda de referência e derrubaria os contratos sem motivo."""
+    monkeypatch.setattr(CC.db, "load_instrument_yaml",
+                        lambda s: {"point_value": 0.20, "tick_value": 1.0})
+    # dentro da janela: no máximo 1 operação por pregão
+    trades = _trades(n=120)
+    # fora dela (antes do começo): um pregão com 8 operações
+    fora = [{"n": 900 + i, "exit_ts": datetime(2023, 6, 1, 10 + i),
+             "liquido": -30.0, "custo": 1.0} for i in range(8)]
+    perfil = {"contratos": 1, "stop_tipo": "pontos", "stop_pontos": 300,
+              "max_trades_dia": 0}          # sem limite: usa o observado
+    leitura = {"boot": {}, "boot_12m": {}}
+    ref, *_ = CC._dimensionar(fora + trades, _wfa(perfil=perfil), leitura,
+                              "2024-01-01", "2024-06-01", 1.0, None, 50.0)
+    # 1 operação no dia → stop dobrado = 300 × 0,20 × 2 = 120, mais o custo
+    assert ref["dia_ruim"] == pytest.approx(121.0)
+
+
+def test_leitura_do_wfa_e_calculada_uma_vez_so(monkeypatch):
+    """Cada mexida no dial de risco não pode refazer os 2.000 caminhos
+    sorteados: a curva não mudou, só o tamanho da posição."""
+    chamadas = []
+
+    def falsos(wid):
+        chamadas.append(wid)
+        return _trades(n=150)
+
+    monkeypatch.setattr(CC.wfa_store, "trades", falsos)
+    monkeypatch.setattr(CC.candidata, "leitura_robustez",
+                        lambda *a, **k: {"boot": {}, "boot_12m": {}})
+    CC._LEITURAS.clear()
+    d = {"capital": 100_000.0, "passos": [], "oos_meses": 6}
+    primeira = CC.leitura_do_wfa(77, d)
+    segunda = CC.leitura_do_wfa(77, d)
+    assert chamadas == [77]
+    assert primeira is segunda
+    CC._LEITURAS.clear()

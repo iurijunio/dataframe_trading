@@ -26,6 +26,43 @@ from .components import wfa_panel as WP
 # título padrão dela
 TITULO_SELO = "a estratégia está pronta para a incubação?"
 
+# A leitura de robustez de cada walk-forward, guardada por id.
+#
+# São 2.000 caminhos sorteados duas vezes (curva inteira e últimos 12 meses),
+# ~0,35 s. Sem guardar, cada mexida no dial de risco — que não muda a curva,
+# só o tamanho da posição — refazia tudo: arrastar 1% para 2% de 0,1 em 0,1
+# custava quase quatro segundos de conta repetida. Não dá para usar um
+# `dcc.Store`: a leitura carrega arrays do numpy (as quedas sorteadas, a
+# faixa por pregão) que não viram JSON.
+#
+# A chave é o `wfa_id`, e ele nunca é reaproveitado: regravar o mesmo
+# walk-forward cria um id novo (ver `wfa_store.salvar`). Guarda os três
+# últimos — a tela compara poucos de cada vez.
+_LEITURAS: dict[int, dict] = {}
+_LEITURAS_MAX = 3
+
+
+def leitura_do_wfa(wfa_id: int, d: dict) -> dict:
+    """A leitura de robustez deste walk-forward, calculada uma vez só.
+
+    Devolve `{"leitura", "trades", "de", "ate"}` — os trades vêm junto
+    porque quem dimensiona precisa deles e lê-los de novo do banco seria a
+    segunda consulta pela mesma coisa no mesmo clique.
+    """
+    if wfa_id in _LEITURAS:
+        return _LEITURAS[wfa_id]
+    capital = d.get("capital")
+    trades = wfa_store.trades(wfa_id)
+    horizonte = candidata.calcula_horizonte(d)
+    de, ate = candidata.limites_oos(d.get("passos"))
+    leitura = candidata.leitura_robustez(trades, capital, horizonte,
+                                         de=de, ate=ate)
+    if len(_LEITURAS) >= _LEITURAS_MAX:
+        _LEITURAS.pop(next(iter(_LEITURAS)))
+    _LEITURAS[wfa_id] = {"leitura": leitura, "trades": trades,
+                         "de": de, "ate": ate}
+    return _LEITURAS[wfa_id]
+
 
 def _nome_da_estrategia(modulo: str | None) -> str:
     """O nome que a estratégia mostra na tela, não o do arquivo.
@@ -107,10 +144,9 @@ def _gates_e_leitura(wfa_id: int, d: dict):
     holdout para montar o resto dos portões.
     """
     capital = d.get("capital")
-    trades = wfa_store.trades(wfa_id)
-    horizonte = candidata.calcula_horizonte(d)
-    de, ate = candidata.limites_oos(d.get("passos"))
-    leitura = candidata.leitura_robustez(trades, capital, horizonte, de=de, ate=ate)
+    guardado = leitura_do_wfa(wfa_id, d)
+    leitura, trades = guardado["leitura"], guardado["trades"]
+    de, ate = guardado["de"], guardado["ate"]
     if leitura.get("erro"):
         return leitura, None, de, ate
 
@@ -137,7 +173,7 @@ def _gates_e_leitura(wfa_id: int, d: dict):
     return leitura, rapidos + lentos, de, ate
 
 
-def _dimensionar(wfa_id: int, d: dict, leitura: dict, de, ate,
+def _dimensionar(trades: list[dict], d: dict, leitura: dict, de, ate,
                  risco_pct, margem, uso_margem_pct) -> tuple[dict, dict, dict]:
     """A perda de referência, os contratos e o disjuntor deste walk-forward.
 
@@ -147,15 +183,20 @@ def _dimensionar(wfa_id: int, d: dict, leitura: dict, de, ate,
     """
     perfil = d.get("profile") or {}
     inst = db.load_instrument_yaml(d["symbol"])
-    trades = wfa_store.trades(wfa_id)
     saida = np.array([t["exit_ts"] for t in trades], dtype="datetime64[s]")
     liq = np.array([t["liquido"] for t in trades], dtype=float)
     custo = float(np.mean([t.get("custo") or 0.0 for t in trades])) if trades else 0.0
-    _, pnl = candidata.por_pregao(saida, liq, de=de, ate=ate)
-    # quantas operações o pregão mais movimentado teve: é a reserva para o
-    # dia ruim quando o perfil não tem limite diário nenhum
-    por_dia = np.unique(np.asarray(saida, dtype="datetime64[D]"),
-                        return_counts=True)[1]
+    dias, pnl = candidata.por_pregao(saida, liq, de=de, ate=ate)
+    # Quantas operações teve o pregão mais movimentado — a reserva para o dia
+    # ruim quando o perfil não tem limite diário nenhum. Conta pela data de
+    # SAÍDA, como o resto da tela, o que só casa com o limite do motor porque
+    # a estratégia é intradiária. E conta DENTRO do mesmo recorte de/até que
+    # produziu o resto da conta: um pregão movimentado fora da janela não
+    # pertence a esta curva.
+    dentro = saida.astype("datetime64[D]")
+    if len(dias):
+        dentro = dentro[(dentro >= dias[0]) & (dentro <= dias[-1])]
+    por_dia = np.unique(dentro, return_counts=True)[1]
 
     ref = tamanho.perda_referencia(
         pnl, perfil.get("contratos") or 1, perfil, inst.get("point_value"),
@@ -282,14 +323,12 @@ def register(app):
         if capital is None:
             return CP.vazio("este walk-forward não tem capital gravado")
 
-        horizonte = candidata.calcula_horizonte(d)
-        de, ate = candidata.limites_oos(d.get("passos"))
-        trades = wfa_store.trades(wid)
-        leitura = candidata.leitura_robustez(trades, capital, horizonte,
-                                             de=de, ate=ate)
+        guardado = leitura_do_wfa(wid, d)
+        leitura = guardado["leitura"]
         if leitura.get("erro"):
             return CP.vazio(leitura["erro"])
-        ref, dim, disj = _dimensionar(wid, d, leitura, de, ate,
+        ref, dim, disj = _dimensionar(guardado["trades"], d, leitura,
+                                      guardado["de"], guardado["ate"],
                                       risco, margem, uso_margem)
         return CP.bloco_tamanho(dim, ref, disj, capital)
 

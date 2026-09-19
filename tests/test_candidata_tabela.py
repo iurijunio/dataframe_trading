@@ -360,18 +360,68 @@ def test_todo_numero_tem_explicacao():
             assert l["explica"] and len(l["explica"]) > 40, l["nome"]
 
 
+# as quatro linhas que escalam com o número de contratos: as duas do
+# disjuntor mais o pior lucro do prazo e o limite do dia, que também são
+# multiplicados por ele dentro de `tamanho.disjuntor`
+ESCALAM = ("reduzir para 1 contrato", "desligar e reotimizar",
+           "pior lucro esperado no prazo", "limite do dia")
+
+
 def test_com_zero_contratos_o_disjuntor_aparece_com_o_aviso():
     """Vazio ali seria esconder número medido de quem mais precisa dele: a
-    tela mostra a conta de 1 contrato, dizendo que é mais do que o risco
-    pedido permite."""
-    linhas = [l for _, _, ls in CP.linhas_tamanho(_dim(n=0), _ref(), _disj(), CAP)
-              for l in ls if l["nome"] in ("reduzir para 1 contrato",
-                                           "desligar e reotimizar")]
+    tela mostra a conta de 1 contrato, avisando. E o aviso precisa estar em
+    TODA linha multiplicada pelos contratos — ler "seu limite do dia é R$
+    300" sem aviso é ler um número que não é o seu."""
+    disj = _disj(limite_dia_reais=300.0, limite_dia_trades=3)
+    linhas = [l for _, _, ls in CP.linhas_tamanho(_dim(n=0), _ref(), disj, CAP)
+              for l in ls if l["nome"] in ESCALAM]
+    assert len(linhas) == 4
     assert all(l["valor"] != "não medido" for l in linhas)
-    assert all("mais do que o seu risco" in l["nota"] for l in linhas)
+    assert all(l["nota"].startswith("conta feita com 1 contrato")
+               for l in linhas), [l["nome"] for l in linhas]
+
+
+def test_o_aviso_cita_a_conta_que_realmente_zerou():
+    """Quando quem travou foi a garantia, mandar o usuário mexer no risco é
+    o mesmo defeito que o motivo da linha "contratos" existe para evitar."""
+    por_margem = _dim(n=0, limite="margem", por_margem=0,
+                      margem=60_000.0, risco_efetivo_pct=None)
+    linha = next(l for _, _, ls in CP.linhas_tamanho(por_margem, _ref(),
+                                                     _disj(), CAP)
+                 for l in ls if l["nome"] == "desligar e reotimizar")
+    assert "garantia" in linha["nota"] and "risco por pregão" not in linha["nota"]
+
+    por_risco = _dim(n=0, limite="risco", risco_efetivo_pct=None)
+    linha = next(l for _, _, ls in CP.linhas_tamanho(por_risco, _ref(),
+                                                     _disj(), CAP)
+                 for l in ls if l["nome"] == "desligar e reotimizar")
+    assert "risco por pregão" in linha["nota"]
 
 
 def test_com_contratos_de_verdade_nao_aparece_aviso_nenhum():
     linhas = [l for _, _, ls in CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP)
               for l in ls if l["nome"] == "desligar e reotimizar"]
     assert "mais do que o seu risco" not in linhas[0]["nota"]
+
+
+def test_todo_numero_diz_o_que_e_bom_e_o_que_e_ruim():
+    """Regra da tela, e não só "ter um (?)": sem a faixa, o número fica sem
+    régua e o operador não sabe se aquilo é bom."""
+    for _, _, ls in CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP):
+        for l in ls:
+            texto = l["explica"].lower()
+            assert "bom:" in texto or "ruim:" in texto, l["nome"]
+
+
+def test_explicacoes_sem_jargao():
+    """O usuário pediu linguagem simples. Estas palavras exigem conhecimento
+    prévio e já apareceram na tela: cauda, ciclos, caminhos simulados."""
+    proibidas = ("cauda", "dos ciclos", "caminhos simulados", "percentil",
+                 "cvar", "drawdown", "bootstrap")
+    for _, explica, ls in CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP):
+        # a NOTA conta tanto quanto o (?): ela é a primeira coisa lida
+        textos = ([explica] + [l["explica"] for l in ls]
+                  + [l["nota"] for l in ls])
+        for t in textos:
+            for palavra in proibidas:
+                assert palavra not in t.lower(), (palavra, t[:60])

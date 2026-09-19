@@ -949,7 +949,27 @@ Conferido na tela com o walk-forward #8 (capital R$ 10.000): a 1% por pregão d�
 **0 contratos** com o motivo escrito na linha; a 5% dá **1 contrato**, risco
 real 4,26%, e o aviso some.
 
-12 testes em `tests/test_candidata_tabela.py`. Suíte inteira: 684.
+**A leitura de robustez é guardada por walk-forward** (`leitura_do_wfa`): são
+2.000 caminhos sorteados duas vezes, ~0,35 s, e sem guardar cada mexida no dial
+de risco refazia tudo — arrastar 1% para 2% custava quase quatro segundos de
+conta repetida, além de ler os trades do banco duas vezes por clique. Não cabe
+num `dcc.Store`: a leitura carrega arrays do numpy que não viram JSON.
+
+**O aviso de "1 contrato" vale para as quatro linhas** que são multiplicadas
+pelo número de contratos (os dois níveis, o pior lucro do prazo e o limite do
+dia), vem **na frente** da nota (na coluna estreita, o fim é o que some
+primeiro) e cita **a conta que realmente zerou** — mandar mexer no risco quando
+quem travou foi a garantia é o defeito que o motivo da linha "contratos"
+existe para evitar.
+
+Os textos passaram por uma régua nova, travada em teste: nenhuma explicação usa
+"cauda", "ciclos", "caminhos simulados", "percentil", "CVaR", "drawdown" ou
+"bootstrap" — nem nos (?) nem nas notas — e **toda** linha diz o que é bom e o
+que é ruim, não só o que o número significa.
+
+18 testes em `tests/test_candidata_tabela.py` e 8 em
+`tests/test_callbacks_candidata.py` (inclusive `_dimensionar`, que existia sem
+teste nenhum). Suíte inteira: 693.
 
 ---
 

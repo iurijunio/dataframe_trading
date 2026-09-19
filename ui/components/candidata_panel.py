@@ -222,7 +222,10 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "coisas no mesmo dia. Sempre arredondado para baixo — "
                      "entre 1 e 2 contratos o risco dobra. Zero contratos não "
                      "é erro: é o capital não comportar o instrumento, e a "
-                     "nota diz qual das contas zerou.")},
+                     "nota diz qual das contas zerou. Bom: 1 ou mais. Ruim: "
+                     "zero — e aí baixar o risco não resolve, porque ele já "
+                     "está no limite; só mais capital ou limite de operações "
+                     "no dia mais apertado.")},
         {"nome": "risco por pregão",
          "valor": pct(efetivo, 2) if efetivo is not None else "não medido",
          "nota": (f"você pediu {pct(pedido, 1)}" if pedido else ""),
@@ -232,15 +235,20 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "perda de referência é de um dia inteiro, então quem "
                      "opera três vezes por dia não multiplica por três. O "
                      "valor real fica abaixo do pedido porque o número de "
-                     "contratos é inteiro — é o pedido que é o teto.")},
+                     "contratos é inteiro, e o pedido é o teto. Bom: até 1% "
+                     "por pregão. Ruim: acima de 2%, porque a sequência de "
+                     "dias ruins que a tabela mostra logo abaixo viraria uma "
+                     "perda grande demais para continuar operando.")},
         {"nome": "perda de referência", "valor": _reais(ref.get("valor")),
          "nota": (ref.get("de_onde") or ref.get("motivo") or ""),
          "tom": None,
-         "explica": ("A perda de UM contrato que dimensiona a posição: vale o "
-                     "pior entre a média dos 5% piores pregões e um dia ruim "
-                     "de execução. A média da cauda não é o teto dela — "
-                     "metade das perdas dessa cauda será maior que esse "
-                     "número.")},
+         "explica": ("A perda de UM contrato que decide o tamanho da "
+                     "posição: vale a pior entre a média dos 5% piores dias e "
+                     "um dia ruim de execução. É uma MÉDIA dos dias ruins, "
+                     "não o teto deles — metade dos dias ruins perde mais que "
+                     "isso. Bom: até 2% do seu capital, porque aí 1 contrato "
+                     "cabe com folga. Ruim: acima de 5%, quando o capital "
+                     "praticamente não comporta o instrumento.")},
         {"nome": "dia ruim de execução", "valor": _reais(ref.get("dia_ruim")),
          "nota": "todos os stops do dia, o último com o dobro do tamanho",
          "tom": None,
@@ -248,8 +256,12 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "bate, e o último sai com o dobro do tamanho porque não "
                      "havia preço. Pode nunca ter acontecido na sua curva e "
                      "ainda assim acontecer amanhã — por isso ele entra na "
-                     "conta. Apertar o máximo de operações por dia no perfil "
-                     "de execução derruba este número direto.")},
+                     "conta. Quantos stops cabem no dia sai do seu limite "
+                     "diário; sem limite nenhum, sai do pregão mais "
+                     "movimentado que a sua curva já teve. Ruim: quando ele "
+                     "fica muito maior que a média dos dias ruins, porque aí "
+                     "é ele que decide o seu tamanho. Apertar o máximo de "
+                     "operações por dia derruba este número direto.")},
         {"nome": "pior pregão já ocorrido",
          "valor": _reais(abs(ref["pior_dia"]) if ref.get("pior_dia") else None),
          "nota": "leitura, não dimensiona", "tom": None,
@@ -257,7 +269,12 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "contrato. Não dimensiona nada de propósito: ele é um "
                      "recorde, que só piora conforme o histórico cresce, e um "
                      "único registro torto passaria a decidir sozinho o seu "
-                     "tamanho de posição.")},
+                     "tamanho de posição. Serve de referência: se ele for "
+                     "muito maior que a média dos dias ruins, você já viveu "
+                     "um dia fora da curva — e vai viver de novo. Bom: perto "
+                     "da média dos dias ruins. Ruim: várias vezes maior, "
+                     "porque aí o pior dia da sua curva não tem nada a ver "
+                     "com o dia ruim comum.")},
         {"nome": "garantia por contrato",
          "valor": _reais(margem, "não informada"),
          "nota": (f"usando até {pct(dim.get('uso_margem_pct'), 0)} do capital"
@@ -267,7 +284,10 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "Informe a INTRADIÁRIA se você fecha a posição no mesmo "
                      "dia — a cheia é dez a trinta vezes maior e derrubaria o "
                      "número de contratos na mesma proporção. Em branco, a "
-                     "conta da garantia fica de fora e só o risco limita.")},
+                     "conta da garantia fica de fora e só o risco limita. "
+                     "Bom: informada, com o valor que a sua corretora cobra "
+                     "hoje. Ruim: em branco, porque o número de contratos "
+                     "pode sair maior do que ela vai deixar você operar.")},
     ]
 
     n1, n2 = disj.get("nivel1") or {}, disj.get("nivel2") or {}
@@ -276,33 +296,55 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
     # baixo da tela ficaria vazia justamente para quem mais precisa dela.
     # Mostra-se a conta de 1 contrato, dizendo que é mais do que o risco
     # pedido permite — número medido, com a régua certa escrita ao lado
-    hipotetico = (" · conta feita com 1 contrato, que é mais do que o seu "
-                  "risco por pregão permite hoje") if n <= 0 else ""
+    # e o aviso precisa citar a conta que REALMENTE zerou: mandar mexer no
+    # risco quando quem travou foi a garantia é o mesmo defeito que o motivo
+    # da linha "contratos" existe para evitar
+    _QUEM = {"risco": "o seu risco por pregão",
+             "margem": "a garantia disponível",
+             "garantia mais prejuízo do dia":
+                 "o capital livre depois da garantia"}
+    quem = " e ".join(_QUEM.get(k, k)
+                      for k in (dim.get("limite") or "risco").split(" e "))
+    hipotetico = (f"conta feita com 1 contrato, que é mais do que {quem} "
+                  "permite hoje") if n <= 0 else ""
 
     def nota(texto):
-        return (texto + hipotetico) if texto else hipotetico.lstrip(" ·").strip()
+        # o aviso vem na FRENTE: na coluna estreita da nota, o que fica no fim
+        # de um texto longo é o primeiro pedaço que some
+        if not hipotetico:
+            return texto
+        return f"{hipotetico} · {texto}" if texto else hipotetico
     parar = [
         {"nome": "reduzir para 1 contrato", "valor": _reais(n1.get("queda")),
-         "nota": nota(f"acontece à toa em {pct(n1.get('alarme_pct'), 0)} dos "
-                      "ciclos" if n1.get("queda") else disj.get("motivo") or ""),
+         "nota": nota(f"reduz à toa em {pct(n1.get('alarme_pct'), 0)} dos "
+                      "períodos até reotimizar" if n1.get("queda")
+                      else disj.get("motivo") or ""),
          "tom": None,
          "explica": ("Quando a queda a partir do topo passar deste valor, "
                      "reduza para 1 contrato. O limite não foi escolhido no "
-                     "olho: você escolhe com que frequência aceita reduzir sem "
-                     "precisar (20% dos ciclos, por padrão) e o valor em reais "
-                     "sai disso. Reduzir é barato e reversível, por isso pode "
-                     "disparar mais vezes que o desligar.")},
+                     "olho: você escolhe com que frequência aceita reduzir "
+                     "sem precisar — 20% das vezes, por padrão — e o valor em "
+                     "reais sai disso. Esses 20% querem dizer: em 20 de cada "
+                     "100 períodos até a próxima reotimização, uma estratégia "
+                     "que continua boa encostaria aqui e você reduziria à "
+                     "toa. Reduzir é barato e se desfaz, por isso pode "
+                     "disparar mais vezes que o desligar. Bom: entre 15% e "
+                     "25%. Ruim: abaixo de 10%, e você só reduz quando já "
+                     "perdeu demais; acima de 35%, e você vive com meia "
+                     "posição sem motivo.")},
         {"nome": "desligar e reotimizar", "valor": _reais(n2.get("queda")),
          "nota": nota((f"{pct(n2.get('pct'), 1)} do capital · desliga uma "
-                       f"estratégia viva em {pct(alarme2, 1)} dos ciclos")
+                       f"estratégia boa em {pct(alarme2, 1)} dos períodos até "
+                       "reotimizar")
                       if n2.get("queda") else disj.get("motivo") or ""),
          "tom": _tom(alarme2, 8, 15) if alarme2 is not None else None,
          "explica": ("Quando a queda chegar aqui, desligue e reotimize antes "
                      "de voltar. Mesma lógica: você escolhe quantas vezes "
-                     "aceita desligar uma estratégia que ainda funcionava (5% "
-                     "dos ciclos, por padrão). Bom: até 8%. Ruim: acima de "
-                     "15% — aí o disjuntor desliga sozinho, e você nunca vai "
-                     "saber se a estratégia morreu ou teve azar.")},
+                     "aceita desligar uma estratégia que ainda funcionava — 5 "
+                     "de cada 100 períodos até a reotimização, por padrão. "
+                     "Bom: até 8%. Ruim: acima de 15%, porque aí o disjuntor "
+                     "dispara sozinho e você nunca vai saber se a estratégia "
+                     "morreu ou só teve azar.")},
         {"nome": "dias perdendo seguidos",
          "valor": (inteiro(n1["perdas_seguidas"])
                    if n1.get("perdas_seguidas") else "não medido"),
@@ -310,16 +352,22 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
          "explica": ("Quantos pregões seguidos no prejuízo você deve estar "
                      "preparado para viver. Passou disso, reduza — é o mesmo "
                      "sinal da queda, visto por outro lado. Dia sem operação "
-                     "não conta.")},
-        {"nome": "acumulado mínimo esperado",
+                     "não conta. Bom: até 8, uma semana e meia de pregões. "
+                     "Ruim: acima de 15, porque quase ninguém segue o plano "
+                     "depois de três semanas perdendo.")},
+        {"nome": "pior lucro esperado no prazo",
          "valor": _reais(n1.get("lucro_no_prazo")),
-         "nota": (f"ao fim de {inteiro(disj.get('horizonte') or 0)} pregões"
-                  if disj.get("horizonte") else ""),
+         "nota": nota(f"ao fim de {inteiro(disj.get('horizonte') or 0)} "
+                      "pregões" if disj.get("horizonte") else ""),
          "tom": None,
-         "explica": ("Onde o lucro acumulado deve estar, no mínimo, ao fim do "
-                     "prazo até a próxima reotimização: só 1 em cada 10 "
-                     "caminhos simulados termina abaixo disso. Ficar abaixo "
-                     "não é azar comum — é sinal de reduzir.")},
+         "explica": ("Onde o lucro acumulado costuma estar no PIOR dos casos "
+                     "ao fim do prazo até a próxima reotimização. A "
+                     "plataforma sorteia 2.000 continuações possíveis para a "
+                     "sua estratégia, usando os dias que ela já viveu em "
+                     "outra ordem, e só 1 em cada 10 termina abaixo deste "
+                     "número. Ficar abaixo dele não é azar comum — é sinal de "
+                     "reduzir. Bom: número positivo, ou seja, mesmo o mau "
+                     "caminho ainda termina no lucro.")},
         {"nome": "dias sem novo topo",
          "valor": (inteiro(disj["dias_sem_topo"])
                    if disj.get("dias_sem_topo") else "não medido"),
@@ -329,18 +377,21 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
          "explica": ("Quanto tempo a estratégia pode passar abaixo do último "
                      "topo sem que isso signifique que ela quebrou. Passar "
                      "muito disso é motivo para olhar, mesmo sem a queda ter "
-                     "batido no limite.")},
+                     "batido no limite. Bom: até metade do prazo até a "
+                     "reotimização. Ruim: quase o prazo inteiro, porque aí "
+                     "você passaria o ciclo todo no vermelho esperando.")},
         {"nome": "limite do dia",
          "valor": _reais(disj.get("limite_dia_reais"), "não definido"),
-         "nota": ((f"{inteiro(disj['limite_dia_trades'])} operações por dia")
-                  if disj.get("limite_dia_trades") else "sem limite de "
-                  "operações no dia"),
+         "nota": nota((f"{inteiro(disj['limite_dia_trades'])} operações por "
+                       "dia") if disj.get("limite_dia_trades")
+                      else "sem limite de operações no dia"),
          "tom": None,
          "explica": ("O limite de perda e de operações do dia que vem do seu "
                      "perfil de execução, já multiplicado pelos contratos. "
-                     "Sem limite nenhum, o dia pode empilhar perdas — e é "
+                     "Bom: ter os dois definidos. Ruim: não ter nenhum, "
+                     "porque sem trava o dia pode empilhar perdas — e é "
                      "justamente isso que engorda a perda de referência lá em "
-                     "cima.")},
+                     "cima e derruba o seu número de contratos.")},
     ]
 
     return [
@@ -352,8 +403,9 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
         ("Quando parar",
          "Dois níveis, porque um gatilho só é mau detector: parando apenas na "
          "queda ruim, você desliga estratégia sadia às vezes e demora demais "
-         "para desligar a que morreu. Os limites saem da frequência de alarme "
-         "falso que você aceita, não de um percentil escolhido no olho.",
+         "para desligar a que morreu. Os valores em reais saem da frequência "
+         "com que você aceita agir à toa — não de um número escolhido no "
+         "olho.",
          parar),
     ]
 
