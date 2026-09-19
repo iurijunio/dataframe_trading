@@ -79,17 +79,29 @@ def test_fmt_portao_holdout_mostra_reais_nao_percentual():
     """O exigido do holdout ("fora dos 10% piores caminhos") tem um "%" que
     descreve o LIMIAR, não o valor medido — que é uma soma em reais."""
     p = candidata.portao("O holdout confirma?", True, True, 942.0,
-                         "fora dos 10% piores caminhos", "")
+                         "fora dos 10% piores caminhos", "",
+                         formato=candidata.REAIS)
     assert WP._fmt_portao(p) == "R$ 942,00"
 
 
 def test_fmt_portao_custo_e_1pct_mostram_reais():
-    custo = candidata.portao("Aguenta custo maior?", True, True, 4454.0,
-                             "> 0 com +1 tick por ponta", "")
-    trades1pct = candidata.portao("Depende do 1% melhor dos trades?", True,
-                                  False, 4106.0, "> 0 sem eles", "")
+    """Pelas funções que produzem os portões de verdade — é delas que o
+    formato vem, não do nome."""
+    import numpy as np
+    custo = candidata.portao_custo(4456.0, [1], 1.0)          # sobra 4.454
+    trades1pct = candidata.alerta_poucos_trades(np.full(100, 41.06))
     assert WP._fmt_portao(custo) == "R$ 4.454,00"
-    assert WP._fmt_portao(trades1pct) == "R$ 4.106,00"
+    assert WP._fmt_portao(trades1pct) == "R$ 4.064,94"
+
+
+def test_renomear_um_portao_nao_muda_o_formato_do_numero():
+    """A dívida 4 da etapa 2: o formato vinha de uma tabela indexada pelo
+    NOME do portão, e renomear a pergunta derrubava o número na regra
+    genérica sem erro nenhum. Agora o portão declara o próprio formato."""
+    renomeado = candidata.portao("Uma pergunta que acabou de mudar de nome?",
+                                 True, True, 0.03, "até 5%", "",
+                                 formato=candidata.FRACAO_PCT)
+    assert WP._fmt_portao(renomeado) == "3,0%"
 
 
 def test_fmt_portao_aleatorio_e_tentativas_escalam_fracao_para_percentual():

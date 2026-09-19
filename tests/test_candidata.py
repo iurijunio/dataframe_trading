@@ -883,3 +883,31 @@ def test_veredito_com_pendentes_fica_aguardando_testes_completos():
     ver = candidata.veredito(gates)
     assert ver["estado"] == "aguardando testes completos"
     assert len(ver["pendentes"]) == 2          # aleatório e tentativas
+
+
+def test_portao_capital_sem_sorteio_nao_aprova_com_zero():
+    """Dívida 5 da etapa 2: sem caminhos sorteados (curva curta demais nos
+    dois recortes), a perda esperada lida era 0,0 — e o portão aprovava em
+    verde dizendo "0% do capital". Falta de medição não é aprovação."""
+    trades = [{"exit_ts": np.datetime64("2024-01-02T10:00") + np.timedelta64(i, "D"),
+               "liquido": 10.0, "custo": 1.0, "contratos": 1,
+               "entry_ts": np.datetime64("2024-01-02T09:00") + np.timedelta64(i, "D")}
+              for i in range(120)]
+    leitura = {"boot": {}, "boot_12m": {}, "resumo": {}, "pregoes": 120}
+    gates = candidata.portoes_rapidos(trades, leitura, [], {}, {}, None, 1.0,
+                                      CAP)
+    capital = next(g for g in gates if g["nome"] == "O capital comporta 1 contrato?")
+    assert capital["ok"] is None and capital["critico"] is True
+
+
+def test_portao_capital_sem_perda_medida_fica_pendente():
+    g = candidata.portao_capital(None, 1, CAP)
+    assert g["ok"] is None
+
+
+def test_texto_do_vizinho_diz_o_raio_que_de_fato_mediu():
+    """Dívida 3 da etapa 2: o (?) dizia "até 2 passos" fixo, mesmo quando a
+    função era chamada com outro raio — a explicação descrevia uma conta que
+    não era a que tinha rodado."""
+    assert "até 3 passos" in candidata.alerta_vizinho({}, raio=3)["dica"]
+    assert "até 2 passos" in candidata.alerta_vizinho({}, raio=2)["dica"]

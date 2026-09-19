@@ -411,3 +411,27 @@ def test_gravar_duas_vezes_guarda_dois_planos(tmp_path, monkeypatch):
     CC.gravar_plano(ver, 2.0, None, 50.0)
     assert len(P.listar(wfa_id=wid)) == 2
     CC._LEITURAS.clear()
+
+
+def test_tick_value_do_yaml_chega_ao_portao_de_custo(tmp_path, monkeypatch):
+    """Dívida 6 da etapa 2: o valor do tick sai do YAML do instrumento e
+    precisa chegar inteiro ao portão "Aguenta custo maior?". Com ele, o
+    portão mede; sem ele, fica pendente — antes, `... or 0.0` fingia tick
+    zero e o portão passava sem cobrar custo nenhum."""
+    wid = _wfa_gravavel(tmp_path, monkeypatch)
+    d = CC.wfa_store.detalhes(wid)
+
+    def custo(yaml):
+        monkeypatch.setattr(CC.db, "load_instrument_yaml", lambda s: yaml)
+        CC._LEITURAS.clear()
+        _, gates, *_ = CC._gates_e_leitura(wid, d)
+        return next(g for g in gates if g["nome"] == "Aguenta custo maior?")
+
+    com = custo({"point_value": 0.20, "tick_value": 1.0})
+    assert com["ok"] is not None and com["valor"] != "não medido"
+    # o valor muda com o tick: tick mais caro cobra mais
+    caro = custo({"point_value": 0.20, "tick_value": 5.0})
+    assert caro["valor"] < com["valor"]
+    sem = custo({"point_value": 0.20})
+    assert sem["ok"] is None
+    CC._LEITURAS.clear()

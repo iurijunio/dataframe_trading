@@ -477,8 +477,14 @@ def estado_testes(e: dict, wfa_id=None) -> dict:
         return dict(fase="rodando", txt=e.get("fase") or "preparando",
                     pct=e.get("pct") or 0, ocupado=True)
     if e.get("resultado") is not None:
-        return dict(fase="pronto", txt="testes completos", pct=100,
-                    ocupado=False)
+        # uma fase que explode vira portão "não medido" e as outras seguem;
+        # dizer "testes completos" aqui escondia a falha atrás de uma barra
+        # cheia, e o operador só descobria lendo o selo portão por portão
+        faltou = [p["nome"] for p in e["resultado"].get("portoes") or []
+                  if p.get("ok") is None]
+        txt = ("testes completos" if not faltou else
+               "terminou, mas não mediu: " + " · ".join(faltou))
+        return dict(fase="pronto", txt=txt, pct=100, ocupado=False)
     return dict(fase="ocioso", txt="escolha um walk-forward e clique em "
                                    "\"Rodar testes completos\"",
                 pct=0, ocupado=False)

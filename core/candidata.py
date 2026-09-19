@@ -369,13 +369,32 @@ def perfil_plato(trials: list[dict], espaco: dict, deploy: dict,
     return {**escolhido, "eixos": resumo}
 
 
-def portao(nome, ok, critico, valor, exigido, dica) -> dict:
+# Como o selo escreve o valor de cada portão. Mora no PORTÃO, e não numa
+# tabela da tela indexada pelo nome dele: com a tabela, renomear uma pergunta
+# ("O parâmetro está..." virou "Os parâmetros estão...") fazia o número cair
+# na regra genérica em silêncio — 0,03 aparecendo como "0,0%".
+REAIS = "reais"
+NUMERO = "numero"
+FRACAO_PCT = "fracao_em_porcento"
+
+
+def portao(nome, ok, critico, valor, exigido, dica, formato=None) -> dict:
     """A forma comum de todo portão da tela Candidata: nome do teste, se
     passou, se reprova a estratégia (ou é só alerta), o valor medido, o que
     era exigido e a dica de por que isso importa — tudo em português simples
-    para quem lê a tela sem saber o jargão por trás da conta."""
+    para quem lê a tela sem saber o jargão por trás da conta.
+
+    `formato` diz ao selo como escrever `valor` quando ele é número: em
+    reais, como número com duas casas, ou como fração que vira porcento.
+    Sem ele, vale a regra genérica da tela."""
     return {"nome": nome, "ok": ok, "critico": critico, "valor": valor,
-            "exigido": exigido, "dica": dica}
+            "exigido": exigido, "dica": dica, "formato": formato}
+
+
+# o segundo portão do platô sai por dois caminhos (medido ou abstido); com o
+# texto escrito nos dois, uma edição num só já fez o mesmo portão aparecer
+# com dois nomes na tela, conforme o dado
+COBERTURA = "A faixa minerada cobre a região?"
 
 
 def portoes_plato(perfil: dict, passos_min: int = 2) -> list[dict]:
@@ -399,7 +418,7 @@ def portoes_plato(perfil: dict, passos_min: int = 2) -> list[dict]:
         motivo = perfil.get("motivo") or "não foi possível medir"
         return [portao(nome, False, False, motivo, f"≥ {passos_min} por lado",
                        dica),
-                portao("A faixa minerada cobre a região?", False, False,
+                portao(COBERTURA, False, False,
                        motivo, "cobre",
                        "Este aviso acompanha o teste acima: sem faixa "
                        "minerada em volta do valor escolhido, não há como "
@@ -418,7 +437,7 @@ def portoes_plato(perfil: dict, passos_min: int = 2) -> list[dict]:
     critico = portao(nome, not queda, True, valor, f"≥ {passos_min} por lado",
                      dica)
     alerta = portao(
-        "A faixa minerada cobre a região?", not faltou, False,
+        COBERTURA, not faltou, False,
         ("a faixa termina perto do valor escolhido" if "borda" in faltou
          else "há valores não minerados perto" if faltou else "sim"),
         "cobre",
@@ -431,9 +450,9 @@ def portoes_plato(perfil: dict, passos_min: int = 2) -> list[dict]:
 
 def alerta_vizinho(perfil: dict, raio: int = 2) -> dict:
     """Algum valor a até `raio` passos do escolhido dá prejuízo?"""
-    dica = ("Valores do parâmetro a até 2 passos do escolhido que deram "
-            "prejuízo na mineração. Um vizinho no vermelho não reprova, mas "
-            "diz que um pequeno erro de ajuste já custa dinheiro.")
+    dica = (f"Valores do parâmetro a até {raio} passos do escolhido que "
+            "deram prejuízo na mineração. Um vizinho no vermelho não reprova, "
+            "mas diz que um pequeno erro de ajuste já custa dinheiro.")
     pontos = perfil.get("pontos") or []
     i = next((k for k, p in enumerate(pontos) if p.get("atual")), None)
     if i is None:
@@ -481,7 +500,8 @@ def portao_acaso(pnl, minimo: float = 2.0) -> dict:
         # régua de "não medido" em vez de reprovar por falta de dado.
         return portao(nome, None, True, "poucos pregões para medir", exigido, dica)
     t = t_diario(pnl)
-    return portao(nome, t >= minimo, True, round(t, 2), exigido, dica)
+    return portao(nome, t >= minimo, True, round(t, 2), exigido, dica,
+                  formato=NUMERO)
 
 
 def portao_poucos_dias(pnl, quantos: int = 5) -> dict:
@@ -499,7 +519,7 @@ def portao_poucos_dias(pnl, quantos: int = 5) -> dict:
     sobra = float(x.sum() - np.sort(x)[::-1][:quantos].sum())
     return portao(
         "O lucro não depende de poucos dias?", sobra > 0, True, round(sobra, 2),
-        exigido, dica)
+        exigido, dica, formato=REAIS)
 
 
 def portao_custo(lucro_liquido: float, contratos, tick_value: float | None) -> dict:
@@ -516,7 +536,8 @@ def portao_custo(lucro_liquido: float, contratos, tick_value: float | None) -> d
         return portao(nome, None, True, "não medido", exigido, dica)
     extra = 2.0 * float(np.sum(contratos)) * tick_value
     sobra = float(lucro_liquido - extra)
-    return portao(nome, sobra > 0, True, round(sobra, 2), exigido, dica)
+    return portao(nome, sobra > 0, True, round(sobra, 2), exigido, dica,
+                  formato=REAIS)
 
 
 def portao_capital(perda_esperada: float, contratos_por_trade: float,
@@ -531,6 +552,12 @@ def portao_capital(perda_esperada: float, contratos_por_trade: float,
         # medir, então o portão fica pendente, não reprovado
         return portao("O capital comporta 1 contrato?", None, True,
                       "capital não informado", exigido, dica)
+    if perda_esperada is None:
+        # sem caminhos sorteados não há perda esperada — e ler 0,0 no lugar
+        # dela aprovava o portão em verde com "0% do capital"
+        return portao("O capital comporta 1 contrato?", None, True,
+                      "curva curta demais para sortear caminhos", exigido,
+                      dica)
     por_contrato = perda_esperada / max(float(contratos_por_trade), 1.0)
     pct_ = por_contrato / capital * 100
     return portao(
@@ -546,7 +573,8 @@ def alerta_poucos_trades(liquido, fracao: float = 0.01) -> dict:
         "Depende do 1% melhor dos trades?", sobra > 0, False, round(sobra, 2),
         "> 0 sem eles",
         "O lucro tirando o 1% de trades que mais ganharam. Negativo não "
-        "reprova, mas diz que o resultado mora em poucas operações.")
+        "reprova, mas diz que o resultado mora em poucas operações.",
+        formato=REAIS)
 
 
 def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
@@ -601,7 +629,7 @@ def portao_holdout(dias, pnl, corte, capital, n: int = 2000,
     real = float(depois.sum())
     p10 = float(boot["final_p10"])
     return {**portao(nome, real >= p10, True, round(real, 2),
-                     "fora dos 10% piores caminhos", dica),
+                     "fora dos 10% piores caminhos", dica, formato=REAIS),
             "lucro_mes_antes": float(antes.sum()) / max(len(antes) / 21, 1e-9),
             "lucro_mes_holdout": real / max(len(depois) / 21, 1e-9),
             "esperado_p10": p10, "pregoes_holdout": int(len(depois))}
@@ -634,7 +662,8 @@ def portao_tentativas(resultado_spa: dict, maximo: float = 0.05) -> dict:
         motivo = resultado_spa["erro"] if resultado_spa else "não foi possível medir"
         return portao(nome, None, True, motivo, exigido, dica)
     p = resultado_spa["p"]
-    return portao(nome, p <= maximo, True, p, exigido, dica)
+    return portao(nome, p <= maximo, True, p, exigido, dica,
+                  formato=FRACAO_PCT)
 
 
 def portao_aleatorio(resultado: dict, maximo: float = 0.05) -> dict:
@@ -674,7 +703,8 @@ def portao_aleatorio(resultado: dict, maximo: float = 0.05) -> dict:
             "o sorteio não conseguiu imitar o número de trades em alguma janela",
             exigido, dica)
     p = resultado["p"]
-    return portao(nome, p <= maximo, True, p, exigido, dica)
+    return portao(nome, p <= maximo, True, p, exigido, dica,
+                  formato=FRACAO_PCT)
 
 
 def alerta_reotimizar(percentil: float | None, motivo: str | None = None) -> dict:
@@ -739,7 +769,11 @@ def portoes_rapidos(trades: list[dict], leitura: dict, trials: list[dict],
 
     perfil = perfil_plato(trials, espaco, deploy)
     pior = pior_dos_recortes(leitura)
-    perda_esperada = pior["dd_p95"]["valor"]
+    # sem sorteio nos dois recortes, `pior_dos_recortes` devolve 0,0 — que é
+    # "não medido", não "perda zero"
+    perda_esperada = (pior["dd_p95"]["valor"]
+                      if (leitura.get("boot") or leitura.get("boot_12m"))
+                      else None)
     contratos_por_trade = float(np.median(contratos)) if len(contratos) else 1.0
     lucro_liquido = float((leitura.get("resumo") or {}).get("lucro_liquido", 0.0))
 

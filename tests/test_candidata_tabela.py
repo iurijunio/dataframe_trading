@@ -425,3 +425,27 @@ def test_explicacoes_sem_jargao():
         for t in textos:
             for palavra in proibidas:
                 assert palavra not in t.lower(), (palavra, t[:60])
+
+
+# ------------------------------------------- dívidas da etapa 2 (tarefa 8)
+def test_barra_nao_diz_completos_quando_uma_fase_falhou():
+    """Uma fase que explode vira portão "não medido" e as outras seguem —
+    mas a barra dizia "testes completos" do mesmo jeito, e o operador só
+    descobria olhando o selo portão por portão."""
+    falhou = {"nome": "Ganha de entradas sorteadas ao acaso?", "ok": None,
+              "critico": True, "valor": "não rodou: motor sem barras"}
+    ok = {"nome": "Aguenta o desconto por muitas tentativas?", "ok": True,
+          "critico": True, "valor": 0.01}
+    e = {"wfa_id": 8, "rodando": False, "erro": None,
+         "resultado": {"portoes": [falhou, ok]}}
+    barra = CP.estado_testes(e, wfa_id=8)
+    assert barra["fase"] == "pronto"
+    assert "testes completos" not in barra["txt"]
+    assert "entradas sorteadas" in barra["txt"]
+
+
+def test_barra_com_todas_as_fases_medidas_diz_completos():
+    e = {"wfa_id": 8, "rodando": False, "erro": None,
+         "resultado": {"portoes": [{"nome": "x", "ok": False, "critico": True,
+                                    "valor": 0.3}]}}
+    assert CP.estado_testes(e, wfa_id=8)["txt"] == "testes completos"

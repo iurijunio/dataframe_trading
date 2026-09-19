@@ -786,19 +786,15 @@ def painel():
 # limiares nunca colidem assim. Nome exato, e não mais uma regra por
 # substring, resolve os dois sem arriscar um terceiro portão futuro cair no
 # mesmo buraco.
-_CANDIDATA_NUMERICO = {
-    "O lucro não é acaso?": lambda v: num(v, 2),
-    "O lucro não depende de poucos dias?": brl,
-    "Aguenta custo maior?": brl,
-    "O holdout confirma?": brl,
-    "Depende do 1% melhor dos trades?": brl,
-    # `portao_aleatorio`/`portao_tentativas` guardam o p-valor como FRAÇÃO
-    # (0,03 = 3%), igual ao limiar deles ("até 5% de chance..."). A regra
-    # genérica do "%" no exigido, mais abaixo, assume um valor JÁ em 0–100
-    # (como o do portão de capital) — sem este par aqui, 0,03 virava
-    # "0,0%" na tela em vez de "3,0%".
-    "Ganha de entradas sorteadas ao acaso?": lambda v: f"{num(v * 100, 1)}%",
-    "Aguenta o desconto por muitas tentativas?": lambda v: f"{num(v * 100, 1)}%",
+# Como escrever o valor de um portão que DECLARA o próprio formato (os da
+# Candidata — ver `candidata.portao`). Antes era uma tabela indexada pelo NOME
+# do portão, e renomear a pergunta fazia o número cair na regra genérica sem
+# erro nenhum: um p-valor de 0,03 aparecia como "0,0%".
+_FORMATOS = {
+    "reais": brl,
+    "numero": lambda v: num(v, 2),
+    # p-valores são guardados como fração (0,03 = 3%), igual ao limiar deles
+    "fracao_em_porcento": lambda v: f"{num(v * 100, 1)}%",
 }
 
 
@@ -818,9 +814,9 @@ def _fmt_portao(p) -> str:
         # Sem este desvio, `inteiro(int(v))` quebrava com ValueError na
         # primeira vez que um destes chegou ao selo.
         return v
+    if p.get("formato") in _FORMATOS:
+        return _FORMATOS[p["formato"]](v)
     nome = p["nome"]
-    if nome in _CANDIDATA_NUMERICO:
-        return _CANDIDATA_NUMERICO[nome](v)
     # o WFE vem em FRAÇÃO (1,04) e o limiar dele é escrito em porcento
     # ("≥ 70%"). Testar o "%" do limiar antes do nome fazia 1,04 virar
     # "1,0%" na tela — o portão aprovava e o número dizia o contrário.
