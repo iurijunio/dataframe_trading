@@ -760,7 +760,7 @@ git commit -m "feat(plano): tabela planos_operacao com retratos e cascata nos tr
 
 ---
 
-## Tarefa 5: camada 4 travada no walk-forward
+## Tarefa 5: camada 4 travada no walk-forward ✅ (18/09/2026)
 
 **Arquivos:**
 - Modificar: `core/wfa.py:748` (`rodar`), `core/wfa.py:1014` (`matrizes`),
@@ -840,12 +840,21 @@ Grava em `wfa_runs.camada4_travada` (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`)
 `wfa_store.salvar` recebe e `detalhes` devolve. Rodar
 `python -m pytest tests/test_callbacks_sem_ciclo.py -q`.
 
-- [ ] **Passo 6: commit**
+### Como ficou
 
-```bash
-git add core/wfa.py core/wfa_store.py core/schema.sql ui/components/wfa_panel.py ui/callbacks.py tests/test_wfa_camada4.py
-git commit -m "feat(wfa): camada 4 travada na primeira janela, por caixa de marcar"
-```
+`wfa.rodar(..., travar_execucao)` e `wfa.matriz/matrizes(..., travar_execucao)`.
+A caixa **"travar stop, alvo e proteções"** fica ao lado de "estender ao
+holdout", nasce marcada, entra na chave do cache da matriz (com e sem trava são
+duas matrizes diferentes) e é gravada em `wfa_runs.camada4_travada`. Carregar um
+walk-forward salvo devolve a caixa ao estado dele; registro anterior à coluna
+volta marcado, que é o padrão de hoje.
+
+Detalhe que quase passou: quando a trava filtra os aprovados, o `memo` da
+janela precisa ser descartado — ele guarda a escolha de cada inteligência sobre
+os aprovados **antigos**, e reaproveitá-lo devolveria justamente a combinação
+que a trava acabou de excluir.
+
+6 testes novos em `tests/test_wfa_camada4.py`, mais a suíte inteira (664).
 
 ---
 

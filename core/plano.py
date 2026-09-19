@@ -18,6 +18,7 @@ import json
 from datetime import datetime
 
 from . import db_manager as db
+from . import engine
 
 _JSON = ("params", "profile", "disjuntor", "expectativa", "reotimizacao",
          "definicoes", "regua")
@@ -27,14 +28,16 @@ _COLUNAS = ("plano_id", "wfa_id", "run_id", "symbol", "strategy", "nome",
             "risco_pedido_pct", "risco_efetivo_pct", "perda_referencia",
             "de_onde", "margem", "uso_margem_pct", "camada4_travada",
             "disjuntor", "expectativa", "reotimizacao", "definicoes",
-            "regua", "estado")
+            "regua", "estado", "motor_versao", "base_ate", "base_barras",
+            "capital_livre", "reotimizar_em")
 
 
 def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
            capital, contratos, risco_pedido_pct, risco_efetivo_pct,
            perda_referencia, de_onde, margem, uso_margem_pct,
            camada4_travada, disjuntor, expectativa, reotimizacao,
-           definicoes, regua) -> int:
+           definicoes, regua, motor_versao=None, base_ate=None,
+           base_barras=None, capital_livre=None, reotimizar_em=None) -> int:
     """Grava um plano e devolve o id.
 
     Nunca substitui: dois planos do mesmo walk-forward com risco diferente
@@ -52,18 +55,37 @@ def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
              int(contratos) if contratos is not None else None,
              risco_pedido_pct, risco_efetivo_pct, perda_referencia, de_onde,
              float(margem) if margem is not None else None,
-             uso_margem_pct, bool(camada4_travada),
+             uso_margem_pct,
+             None if camada4_travada is None else bool(camada4_travada),
              json.dumps(disjuntor or {}), json.dumps(expectativa or {}),
              json.dumps(reotimizacao or {}), json.dumps(definicoes or {}),
-             json.dumps(regua or {}), "ativo"])
+             json.dumps(regua or {}), "ativo", motor_versao, base_ate,
+             base_barras, capital_livre, reotimizar_em])
     return int(pid)
+
+
+def retrato_da_base(symbol: str) -> dict:
+    """Até onde ia a base, e com quantas barras, na hora de gravar o plano.
+
+    Junto com a versão do motor, é o que permite refazer a mesma conta daqui
+    a seis meses e saber por que o número mudou: a base cresce a cada
+    exportação do MT5, e uma reimportação pode corrigir barras antigas.
+    """
+    with db.connect(read_only=True) as con:
+        r = con.execute(
+            "SELECT max(ts), count(*) FROM bars_m1 WHERE symbol = ?",
+            [symbol]).fetchone()
+    return {"motor_versao": engine.VERSAO,
+            "base_ate": r[0] if r else None,
+            "base_barras": int(r[1]) if r and r[1] else None}
 
 
 def _linha(r) -> dict:
     d = dict(zip(_COLUNAS, r))
     for c in _JSON:
         d[c] = json.loads(d[c]) if d[c] else {}
-    d["camada4_travada"] = bool(d["camada4_travada"])
+    if d["camada4_travada"] is not None:
+        d["camada4_travada"] = bool(d["camada4_travada"])
     return d
 
 

@@ -745,11 +745,24 @@ def _fatiador(entry_ts: np.ndarray):
     return recorte
 
 
+def _travados_em(params: dict, campos) -> dict:
+    """Os valores da camada 4 que a primeira janela escolheu.
+
+    Normaliza com a mesma régua do resto da plataforma (`candidata._valor`):
+    o espaço da mineração pode trazer 300 e o JSON trazer 300.0, e comparar
+    cru faria a trava não encontrar candidata nenhuma — o walk-forward
+    inteiro ficaria fora do mercado sem erro nenhum aparecer.
+    """
+    from .candidata import _valor
+    return {k: _valor(params[k]) for k in campos if k in params}
+
+
 def rodar(combos: list[dict], janelas: list[Janela], capital: float,
           inteligencia: str = "centroide_mediana",
           criterios: dict | None = None,
           min_trades_is: int = MIN_TRADES_IS,
-          preparado: dict | None = None) -> list[Passo]:
+          preparado: dict | None = None,
+          travar_execucao: set[str] | None = None) -> list[Passo]:
     """Percorre a escadinha. Cada `combo` é
     `{"params": {...}, "entry_ts": array, "liquido": array}`.
 
@@ -758,6 +771,17 @@ def rodar(combos: list[dict], janelas: list[Janela], capital: float,
 
     `preparado` (de `preparar`, com as MESMAS janelas e critérios) poupa a
     parte cara quando várias inteligências percorrem a mesma escadinha.
+
+    `travar_execucao` são os campos da camada 4 (stop, alvo, proteções) que
+    **não** podem ser reotimizados: a primeira janela real escolhe
+    normalmente, e as seguintes só consideram combinações que casem com o
+    que ela escolheu. Esses campos protegem o capital, não geram lucro —
+    reotimizá-los faz o stop aprender o passado e mudaria o disjuntor do
+    plano de operação a cada seis meses. A trava é no valor da PRIMEIRA
+    janela, e não no melhor do período inteiro, porque o melhor do período
+    só é conhecido depois que o período acabou: fixar por ele seria olhar o
+    futuro. Se nenhuma aprovada casar, a janela fica **fora do mercado** — a
+    mesma regra que vale quando ninguém passa nos critérios.
     """
     if not combos or not janelas:
         return []
@@ -766,9 +790,19 @@ def rodar(combos: list[dict], janelas: list[Janela], capital: float,
     params, dias = prep["params"], prep["dias"]
     fatia = prep.get("fatia") or [_fatiador(c["entry_ts"]) for c in combos]
     memos = prep.get("memo") or [None] * len(janelas)
+    campos_travados = set(travar_execucao or ())
+    travados = None
 
     passos = []
     for j, (m_is, aprovados), memo in zip(janelas, prep["janelas"], memos):
+
+        if travados:
+            aprovados = [i for i in aprovados
+                         if _travados_em(params[i], travados) == travados]
+            # a escolha mudou de conjunto: o memo da janela guarda a decisão
+            # de cada inteligência sobre os aprovados ANTIGOS, e reaproveitá-lo
+            # devolveria uma combinação que a trava acabou de excluir
+            memo = None
 
         if not aprovados:
             # ninguém aprovado: fica fora do mercado neste OOS. É a decisão
@@ -780,6 +814,8 @@ def rodar(combos: list[dict], janelas: list[Janela], capital: float,
 
         i, detalhe = escolher(inteligencia, aprovados, params, m_is, memo)
         ins = m_is[i]
+        if campos_travados and travados is None:
+            travados = _travados_em(params[i], campos_travados)
 
         if j.deploy:
             # o OOS da última janela é o futuro: não existe resultado
@@ -1005,10 +1041,12 @@ def matriz(combos: list[dict], inicio, fim, capital: float,
            inteligencia: str = "centroide_mediana",
            criterios: dict | None = None,
            configs: list[tuple[int, int]] | None = None,
-           min_trades_is: int = MIN_TRADES_IS) -> list[dict]:
+           min_trades_is: int = MIN_TRADES_IS,
+           travar_execucao: set[str] | None = None) -> list[dict]:
     """A matriz de UMA inteligência. Ver `matrizes`."""
     return matrizes(combos, inicio, fim, capital, [inteligencia], criterios,
-                    configs, min_trades_is)[inteligencia]
+                    configs, min_trades_is,
+                    travar_execucao=travar_execucao)[inteligencia]
 
 
 def matrizes(combos: list[dict], inicio, fim, capital: float,
@@ -1017,7 +1055,8 @@ def matrizes(combos: list[dict], inicio, fim, capital: float,
              configs: list[tuple[int, int]] | None = None,
              min_trades_is: int = MIN_TRADES_IS,
              limiares: dict | None = None,
-             progresso=None) -> dict[str, list[dict]]:
+             progresso=None,
+             travar_execucao: set[str] | None = None) -> dict[str, list[dict]]:
     """Uma linha por configuração IS/OOS — a Matriz de Otimização.
 
     A pergunta que ela responde não é "qual configuração rendeu mais", e sim
@@ -1062,7 +1101,7 @@ def matrizes(combos: list[dict], inicio, fim, capital: float,
 
         for q in qs:
             passos = rodar(combos, js, capital, q, criterios, min_trades_is,
-                           preparado=prep)
+                           preparado=prep, travar_execucao=travar_execucao)
             # a saída entra à parte: o Sharpe da linha agrega por ela (é
             # quando o resultado se realiza), mas o "comum" abaixo continua
             # cortando pela entrada
@@ -1078,7 +1117,8 @@ def matrizes(combos: list[dict], inicio, fim, capital: float,
                                          if meses > 0 else None)
             ver = portoes_wfa(ag, passos, capital, limiares)
             ag_anc = agregar(rodar(combos, anc, capital, q, criterios,
-                                   min_trades_is, preparado=prep_anc), capital)
+                                   min_trades_is, preparado=prep_anc,
+                                   travar_execucao=travar_execucao), capital)
             fora[q].append(_linha_matriz(is_m, oos_m, ag, ag_anc, ver))
         if progresso:
             progresso(k + 1, len(lista))

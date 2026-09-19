@@ -186,6 +186,12 @@ ALTER TABLE wfa_runs ADD COLUMN IF NOT EXISTS capital DOUBLE;
 -- os sharpes das 96 celulas da matriz: entrada do Sharpe Deflacionado
 ALTER TABLE wfa_runs ADD COLUMN IF NOT EXISTS sharpes_matriz JSON;
 
+-- A camada 4 (stop, alvo, protecoes) foi travada na primeira janela, ou
+-- reotimizada junto com o resto? Muda o que o plano de operacao promete: com
+-- ela travada o disjuntor vale ate a proxima troca de parametro; solta, ele
+-- e regravado a cada reotimizacao.
+ALTER TABLE wfa_runs ADD COLUMN IF NOT EXISTS camada4_travada BOOLEAN;
+
 -- Os TRADES da curva fora da amostra, um por linha.
 --
 -- O agregado por janela nao serve para portfolio: correlacao de verdade pede
@@ -252,6 +258,19 @@ CREATE TABLE IF NOT EXISTS planos_operacao (
     regua           JSON,     -- limiares congelados + resultado do holdout
     estado          VARCHAR   -- 'ativo' | 'aposentado'
 );
+
+-- Reprodutibilidade e vencimento. Os retratos acima protegem contra a
+-- mineracao sumir; estas colunas protegem contra o MOTOR mudar. Uma alteracao
+-- de slippage, de regra de preenchimento ou um reingest com correcao de
+-- rollover muda os numeros que este plano gravou, e sem isto nao ha como
+-- saber qual motor e qual base produziram a decisao.
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS motor_versao VARCHAR;
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS base_ate TIMESTAMP;
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS base_barras BIGINT;
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS capital_livre DOUBLE;
+-- coluna, nao campo dentro do JSON: a incubacao vai perguntar "quais planos
+-- vencem esta semana", e isso nao se consulta dentro de um JSON
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS reotimizar_em DATE;
 
 CREATE SEQUENCE IF NOT EXISTS seq_plano_id START 1;
 

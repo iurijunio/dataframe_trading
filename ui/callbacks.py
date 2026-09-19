@@ -1200,6 +1200,7 @@ def register(app):
         Input("wfa-is", "value"), Input("wfa-oos", "value"),
         Input("wfa-inteligencia", "value"),
         Input("wfa-holdout", "value"),
+        Input("wfa-travar-camada4", "value"),
         State("wfa-mineracao", "value"),
         State("ativo", "value"),
         State("store-wfa", "data"),
@@ -1212,7 +1213,7 @@ def register(app):
                  (Output("wfa-veu-janelas", "className"), "veu on", "veu")],
     )
     def wfa_executar(_n, _fim, _carregado, is_m, oos_m, inteligencia, holdout,
-                     run_id, ativo, store_atual):
+                     travar, run_id, ativo, store_atual):
         """Monta o walk-forward da configuração aberta sobre o cache.
 
         Trocar IS, OOS ou a inteligência NÃO roda backtest de novo: o cache
@@ -1301,7 +1302,12 @@ def register(app):
 
         qual = inteligencia or "centroide_mediana"
         crit, origem_crit = _criterios_wfa(d, e)
-        passos = wfa.rodar(cache, janelas, capital, qual, crit)
+        # a camada 4 travada: a primeira janela escolhe stop, alvo e
+        # proteções, e as seguintes ficam com eles (ver `wfa.rodar`)
+        travados = (set(wfa_runner.CAMPOS_EXECUCAO_NOMES)
+                    if "on" in (travar or []) else None)
+        passos = wfa.rodar(cache, janelas, capital, qual, crit,
+                           travar_execucao=travados)
         oos = wfa.trades_oos_campos(cache, passos,
                                     ("entry_ts", "exit_ts", "liquido", "custo"))
         ts, liq, steps = oos["entry_ts"], oos["liquido"], oos["step"]
@@ -1320,7 +1326,7 @@ def register(app):
                     strategy=d["estrategia"], is_meses=int(is_m or 12),
                     oos_meses=int(oos_m or 6), inteligencia=qual,
                     holdout=estende, agregado=ag, veredito=ver, passos=passos,
-                    capital=capital,
+                    capital=capital, camada4_travada=travados is not None,
                     deploy=next((p.params for p in passos if p.janela.deploy),
                                 None))
         # O Store só é regravado quando MUDA. O dcc.Store redispara quem o
@@ -1358,6 +1364,7 @@ def register(app):
         Output("store-matriz", "data"),
         Input("store-wfa", "data"),
         Input("wfa-holdout", "value"),
+        Input("wfa-travar-camada4", "value"),
         running=[(Output("wfa-trava-matriz", "className"),
                   "wfa-trava on", "wfa-trava"),
                  (Output("wfa-veu-matriz", "className"), "veu on", "veu"),
@@ -1368,7 +1375,7 @@ def register(app):
                     "disabled": True}],
                   [{"label": "estender ao holdout", "value": "on"}])],
     )
-    def wfa_matriz(store, holdout):
+    def wfa_matriz(store, holdout, travar):
         """As sete inteligências × 12 configurações, de uma vez, no servidor.
 
         Não depende de IS, OOS nem da inteligência escolhida — ela é quem os
@@ -1393,18 +1400,25 @@ def register(app):
 
         e = VARREDURA.estado
         estende = "on" in (holdout or [])
-        chave = f"{e.get('run_id')}-{e.get('geracao')}-{int(estende)}"
+        trava = "on" in (travar or [])
+        # a trava entra na chave do cache: com e sem camada 4 travada são
+        # duas matrizes diferentes, e reaproveitar uma pela outra mostraria
+        # números de um walk-forward que não foi o pedido
+        chave = f"{e.get('run_id')}-{e.get('geracao')}-{int(estende)}-{int(trava)}"
         guardadas = _WFA.setdefault("matrizes", {})
         with _MATRIZ_LOCK:          # duas threads não calculam a mesma matriz
-            return _matriz_guardada(guardadas, chave, cache, e, estende)
+            return _matriz_guardada(guardadas, chave, cache, e, estende, trava)
 
-    def _matriz_guardada(guardadas, chave, cache, e, estende):
+    def _matriz_guardada(guardadas, chave, cache, e, estende, trava):
         if chave not in guardadas:
             fim = e["ate"] if estende else e["ate_holdout"]
             d = optimizer.detalhes_salva(e.get("run_id")) if e.get("run_id") else None
             por_q = wfa.matrizes(cache, e["de"], fim,
                                  float(e["capital"] or 10_000.0),
-                                 criterios=_criterios_wfa(d, e)[0])
+                                 criterios=_criterios_wfa(d, e)[0],
+                                 travar_execucao=(
+                                     set(wfa_runner.CAMPOS_EXECUCAO_NOMES)
+                                     if trava else None))
             # só as da varredura atual: holdout ligado e desligado
             for velha in [k for k in guardadas
                           if not k.startswith(f"{e.get('run_id')}-{e.get('geracao')}-")]:
@@ -1542,7 +1556,8 @@ def register(app):
                 agregado=_WFA["agregado"], veredito=_WFA["veredito"],
                 passos=_WFA["passos"], trades=trades,
                 profile=d["perfil"] if d else None,
-                capital=_WFA.get("capital"), sharpes_matriz=sharpes)
+                capital=_WFA.get("capital"), sharpes_matriz=sharpes,
+                camada4_travada=_WFA.get("camada4_travada"))
             aviso = (f"walk-forward #{wid} salvo · "
                      f"{len(trades)} trades gravados para o portfólio")
         elif gatilho == "store-wfa-lista":
@@ -1591,6 +1606,7 @@ def register(app):
         Output("wfa-oos", "value", allow_duplicate=True),
         Output("wfa-inteligencia", "value"),
         Output("wfa-holdout", "value"),
+        Output("wfa-travar-camada4", "value"),
         Output("wfa-nome", "value"),
         Output("store-wfa-carregar", "data"),
         Output("wfa-aviso", "children", allow_duplicate=True),
@@ -1615,10 +1631,14 @@ def register(app):
         if not optimizer.detalhes_salva(d["run_id"]):
             # sem a mineração não há espaço de busca para refazer nada; trocar
             # por outra em silêncio mostraria um resultado que não é o dele
-            return (*[no_update] * 8,
+            return (*[no_update] * 9,
                     f"a mineração #{d['run_id']} deste walk-forward foi excluída")
+        # registro anterior a esta coluna volta com a caixa MARCADA, que é o
+        # padrão de hoje — e o resumo da Candidata diz que não foi informado
+        travada = d.get("camada4_travada")
         return (d["strategy"], d["run_id"], d["is_meses"], d["oos_meses"],
                 d["inteligencia"], ["on"] if d["holdout"] else [],
+                [] if travada is False else ["on"],
                 d.get("nome") or "", {"wfa_id": int(wfa_id)}, "")
 
     # ------------------------------ os parâmetros da vencedora, no WFA

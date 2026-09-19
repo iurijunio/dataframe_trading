@@ -130,6 +130,79 @@ def test_excluir_plano_apaga_so_ele(banco):
     assert [p["plano_id"] for p in plano.listar()] == [b]
 
 
+def test_regravar_o_walk_forward_aposenta_o_plano_e_nao_o_perde(banco):
+    """Regravar o MESMO walk-forward apaga o registro antigo e cria outro id.
+    Sem tratar o plano, ele ficava apontando para um id que não existe mais:
+    invisível nas duas telas, achável só por consulta à mão. Agora ele muda
+    de dono e fica aposentado — decisão gravada não se apaga."""
+    import numpy as np
+
+    from core import wfa
+
+    def passos():
+        j = wfa.Janela(1, np.datetime64("2021-03-01", "s"),
+                       np.datetime64("2022-03-01", "s"),
+                       np.datetime64("2022-03-01", "s"),
+                       np.datetime64("2022-09-01", "s"), False)
+        return [wfa.Passo(janela=j, escolhida=0, params={"a": 10},
+                          is_={"lucro": 900.0, "trades": 200, "dd": 80.0},
+                          oos={"lucro": 300.0, "trades": 60}, wfe_lucro=0.66)]
+
+    def grava_wfa():
+        return wfa_store.salvar(
+            run_id=1, symbol="WIN$N", strategy="rompimento_canal",
+            nome="x", is_meses=18, oos_meses=6, inteligencia="ulcer",
+            holdout=False, agregado={"steps": 1}, veredito={"estado": "boa"},
+            passos=passos(), capital=10_000.0)
+
+    primeiro = grava_wfa()
+    pid = plano.salvar(**_campos(wfa_id=primeiro))
+    segundo = grava_wfa()          # mesma configuração: SUBSTITUI o anterior
+
+    d = plano.detalhes(pid)
+    assert d is not None and d["estado"] == "aposentado"
+    assert d["wfa_id"] == segundo
+    assert [p["plano_id"] for p in plano.listar(wfa_id=segundo)] == [pid]
+
+
+def test_camada4_nao_informada_nao_vira_destravada(banco):
+    """Afirmar 'não estava travada' sobre uma decisão que ninguém registrou é
+    pior que deixar em branco: ela muda o que o plano promete."""
+    _wfa_no_banco()
+    pid = plano.salvar(**_campos(camada4_travada=None))
+    assert plano.detalhes(pid)["camada4_travada"] is None
+
+
+def test_todos_os_campos_de_retrato_voltam_como_dicionario(banco):
+    """Se um deles sair da lista de JSON, ele volta como texto e a tela
+    mostra um dicionário escrito à mão."""
+    _wfa_no_banco()
+    d = plano.detalhes(plano.salvar(**_campos()))
+    for campo in ("params", "profile", "disjuntor", "expectativa",
+                  "reotimizacao", "definicoes", "regua"):
+        assert isinstance(d[campo], dict), campo
+    assert d["expectativa"]["p50_6m"] == 5000.0
+    assert d["reotimizacao"]["is_meses"] == 18
+    assert d["definicoes"]["novo_topo"] == "fechamento do pregão"
+    assert d["regua"]["holdout"] == "R$ 942"
+
+
+def test_reprodutibilidade_fica_gravada(banco):
+    """Os retratos protegem contra a mineração sumir; estes campos protegem
+    contra o MOTOR mudar. Sem eles, um plano de seis meses atrás não tem como
+    explicar por que o mesmo backtest dá outro número hoje."""
+    from core import engine
+
+    _wfa_no_banco()
+    pid = plano.salvar(**_campos(
+        **plano.retrato_da_base("WIN$N"), capital_livre=70_000.0,
+        reotimizar_em="2026-03-31"))
+    d = plano.detalhes(pid)
+    assert d["motor_versao"] == engine.VERSAO
+    assert d["capital_livre"] == 70_000.0
+    assert str(d["reotimizar_em"]) == "2026-03-31"
+
+
 def test_detalhes_de_plano_que_nao_existe_devolve_nada(banco):
     assert plano.detalhes(999) is None
     assert plano.aposentar(999) is False

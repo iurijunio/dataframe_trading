@@ -594,6 +594,26 @@ def painel():
                              "janela IS de cada passo, então esses meses só entram "
                              "como resultado — nunca como escolha."),
                     ], className="fld-chk tool-right"),
+                    html.Div([
+                        dcc.Checklist(
+                            id="wfa-travar-camada4", value=["on"],
+                            className="chk",
+                            options=[{"label": "travar stop, alvo e proteções",
+                                      "value": "on"}]),
+                        dica("MARCADO, a primeira janela escolhe o stop, o "
+                             "alvo e as proteções, e todas as seguintes ficam "
+                             "com eles — só os parâmetros da estratégia são "
+                             "reotimizados. Esses campos protegem o capital, "
+                             "não geram lucro: reotimizá-los faz o stop "
+                             "aprender o passado, e muda o limite de "
+                             "desligamento do seu plano a cada seis meses. "
+                             "A trava é no valor da PRIMEIRA janela, nunca no "
+                             "melhor do período inteiro — o melhor do período "
+                             "só é conhecido depois que ele acabou. "
+                             "Desmarque só para medir o quanto reotimizar "
+                             "tudo mudaria o resultado. Sem efeito quando a "
+                             "mineração não varreu nenhum desses campos."),
+                    ], className="fld-chk tool-right"),
             ], className="mz-holdout")),
 
         html.Section([

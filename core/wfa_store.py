@@ -40,7 +40,7 @@ def _passo_para_banco(p) -> dict:
 def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
            inteligencia, holdout, agregado, veredito, passos,
            trades=None, profile=None, capital=None,
-           sharpes_matriz=None) -> int:
+           sharpes_matriz=None, camada4_travada=None) -> int:
     """Grava um walk-forward e devolve o id.
 
     Um WFA por combinação de (mineração, IS, OOS, inteligência, holdout): se
@@ -62,17 +62,27 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
             "AND holdout = ?",
             [run_id, strategy, is_meses, oos_meses, inteligencia,
              bool(holdout)]).fetchall()]
+        wfa_id = con.execute("SELECT nextval('seq_wfa_id')").fetchone()[0]
         for antigo in antigos:
             con.execute("DELETE FROM wfa_trades WHERE wfa_id = ?", [antigo])
+            # Os planos de operação do registro substituído mudam de dono e
+            # ficam APOSENTADOS. Apagá-los destruiria decisão gravada; deixá-los
+            # apontando para o `wfa_id` que acabou de sumir era pior ainda —
+            # o plano continuava no banco, invisível nas duas telas, e só uma
+            # consulta à mão o encontrava. É o mesmo tipo de acidente dos 551
+            # trades órfãos, uma tabela adiante.
+            con.execute(
+                "UPDATE planos_operacao SET wfa_id = ?, estado = 'aposentado' "
+                "WHERE wfa_id = ?", [wfa_id, antigo])
             con.execute("DELETE FROM wfa_runs WHERE wfa_id = ?", [antigo])
-        wfa_id = con.execute("SELECT nextval('seq_wfa_id')").fetchone()[0]
         # colunas nomeadas: a tabela vai ganhar colunas com o tempo
         con.execute(
             "INSERT INTO wfa_runs (wfa_id, run_id, symbol, strategy, "
             "created_at, nome, is_meses, oos_meses, inteligencia, holdout, "
             "janelas, oos_lucro, oos_trades, wfe_global, consistencia, dd_oos, "
-            "veredito, passos, deploy, profile, capital, sharpes_matriz) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "veredito, passos, deploy, profile, capital, sharpes_matriz, "
+            "camada4_travada) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [wfa_id, run_id, symbol, strategy, datetime.now(), nome or None,
              int(is_meses), int(oos_meses), inteligencia, bool(holdout),
              int(agregado.get("steps", 0)),
@@ -85,7 +95,8 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
              json.dumps(linhas), json.dumps(deploy),
              json.dumps(profile) if profile else None,
              float(capital) if capital is not None else None,
-             json.dumps(sharpes_matriz) if sharpes_matriz else None])
+             json.dumps(sharpes_matriz) if sharpes_matriz else None,
+             None if camada4_travada is None else bool(camada4_travada)])
 
         # Os trades da curva OOS, um por linha. É o que o portfólio vai
         # consumir: correlação de verdade pede a série, e exposição
@@ -152,7 +163,7 @@ def detalhes(wfa_id: int) -> dict | None:
         r = con.execute(
             "SELECT run_id, symbol, strategy, nome, is_meses, oos_meses, "
             "inteligencia, holdout, passos, deploy, profile, capital, "
-            "sharpes_matriz FROM wfa_runs WHERE wfa_id = ?",
+            "sharpes_matriz, camada4_travada FROM wfa_runs WHERE wfa_id = ?",
             [wfa_id]).fetchone()
     if not r:
         return None
@@ -166,6 +177,9 @@ def detalhes(wfa_id: int) -> dict | None:
         "profile": json.loads(r[10]) if r[10] else None,
         "capital": float(r[11]) if r[11] is not None else None,
         "sharpes_matriz": json.loads(r[12]) if r[12] else None,
+        # None em registro anterior a esta coluna: a tela diz "nao informado",
+        # que e diferente de "estava solta"
+        "camada4_travada": None if r[13] is None else bool(r[13]),
     }
 
 

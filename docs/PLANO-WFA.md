@@ -143,7 +143,7 @@ fim de tudo.
 | ~~5.4a~~ | ~~Ficha completa da vencedora, dinâmica~~ | **feito** — `ficha.py` + `catalogo.py`: estratégia pelo schema, execução pelo `ExecutionProfile` |
 | ~~5.4b~~ | ~~Progresso da varredura, travas e véu na matriz~~ | **feito** — sem laço de callbacks; teste de ciclo no app inteiro |
 | 5.5 | Botão "editar faixas" (decisão da pergunta 7) | pendente — usa o espaço gravado por padrão; editar avisa que a matriz deixa de ser comparável com a mineração de origem |
-| 5.6 | Camada 4 reotimizável ou travada, por caixa de marcar (decisão 9) | pendente |
+| ~~5.6~~ | ~~Camada 4 reotimizável ou travada, por caixa de marcar (decisão 9)~~ | **feito** 18/09/2026 — caixa nasce MARCADA; a primeira janela escolhe stop, alvo e proteções e as seguintes ficam com eles; grava em `wfa_runs.camada4_travada` |
 
 ### Fase 6 — Fechamento
 
