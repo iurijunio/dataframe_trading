@@ -854,7 +854,20 @@ janela precisa ser descartado — ele guarda a escolha de cada inteligência sob
 os aprovados **antigos**, e reaproveitá-lo devolveria justamente a combinação
 que a trava acabou de excluir.
 
-6 testes novos em `tests/test_wfa_camada4.py`, mais a suíte inteira (664).
+**A matriz e as sete inteligências usam os valores travados da configuração
+aberta**, não os que cada uma aprenderia da própria primeira janela: sete
+inteligências × doze configurações travariam em até doze stops diferentes, e a
+matriz passaria a misturar "de que tamanho de janela a estratégia precisa" com
+"que stop aquela célula calhou de pegar". Por isso `rodar` aceita também
+`valores_travados`, prontos, além de `travar_execucao`, que os aprende.
+
+A chave do cache da matriz passou a ter **um dono só** (`_chave_matriz`): quem
+guardava e quem lia montavam a string cada um por conta própria, e bastou a
+camada 4 entrar de um lado para o outro nunca mais achar nada — `sharpes_matriz`
+gravava vazio em todo walk-forward salvo, sem erro aparecer. Os valores travados
+entram na chave, porque trocar de inteligência pode travar noutro stop.
+
+11 testes em `tests/test_wfa_camada4.py`, mais a suíte inteira (668).
 
 ---
 

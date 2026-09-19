@@ -762,7 +762,8 @@ def rodar(combos: list[dict], janelas: list[Janela], capital: float,
           criterios: dict | None = None,
           min_trades_is: int = MIN_TRADES_IS,
           preparado: dict | None = None,
-          travar_execucao: set[str] | None = None) -> list[Passo]:
+          travar_execucao: set[str] | None = None,
+          valores_travados: dict | None = None) -> list[Passo]:
     """Percorre a escadinha. Cada `combo` é
     `{"params": {...}, "entry_ts": array, "liquido": array}`.
 
@@ -773,15 +774,24 @@ def rodar(combos: list[dict], janelas: list[Janela], capital: float,
     parte cara quando várias inteligências percorrem a mesma escadinha.
 
     `travar_execucao` são os campos da camada 4 (stop, alvo, proteções) que
-    **não** podem ser reotimizados: a primeira janela real escolhe
-    normalmente, e as seguintes só consideram combinações que casem com o
-    que ela escolheu. Esses campos protegem o capital, não geram lucro —
+    **não** podem ser reotimizados: a primeira janela que de fato operou
+    escolhe normalmente, e as seguintes só consideram combinações que casem
+    com o que ela escolheu. Esses campos protegem o capital, não geram lucro —
     reotimizá-los faz o stop aprender o passado e mudaria o disjuntor do
     plano de operação a cada seis meses. A trava é no valor da PRIMEIRA
     janela, e não no melhor do período inteiro, porque o melhor do período
     só é conhecido depois que o período acabou: fixar por ele seria olhar o
     futuro. Se nenhuma aprovada casar, a janela fica **fora do mercado** — a
     mesma regra que vale quando ninguém passa nos critérios.
+
+    `valores_travados` dá os valores prontos, em vez de aprendê-los da
+    primeira janela. É o que a matriz das 12 configurações e as sete
+    inteligências precisam: cada uma tem a sua própria primeira janela, e
+    deixá-las aprender sozinhas fazia cada célula travar num stop diferente
+    — a matriz passava a misturar "de que tamanho de janela a estratégia
+    precisa" com "que stop a primeira janela daquela célula calhou de
+    pegar". Com os valores vindos de fora, toda célula responde à mesma
+    pergunta: **com a camada 4 que eu vou operar, qual janela funciona.**
     """
     if not combos or not janelas:
         return []
@@ -791,7 +801,7 @@ def rodar(combos: list[dict], janelas: list[Janela], capital: float,
     fatia = prep.get("fatia") or [_fatiador(c["entry_ts"]) for c in combos]
     memos = prep.get("memo") or [None] * len(janelas)
     campos_travados = set(travar_execucao or ())
-    travados = None
+    travados = dict(valores_travados) if valores_travados else None
 
     passos = []
     for j, (m_is, aprovados), memo in zip(janelas, prep["janelas"], memos):
@@ -1042,11 +1052,13 @@ def matriz(combos: list[dict], inicio, fim, capital: float,
            criterios: dict | None = None,
            configs: list[tuple[int, int]] | None = None,
            min_trades_is: int = MIN_TRADES_IS,
-           travar_execucao: set[str] | None = None) -> list[dict]:
+           travar_execucao: set[str] | None = None,
+           valores_travados: dict | None = None) -> list[dict]:
     """A matriz de UMA inteligência. Ver `matrizes`."""
     return matrizes(combos, inicio, fim, capital, [inteligencia], criterios,
                     configs, min_trades_is,
-                    travar_execucao=travar_execucao)[inteligencia]
+                    travar_execucao=travar_execucao,
+                    valores_travados=valores_travados)[inteligencia]
 
 
 def matrizes(combos: list[dict], inicio, fim, capital: float,
@@ -1056,7 +1068,8 @@ def matrizes(combos: list[dict], inicio, fim, capital: float,
              min_trades_is: int = MIN_TRADES_IS,
              limiares: dict | None = None,
              progresso=None,
-             travar_execucao: set[str] | None = None) -> dict[str, list[dict]]:
+             travar_execucao: set[str] | None = None,
+             valores_travados: dict | None = None) -> dict[str, list[dict]]:
     """Uma linha por configuração IS/OOS — a Matriz de Otimização.
 
     A pergunta que ela responde não é "qual configuração rendeu mais", e sim
@@ -1101,7 +1114,8 @@ def matrizes(combos: list[dict], inicio, fim, capital: float,
 
         for q in qs:
             passos = rodar(combos, js, capital, q, criterios, min_trades_is,
-                           preparado=prep, travar_execucao=travar_execucao)
+                           preparado=prep, travar_execucao=travar_execucao,
+                           valores_travados=valores_travados)
             # a saída entra à parte: o Sharpe da linha agrega por ela (é
             # quando o resultado se realiza), mas o "comum" abaixo continua
             # cortando pela entrada
@@ -1118,7 +1132,8 @@ def matrizes(combos: list[dict], inicio, fim, capital: float,
             ver = portoes_wfa(ag, passos, capital, limiares)
             ag_anc = agregar(rodar(combos, anc, capital, q, criterios,
                                    min_trades_is, preparado=prep_anc,
-                                   travar_execucao=travar_execucao), capital)
+                                   travar_execucao=travar_execucao,
+                                   valores_travados=valores_travados), capital)
             fora[q].append(_linha_matriz(is_m, oos_m, ag, ag_anc, ver))
         if progresso:
             progresso(k + 1, len(lista))

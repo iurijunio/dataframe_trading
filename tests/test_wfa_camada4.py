@@ -81,14 +81,22 @@ def test_travada_nao_prende_o_parametro_da_estrategia():
     a = combo({"periodo": 10, "stop_pontos": 300},
               {**meses("2021-03", "2022-09", 10.0),
                **meses("2022-09", "2024-03", 1.0)})
+    # o mesmo stop travado, período diferente: é esta que a janela seguinte
+    # precisa poder escolher
     b = combo({"periodo": 20, "stop_pontos": 300},
               {**meses("2021-03", "2022-09", 1.0),
                **meses("2022-09", "2024-03", 100.0)})
+    # e uma terceira, melhor que as duas, que a trava TEM de excluir — sem
+    # ela o teste passaria com a trava desligada
+    c = combo({"periodo": 30, "stop_pontos": 500},
+              {**meses("2021-03", "2022-09", 1.0),
+               **meses("2022-09", "2024-03", 500.0)})
     janelas = [j for j in wfa.montar_janelas("2021-03-16", "2024-03-13", 18, 6)
                if not j.deploy]
-    passos = wfa.rodar([a, b], janelas, CAP, COMO,
+    passos = wfa.rodar([a, b, c], janelas, CAP, COMO,
                        travar_execucao=EXEC)
     assert [p.params["periodo"] for p in passos][:2] == [10, 20]
+    assert 30 not in [p.params["periodo"] for p in passos]
 
 
 def test_trava_compara_78_com_78_ponto_zero():
@@ -146,3 +154,95 @@ def test_a_trava_nasce_na_primeira_janela_nao_no_melhor_do_periodo():
     passos = wfa.rodar([a, b], janelas, CAP, COMO,
                        travar_execucao=EXEC)
     assert {p.params["stop_pontos"] for p in passos} == {300}
+
+
+# ------------------------------------------------- a chave do cache da matriz
+def test_chave_da_matriz_muda_com_a_trava_e_com_os_valores():
+    """Quem guarda a matriz e quem a lê montavam a chave cada um por conta
+    própria. Bastou a camada 4 entrar de um lado para o outro nunca mais
+    achar nada: `sharpes_matriz` passou a ser gravado VAZIO em todo
+    walk-forward salvo, sem erro nenhum aparecer. Agora a chave tem um dono,
+    e os valores travados entram nela — trocar de inteligência pode travar
+    noutro stop, e a matriz guardada seria de outra camada 4."""
+    from ui.callbacks import _chave_matriz
+
+    solta = _chave_matriz(7, 3, False, False)
+    travada = _chave_matriz(7, 3, False, True)
+    assert solta != travada
+
+    a = _chave_matriz(7, 3, False, True, {"stop_pontos": 300})
+    b = _chave_matriz(7, 3, False, True, {"stop_pontos": 500})
+    assert a != b and a != travada
+    # a ordem dos campos não pode criar chave nova
+    assert (_chave_matriz(7, 3, False, True, {"stop_pontos": 300, "alvo": 9})
+            == _chave_matriz(7, 3, False, True, {"alvo": 9, "stop_pontos": 300}))
+
+
+# --------------------------------------------- mais de um campo, e a DEPLOY
+def test_trava_com_dois_campos_exige_os_dois():
+    """A produção trava os seis campos de execução de uma vez. A regra é
+    conjuntiva: casar só o stop e mudar o alvo é outra camada 4."""
+    dois = {"stop_pontos", "alvo_pontos"}
+    a = combo({"periodo": 10, "stop_pontos": 300, "alvo_pontos": 600},
+              {**meses("2021-03", "2022-09", 10.0),
+               **meses("2022-09", "2024-03", 1.0)})
+    # mesmo stop, alvo diferente: não pode ser escolhida depois da trava
+    b = combo({"periodo": 10, "stop_pontos": 300, "alvo_pontos": 900},
+              {**meses("2021-03", "2022-09", 1.0),
+               **meses("2022-09", "2024-03", 100.0)})
+    # e o espelho: mesmo alvo, stop diferente. Com os dois casos, travar só um
+    # dos campos deixa passar uma delas — que é o defeito que se quer pegar
+    c = combo({"periodo": 10, "stop_pontos": 500, "alvo_pontos": 600},
+              {**meses("2021-03", "2022-09", 1.0),
+               **meses("2022-09", "2024-03", 200.0)})
+    janelas = [j for j in wfa.montar_janelas("2021-03-16", "2024-03-13", 18, 6)
+               if not j.deploy]
+    soltos = wfa.rodar([a, b, c], janelas, CAP, COMO)
+    # sem trava, a segunda janela troca de camada 4 (pega o stop 500)
+    assert [p.params["stop_pontos"] for p in soltos][:2] == [300, 500]
+    travados = wfa.rodar([a, b, c], janelas, CAP, COMO, travar_execucao=dois)
+    assert {p.params["alvo_pontos"] for p in travados} == {600}
+    assert {p.params["stop_pontos"] for p in travados} == {300}
+
+
+def test_a_janela_deploy_tambem_respeita_a_trava():
+    """A DEPLOY é a combinação que iria operar — é ela que vira o plano de
+    operação. Deixá-la fora da trava entregaria um plano com stop diferente
+    do que o walk-forward mediu."""
+    a = combo({"periodo": 10, "stop_pontos": 300},
+              {**meses("2021-03", "2022-09", 10.0),
+               **meses("2022-09", "2024-03", 1.0)})
+    b = combo({"periodo": 10, "stop_pontos": 500},
+              {**meses("2021-03", "2022-09", 1.0),
+               **meses("2022-09", "2024-03", 100.0)})
+    janelas = wfa.montar_janelas("2021-03-16", "2024-03-13", 18, 6)
+    passos = wfa.rodar([a, b], janelas, CAP, COMO, travar_execucao=EXEC)
+    deploy = next(p for p in passos if p.janela.deploy)
+    assert deploy.params["stop_pontos"] == 300
+
+
+def test_mineracao_sem_campo_de_execucao_reotimiza_normalmente():
+    """Mineração que não varreu stop nem alvo: não há o que travar, e a
+    trava não pode virar filtro que exclui todo mundo."""
+    a = combo({"periodo": 10}, {**meses("2021-03", "2022-09", 10.0),
+                                **meses("2022-09", "2024-03", 1.0)})
+    b = combo({"periodo": 20}, {**meses("2021-03", "2022-09", 1.0),
+                                **meses("2022-09", "2024-03", 100.0)})
+    janelas = [j for j in wfa.montar_janelas("2021-03-16", "2024-03-13", 18, 6)
+               if not j.deploy]
+    passos = wfa.rodar([a, b], janelas, CAP, COMO, travar_execucao=EXEC)
+    assert not any(p.fora_do_mercado for p in passos)
+    assert [p.params["periodo"] for p in passos][:2] == [10, 20]
+
+
+def test_valores_travados_vindos_de_fora_valem_desde_a_primeira_janela():
+    """É o que a matriz das 12 configurações usa: sem isso, cada célula
+    aprendia o stop da própria primeira janela e a matriz comparava camadas 4
+    diferentes entre si."""
+    combos, janelas = _cenario()
+    passos = wfa.rodar(combos, janelas, CAP, COMO,
+                       valores_travados={"stop_pontos": 500})
+    assert {p.params["stop_pontos"] for p in passos} == {500}
+    # e o resultado é diferente do que a própria primeira janela escolheria
+    sozinha = wfa.rodar(combos, janelas, CAP, COMO, travar_execucao=EXEC)
+    assert {p.params["stop_pontos"] for p in sozinha} == {300}

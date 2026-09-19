@@ -254,6 +254,23 @@ def _robustez(res, run, liq):
     )
 
 
+def _chave_matriz(run_id, geracao, estende, trava, valores=None) -> str:
+    """A chave do cache da matriz — um lugar só.
+
+    Quem guarda e quem lê montavam a string cada um por sua conta, e bastou
+    a camada 4 entrar na conta de um lado para o outro nunca mais achar a
+    matriz: `sharpes_matriz` passou a ser gravado vazio em todo walk-forward
+    salvo, sem erro nenhum aparecer.
+
+    Os VALORES travados entram na chave porque a matriz agora depende deles:
+    trocar de inteligência pode travar noutro stop, e a matriz guardada seria
+    de outra camada 4 — certa na aparência, errada no conteúdo.
+    """
+    marca = "-".join(f"{k}={valores[k]}" for k in sorted(valores or {}))
+    return (f"{run_id}-{geracao}-{int(bool(estende))}-{int(bool(trava))}"
+            + (f"-{marca}" if marca else ""))
+
+
 def register(app):
     # ------------------------------------------------------ modal do grafico
     @app.callback(
@@ -1308,6 +1325,14 @@ def register(app):
                     if "on" in (travar or []) else None)
         passos = wfa.rodar(cache, janelas, capital, qual, crit,
                            travar_execucao=travados)
+        # o que ESTA configuração travou, para a matriz das 12 usar o mesmo
+        # stop em todas as células em vez de cada uma aprender o seu
+        camada4_valores = None
+        if travados:
+            operou = next((p for p in passos if p.params), None)
+            camada4_valores = (
+                {k: v for k, v in operou.params.items() if k in travados}
+                if operou else None)
         oos = wfa.trades_oos_campos(cache, passos,
                                     ("entry_ts", "exit_ts", "liquido", "custo"))
         ts, liq, steps = oos["entry_ts"], oos["liquido"], oos["step"]
@@ -1327,6 +1352,7 @@ def register(app):
                     oos_meses=int(oos_m or 6), inteligencia=qual,
                     holdout=estende, agregado=ag, veredito=ver, passos=passos,
                     capital=capital, camada4_travada=travados is not None,
+                    camada4_valores=camada4_valores,
                     deploy=next((p.params for p in passos if p.janela.deploy),
                                 None))
         # O Store só é regravado quando MUDA. O dcc.Store redispara quem o
@@ -1404,7 +1430,8 @@ def register(app):
         # a trava entra na chave do cache: com e sem camada 4 travada são
         # duas matrizes diferentes, e reaproveitar uma pela outra mostraria
         # números de um walk-forward que não foi o pedido
-        chave = f"{e.get('run_id')}-{e.get('geracao')}-{int(estende)}-{int(trava)}"
+        chave = _chave_matriz(e.get("run_id"), e.get("geracao"), estende, trava,
+                              _WFA.get("camada4_valores") if trava else None)
         guardadas = _WFA.setdefault("matrizes", {})
         with _MATRIZ_LOCK:          # duas threads não calculam a mesma matriz
             return _matriz_guardada(guardadas, chave, cache, e, estende, trava)
@@ -1413,12 +1440,20 @@ def register(app):
         if chave not in guardadas:
             fim = e["ate"] if estende else e["ate_holdout"]
             d = optimizer.detalhes_salva(e.get("run_id")) if e.get("run_id") else None
+            # TODAS as células usam a camada 4 da configuração aberta, não a
+            # que cada uma aprenderia da própria primeira janela: sete
+            # inteligências × doze configurações travariam em até doze stops
+            # diferentes, e a matriz passaria a misturar "de que tamanho de
+            # janela a estratégia precisa" com "que stop aquela célula calhou
+            # de pegar"
+            valores = _WFA.get("camada4_valores") if trava else None
             por_q = wfa.matrizes(cache, e["de"], fim,
                                  float(e["capital"] or 10_000.0),
                                  criterios=_criterios_wfa(d, e)[0],
                                  travar_execucao=(
                                      set(wfa_runner.CAMPOS_EXECUCAO_NOMES)
-                                     if trava else None))
+                                     if trava and not valores else None),
+                                 valores_travados=valores)
             # só as da varredura atual: holdout ligado e desligado
             for velha in [k for k in guardadas
                           if not k.startswith(f"{e.get('run_id')}-{e.get('geracao')}-")]:
@@ -1541,10 +1576,14 @@ def register(app):
                 d["perfil"], _WFA["strategy"], _WFA["symbol"],
                 _WFA["passos"], set(SCHEMA_EXECUCAO)) if d else []
             # a mesma chave com que `_matriz_guardada` guardou a matriz desta
-            # configuração — sem casar run/geração/holdout, os sharpes
-            # viriam de outra varredura ou do outro lado do holdout
-            chave = (f"{_WFA.get('run_id')}-{(_store or {}).get('g')}-"
-                    f"{int(_WFA.get('holdout', False))}")
+            # configuração — sem casar run, geração, holdout E camada 4,
+            # os sharpes viriam de outra varredura, do outro lado do holdout,
+            # ou simplesmente não seriam encontrados: montar a chave à mão
+            # nos dois lugares já fez `sharpes_matriz` gravar vazio
+            chave = _chave_matriz(_WFA.get("run_id"), (_store or {}).get("g"),
+                                  _WFA.get("holdout", False),
+                                  _WFA.get("camada4_travada", False),
+                                  _WFA.get("camada4_valores"))
             por_q = (_WFA.get("matrizes", {}).get(chave) or {}).get("por_q", {})
             sharpes = [r["sharpe"] for linhas in por_q.values()
                       for r in linhas if r.get("sharpe") is not None]
