@@ -155,6 +155,27 @@ def test_pico_isolado_perde_para_regiao_boa():
     assert pico["score_robusto"] < plato["score_robusto"]  # robusto, perde
 
 
+def test_combinacao_reprovada_no_minimo_de_operacoes_nao_volta_pelos_vizinhos():
+    """O defeito que fazia o "mínimo de operações" parecer não funcionar.
+
+    Quem fica abaixo do mínimo recebe score −∞. Mas a pontuação robusta
+    trocava o score de cada combinação pela mediana dos vizinhos DESCARTANDO
+    os −∞ — então a combinação reprovada herdava a nota dos vizinhos bons e
+    voltava para o topo do ranking, que ordena pela robusta. O filtro era
+    aplicado e desfeito uma linha depois.
+    """
+    trials = [
+        {"params": {"a": 1}, "score": 10.0, "passa_filtro": True},
+        {"params": {"a": 2}, "score": float("-inf"), "passa_filtro": False},
+        {"params": {"a": 3}, "score": 10.0, "passa_filtro": True},
+    ]
+    wf.score_vizinhanca(trials, ["a"])
+    reprovada = trials[1]
+    assert reprovada["score_robusto"] == float("-inf")
+    # e as aprovadas continuam medidas normalmente
+    assert trials[0]["score_robusto"] == 10.0
+
+
 # ------------------------------------------------------- espaco de busca
 def test_espaco_respeita_o_interruptor():
     schema = {"a": {"default": 9, "step": 1, "tipo": "int"},

@@ -183,6 +183,15 @@ def score_vizinhanca(trials: list[dict], nomes: list[str]) -> None:
         por_coord[coord] = t
 
     for t in trials:
+        # Reprovada no filtro (mínimo de operações, presença nos períodos)
+        # fica reprovada. Sem isto, o −∞ dela era descartado junto com os
+        # dos vizinhos e sobrava a mediana dos vizinhos BONS: a combinação
+        # voltava ao topo do ranking — que ordena por esta nota — e o filtro
+        # da tela parecia não fazer nada.
+        if not np.isfinite(t["score"]):
+            t["score_robusto"] = float("-inf")
+            t.pop("_coord", None)
+            continue
         vizinhos = [t["score"]]
         for eixo in range(len(nomes)):
             for passo in (-1, 1):
