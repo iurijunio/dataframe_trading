@@ -871,7 +871,7 @@ entram na chave, porque trocar de inteligência pode travar noutro stop.
 
 ---
 
-## Tarefa 6: o bloco 5 na tela
+## Tarefa 6: o bloco 5 na tela ✅ (18/09/2026)
 
 **Arquivos:**
 - Modificar: `ui/components/candidata_panel.py`, `ui/callbacks_candidata.py`
@@ -930,12 +930,26 @@ novo**.
 walk-forward #8, conferir contratos, disjuntor e os (?) — e só então marcar
 como pronto.
 
-- [ ] **Passo 6: commit**
+### Como ficou
 
-```bash
-git add ui/components/candidata_panel.py ui/callbacks_candidata.py tests/
-git commit -m "feat(candidata): bloco de tamanho e disjuntor, em tabela com mapa de calor"
-```
+`CP.linhas_tamanho(dim, ref, disj, capital)` e `CP.bloco_tamanho(...)`, com os
+mesmos dois grupos do desenho, e `CP.entradas_tamanho()` com os três diais lado
+a lado: risco por pregão (%), garantia por contrato (R$) e capital para
+garantia (%). O callback `cand_tamanho` é separado do dos portões de propósito
+— mexer no risco não pode disparar de novo os 2.000 caminhos do holdout, e
+tamanho não muda veredito.
+
+**Com zero contratos a tabela não fica vazia.** Os limites aparecem calculados
+para 1 contrato, com a nota "conta feita com 1 contrato, que é mais do que o
+seu risco por pregão permite hoje". Esconder número medido de quem acabou de
+descobrir que o capital não comporta o instrumento seria o pior momento
+possível para esconder.
+
+Conferido na tela com o walk-forward #8 (capital R$ 10.000): a 1% por pregão dá
+**0 contratos** com o motivo escrito na linha; a 5% dá **1 contrato**, risco
+real 4,26%, e o aviso some.
+
+12 testes em `tests/test_candidata_tabela.py`. Suíte inteira: 684.
 
 ---
 

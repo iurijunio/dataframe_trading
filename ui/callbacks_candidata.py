@@ -7,10 +7,11 @@ para um lugar pequeno quando algo trava.
 
 from __future__ import annotations
 
+import numpy as np
 from dash import Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
-from core import candidata, wfa, wfa_runner, wfa_store
+from core import candidata, tamanho, wfa, wfa_runner, wfa_store
 from core import db_manager as db
 from core import optimizer
 from core.candidata_runner import TESTES
@@ -136,6 +137,40 @@ def _gates_e_leitura(wfa_id: int, d: dict):
     return leitura, rapidos + lentos, de, ate
 
 
+def _dimensionar(wfa_id: int, d: dict, leitura: dict, de, ate,
+                 risco_pct, margem, uso_margem_pct) -> tuple[dict, dict, dict]:
+    """A perda de referência, os contratos e o disjuntor deste walk-forward.
+
+    Separado do callback para poder ser testado sem montar o app Dash. Não
+    decide nada: junta o que o banco tem (trades, perfil, instrumento) e
+    entrega a `core/tamanho.py`.
+    """
+    perfil = d.get("profile") or {}
+    inst = db.load_instrument_yaml(d["symbol"])
+    trades = wfa_store.trades(wfa_id)
+    saida = np.array([t["exit_ts"] for t in trades], dtype="datetime64[s]")
+    liq = np.array([t["liquido"] for t in trades], dtype=float)
+    custo = float(np.mean([t.get("custo") or 0.0 for t in trades])) if trades else 0.0
+    _, pnl = candidata.por_pregao(saida, liq, de=de, ate=ate)
+    # quantas operações o pregão mais movimentado teve: é a reserva para o
+    # dia ruim quando o perfil não tem limite diário nenhum
+    por_dia = np.unique(np.asarray(saida, dtype="datetime64[D]"),
+                        return_counts=True)[1]
+
+    ref = tamanho.perda_referencia(
+        pnl, perfil.get("contratos") or 1, perfil, inst.get("point_value"),
+        piso=inst.get("tick_value"), custo_por_trade=custo,
+        trades_no_dia=int(por_dia.max()) if len(por_dia) else None)
+    dim = tamanho.contratos(d.get("capital"), risco_pct, ref.get("valor"),
+                            margem=margem,
+                            uso_margem_pct=uso_margem_pct or tamanho.USO_MARGEM)
+    # com zero contratos o disjuntor não existe; a tela mostra a conta de 1
+    # contrato, avisando que é mais do que o risco pedido permite — vazio
+    # ali seria esconder informação medida de quem mais precisa dela
+    disj = tamanho.disjuntor(leitura, d.get("capital"), dim["n"] or 1, perfil)
+    return ref, dim, disj
+
+
 def register(app):
     @app.callback(
         Output("cand-estrategia", "options"),
@@ -222,6 +257,41 @@ def register(app):
                                     "sem dado suficiente para medir os portões")
         ver = candidata.veredito(gates)
         return blocos, WP.selo(ver, titulo=TITULO_SELO)
+
+    # ------------------------------------- bloco 5: tamanho e disjuntor
+    @app.callback(
+        Output("cand-tamanho", "children"),
+        Input("cand-wfa", "value"),
+        Input("cand-risco", "value"),
+        Input("cand-margem", "value"),
+        Input("cand-uso-margem", "value"),
+    )
+    def cand_tamanho(wfa_id, risco, margem, uso_margem):
+        """Quantos contratos e quando parar.
+
+        Separado do bloco dos portões de propósito: mexer no risco por pregão
+        não pode recalcular o holdout nem os portões (são 2.000 caminhos
+        simulados por clique), e o dimensionamento não muda o veredito —
+        aprovar ou reprovar é sobre a estratégia, tamanho é sobre o bolso.
+        """
+        if not wfa_id:
+            return CP.vazio("escolha um walk-forward salvo para dimensionar")
+        wid = int(wfa_id)
+        d = wfa_store.detalhes(wid) or {}
+        capital = d.get("capital")
+        if capital is None:
+            return CP.vazio("este walk-forward não tem capital gravado")
+
+        horizonte = candidata.calcula_horizonte(d)
+        de, ate = candidata.limites_oos(d.get("passos"))
+        trades = wfa_store.trades(wid)
+        leitura = candidata.leitura_robustez(trades, capital, horizonte,
+                                             de=de, ate=ate)
+        if leitura.get("erro"):
+            return CP.vazio(leitura["erro"])
+        ref, dim, disj = _dimensionar(wid, d, leitura, de, ate,
+                                      risco, margem, uso_margem)
+        return CP.bloco_tamanho(dim, ref, disj, capital)
 
     # ------------------------------------------ os três testes demorados
     @app.callback(

@@ -240,3 +240,138 @@ def test_relogio_prova_a_ordem_que_travava_o_selo():
     #    anunciar (agora que "rodando" já é False), o relógio pode desligar
     store = {"g": estado["geracao"]}
     assert CP.relogio_ligado(estado, store) is False
+
+
+# ---------------------------------------- bloco 5: tamanho e desligamento
+def _dim(**troca):
+    d = {"n": 3, "por_risco": 3, "por_margem": None, "por_folga": None,
+         "limite": "risco", "risco_pedido_pct": 1.0, "risco_efetivo_pct": 0.9,
+         "perda_ref": 300.0, "margem": None, "uso_margem_pct": 50.0,
+         "motivo": None}
+    d.update(troca)
+    return d
+
+
+def _ref(**troca):
+    r = {"valor": 300.0, "de_onde": "a média dos 5% piores pregões",
+         "cvar": -300.0, "quantos": 53, "fracao": 0.051, "pior_dia": -128.0,
+         "dia_ruim": 240.0, "motivo": None}
+    r.update(troca)
+    return r
+
+
+def _disj(**troca):
+    d = {"nivel1": {"queda": 1200.0, "perdas_seguidas": 15,
+                    "lucro_no_prazo": -200.0, "faixa_por_pregao": [-10.0],
+                    "alarme_pct": 20.0, "acao": "reduzir para 1 contrato"},
+         "nivel2": {"queda": 1800.0, "pct": 18.0, "alarme_pct": 5.0,
+                    "risco_de_desligar_pct": 5.0,
+                    "acao": "desligar e reotimizar"},
+         "recorte": "curva inteira", "dias_sem_topo": 125,
+         "limite_dia_reais": None, "limite_dia_trades": None,
+         "horizonte": 131, "motivo": None}
+    d.update(troca)
+    return d
+
+
+def _nomes(grupos):
+    return [l["nome"] for _, _, linhas in grupos for l in linhas]
+
+
+def test_bloco_de_tamanho_tem_os_dois_grupos_e_os_numeros():
+    grupos = CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP)
+    assert [g[0] for g in grupos] == ["Quanto operar", "Quando parar"]
+    nomes = _nomes(grupos)
+    for esperado in ("contratos", "risco por pregão", "perda de referência",
+                     "reduzir para 1 contrato", "desligar e reotimizar",
+                     "dias perdendo seguidos", "dias sem novo topo"):
+        assert esperado in nomes, esperado
+
+
+def test_contratos_zero_fica_vermelho_e_mostra_o_motivo():
+    """Reprovação por capital insuficiente é resposta, não erro — e precisa
+    dizer qual conta zerou, senão o usuário mexe no dial errado."""
+    dim = _dim(n=0, risco_efetivo_pct=None,
+               motivo="o capital não comporta nem 1 contrato: 1 contrato já "
+                      "arrisca mais do que o limite pedido")
+    linha = next(l for _, _, ls in CP.linhas_tamanho(dim, _ref(), _disj(), CAP)
+                 for l in ls if l["nome"] == "contratos")
+    assert linha["valor"] == "0" and linha["tom"] == "ruim"
+    assert "arrisca mais" in linha["nota"]
+
+
+def test_risco_efetivo_aparece_junto_do_pedido():
+    """Entre 1 e 2 contratos o risco dobra: mostrar só o pedido seria
+    mentira confortável."""
+    linha = next(l for _, _, ls in CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP)
+                 for l in ls if l["nome"] == "risco por pregão")
+    assert "0,9" in linha["valor"] and "1,0" in linha["nota"]
+
+
+def test_perda_de_referencia_diz_de_onde_veio_e_mostra_as_tres_leituras():
+    grupos = CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP)
+    linha = next(l for _, _, ls in grupos for l in ls
+                 if l["nome"] == "perda de referência")
+    assert "5% piores" in linha["nota"]
+    nomes = _nomes(grupos)
+    assert "pior pregão já ocorrido" in nomes
+
+
+def test_garantia_nao_informada_nao_vira_zero_na_tela():
+    """Margem em branco é dado que falta, não garantia de graça."""
+    linha = next(l for _, _, ls in CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP)
+                 for l in ls if l["nome"] == "garantia por contrato")
+    assert "não informada" in linha["valor"] and linha["tom"] is None
+
+
+def test_alarme_falso_alto_no_desligar_fica_vermelho():
+    """Desligar uma estratégia viva em 1 de cada 4 ciclos é disjuntor que
+    dispara sozinho."""
+    disj = _disj(nivel2={**_disj()["nivel2"], "risco_de_desligar_pct": 25.0})
+    linha = next(l for _, _, ls in CP.linhas_tamanho(_dim(), _ref(), disj, CAP)
+                 for l in ls if l["nome"] == "desligar e reotimizar")
+    assert linha["tom"] == "ruim"
+
+
+def test_sem_disjuntor_a_tabela_diz_nao_medido_e_nao_zero():
+    disj = _disj(nivel1={**_disj()["nivel1"], "queda": None},
+                 nivel2={**_disj()["nivel2"], "queda": None, "pct": None,
+                         "risco_de_desligar_pct": None},
+                 motivo="sem número de contratos não há limite")
+    linhas = [l for _, _, ls in CP.linhas_tamanho(_dim(n=0), _ref(), disj, CAP)
+              for l in ls if l["nome"] in ("reduzir para 1 contrato",
+                                           "desligar e reotimizar")]
+    assert all(l["valor"] == "não medido" for l in linhas)
+
+
+def test_perda_de_referencia_nao_medida_nao_inventa_numero():
+    ref = _ref(valor=None, de_onde=None, cvar=None,
+               motivo="a curva não tem pregão nenhum")
+    linha = next(l for _, _, ls in CP.linhas_tamanho(_dim(n=0), ref, _disj(), CAP)
+                 for l in ls if l["nome"] == "perda de referência")
+    assert linha["valor"] == "não medido"
+    assert "pregão nenhum" in linha["nota"]
+
+
+def test_todo_numero_tem_explicacao():
+    """Regra da tela: nenhum número sem (?) dizendo o que é e qual a faixa."""
+    for _, _, ls in CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP):
+        for l in ls:
+            assert l["explica"] and len(l["explica"]) > 40, l["nome"]
+
+
+def test_com_zero_contratos_o_disjuntor_aparece_com_o_aviso():
+    """Vazio ali seria esconder número medido de quem mais precisa dele: a
+    tela mostra a conta de 1 contrato, dizendo que é mais do que o risco
+    pedido permite."""
+    linhas = [l for _, _, ls in CP.linhas_tamanho(_dim(n=0), _ref(), _disj(), CAP)
+              for l in ls if l["nome"] in ("reduzir para 1 contrato",
+                                           "desligar e reotimizar")]
+    assert all(l["valor"] != "não medido" for l in linhas)
+    assert all("mais do que o seu risco" in l["nota"] for l in linhas)
+
+
+def test_com_contratos_de_verdade_nao_aparece_aviso_nenhum():
+    linhas = [l for _, _, ls in CP.linhas_tamanho(_dim(), _ref(), _disj(), CAP)
+              for l in ls if l["nome"] == "desligar e reotimizar"]
+    assert "mais do que o seu risco" not in linhas[0]["nota"]

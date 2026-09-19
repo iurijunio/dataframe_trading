@@ -945,3 +945,13 @@ body{
 .ct-valor.tom-bom{background:rgba(0,245,160,.16);color:var(--pos);}
 .ct-valor.tom-medio{background:rgba(255,201,60,.13);color:var(--warn);}
 .ct-valor.tom-ruim{background:rgba(255,77,125,.16);color:var(--neg);}
+/* a nota é texto corrido: sem isto ela empurrava a tabela para os lados e
+   sumia atrás da barra de rolagem, justamente quando é ela que explica o
+   número (o motivo de zero contratos, por exemplo) */
+.cand-tab td.ct-nota{white-space:normal;min-width:180px;}
+/* os três diais do bloco de tamanho: lado a lado, curtos. Cada um numa linha
+   inteira desperdiçava a tela e obrigava a rolar para comparar o que muda */
+.cand-diais{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;
+  margin:14px 0 6px;}
+.cand-diais .fld-cand{flex:0 1 220px;min-width:180px;}
+.cand-diais .inp-cand{width:100%;}

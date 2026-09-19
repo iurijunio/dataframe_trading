@@ -193,6 +193,178 @@ def linhas(leitura: dict, capital: float, holdout: bool = False,
     ]
 
 
+def _reais(v, quando_falta="não medido"):
+    return brl(v) if v is not None else quando_falta
+
+
+def linhas_tamanho(dim: dict, ref: dict, disj: dict,
+                   capital: float) -> list[tuple[str, str, list[dict]]]:
+    """Os grupos do bloco 5: quanto operar e quando parar.
+
+    Mesmo formato dos outros blocos — (título, explicação, linhas) — para
+    reusar a mesma tabela com mapa de calor. Nada aqui calcula: o que chega
+    já vem de `core/tamanho.py`, e o que falta chega como `None` e aparece
+    como "não medido", nunca como zero.
+    """
+    n = dim.get("n") or 0
+    efetivo = dim.get("risco_efetivo_pct")
+    pedido = dim.get("risco_pedido_pct")
+    margem = dim.get("margem")
+
+    quanto = [
+        {"nome": "contratos", "valor": inteiro(n),
+         "nota": (dim.get("motivo") or
+                  f"quem limitou: {dim.get('limite') or '—'}"),
+         "tom": "ruim" if n <= 0 else "bom",
+         "explica": ("Quantos contratos operar. É o menor de três contas: o "
+                     "que o seu risco por pregão permite, o que a garantia da "
+                     "corretora permite, e o que sobra para pagar as duas "
+                     "coisas no mesmo dia. Sempre arredondado para baixo — "
+                     "entre 1 e 2 contratos o risco dobra. Zero contratos não "
+                     "é erro: é o capital não comportar o instrumento, e a "
+                     "nota diz qual das contas zerou.")},
+        {"nome": "risco por pregão",
+         "valor": pct(efetivo, 2) if efetivo is not None else "não medido",
+         "nota": (f"você pediu {pct(pedido, 1)}" if pedido else ""),
+         "tom": None,
+         "explica": ("Quanto do capital você perde num pregão ruim com os "
+                     "contratos escolhidos. É por PREGÃO, não por operação: a "
+                     "perda de referência é de um dia inteiro, então quem "
+                     "opera três vezes por dia não multiplica por três. O "
+                     "valor real fica abaixo do pedido porque o número de "
+                     "contratos é inteiro — é o pedido que é o teto.")},
+        {"nome": "perda de referência", "valor": _reais(ref.get("valor")),
+         "nota": (ref.get("de_onde") or ref.get("motivo") or ""),
+         "tom": None,
+         "explica": ("A perda de UM contrato que dimensiona a posição: vale o "
+                     "pior entre a média dos 5% piores pregões e um dia ruim "
+                     "de execução. A média da cauda não é o teto dela — "
+                     "metade das perdas dessa cauda será maior que esse "
+                     "número.")},
+        {"nome": "dia ruim de execução", "valor": _reais(ref.get("dia_ruim")),
+         "nota": "todos os stops do dia, o último com o dobro do tamanho",
+         "tom": None,
+         "explica": ("O dia em que todo stop que o seu limite diário permite "
+                     "bate, e o último sai com o dobro do tamanho porque não "
+                     "havia preço. Pode nunca ter acontecido na sua curva e "
+                     "ainda assim acontecer amanhã — por isso ele entra na "
+                     "conta. Apertar o máximo de operações por dia no perfil "
+                     "de execução derruba este número direto.")},
+        {"nome": "pior pregão já ocorrido",
+         "valor": _reais(abs(ref["pior_dia"]) if ref.get("pior_dia") else None),
+         "nota": "leitura, não dimensiona", "tom": None,
+         "explica": ("O pior dia que a curva fora da amostra já teve, por "
+                     "contrato. Não dimensiona nada de propósito: ele é um "
+                     "recorde, que só piora conforme o histórico cresce, e um "
+                     "único registro torto passaria a decidir sozinho o seu "
+                     "tamanho de posição.")},
+        {"nome": "garantia por contrato",
+         "valor": _reais(margem, "não informada"),
+         "nota": (f"usando até {pct(dim.get('uso_margem_pct'), 0)} do capital"
+                  if margem else "a conta da garantia ficou de fora"),
+         "tom": None,
+         "explica": ("Quanto a corretora exige de garantia por contrato. "
+                     "Informe a INTRADIÁRIA se você fecha a posição no mesmo "
+                     "dia — a cheia é dez a trinta vezes maior e derrubaria o "
+                     "número de contratos na mesma proporção. Em branco, a "
+                     "conta da garantia fica de fora e só o risco limita.")},
+    ]
+
+    n1, n2 = disj.get("nivel1") or {}, disj.get("nivel2") or {}
+    alarme2 = n2.get("risco_de_desligar_pct")
+    # com zero contratos os limites sairiam todos "não medido" e a metade de
+    # baixo da tela ficaria vazia justamente para quem mais precisa dela.
+    # Mostra-se a conta de 1 contrato, dizendo que é mais do que o risco
+    # pedido permite — número medido, com a régua certa escrita ao lado
+    hipotetico = (" · conta feita com 1 contrato, que é mais do que o seu "
+                  "risco por pregão permite hoje") if n <= 0 else ""
+
+    def nota(texto):
+        return (texto + hipotetico) if texto else hipotetico.lstrip(" ·").strip()
+    parar = [
+        {"nome": "reduzir para 1 contrato", "valor": _reais(n1.get("queda")),
+         "nota": nota(f"acontece à toa em {pct(n1.get('alarme_pct'), 0)} dos "
+                      "ciclos" if n1.get("queda") else disj.get("motivo") or ""),
+         "tom": None,
+         "explica": ("Quando a queda a partir do topo passar deste valor, "
+                     "reduza para 1 contrato. O limite não foi escolhido no "
+                     "olho: você escolhe com que frequência aceita reduzir sem "
+                     "precisar (20% dos ciclos, por padrão) e o valor em reais "
+                     "sai disso. Reduzir é barato e reversível, por isso pode "
+                     "disparar mais vezes que o desligar.")},
+        {"nome": "desligar e reotimizar", "valor": _reais(n2.get("queda")),
+         "nota": nota((f"{pct(n2.get('pct'), 1)} do capital · desliga uma "
+                       f"estratégia viva em {pct(alarme2, 1)} dos ciclos")
+                      if n2.get("queda") else disj.get("motivo") or ""),
+         "tom": _tom(alarme2, 8, 15) if alarme2 is not None else None,
+         "explica": ("Quando a queda chegar aqui, desligue e reotimize antes "
+                     "de voltar. Mesma lógica: você escolhe quantas vezes "
+                     "aceita desligar uma estratégia que ainda funcionava (5% "
+                     "dos ciclos, por padrão). Bom: até 8%. Ruim: acima de "
+                     "15% — aí o disjuntor desliga sozinho, e você nunca vai "
+                     "saber se a estratégia morreu ou teve azar.")},
+        {"nome": "dias perdendo seguidos",
+         "valor": (inteiro(n1["perdas_seguidas"])
+                   if n1.get("perdas_seguidas") else "não medido"),
+         "nota": "também reduz para 1 contrato", "tom": None,
+         "explica": ("Quantos pregões seguidos no prejuízo você deve estar "
+                     "preparado para viver. Passou disso, reduza — é o mesmo "
+                     "sinal da queda, visto por outro lado. Dia sem operação "
+                     "não conta.")},
+        {"nome": "acumulado mínimo esperado",
+         "valor": _reais(n1.get("lucro_no_prazo")),
+         "nota": (f"ao fim de {inteiro(disj.get('horizonte') or 0)} pregões"
+                  if disj.get("horizonte") else ""),
+         "tom": None,
+         "explica": ("Onde o lucro acumulado deve estar, no mínimo, ao fim do "
+                     "prazo até a próxima reotimização: só 1 em cada 10 "
+                     "caminhos simulados termina abaixo disso. Ficar abaixo "
+                     "não é azar comum — é sinal de reduzir.")},
+        {"nome": "dias sem novo topo",
+         "valor": (inteiro(disj["dias_sem_topo"])
+                   if disj.get("dias_sem_topo") else "não medido"),
+         "nota": (f"de {inteiro(disj.get('horizonte') or 0)} pregões"
+                  if disj.get("horizonte") else ""),
+         "tom": None,
+         "explica": ("Quanto tempo a estratégia pode passar abaixo do último "
+                     "topo sem que isso signifique que ela quebrou. Passar "
+                     "muito disso é motivo para olhar, mesmo sem a queda ter "
+                     "batido no limite.")},
+        {"nome": "limite do dia",
+         "valor": _reais(disj.get("limite_dia_reais"), "não definido"),
+         "nota": ((f"{inteiro(disj['limite_dia_trades'])} operações por dia")
+                  if disj.get("limite_dia_trades") else "sem limite de "
+                  "operações no dia"),
+         "tom": None,
+         "explica": ("O limite de perda e de operações do dia que vem do seu "
+                     "perfil de execução, já multiplicado pelos contratos. "
+                     "Sem limite nenhum, o dia pode empilhar perdas — e é "
+                     "justamente isso que engorda a perda de referência lá em "
+                     "cima.")},
+    ]
+
+    return [
+        ("Quanto operar",
+         "O tamanho da posição sai da perda de um contrato num pregão ruim, "
+         "não do lucro esperado. Três contas limitam ao mesmo tempo, e vale a "
+         "menor delas.",
+         quanto),
+        ("Quando parar",
+         "Dois níveis, porque um gatilho só é mau detector: parando apenas na "
+         "queda ruim, você desliga estratégia sadia às vezes e demora demais "
+         "para desligar a que morreu. Os limites saem da frequência de alarme "
+         "falso que você aceita, não de um percentil escolhido no olho.",
+         parar),
+    ]
+
+
+def bloco_tamanho(dim: dict, ref: dict, disj: dict, capital: float):
+    """As duas tabelas do bloco 5."""
+    return html.Div([_tabela(*g) for g in linhas_tamanho(dim, ref, disj,
+                                                         capital)],
+                    className="cand-tabelas")
+
+
 def _tabela(titulo: str, explica: str, itens: list[dict]):
     corpo = [
         html.Tr([
@@ -313,6 +485,42 @@ def bloco_testes() -> html.Div:
     ], className="cand-testes-linha")
 
 
+def _campo(id_, rotulo, valor, explica, passo=0.1, minimo=0,
+           placeholder=None):
+    return html.Div([
+        html.Label([rotulo, dica(explica)], className="lbl"),
+        dcc.Input(id=id_, type="number", value=valor, min=minimo, step=passo,
+                  placeholder=placeholder, className="inp inp-cand"),
+    ], className="fld fld-cand")
+
+
+def entradas_tamanho() -> html.Div:
+    """Os três diais do bloco 5.
+
+    Ficam acima da tabela porque mudam todos os números dela. Só estes três
+    são escolha do operador — o resto sai da curva.
+    """
+    return html.Div([
+        _campo("cand-risco", "risco por pregão (%)", 1.0,
+               "Quanto do capital você aceita perder num PREGÃO ruim — não "
+               "numa operação. A perda de referência é de um dia inteiro, "
+               "então quem opera três vezes por dia não multiplica por três. "
+               "1% é um ponto de partida comum; acima de 2% por pregão a "
+               "sequência ruim normal já machuca demais.", passo=0.1),
+        _campo("cand-margem", "garantia por contrato (R$)", None,
+               "Quanto a corretora exige de garantia por contrato. Informe a "
+               "INTRADIÁRIA se você fecha a posição no mesmo dia: a cheia é "
+               "dez a trinta vezes maior e derrubaria o número de contratos "
+               "na mesma proporção. Deixe em branco e a conta da garantia "
+               "fica de fora — a tela avisa que ela não foi conferida.",
+               passo=10, placeholder="não informada"),
+        _campo("cand-uso-margem", "capital para garantia (%)", 50.0,
+               "Quanto do seu capital pode ficar preso como garantia. Usar "
+               "100% não sobra dinheiro para o prejuízo do próprio dia, que "
+               "é debitado da mesma conta. 50% é o padrão.", passo=5),
+    ], className="cand-diais")
+
+
 def painel():
     return html.Div(
         [
@@ -333,6 +541,8 @@ def painel():
             bloco_testes(),
             html.Div(id="cand-portoes", className="cand-portoes"),
             html.Div(id="cand-blocos", className="cand-blocos"),
+            entradas_tamanho(),
+            html.Div(id="cand-tamanho", className="cand-blocos"),
         ],
         # escondido de saída: sem isto o painel aparece embaixo do Backtest
         # até o callback `modo` resolver no navegador
