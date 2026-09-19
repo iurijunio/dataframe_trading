@@ -474,6 +474,14 @@ métrica com (?) explicando faixa boa e ruim. 147 testes.
 3. Execução ao vivo, em papel antes de dinheiro.
 4. Segundo instrumento, para validar a camada 1.
 5. Série ajustada por rolagem, para estratégias com carrego.
+6. **Tela de estratégias** (pedido de 18/09/2026): uma lista com todas as
+   estratégias disponíveis e, para cada uma, uma página com os detalhes —
+   de onde ela veio (autor, fonte), que perfil ela tem (acerta muito e erra
+   grande, ou o contrário), o que cada parâmetro faz, em que mercado
+   costuma funcionar e o que já foi medido dela aqui dentro. Hoje isso está
+   só no cabeçalho do arquivo `.py`, invisível para quem usa a tela. A
+   fonte deve ser o próprio módulo (`registry.descobrir` já lê `label`),
+   para não haver duas verdades.
 
 ## 12. Riscos
 
