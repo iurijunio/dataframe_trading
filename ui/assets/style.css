@@ -955,3 +955,15 @@ body{
   margin:14px 0 6px;}
 .cand-diais .fld-cand{flex:0 1 220px;min-width:180px;}
 .cand-diais .inp-cand{width:100%;}
+
+/* o botão de gravar o plano, com o motivo do bloqueio ao lado: apagado sem
+   explicação, ninguém sabe qual trava está segurando */
+.cand-gravar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin:18px 0 8px;padding:12px 14px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--surface);}
+/* do tamanho do texto, não da linha inteira: largo, ele empurrava o (?) e o
+   motivo para a linha de baixo, longe do botão que eles explicam */
+.cand-gravar .btn-primary{width:auto;flex:0 0 auto;padding-left:22px;
+  padding-right:22px;}
+.cand-gravar-motivo{color:var(--warn);font-family:var(--mono);font-size:12px;}
+.cand-gravar-aviso{color:var(--pos);font-family:var(--mono);font-size:12px;}

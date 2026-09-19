@@ -973,7 +973,7 @@ teste nenhum). Suíte inteira: 693.
 
 ---
 
-## Tarefa 7: gravar o plano pela tela
+## Tarefa 7: gravar o plano pela tela ✅ (19/09/2026)
 
 **Arquivos:**
 - Modificar: `ui/callbacks_candidata.py`, `ui/components/candidata_panel.py`
@@ -1005,6 +1005,32 @@ Depois de gravar, a tela mostra o plano gravado com data e o botão vira
 - [ ] **Passo 4: rodar e ver passar** + `test_callbacks_sem_ciclo.py`.
 - [ ] **Passo 5: gravar um plano de verdade no #8 e conferir no banco.**
 - [ ] **Passo 6: commit.**
+
+### Como ficou
+
+`core/plano.py` ganhou `pode_gravar` (o motivo do bloqueio em palavras),
+`expectativa` (faixa do pior ao melhor décimo em 3, 6 e 12 meses — sorteio
+próprio de 12 meses, porque o da tela vai só até a reotimização) e `montar`
+(todos os campos de `salvar` a partir do que a tela já calculou; não recalcula
+nada, o plano grava o que o operador viu). O JSON passou a aceitar número do
+numpy — sem isso o clique quebrava justamente no plano mais completo.
+
+Na tela, o selo publica o veredito num `dcc.Store`, e o botão lê dali: mexer
+no dial não refaz os 2.000 caminhos do holdout. O botão nasce desligado e o
+motivo fica escrito ao lado — reprovada (com os portões que reprovaram),
+testes completos não rodados, ou zero contratos (com a conta que zerou). A
+trava é conferida **de novo no servidor** ao gravar: botão desligado no
+navegador não é garantia de nada. Depois de gravar, o rótulo vira "Gravar
+outro plano".
+
+Conferido na tela com o #8: sem os testes completos, travado com o motivo
+certo; depois deles (aprovada com ressalva, 11/12), travado pelo segundo
+motivo, zero contratos a 1%; a 5% cabe 1 contrato e o botão libera. A
+gravação em si foi provada com banco temporário, para não deixar plano de
+teste no banco real.
+
+21 testes em `test_plano.py`, 5 novos em `test_callbacks_candidata.py`, 6
+mutações provadas. Suíte inteira: 720.
 
 ---
 

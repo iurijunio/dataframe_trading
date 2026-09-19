@@ -207,3 +207,113 @@ def test_detalhes_de_plano_que_nao_existe_devolve_nada(banco):
     assert plano.detalhes(999) is None
     assert plano.aposentar(999) is False
     assert plano.excluir(999) is False
+
+
+# ------------------------------------------- montar o plano pela tela
+import numpy as np  # noqa: E402
+
+
+def _ver(estado="aprovada", reprovados=(), pendentes=()):
+    return {"estado": estado, "reprovados": list(reprovados),
+            "pendentes": list(pendentes),
+            "portoes": [{"nome": "O lucro não é acaso?", "ok": True,
+                         "valor": np.float64(2.59), "exigido": "≥ 2,0",
+                         "critico": True}]}
+
+
+def _dim(n=2, margem=None):
+    return {"n": n, "risco_pedido_pct": 1.0, "risco_efetivo_pct": 0.8 if n else None,
+            "perda_ref": 400.0, "margem": margem, "uso_margem_pct": 50.0,
+            "limite": "risco",
+            # o texto real de `tamanho.contratos`, não um resumo inventado
+            "motivo": None if n else ("o capital não comporta nem 1 contrato: "
+                                      "1 contrato já arrisca mais do que o "
+                                      "limite pedido")}
+
+
+def test_pode_gravar_so_aprovada_com_contratos():
+    assert plano.pode_gravar(_ver("aprovada"), _dim()) is None
+    assert plano.pode_gravar(_ver("aprovada com ressalva"), _dim()) is None
+
+
+def test_reprovada_nao_grava_e_diz_o_porque():
+    """Gravar plano de estratégia reprovada é dar forma oficial a uma
+    decisão que a própria tela desaconselhou."""
+    m = plano.pode_gravar(_ver("reprovada", reprovados=["Aguenta custo maior?"]),
+                          _dim())
+    assert m and "reprovada" in m and "Aguenta custo maior?" in m
+
+
+def test_sem_testes_completos_nao_grava():
+    """Teste não medido não aprova nada — é a regra do selo, e vale aqui."""
+    m = plano.pode_gravar(_ver("aguardando testes completos",
+                               pendentes=["Ganha de entradas sorteadas ao acaso?"]),
+                          _dim())
+    assert m and "testes completos" in m
+
+
+def test_zero_contratos_nao_grava():
+    """E diz qual conta zerou, sem repetir a mesma frase duas vezes."""
+    m = plano.pode_gravar(_ver(), _dim(n=0))
+    assert m and "arrisca mais" in m
+    assert m.count("1 contrato") <= 2 and "não cabe nem" not in m
+
+
+def test_expectativa_tem_os_tres_marcos_e_escala_com_os_contratos():
+    rng = np.random.default_rng(3)
+    pnl = rng.normal(20, 80, 500)
+    um = plano.expectativa(pnl, 100_000.0, 1)
+    dois = plano.expectativa(pnl, 100_000.0, 2)
+    assert set(um) == {"3_meses", "6_meses", "12_meses"}
+    for k in um:
+        assert um[k]["p10"] <= um[k]["p50"] <= um[k]["p90"]
+        assert dois[k]["p50"] == pytest.approx(2 * um[k]["p50"])
+
+
+def test_expectativa_sem_pregoes_suficientes_nao_inventa():
+    assert plano.expectativa(np.zeros(10), 100_000.0, 1) == {}
+
+
+def _detalhes():
+    return {"run_id": 7, "symbol": "WIN$N", "strategy": "rompimento_canal",
+            "nome": "#8", "is_meses": 12, "oos_meses": 6,
+            "inteligencia": "ulcer", "capital": 100_000.0,
+            "camada4_travada": True, "profile": {"contratos": 1},
+            "deploy": {"params": {"periodo_canal": 78},
+                       "oos_de": "2026-03-01", "oos_ate": "2026-09-01"}}
+
+
+def test_montar_junta_os_grupos_do_desenho(banco):
+    ref = {"valor": 400.0, "de_onde": "a média dos 5% piores pregões"}
+    disj = {"nivel2": {"queda": 1800.0}}
+    campos = plano.montar(8, _detalhes(), ref, _dim(n=2, margem=1_000.0), disj,
+                          _ver("aprovada com ressalva"), {"6_meses": {}})
+    # identidade e retratos
+    assert campos["wfa_id"] == 8 and campos["params"] == {"periodo_canal": 78}
+    # tamanho: capital livre desconta a garantia dos contratos
+    assert campos["contratos"] == 2
+    assert campos["capital_livre"] == pytest.approx(98_000.0)
+    # a data da próxima reotimização é o fim do DEPLOY, em coluna própria
+    assert str(campos["reotimizar_em"]) == "2026-09-01"
+    # receita da reotimização e as duas regras operacionais, por escrito
+    r = campos["reotimizacao"]
+    assert r["run_id"] == 7 and r["inteligencia"] == "ulcer"
+    assert r["camada4_travada"] is True and r["is_meses"] == 12
+    regras = " ".join(campos["definicoes"]["regras"]).lower()
+    assert "véspera" in regras and "posição aberta" in regras
+    # a régua congelada, com o veredito
+    assert campos["regua"]["veredito"] == "aprovada com ressalva"
+    assert campos["regua"]["portoes"][0]["valor"] == pytest.approx(2.59)
+
+
+def test_plano_montado_grava_mesmo_com_numeros_do_numpy(banco):
+    """Os portões chegam com valores do numpy, que o JSON padrão recusa: a
+    gravação não pode quebrar por isso na hora do clique."""
+    _wfa_no_banco(run_id=7, wfa_id=8)
+    campos = plano.montar(8, _detalhes(), {"valor": 400.0, "de_onde": "x"},
+                          _dim(), {"nivel2": {"queda": np.float64(1800.0)}},
+                          _ver(), {})
+    pid = plano.salvar(**campos)
+    d = plano.detalhes(pid)
+    assert d["disjuntor"]["nivel2"]["queda"] == 1800.0
+    assert d["regua"]["portoes"][0]["valor"] == pytest.approx(2.59)

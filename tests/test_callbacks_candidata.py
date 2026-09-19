@@ -306,3 +306,108 @@ def test_leitura_do_wfa_e_calculada_uma_vez_so(monkeypatch):
     assert chamadas == [77]
     assert primeira is segunda
     CC._LEITURAS.clear()
+
+
+# ---------------------------------------------------- gravar o plano (tarefa 7)
+def test_veredito_para_tela_sai_sem_numero_do_numpy():
+    """O veredito vai para um dcc.Store: número do numpy ali quebra a
+    serialização na hora em que o selo acabou de ficar pronto."""
+    import json
+    ver = candidata.veredito([
+        {"nome": "O lucro não é acaso?", "ok": True, "critico": True,
+         "valor": np.float64(2.59), "exigido": "≥ 2,0", "dica": ""},
+        {"nome": "Aguenta custo maior?", "ok": False, "critico": True,
+         "valor": np.float64(-10.0), "exigido": "> 0", "dica": ""}])
+    tela = CC.veredito_para_tela(8, ver)
+    json.dumps(tela)                        # não pode levantar
+    assert tela["estado"] == "reprovada"
+    assert tela["reprovados"] == ["Aguenta custo maior?"]
+
+
+def _wfa_gravavel(banco_path, monkeypatch):
+    """Um walk-forward de verdade num banco temporário, com trades
+    suficientes para a tela medir tudo."""
+    from core import db_manager as dbm
+    from core import wfa as W
+
+    monkeypatch.setattr(dbm, "DB_PATH", banco_path / "t.duckdb")
+    with dbm.connect() as con:
+        dbm.init_schema(con)
+    j = W.Janela(1, np.datetime64("2023-01-01", "s"),
+                 np.datetime64("2024-01-01", "s"),
+                 np.datetime64("2024-01-01", "s"),
+                 np.datetime64("2025-01-01", "s"), False)
+    dep = W.Janela(2, np.datetime64("2024-01-01", "s"),
+                   np.datetime64("2025-01-01", "s"),
+                   np.datetime64("2025-01-01", "s"),
+                   np.datetime64("2025-07-01", "s"), True)
+    passos = [W.Passo(janela=j, escolhida=0, params={"a": 1},
+                      is_={"lucro": 900.0, "trades": 200},
+                      oos={"lucro": 300.0, "trades": 250}, wfe_lucro=0.6),
+              W.Passo(janela=dep, escolhida=0, params={"a": 1},
+                      is_={"lucro": 900.0, "trades": 200})]
+    rng = np.random.default_rng(5)
+    trades = []
+    dia = datetime(2024, 1, 2, 10)
+    for i in range(250):
+        dia += timedelta(days=1)
+        trades.append({"n": i, "step": 1, "entry_ts": dia,
+                       "exit_ts": dia + timedelta(hours=1), "side": 1,
+                       "entry_px": 1, "exit_px": 1, "points": 0,
+                       "contratos": 1, "bruto": 0.0, "custo": 1.0,
+                       "liquido": float(rng.normal(30, 60)), "reason": 1,
+                       "mae": 0, "mfe": 0, "bars_held": 1})
+    wid = CC.wfa_store.salvar(
+        run_id=1, symbol="WIN$N", strategy="rompimento_canal", nome="t",
+        is_meses=12, oos_meses=6, inteligencia="ulcer", holdout=False,
+        agregado={"steps": 1}, veredito={"estado": "boa"}, passos=passos,
+        trades=trades, profile={"contratos": 1, "stop_tipo": "pontos",
+                                "stop_pontos": 300, "max_trades_dia": 2},
+        capital=100_000.0, camada4_travada=True)
+    monkeypatch.setattr(CC.db, "load_instrument_yaml",
+                        lambda s: {"point_value": 0.20, "tick_value": 1.0})
+    CC._LEITURAS.clear()
+    return wid
+
+
+def test_gravar_plano_grava_e_diz_o_numero(tmp_path, monkeypatch):
+    from core import plano as P
+
+    wid = _wfa_gravavel(tmp_path, monkeypatch)
+    ver = {"wfa_id": wid, "estado": "aprovada", "reprovados": [],
+           "pendentes": [], "portoes": []}
+    aviso = CC.gravar_plano(ver, 5.0, None, 50.0)
+    assert aviso.startswith("plano #")
+    salvo = P.listar(wfa_id=wid)
+    assert len(salvo) == 1 and salvo[0]["contratos"] >= 1
+    assert str(salvo[0]["reotimizar_em"]) == "2025-07-01"
+    assert set(salvo[0]["expectativa"]) == {"3_meses", "6_meses", "12_meses"}
+    CC._LEITURAS.clear()
+
+
+def test_gravar_plano_reprovado_nao_grava_nada(tmp_path, monkeypatch):
+    """O botão apagado no navegador não é garantia: a trava é conferida de
+    novo no servidor."""
+    from core import plano as P
+
+    wid = _wfa_gravavel(tmp_path, monkeypatch)
+    ver = {"wfa_id": wid, "estado": "reprovada",
+           "reprovados": ["Aguenta custo maior?"], "pendentes": [],
+           "portoes": []}
+    aviso = CC.gravar_plano(ver, 5.0, None, 50.0)
+    assert aviso.startswith("não gravado") and "reprovada" in aviso
+    assert P.listar(wfa_id=wid) == []
+    CC._LEITURAS.clear()
+
+
+def test_gravar_duas_vezes_guarda_dois_planos(tmp_path, monkeypatch):
+    """Plano não se edita: clicar de novo com outro risco é outra decisão."""
+    from core import plano as P
+
+    wid = _wfa_gravavel(tmp_path, monkeypatch)
+    ver = {"wfa_id": wid, "estado": "aprovada com ressalva", "reprovados": [],
+           "pendentes": [], "portoes": []}
+    CC.gravar_plano(ver, 5.0, None, 50.0)
+    CC.gravar_plano(ver, 2.0, None, 50.0)
+    assert len(P.listar(wfa_id=wid)) == 2
+    CC._LEITURAS.clear()

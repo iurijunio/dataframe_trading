@@ -11,7 +11,7 @@ import numpy as np
 from dash import Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
-from core import candidata, tamanho, wfa, wfa_runner, wfa_store
+from core import candidata, plano, tamanho, wfa, wfa_runner, wfa_store
 from core import db_manager as db
 from core import optimizer
 from core.candidata_runner import TESTES
@@ -212,6 +212,54 @@ def _dimensionar(trades: list[dict], d: dict, leitura: dict, de, ate,
     return ref, dim, disj
 
 
+def veredito_para_tela(wfa_id: int, ver: dict) -> dict:
+    """O veredito no formato que viaja para o navegador e volta.
+
+    Só o que o botão de gravar precisa: o estado, os nomes do que reprovou ou
+    não foi medido (para o motivo em palavras) e os portões como estavam no
+    dia, que viram a régua congelada do plano. Os valores passam por JSON de
+    ida e volta para chegar ao `dcc.Store` sem número do numpy.
+    """
+    import json
+    portoes = json.loads(plano._js([plano._portao_para_json(p)
+                                    for p in ver.get("portoes") or []]))
+    return {"wfa_id": wfa_id, "estado": ver.get("estado"),
+            "reprovados": [p["nome"] for p in ver.get("reprovados") or []],
+            "pendentes": [p["nome"] for p in ver.get("pendentes") or []],
+            "portoes": portoes}
+
+
+def gravar_plano(ver: dict, risco, margem, uso_margem) -> str:
+    """Grava o plano do walk-forward do veredito e devolve o aviso da tela.
+
+    Confere as travas de novo aqui, no servidor: o botão desligado no
+    navegador não é garantia de nada. Fora do callback para poder ser
+    testada com banco temporário.
+    """
+    wid = int(ver["wfa_id"])
+    d = wfa_store.detalhes(wid) or {}
+    guardado = leitura_do_wfa(wid, d)
+    if guardado["leitura"].get("erro"):
+        return f"não gravado: {guardado['leitura']['erro']}"
+    ref, dim, disj = _dimensionar(guardado["trades"], d, guardado["leitura"],
+                                  guardado["de"], guardado["ate"],
+                                  risco, margem, uso_margem)
+    motivo = plano.pode_gravar(ver, dim)
+    if motivo:
+        return f"não gravado: {motivo}"
+    pnl = _pnl_do_wfa(guardado["trades"], guardado["de"], guardado["ate"])
+    expect = plano.expectativa(pnl, d.get("capital"), dim["n"])
+    pid = plano.salvar(**plano.montar(wid, d, ref, dim, disj, ver, expect))
+    return (f"plano #{pid} gravado · {dim['n']} contrato(s) · reotimizar em "
+            f"{(d.get('deploy') or {}).get('oos_ate') or '—'}")
+
+
+def _pnl_do_wfa(trades: list[dict], de, ate):
+    saida = np.array([t["exit_ts"] for t in trades], dtype="datetime64[s]")
+    liq = np.array([t["liquido"] for t in trades], dtype=float)
+    return candidata.por_pregao(saida, liq, de=de, ate=ate)[1]
+
+
 def register(app):
     @app.callback(
         Output("cand-estrategia", "options"),
@@ -268,6 +316,7 @@ def register(app):
     @app.callback(
         Output("cand-blocos", "children"),
         Output("cand-portoes", "children"),
+        Output("cand-veredito", "data"),
         Input("cand-wfa", "value"),
         # o Store que `cand_fim_dos_testes` escreve UMA vez por geração: é
         # ele, e não o relógio, quem faz o selo ser recalculado com o
@@ -277,7 +326,7 @@ def register(app):
     def cand_conteudo(wfa_id, _testes):
         if not wfa_id:
             vazio = CP.vazio("escolha um walk-forward salvo para analisar")
-            return vazio, html.Div()
+            return vazio, html.Div(), None
         wid = int(wfa_id)
         d = wfa_store.detalhes(wid) or {}
         capital = d.get("capital")
@@ -286,7 +335,7 @@ def register(app):
                 "este walk-forward foi salvo antes desta tela: não tem "
                 "capital nem perfil gravados. Rode e salve o walk-forward "
                 "de novo para analisá-lo.")
-            return vazio, html.Div()
+            return vazio, html.Div(), None
 
         leitura, gates, de, ate = _gates_e_leitura(wid, d)
         holdout_gate = (next((g for g in gates if g["nome"] == "O holdout confirma?"),
@@ -295,9 +344,9 @@ def register(app):
                                    de=de, ate=ate, holdout_gate=holdout_gate)
         if gates is None:
             return blocos, CP.vazio(leitura.get("erro") or
-                                    "sem dado suficiente para medir os portões")
+                                    "sem dado suficiente para medir os portões"), None
         ver = candidata.veredito(gates)
-        return blocos, WP.selo(ver, titulo=TITULO_SELO)
+        return blocos, WP.selo(ver, titulo=TITULO_SELO), veredito_para_tela(wid, ver)
 
     # ------------------------------------- bloco 5: tamanho e disjuntor
     @app.callback(
@@ -331,6 +380,51 @@ def register(app):
                                       guardado["de"], guardado["ate"],
                                       risco, margem, uso_margem)
         return CP.bloco_tamanho(dim, ref, disj, capital)
+
+    # ----------------------------------------- gravar o plano de operação
+    @app.callback(
+        Output("btn-cand-gravar", "disabled"),
+        Output("btn-cand-gravar", "children"),
+        Output("cand-gravar-motivo", "children"),
+        Input("cand-veredito", "data"),
+        Input("cand-risco", "value"),
+        Input("cand-margem", "value"),
+        Input("cand-uso-margem", "value"),
+        # depois de gravar, o rótulo vira "gravar outro plano"
+        Input("cand-gravar-aviso", "children"),
+    )
+    def cand_pode_gravar(ver, risco, margem, uso_margem, _aviso):
+        """Liga o botão só quando dá para gravar — e diz por que não dá."""
+        if not ver:
+            return True, "Gravar plano de operação", ""
+        wid = int(ver["wfa_id"])
+        d = wfa_store.detalhes(wid) or {}
+        guardado = leitura_do_wfa(wid, d)
+        if guardado["leitura"].get("erro"):
+            return True, "Gravar plano de operação", guardado["leitura"]["erro"]
+        _, dim, _ = _dimensionar(guardado["trades"], d, guardado["leitura"],
+                                 guardado["de"], guardado["ate"],
+                                 risco, margem, uso_margem)
+        motivo = plano.pode_gravar(ver, dim)
+        rotulo = ("Gravar outro plano" if plano.listar(wfa_id=wid)
+                  else "Gravar plano de operação")
+        return motivo is not None, rotulo, motivo or ""
+
+    @app.callback(
+        Output("cand-gravar-aviso", "children"),
+        Input("btn-cand-gravar", "n_clicks"),
+        State("cand-veredito", "data"),
+        State("cand-risco", "value"),
+        State("cand-margem", "value"),
+        State("cand-uso-margem", "value"),
+        prevent_initial_call=True,
+    )
+    def cand_gravar(n, ver, risco, margem, uso_margem):
+        """Grava o que a tela mostra. Confere as travas de novo no servidor:
+        o botão desligado no navegador não é garantia de nada."""
+        if not n or not ver:
+            raise PreventUpdate
+        return gravar_plano(ver, risco, margem, uso_margem)
 
     # ------------------------------------------ os três testes demorados
     @app.callback(

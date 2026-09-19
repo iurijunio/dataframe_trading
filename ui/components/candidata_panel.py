@@ -573,6 +573,29 @@ def entradas_tamanho() -> html.Div:
     ], className="cand-diais")
 
 
+def bloco_gravar() -> html.Div:
+    """O fim da tela: transformar o que ela calculou num plano gravado.
+
+    O botão nasce desligado e o motivo fica escrito ao lado — apagado sem
+    explicação, o operador não saberia se falta rodar teste, mudar a
+    estratégia ou mudar o capital, e o remédio de cada um é diferente.
+    """
+    return html.Div([
+        html.Button("Gravar plano de operação", id="btn-cand-gravar",
+                    n_clicks=0, className="btn-primary", disabled=True),
+        dica("Grava tudo o que esta tela mostra — parâmetros, contratos, "
+             "quando reduzir e quando desligar, o que se espera em 3, 6 e 12 "
+             "meses e a régua do dia — num registro que não muda mais. É ele "
+             "que a incubação vai ler. Para mudar alguma coisa, grava-se "
+             "outro: plano antigo não é editado, é aposentado."),
+        html.Span(id="cand-gravar-motivo", className="cand-gravar-motivo"),
+        html.Span(id="cand-gravar-aviso", className="cand-gravar-aviso"),
+        # o veredito que o selo acabou de calcular, para o botão não refazer
+        # os 2.000 caminhos do holdout a cada mexida no dial
+        dcc.Store(id="cand-veredito"),
+    ], className="cand-gravar")
+
+
 def painel():
     return html.Div(
         [
@@ -595,6 +618,7 @@ def painel():
             html.Div(id="cand-blocos", className="cand-blocos"),
             entradas_tamanho(),
             html.Div(id="cand-tamanho", className="cand-blocos"),
+            bloco_gravar(),
         ],
         # escondido de saída: sem isto o painel aparece embaixo do Backtest
         # até o callback `modo` resolver no navegador
