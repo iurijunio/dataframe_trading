@@ -293,8 +293,15 @@ def test_montar_junta_os_grupos_do_desenho(banco):
     # tamanho: capital livre desconta a garantia dos contratos
     assert campos["contratos"] == 2
     assert campos["capital_livre"] == pytest.approx(98_000.0)
-    # a data da próxima reotimização é o fim do DEPLOY, em coluna própria
-    assert str(campos["reotimizar_em"]) == "2026-09-01"
+    # A data de reotimizar conta de HOJE + os meses de OOS, em coluna
+    # própria. Usar o fim da janela do DEPLOY gravava data VENCIDA: com
+    # holdout, essa janela começa no corte dos dados (o #8 gravaria
+    # "reotimizar em 01/09/2026" num dia 19/09/2026).
+    from datetime import date
+    hoje = date.today()
+    assert campos["reotimizar_em"] > hoje
+    meses = (campos["reotimizar_em"].year - hoje.year) * 12 +         (campos["reotimizar_em"].month - hoje.month)
+    assert meses == 6
     # receita da reotimização e as duas regras operacionais, por escrito
     r = campos["reotimizacao"]
     assert r["run_id"] == 7 and r["inteligencia"] == "ulcer"
@@ -317,3 +324,52 @@ def test_plano_montado_grava_mesmo_com_numeros_do_numpy(banco):
     d = plano.detalhes(pid)
     assert d["disjuntor"]["nivel2"]["queda"] == 1800.0
     assert d["regua"]["portoes"][0]["valor"] == pytest.approx(2.59)
+
+
+def test_expectativa_usa_o_sorteio_que_a_tela_ja_fez(banco):
+    """O plano não pode gravar dois números diferentes para a mesma
+    pergunta: a faixa de 6 meses tem que ser o mesmo número que o disjuntor
+    mostrou para o mesmo prazo, e não um sorteio novo de outro recorte."""
+    from core import robustez
+
+    rng = np.random.default_rng(4)
+    pnl = rng.normal(20, 80, 400)
+    boot = robustez.bootstrap(pnl, 100_000.0, horizonte=126)
+    e = plano.expectativa(pnl, 100_000.0, fator=2.0, boot=boot)
+    assert e["6_meses"]["p10"] == pytest.approx(
+        float(boot["envelope_p10"][125]) * 2)
+    # o marco de 12 meses vai além do sorteio da tela: sorteio próprio, sobre
+    # a MESMA série
+    assert e["12_meses"]["pregoes"] == 252
+
+
+def test_expectativa_nao_promete_prazo_que_a_curva_nao_sustenta(banco):
+    curta = np.full(25, 10.0)
+    assert plano.expectativa(curta, 100_000.0) == {}
+
+
+def test_deploy_fora_do_mercado_nao_vira_plano(banco):
+    """A última janela pode ficar fora do mercado (ninguém aprovado, ou a
+    camada 4 travada sem candidata que case). Gravar isso daria um plano de
+    operação que não diz o que operar."""
+    m = plano.pode_gravar(_ver(), _dim(), params={})
+    assert m and "fora do mercado" in m
+    assert plano.pode_gravar(_ver(), _dim(), params={"a": 1}) is None
+
+
+def test_plano_novo_aposenta_o_ativo_do_mesmo_walk_forward(banco):
+    """Dois planos ativos deixariam a incubação sem saber qual obedecer — e
+    um duplo clique já criava esse caso. O anterior fica no banco."""
+    _wfa_no_banco()
+    velho = plano.salvar(**_campos())
+    novo = plano.salvar(**_campos(contratos=1))
+    assert plano.detalhes(velho)["estado"] == "aposentado"
+    assert plano.detalhes(novo)["estado"] == "ativo"
+    assert [p["plano_id"] for p in plano.listar(wfa_id=1, apenas_ativos=True)] == [novo]
+
+
+def test_aviso_da_ressalva_de_reotimizar(banco):
+    """Decisão do usuário: grava, mas avisa em destaque."""
+    com = plano.aviso_ao_gravar({"ressalvas": [{"nome": "Reotimizar compensou?"}]})
+    assert com and "não compensou" in com.lower()
+    assert plano.aviso_ao_gravar({"ressalvas": [{"nome": "Algum vizinho dá prejuízo?"}]}) is None

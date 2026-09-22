@@ -1029,8 +1029,42 @@ motivo, zero contratos a 1%; a 5% cabe 1 contrato e o botão libera. A
 gravação em si foi provada com banco temporário, para não deixar plano de
 teste no banco real.
 
-21 testes em `test_plano.py`, 5 novos em `test_callbacks_candidata.py`, 6
-mutações provadas. Suíte inteira: 720.
+### As sete correções da revisão
+
+1. **Disjuntor e expectativa dividem pelos contratos do backtest.** O sorteio
+   sai da curva do backtest; multiplicar direto pelos contratos do plano só
+   estava certo com backtest de 1 contrato. Com 2, os limites saíam do dobro.
+   Defeito latente (todos os walk-forwards salvos usam 1), errado no primeiro
+   que não usasse.
+2. **`reotimizar_em` conta da gravação**, não do fim da janela do DEPLOY: com
+   holdout essa janela começa no corte dos dados e **já nasce vencida** — o #8
+   gravaria "reotimizar em 01/09/2026" num dia 19/09/2026. E a data aparece
+   sem hora.
+3. **A faixa esperada sai do MESMO sorteio do disjuntor** (mesmo recorte,
+   mesmos caminhos). Antes o plano gravava R$ 39 no disjuntor e R$ 376 na
+   faixa para a mesma curva e o mesmo prazo — a incubação receberia respostas
+   contraditórias. Só o marco de 12 meses, além do prazo da tela, tem sorteio
+   próprio, sobre a mesma série.
+4. **DEPLOY fora do mercado não vira plano**: a última janela pode ficar sem
+   combinação (ninguém aprovado, ou camada 4 travada sem candidata que case),
+   e o plano saía com `params` vazio — um plano que não diz o que operar.
+5. **Definições alinhadas ao que o disjuntor mede**: queda do último topo até
+   o **fechamento** do pregão, comparada com o capital do plano. Medir a
+   oscilação de dentro do dia dispararia antes do limite calibrado; o risco
+   intradiário é coberto pelo limite do dia.
+6. **Trava de walk-forward trocado**: o selo é o bloco lento da tela, e o
+   clique podia gravar o plano do anterior com os diais da tela nova.
+7. **Plano novo aposenta o ativo do mesmo walk-forward** — dois ativos
+   deixariam a incubação sem saber qual obedecer, e um duplo clique já criava
+   esse caso.
+
+**Decisão do usuário (19/09/2026):** com a ressalva "Reotimizar compensou?",
+grava **com aviso em destaque** — o aviso aparece antes do clique e a ressalva
+vai dentro do plano. Recusar deixaria o melhor candidato de hoje (o #8) sem
+plano; gravar em modo parâmetro fixo mudaria a regra de operação sem pedir.
+
+26 testes em `test_plano.py`, 8 em `test_callbacks_candidata.py`, 13 mutações
+provadas ao todo. Suíte inteira: 735.
 
 ---
 

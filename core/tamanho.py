@@ -178,7 +178,8 @@ def limite_por_alarme(quedas, alarme_pct: float) -> float | None:
 
 def disjuntor(leitura: dict, capital: float, n_contratos: int, perfil: dict,
               alarme_reduzir: float = ALARME_REDUZIR,
-              alarme_desligar: float = ALARME_DESLIGAR) -> dict:
+              alarme_desligar: float = ALARME_DESLIGAR,
+              contratos_backtest: int = 1) -> dict:
     """Quando reduzir a posição e quando desligar a estratégia.
 
     Dois níveis, porque gatilho único é mau detector: parando só na queda
@@ -199,8 +200,11 @@ def disjuntor(leitura: dict, capital: float, n_contratos: int, perfil: dict,
     estratégia sadia passa dela, e reduzir posição viraria cara ou coroa a
     cada ciclo.
 
-    Tudo **multiplicado pelos contratos escolhidos**, porque o sorteio mede
-    um contrato. As quedas vêm do recorte (curva inteira ou últimos 12 meses)
+    Tudo na escala dos **contratos escolhidos**: o sorteio foi feito sobre a
+    curva do BACKTEST, então o fator é `contratos ÷ contratos do backtest`.
+    Multiplicar direto pelos contratos escolhidos só está certo quando o
+    backtest rodou com um; com dois, os limites saíam do dobro do tamanho
+    real. As quedas vêm do recorte (curva inteira ou últimos 12 meses)
     que tiver a queda ruim maior, para os dois níveis saírem da mesma régua.
     Já "dias perdendo seguidos" e "dias sem novo topo" valem o pior recorte
     **daquela métrica**, que é a regra do bloco 1: são leituras
@@ -240,11 +244,14 @@ def disjuntor(leitura: dict, capital: float, n_contratos: int, perfil: dict,
                                     "elas não dá para calibrar o limite")}
 
     n = int(n_contratos)
-    reduzir = (limite_por_alarme(quedas, alarme_reduzir) or 0.0) * n
-    desligar = (limite_por_alarme(quedas, alarme_desligar) or 0.0) * n
+    fator = n / max(int(contratos_backtest or 1), 1)
+    reduzir = (limite_por_alarme(quedas, alarme_reduzir) or 0.0) * fator
+    desligar = (limite_por_alarme(quedas, alarme_desligar) or 0.0) * fator
     faixa = b.get("envelope_p10")
-    faixa = [float(v) * n for v in faixa] if faixa is not None and len(faixa) \
-        else None
+    faixa = ([float(v) * fator for v in faixa]
+             if faixa is not None and len(faixa) else None)
+    # o limite do dia vem do PERFIL, por contrato: escala pelos contratos
+    # escolhidos, não pelo fator do sorteio
     lim_reais = float((perfil or {}).get("limite_perda_contrato") or 0.0) * n
     trades_dia = int((perfil or {}).get("max_trades_dia") or 0)
     return {
@@ -265,7 +272,7 @@ def disjuntor(leitura: dict, capital: float, n_contratos: int, perfil: dict,
             "acao": "desligar e reotimizar",
             "alarme_pct": alarme_desligar,
             "risco_de_desligar_pct": (
-                candidata.risco_de_desligar(b, desligar / n)
+                candidata.risco_de_desligar(b, desligar / fator)
                 if desligar else None)},
         "recorte": recorte,
         "dias_sem_topo": int(round(pior["submerso_p95"]["valor"])) or None,

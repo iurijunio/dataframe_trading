@@ -15,7 +15,7 @@ reescrito não é histórico.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 from . import db_manager as db
 from . import engine
@@ -63,6 +63,11 @@ def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
     são duas decisões, e as duas ficam.
     """
     with db.connect_write() as con, db.transacao(con):
+        # só um plano ATIVO por walk-forward: dois ativos deixariam a
+        # incubação sem saber qual obedecer, e um duplo clique já criava
+        # esse caso. O anterior continua no banco, aposentado.
+        con.execute("UPDATE planos_operacao SET estado = 'aposentado' "
+                    "WHERE wfa_id = ? AND estado = 'ativo'", [wfa_id])
         pid = con.execute("SELECT nextval('seq_plano_id')").fetchone()[0]
         con.execute(
             f"INSERT INTO planos_operacao ({', '.join(_COLUNAS)}) "
@@ -173,10 +178,12 @@ REGRAS = [
 DEFINICOES = {
     "novo_topo": "o maior saldo de fechamento de pregão desde que o plano "
                  "foi ligado",
-    "queda": "medida a partir do último topo, em reais, sobre o saldo — não "
-             "sobre o capital inicial",
-    "posicao_aberta": "conta: a queda é medida com o resultado da posição "
-                      "aberta marcado a mercado",
+    "queda": "medida do último topo até o FECHAMENTO do pregão, em reais, e "
+             "comparada com o capital do plano — é assim que os limites foram "
+             "calibrados",
+    "posicao_aberta": "não conta durante o pregão: medir a oscilação de "
+                      "dentro do dia dispararia antes do limite calibrado. O "
+                      "risco intradiário é coberto pelo limite do dia",
     "depois_de_reduzir": "volta ao número de contratos do plano quando o "
                          "saldo fizer um topo novo",
     "depois_de_desligar": "só volta a operar depois de reotimizar e gravar "
@@ -184,7 +191,29 @@ DEFINICOES = {
 }
 
 
-def pode_gravar(veredito: dict, dim: dict) -> str | None:
+# A ressalva que muda o que o plano promete: se reotimizar não compensou, a
+# receita de reotimização do plano contradiz o que a própria tela mediu.
+# Decisão do usuário (19/09/2026): grava, com o aviso em destaque, e a
+# ressalva vai escrita dentro do plano — quem decide é a incubação, olhando o
+# resultado real.
+RESSALVA_REOTIMIZAR = "Reotimizar compensou?"
+
+
+def aviso_ao_gravar(veredito: dict) -> str | None:
+    """O que precisa ser dito ANTES de gravar, mesmo podendo gravar."""
+    nomes = [p if isinstance(p, str) else p.get("nome")
+             for p in (veredito or {}).get("ressalvas_nomes")
+             or (veredito or {}).get("ressalvas") or []]
+    if RESSALVA_REOTIMIZAR in nomes:
+        return ("atenção: neste walk-forward reotimizar NÃO compensou — a "
+                "curva ficou abaixo da maioria das combinações fixas. O plano "
+                "grava a receita de reotimização mesmo assim, e a ressalva vai "
+                "dentro dele; vale conferir na incubação se operar parâmetro "
+                "fixo não seria melhor")
+    return None
+
+
+def pode_gravar(veredito: dict, dim: dict, params: dict | None = None) -> str | None:
     """`None` quando o plano pode ser gravado; senão, o porquê, em palavras.
 
     O botão não pode só aparecer apagado: quem está na tela precisa saber
@@ -200,6 +229,12 @@ def pode_gravar(veredito: dict, dim: dict) -> str | None:
     if estado != "aprovada" and estado != "aprovada com ressalva":
         return ("rode os testes completos antes de gravar: teste que não "
                 "rodou não aprova nada")
+    if params is not None and not params:
+        # o DEPLOY pode sair "fora do mercado" (ninguém aprovado na janela, ou
+        # a camada 4 travada sem candidata que case): gravar isso daria um
+        # plano de operação que não diz o que operar
+        return ("a última janela do walk-forward ficou fora do mercado: não "
+                "há parâmetro para operar")
     if not dim or (dim.get("n") or 0) <= 0:
         # o motivo de `tamanho.contratos` já diz qual conta zerou; repetir
         # "não cabe nem 1 contrato" na frente dele só dobrava a frase
@@ -212,28 +247,58 @@ def pode_gravar(veredito: dict, dim: dict) -> str | None:
 MARCOS = {"3_meses": 63, "6_meses": 126, "12_meses": 252}
 
 
-def expectativa(pnl_dia, capital: float, contratos: int) -> dict:
+def expectativa(pnl_dia, capital: float, fator: float = 1.0,
+                boot: dict | None = None) -> dict:
     """Onde o lucro acumulado deve estar em 3, 6 e 12 meses, na faixa que
     vai do pior décimo ao melhor décimo dos caminhos sorteados.
 
     É contra ESTA faixa que a incubação vai comparar o resultado real: ficar
-    dentro dela é a estratégia se comportando como o teste prometeu. Sorteio
-    próprio de 12 meses, porque o da tela vai só até a próxima reotimização.
+    dentro dela é a estratégia se comportando como o teste prometeu.
+
+    `boot` é o sorteio que a tela **já fez** — o mesmo recorte e os mesmos
+    caminhos do disjuntor. Sem ele, o plano gravava dois números diferentes
+    para a mesma pergunta: R$ 39 no disjuntor e R$ 376 na faixa, para a mesma
+    curva e o mesmo prazo, e a incubação receberia respostas contraditórias.
+    Só os marcos ALÉM do prazo do sorteio da tela precisam de sorteio próprio
+    — sobre a mesma série, para continuar sendo a mesma régua.
+
+    `fator` é `contratos do plano ÷ contratos do backtest`: o sorteio saiu da
+    curva do backtest, que pode não ter rodado com um contrato.
     """
     from . import robustez
 
-    boot = robustez.bootstrap(pnl_dia, capital, horizonte=max(MARCOS.values()))
-    if not boot:
-        return {}
-    n = max(int(contratos or 1), 1)
+    pronto = boot or {}
+    env = pronto.get("envelope_p10")
+    horizonte = len(env) if env is not None else 0
+    estendido = None
     fora = {}
     for rotulo, pregao in MARCOS.items():
+        usado = pronto
+        if pregao > horizonte:
+            if estendido is None:
+                estendido = robustez.bootstrap(
+                    pnl_dia, capital, horizonte=max(MARCOS.values())) or {}
+            usado = estendido
+        disponivel = usado.get("envelope_p10")
+        if disponivel is None or pregao > len(disponivel):
+            continue        # curva curta demais para prometer este prazo
         i = pregao - 1
         fora[rotulo] = {"pregoes": pregao,
-                        "p10": float(boot["envelope_p10"][i]) * n,
-                        "p50": float(boot["envelope_p50"][i]) * n,
-                        "p90": float(boot["envelope_p90"][i]) * n}
+                        "p10": float(usado["envelope_p10"][i]) * fator,
+                        "p50": float(usado["envelope_p50"][i]) * fator,
+                        "p90": float(usado["envelope_p90"][i]) * fator}
     return fora
+
+
+def _quando_reotimizar(oos_meses) -> date | None:
+    """A data da próxima reotimização, contada da gravação."""
+    if not oos_meses:
+        return None
+    hoje = datetime.now().date()
+    mes = hoje.month - 1 + int(oos_meses)
+    ano = hoje.year + mes // 12
+    dia = min(hoje.day, 28)          # evita 31/02 e afins
+    return date(ano, mes % 12 + 1, dia)
 
 
 def _portao_para_json(p: dict) -> dict:
@@ -279,7 +344,12 @@ def montar(wfa_id: int, d: dict, ref: dict, dim: dict, disj: dict,
             "sem_combinacao_aprovada": "fica fora do mercado até a próxima "
                                        "reotimização",
         },
-        "reotimizar_em": deploy.get("oos_ate"),
+        # A data de reotimizar NÃO é o fim da janela do DEPLOY: com holdout,
+        # essa janela começa no corte dos dados e costuma já ter vencido na
+        # hora de gravar. A regra 1 manda reotimizar imediatamente antes de
+        # ligar, então o prazo conta a partir de HOJE — e o campo fica em
+        # branco quando não há quantos meses contar.
+        "reotimizar_em": _quando_reotimizar(d.get("oos_meses")),
         "definicoes": {**DEFINICOES, "regras": list(REGRAS)},
         # a régua congelada: o veredito e cada portão como estava no dia
         "regua": {"veredito": (veredito or {}).get("estado"),

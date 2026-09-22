@@ -380,7 +380,10 @@ def test_gravar_plano_grava_e_diz_o_numero(tmp_path, monkeypatch):
     assert aviso.startswith("plano #")
     salvo = P.listar(wfa_id=wid)
     assert len(salvo) == 1 and salvo[0]["contratos"] >= 1
-    assert str(salvo[0]["reotimizar_em"]) == "2025-07-01"
+    # a data conta da gravação, não do fim da janela do DEPLOY (que com
+    # holdout já nasce vencida)
+    from datetime import date
+    assert salvo[0]["reotimizar_em"] > date.today()
     assert set(salvo[0]["expectativa"]) == {"3_meses", "6_meses", "12_meses"}
     CC._LEITURAS.clear()
 
@@ -401,7 +404,8 @@ def test_gravar_plano_reprovado_nao_grava_nada(tmp_path, monkeypatch):
 
 
 def test_gravar_duas_vezes_guarda_dois_planos(tmp_path, monkeypatch):
-    """Plano não se edita: clicar de novo com outro risco é outra decisão."""
+    """Plano não se edita: clicar de novo com outro risco é outra decisão —
+    e só o último fica valendo."""
     from core import plano as P
 
     wid = _wfa_gravavel(tmp_path, monkeypatch)
@@ -410,6 +414,22 @@ def test_gravar_duas_vezes_guarda_dois_planos(tmp_path, monkeypatch):
     CC.gravar_plano(ver, 5.0, None, 50.0)
     CC.gravar_plano(ver, 2.0, None, 50.0)
     assert len(P.listar(wfa_id=wid)) == 2
+    assert len(P.listar(wfa_id=wid, apenas_ativos=True)) == 1
+    CC._LEITURAS.clear()
+
+
+def test_gravar_com_o_veredito_do_walk_forward_anterior_e_recusado(tmp_path,
+                                                                   monkeypatch):
+    """O selo é o bloco lento da tela: trocando de walk-forward, o clique
+    podia gravar o plano do ANTERIOR com os diais da tela nova."""
+    from core import plano as P
+
+    wid = _wfa_gravavel(tmp_path, monkeypatch)
+    ver = {"wfa_id": wid, "estado": "aprovada", "reprovados": [],
+           "pendentes": [], "portoes": []}
+    aviso = CC.gravar_plano(ver, 5.0, None, 50.0, wfa_aberto=wid + 1)
+    assert "walk-forward anterior" in aviso
+    assert P.listar(wfa_id=wid) == []
     CC._LEITURAS.clear()
 
 

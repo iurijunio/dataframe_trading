@@ -478,3 +478,23 @@ def test_sem_capital_ou_sem_risco_pedido_nao_mede():
     assert tamanho.contratos(0.0, 1.0, 300.0)["n"] == 0
     assert tamanho.contratos(100_000.0, 0.0, 300.0)["motivo"]
     assert tamanho.contratos(100_000.0, -1.0, 300.0)["n"] == 0
+
+
+def test_disjuntor_desconta_os_contratos_do_backtest():
+    """O sorteio é feito sobre a curva do BACKTEST. Se ela rodou com 2
+    contratos e o plano vai operar 2, o limite não pode dobrar: é o mesmo
+    tamanho. Sem isto, backtest de 2 contratos gravava limites e faixa do
+    dobro do certo — latente enquanto todos os walk-forwards salvos usam 1
+    contrato, e errado no primeiro que não usar."""
+    leitura = _leitura()
+    um = tamanho.disjuntor(leitura, 100_000.0, 2, {}, contratos_backtest=1)
+    dois = tamanho.disjuntor(leitura, 100_000.0, 2, {}, contratos_backtest=2)
+    assert dois["nivel2"]["queda"] == pytest.approx(um["nivel2"]["queda"] / 2)
+    assert dois["nivel1"]["faixa_por_pregao"][-1] == pytest.approx(
+        um["nivel1"]["faixa_por_pregao"][-1] / 2)
+
+
+def test_disjuntor_com_backtest_invalido_trata_como_um_contrato():
+    leitura = _leitura()
+    assert (tamanho.disjuntor(leitura, 100_000.0, 1, {}, contratos_backtest=0)
+            == tamanho.disjuntor(leitura, 100_000.0, 1, {}))

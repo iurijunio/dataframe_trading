@@ -208,7 +208,10 @@ def _dimensionar(trades: list[dict], d: dict, leitura: dict, de, ate,
     # com zero contratos o disjuntor não existe; a tela mostra a conta de 1
     # contrato, avisando que é mais do que o risco pedido permite — vazio
     # ali seria esconder informação medida de quem mais precisa dela
-    disj = tamanho.disjuntor(leitura, d.get("capital"), dim["n"] or 1, perfil)
+    # os contratos do BACKTEST: o sorteio saiu da curva dele, e sem isto os
+    # limites de um backtest de 2 contratos saíam do dobro do tamanho real
+    disj = tamanho.disjuntor(leitura, d.get("capital"), dim["n"] or 1, perfil,
+                             contratos_backtest=perfil.get("contratos") or 1)
     return ref, dim, disj
 
 
@@ -226,10 +229,12 @@ def veredito_para_tela(wfa_id: int, ver: dict) -> dict:
     return {"wfa_id": wfa_id, "estado": ver.get("estado"),
             "reprovados": [p["nome"] for p in ver.get("reprovados") or []],
             "pendentes": [p["nome"] for p in ver.get("pendentes") or []],
+            "ressalvas_nomes": [p["nome"] for p in ver.get("ressalvas") or []],
             "portoes": portoes}
 
 
-def gravar_plano(ver: dict, risco, margem, uso_margem) -> str:
+def gravar_plano(ver: dict, risco, margem, uso_margem,
+                 wfa_aberto=None) -> str:
     """Grava o plano do walk-forward do veredito e devolve o aviso da tela.
 
     Confere as travas de novo aqui, no servidor: o botão desligado no
@@ -237,6 +242,12 @@ def gravar_plano(ver: dict, risco, margem, uso_margem) -> str:
     testada com banco temporário.
     """
     wid = int(ver["wfa_id"])
+    if wfa_aberto is not None and int(wfa_aberto) != wid:
+        # o veredito é recalculado pelo bloco lento dos portões: trocando de
+        # walk-forward, o clique podia gravar o plano do ANTERIOR com os
+        # diais da tela nova
+        return ("não gravado: o veredito ainda é do walk-forward anterior — "
+                "espere o selo terminar")
     d = wfa_store.detalhes(wid) or {}
     guardado = leitura_do_wfa(wid, d)
     if guardado["leitura"].get("erro"):
@@ -244,14 +255,27 @@ def gravar_plano(ver: dict, risco, margem, uso_margem) -> str:
     ref, dim, disj = _dimensionar(guardado["trades"], d, guardado["leitura"],
                                   guardado["de"], guardado["ate"],
                                   risco, margem, uso_margem)
-    motivo = plano.pode_gravar(ver, dim)
+    params = (d.get("deploy") or {}).get("params")
+    motivo = plano.pode_gravar(ver, dim, params=params)
     if motivo:
         return f"não gravado: {motivo}"
+    # a faixa esperada sai do MESMO sorteio que o disjuntor usou (mesmo
+    # recorte, mesmos caminhos): dois sorteios davam dois números para a
+    # mesma pergunta dentro do mesmo plano
+    recorte = disj.get("recorte")
+    boot = ((guardado["leitura"].get("boot_12m")
+             if recorte == "últimos 12 meses" else None)
+            or guardado["leitura"].get("boot"))
     pnl = _pnl_do_wfa(guardado["trades"], guardado["de"], guardado["ate"])
-    expect = plano.expectativa(pnl, d.get("capital"), dim["n"])
-    pid = plano.salvar(**plano.montar(wid, d, ref, dim, disj, ver, expect))
-    return (f"plano #{pid} gravado · {dim['n']} contrato(s) · reotimizar em "
-            f"{(d.get('deploy') or {}).get('oos_ate') or '—'}")
+    fator = dim["n"] / max(int((d.get("profile") or {}).get("contratos") or 1), 1)
+    expect = plano.expectativa(pnl, d.get("capital"), fator, boot=boot)
+    campos = plano.montar(wid, d, ref, dim, disj, ver, expect)
+    pid = plano.salvar(**campos)
+    quando = campos.get("reotimizar_em")
+    aviso = plano.aviso_ao_gravar(ver)
+    return (f"plano #{pid} gravado · {dim['n']} contrato(s) · reotimizar até "
+            f"{quando.strftime('%d/%m/%Y') if quando else '—'}"
+            + (f" · {aviso}" if aviso else ""))
 
 
 def _pnl_do_wfa(trades: list[dict], de, ate):
@@ -405,10 +429,14 @@ def register(app):
         _, dim, _ = _dimensionar(guardado["trades"], d, guardado["leitura"],
                                  guardado["de"], guardado["ate"],
                                  risco, margem, uso_margem)
-        motivo = plano.pode_gravar(ver, dim)
+        motivo = plano.pode_gravar(
+            ver, dim, params=(d.get("deploy") or {}).get("params"))
         rotulo = ("Gravar outro plano" if plano.listar(wfa_id=wid)
                   else "Gravar plano de operação")
-        return motivo is not None, rotulo, motivo or ""
+        # o aviso da ressalva aparece ANTES do clique, não depois: é com ele
+        # que se decide se vale gravar
+        return (motivo is not None, rotulo,
+                motivo or plano.aviso_ao_gravar(ver) or "")
 
     @app.callback(
         Output("cand-gravar-aviso", "children"),
@@ -417,14 +445,15 @@ def register(app):
         State("cand-risco", "value"),
         State("cand-margem", "value"),
         State("cand-uso-margem", "value"),
+        State("cand-wfa", "value"),
         prevent_initial_call=True,
     )
-    def cand_gravar(n, ver, risco, margem, uso_margem):
+    def cand_gravar(n, ver, risco, margem, uso_margem, wfa_aberto):
         """Grava o que a tela mostra. Confere as travas de novo no servidor:
         o botão desligado no navegador não é garantia de nada."""
         if not n or not ver:
             raise PreventUpdate
-        return gravar_plano(ver, risco, margem, uso_margem)
+        return gravar_plano(ver, risco, margem, uso_margem, wfa_aberto)
 
     # ------------------------------------------ os três testes demorados
     @app.callback(
