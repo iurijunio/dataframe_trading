@@ -346,8 +346,11 @@ def test_sincronizar_pede_ate_alem_de_agora_por_margem(con, tmp_path, monkeypatc
 
 def test_sincronizar_nao_engole_yaml_de_instrumento_ausente(con, tmp_path, monkeypatch):
     """cli.py cmd_ingest deixa FileNotFoundError estourar quando o YAML do
-    instrumento não existe — sincronizar precisa fazer o mesmo, em vez de
-    seguir em frente sem rollover_policy como se estivesse tudo bem."""
+    instrumento não existe — sincronizar não pode seguir em frente sem
+    rollover_policy como se estivesse tudo bem. O erro vem embrulhado em
+    MT5Error (mesmo caminho da reconstrução que falha, ver o teste
+    `test_sincronizar_avisa_quando_ingest_ok_mas_reconstrucao_falha`), com
+    a causa original preservada em `__cause__`."""
     seed = tmp_path / "seed.tsv"
     ts0 = datetime(2026, 9, 1, 9, 0)
     from tests.test_ingest import write_export
@@ -366,8 +369,9 @@ def test_sincronizar_nao_engole_yaml_de_instrumento_ausente(con, tmp_path, monke
     monkeypatch.setattr(src, "conectar", lambda: None)
     monkeypatch.setattr(src, "desconectar", lambda: None)
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(src.MT5Error, match="barras novas já foram gravadas") as excinfo:
         src.sincronizar(con, "SEM$YAML", price_decimals=0)
+    assert isinstance(excinfo.value.__cause__, FileNotFoundError)
 
 
 def test_sincronizar_duas_vezes_na_mesma_janela_nao_sobrescreve_o_tsv(con, tmp_path, monkeypatch):
@@ -496,3 +500,35 @@ def test_sincronizar_conecta_e_desconecta_uma_vez_no_caminho_de_sucesso(con, tmp
     src.sincronizar(con, "WIN$N", price_decimals=0)
 
     assert contagem == {"conectou": 1, "desconectou": 1}
+
+
+def test_sincronizar_avisa_quando_ingest_ok_mas_reconstrucao_falha(con, tmp_path, monkeypatch):
+    """rebuild_trading_days/rebuild_rollovers/export_parquet rodam DEPOIS
+    do commit do ingest_csv — se um deles falhar, as barras novas já estão
+    gravadas. A mensagem de erro precisa dizer isso, em vez de "erro
+    inesperado" genérico escondendo que parte do trabalho já aconteceu."""
+    seed = tmp_path / "seed.tsv"
+    ts0 = datetime(2026, 9, 1, 9, 0)
+    from tests.test_ingest import write_export
+    write_export(seed, [(ts0, 100000, 100050, 99950, 100010)])
+    ing.ingest_csv(con, seed, "WIN$N", price_decimals=0)
+
+    monkeypatch.setattr(db, "RAW_DIR", tmp_path / "raw")
+    monkeypatch.setattr(src, "conectar", lambda: None)
+    monkeypatch.setattr(src, "desconectar", lambda: None)
+    monkeypatch.setattr(
+        src, "buscar_barras",
+        lambda symbol, desde, ate: pl.DataFrame({
+            "ts": [datetime(2026, 9, 2, 9, 0)],
+            "open": [100010], "high": [100060], "low": [99960], "close": [100020],
+            "tick_volume": [80], "volume": [0], "spread": [5],
+        }),
+    )
+
+    def rebuild_que_falha(con, symbol):
+        raise RuntimeError("falha proposital na reconstrução")
+
+    monkeypatch.setattr(src.cal, "rebuild_trading_days", rebuild_que_falha)
+
+    with pytest.raises(src.MT5Error, match="barras novas já foram gravadas"):
+        src.sincronizar(con, "WIN$N", price_decimals=0)

@@ -66,6 +66,14 @@ def topbar(simbolo):
             # O cartao "periodo" ja diz a janela medida, e o tempo do motor
             # nao ajuda a decidir nada - o cabecalho fica so com a identidade.
             html.Span(id="meta-tempo", style={"display": "none"}),
+            html.Div(
+                [
+                    html.Button("Sincronizar com MT5", id="btn-mt5-sync",
+                                n_clicks=0, className="btn-ghost"),
+                    html.Span(id="mt5-sync-status", className="mt5-sync-status"),
+                ],
+                className="mt5-sync-wrap",
+            ),
         ],
         className="topbar",
     )

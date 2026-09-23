@@ -967,3 +967,8 @@ body{
   padding-right:22px;}
 .cand-gravar-motivo{color:var(--warn);font-family:var(--mono);font-size:12px;}
 .cand-gravar-aviso{color:var(--pos);font-family:var(--mono);font-size:12px;}
+
+.mt5-sync-wrap{display:flex;align-items:center;gap:10px;margin-left:auto;}
+.mt5-sync-status{font-size:.85em;color:var(--muted);}
+.mt5-sync-status.ok{color:var(--pos);}
+.mt5-sync-status.falha{color:var(--neg);}

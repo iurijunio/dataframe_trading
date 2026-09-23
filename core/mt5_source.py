@@ -173,9 +173,21 @@ def sincronizar(con, symbol: str, price_decimals: int) -> SincronizacaoResult:
 
     resultado = ing.ingest_csv(con, destino, symbol, price_decimals=price_decimals)
 
-    inst = db.load_instrument_yaml(symbol)
-    n_days = cal.rebuild_trading_days(con, symbol)
-    n_roll = roll.rebuild_rollovers(con, symbol, inst.get("rollover_policy"))
-    db.export_parquet(con, symbol)
+    # ingest_csv já commitou: as barras novas estão gravadas a partir
+    # daqui, mesmo que o resto falhe. Se falhar, a mensagem precisa dizer
+    # isso — "erro inesperado" genérico esconderia que parte do trabalho
+    # já aconteceu, e o operador rodaria de novo achando que nada mudou.
+    try:
+        inst = db.load_instrument_yaml(symbol)
+        n_days = cal.rebuild_trading_days(con, symbol)
+        n_roll = roll.rebuild_rollovers(con, symbol, inst.get("rollover_policy"))
+        db.export_parquet(con, symbol)
+    except Exception as erro:
+        raise MT5Error(
+            f"as barras novas já foram gravadas ({resultado.rows_inserted} "
+            f"inseridas, {resultado.rows_updated} revisadas), mas a "
+            f"reconstrução de pregões/rolagens falhou: {erro}. Rode "
+            "'cli.py derive' para terminar."
+        ) from erro
 
     return SincronizacaoResult(ingest=resultado, trading_days=n_days, rollovers=n_roll)

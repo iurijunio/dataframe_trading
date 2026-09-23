@@ -18,7 +18,7 @@ numpy==2.5.2
 # optuna
 
 # --- pos-MVP: sincronizacao automatica -----------------------------------
-# MetaTrader5           # so Windows, com terminal aberto
+MetaTrader5              # so Windows, com terminal aberto
 
 # --- desenvolvimento -----------------------------------------------------
 pytest==9.0.1
