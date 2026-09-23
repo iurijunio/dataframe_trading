@@ -305,6 +305,7 @@ def register(app):
     @app.callback(
         Output("painel-backtest", "style"), Output("painel-mineracao", "style"),
         Output("painel-wfa", "style"), Output("painel-candidata", "style"),
+        Output("painel-estrategias", "style"),
         Output("acao-backtest", "style"), Output("sec-mineracao", "style"),
         Output("sidebar", "style"),
         Input("modo", "value"),
@@ -333,7 +334,7 @@ def register(app):
         # Deixar os campos da barra lateral na tela convidaria a editá-los
         # achando que mudam alguma coisa.
         return (v(qual == "backtest"), v(qual == "mineracao"), v(qual == "wfa"),
-                v(qual == "candidata"),
+                v(qual == "candidata"), v(qual == "estrategias"),
                 VISIVEL if qual == "backtest" else OCULTO,
                 VISIVEL if qual == "mineracao" else OCULTO,
                 # BLOCK, e não flex: a barra lateral é um <aside> comum com
@@ -341,7 +342,8 @@ def register(app):
                 # container de LINHA, e as seções (Período, Estratégia,
                 # Parâmetros, Execução) se enfileiravam na horizontal — só a
                 # primeira cabia, e o resto sumia no corte do overflow.
-                OCULTO if qual in ("wfa", "candidata") else {"display": "block"})
+                OCULTO if qual in ("wfa", "candidata", "estrategias")
+                else {"display": "block"})
 
     # ---- ou o valor fixo, ou a faixa de/passo/até - nunca os dois na tela
     @app.callback(
@@ -1872,3 +1874,6 @@ def register(app):
 
     from ui import callbacks_mt5
     callbacks_mt5.register(app)
+
+    from ui import callbacks_estrategias
+    callbacks_estrategias.register(app)

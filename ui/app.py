@@ -21,7 +21,8 @@ from dash import Dash, dcc, html
 from ui import data as D
 from ui import theme as T
 from ui.components import (analytics_charts, candidata_panel, controls,
-                           mining, results_grid, stats_cards, wfa_panel)
+                           estrategias_panel, mining, results_grid,
+                           stats_cards, wfa_panel)
 
 # O simbolo NAO mora mais no codigo: vem do banco. Este e so o padrao de
 # arranque, o primeiro instrumento com barras.
@@ -58,7 +59,8 @@ def topbar(simbolo):
                         options=[{"label": "Backtest", "value": "backtest"},
                                  {"label": "Mineração", "value": "mineracao"},
                                  {"label": "Walk-Forward", "value": "wfa"},
-                                 {"label": "Candidata", "value": "candidata"}],
+                                 {"label": "Candidata", "value": "candidata"},
+                                 {"label": "Estratégias", "value": "estrategias"}],
                     ),
                 ],
                 className="brand-wrap",
@@ -172,6 +174,8 @@ def painel(inicio, fim):
             # requisição (`DuplicateIdError`), diferente do padrão do WFA
             # acima, cujo `painel()` devolve uma LISTA de filhos, sem id.
             candidata_panel.painel(),
+
+            estrategias_panel.painel(),
         ],
         className="main",
     )

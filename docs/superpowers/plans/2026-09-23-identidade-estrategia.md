@@ -669,7 +669,7 @@ def linha_variante(nome: str, ciclos: list[dict]) -> html.Div:
 """Callbacks da tela Estratégias — lista de módulos e variantes em uso."""
 from __future__ import annotations
 
-from dash import Input, Output, State, ALL, html, no_update
+from dash import ALL, Input, Output, ctx, html, no_update
 
 from core import variantes as V
 from strategies import registry
@@ -693,13 +693,17 @@ def register(app):
         Output("est-detalhe-titulo", "children"),
         Output("est-variantes", "children"),
         Input({"type": "est-cartao", "modulo": ALL}, "n_clicks"),
-        State({"type": "est-cartao", "modulo": ALL}, "id"),
         prevent_initial_call=True,
     )
-    def abrir_detalhe(cliques, ids):
-        if not any(cliques):
+    def abrir_detalhe(cliques):
+        # n_clicks e cumulativo por cartao, nao reseta entre cliques -
+        # pegar o primeiro "truthy" reabria sempre o cartao de menor
+        # indice ja clicado, nao o que acabou de ser clicado agora.
+        # ctx.triggered_id e o unico jeito confiavel de saber QUAL
+        # cartao disparou desta vez (achado real na revisao do agente).
+        if not ctx.triggered_id:
             return {"display": "none"}, no_update, no_update
-        modulo = next(i["modulo"] for i, n in zip(ids, cliques) if n)
+        modulo = ctx.triggered_id["modulo"]
         vs = V.listar(modulo)
         if not vs:
             corpo = html.P("nenhuma variante ainda para esta estratégia.")
