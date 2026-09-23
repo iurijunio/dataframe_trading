@@ -761,15 +761,38 @@ def register(app):
         return 0
 
     # --------------------------------------------------- salvar sob demanda
+    @app.callback(
+        Output("mine-variante", "options"),
+        Input("estrategia", "value"),
+    )
+    def variantes_da_estrategia(modulo):
+        if not modulo:
+            return []
+        from core import variantes as V
+        return [{"label": v["nome"], "value": v["variante_id"]}
+                for v in V.listar(modulo)]
+
     @app.callback(Output("btn-salvar", "n_clicks"),
                   Input("btn-salvar", "n_clicks"), State("mine-nome", "value"),
+                  State("mine-variante", "value"),
+                  State("mine-variante-nova", "value"),
+                  State("estrategia", "value"),
                   *[State(f"crit-{c['id']}", "value") for c in MS.CRITERIOS],
                   prevent_initial_call=True)
-    def salvar(n, nome, *limites):
+    def salvar(n, nome, variante_id, variante_nova, modulo, *limites):
+        from core import variantes as V
+        nova = (variante_nova or "").strip()
+        if nova:
+            try:
+                variante_id = V.criar(nova, modulo)
+            except ValueError as erro:
+                MINERACAO.estado["aviso_salvar"] = f"falhou ao salvar: {erro}"
+                return 0
         # os critérios vão junto: o walk-forward desta mineração os aplica
         # dentro de cada janela IS
         MINERACAO.salvar((nome or "").strip() or None,
-                         {c["id"]: v for c, v in zip(MS.CRITERIOS, limites)})
+                         {c["id"]: v for c, v in zip(MS.CRITERIOS, limites)},
+                         variante_id)
         return 0
 
     @app.callback(

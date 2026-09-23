@@ -509,10 +509,16 @@ Em `ui/callbacks.py`, um callback novo (perto do de `salvar`, linha
         Input("estrategia", "value"),
     )
     def variantes_da_estrategia(modulo):
+        if not modulo:
+            return []
         from core import variantes as V
         return [{"label": v["nome"], "value": v["variante_id"]}
                 for v in V.listar(modulo)]
 ```
+
+(`if not modulo: return []` — sem isso, `V.listar(None)` devolve TODAS as
+variantes de todas as estratégias, achado real na revisão do agente antes
+do commit desta tarefa)
 
 - [ ] **Step 3: usar no clique de Salvar**
 
@@ -530,7 +536,11 @@ Modificar o callback `salvar` (linha ~764-773):
         from core import variantes as V
         nova = (variante_nova or "").strip()
         if nova:
-            variante_id = V.criar(nova, modulo)
+            try:
+                variante_id = V.criar(nova, modulo)
+            except ValueError as erro:
+                MINERACAO.estado["aviso_salvar"] = f"falhou ao salvar: {erro}"
+                return 0
         # os critérios vão junto: o walk-forward desta mineração os aplica
         # dentro de cada janela IS
         MINERACAO.salvar((nome or "").strip() or None,
@@ -538,6 +548,12 @@ Modificar o callback `salvar` (linha ~764-773):
                          variante_id)
         return 0
 ```
+
+(o `try/except` em volta de `V.criar` é o achado real da revisão: sem ele,
+digitar o nome de uma variante que já existe para a mesma estratégia
+estourava `ValueError` sem tratamento dentro do callback — a mensagem
+`"falhou ao salvar: …"` segue o mesmo padrão que `_persistir` já usa para
+erros de gravação, exibida via `estado_salvar`)
 
 - [ ] **Step 4: rodar a suíte inteira, inclusive o teste de ciclo**
 

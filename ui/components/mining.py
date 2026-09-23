@@ -118,6 +118,12 @@ def barra_acoes():
             html.Div([
                 dcc.Input(id="mine-nome", type="text", className="inp",
                           placeholder="nome da mineração", debounce=True),
+                dcc.Dropdown(id="mine-variante", className="dd dd-sm",
+                            placeholder="variante (opcional)",
+                            options=[], clearable=True),
+                dcc.Input(id="mine-variante-nova", type="text",
+                          className="inp", debounce=True,
+                          placeholder="ou nome de variante nova"),
                 html.Button("Salvar", id="btn-salvar", n_clicks=0,
                             className="btn-ghost btn-salvar", disabled=True),
             ], className="acoes acoes-salvar"),
