@@ -28,8 +28,11 @@ linha do tempo de ciclos.
   `.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider`.
 - Commits: `git -c user.name="Dataframe" -c user.email="iurijunio5@gmail.com" commit`.
 - `nome` de variante é único **dentro da mesma estratégia**, não global.
-- Minerações antigas (sem `variante_id`) continuam funcionando — a coluna é
-  opcional (`NULL` permitido), nunca obrigatória.
+- `variante_id` é `NULL` permitido no schema por segurança técnica (o
+  `ALTER TABLE` não pode exigir valor em coluna nova), **mas isso não é
+  licença para manter minerações antigas** — decisão do usuário
+  (23/09/2026): apagar todas as minerações, WFAs e candidatas de antes
+  desta implementação. Ver Task 6.
 - Linguagem de tela em português simples, sem jargão.
 
 ---
@@ -770,6 +773,82 @@ git -c user.name="Dataframe" -c user.email="iurijunio5@gmail.com" commit -m "fea
 
 ---
 
+### Task 6: apagar minerações, WFAs e candidatas de antes da identidade
+
+**Por quê:** decisão do usuário (23/09/2026) — o controle de variante só
+vale para o que for criado a partir desta implementação; não vale a pena
+marcar retroativamente o que já existe (spec §2), então o combinado é
+apagar, não manter como "sem variante" para sempre. Isso inclui as
+minerações/WFAs usadas na auditoria da Tarefa 9 do projeto Candidata
+(walk-forwards #8/#10/#11) — elas já cumpriram o papel de auditoria e
+ficaram documentadas em `docs/PLANO-CANDIDATA.md`; os números não somem,
+só o registro no banco.
+
+**Files:**
+- Create: `scripts/limpar_minerações_antigas.py` (script único, descartável
+  depois de rodado — não faz parte do produto)
+
+**Interfaces:**
+- Consumes: nenhuma função nova — só `DELETE` nas tabelas existentes.
+
+- [ ] **Step 1: conferir com o usuário, na tela, antes de rodar**
+
+Antes de tocar no banco real (`data/database.duckdb`, não um banco de
+teste), mostrar a contagem atual de linhas em `mining_runs`, `wfa_runs`,
+`planos_operacao` e pedir confirmação explícita — apagar é irreversível
+e este é o banco de produção, não um teste.
+
+```python
+# scripts/limpar_minerações_antigas.py
+from core import db_manager as db
+
+with db.connect(read_only=True) as con:
+    for t in ("mining_runs", "wfa_runs", "planos_operacao"):
+        n = con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+        print(f"{t}: {n} linha(s)")
+```
+
+Run: `.venv\Scripts\python.exe scripts\limpar_minerações_antigas.py`
+
+- [ ] **Step 2: apagar, em ordem segura de dependência**
+
+Ordem: tabelas-filha antes das tabelas-pai (`mining_trials`/`wfa_trades`
+antes de `mining_runs`/`wfa_runs`; `planos_operacao` antes de `wfa_runs`
+pois referencia `wfa_id`).
+
+```python
+# acrescentar em scripts/limpar_minerações_antigas.py
+with db.connect_write() as con, db.transacao(con):
+    for t in ("mining_trials", "wfa_trades", "planos_operacao",
+              "wfa_runs", "mining_runs"):
+        con.execute(f"DELETE FROM {t}")
+print("apagado.")
+```
+
+- [ ] **Step 3: rodar contra o banco real**
+
+Run: `.venv\Scripts\python.exe scripts\limpar_minerações_antigas.py`
+(rodar de novo, agora com o `DELETE` incluído — só depois da confirmação
+do Step 1)
+Expected: contagens exibidas voltam a 0 numa nova checagem.
+
+- [ ] **Step 4: conferência manual, na tela**
+
+Subir o app, abrir Mineração/Walk-Forward/Candidata — as listas devem
+aparecer vazias, prontas para o primeiro ciclo já com variante.
+
+- [ ] **Step 5: remover o script descartável**
+
+```bash
+rm scripts/limpar_minerações_antigas.py
+```
+
+(o script não é commitado — existiu só para rodar uma vez contra o banco
+real; se algo der errado no Step 3, é mais seguro poder editá-lo à vontade
+sem afetar o histórico do git)
+
+---
+
 ## Conferência do plano contra a spec
 
 | spec | tarefa |
@@ -781,3 +860,4 @@ git -c user.name="Dataframe" -c user.email="iurijunio5@gmail.com" commit -m "fea
 | §3 decisão 4 (dentro da tela de estratégias, sem metadados ricos) | 5 |
 | §7 testes | 1, 2, 3, 5 (ciclo) |
 | §8 fora de escopo | nenhuma tarefa toca portfólio/gatilho/sinais ao vivo |
+| §2 (não vale marcar retroativamente; usuário pode apagar) | 6 |
