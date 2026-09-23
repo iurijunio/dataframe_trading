@@ -1259,7 +1259,7 @@ def register(app):
                  no_update)
         try:
             return _wfa_montar(ctx.triggered_id, _n, is_m, oos_m, inteligencia,
-                               holdout, run_id, ativo, store_atual, vazio)
+                               holdout, travar, run_id, ativo, store_atual, vazio)
         except PreventUpdate:
             raise
         except Exception as erro:          # banco travado, mineração corrompida…
@@ -1268,8 +1268,8 @@ def register(app):
             if not e["rodando"] and e["pronto"]:
                 e["entregue"] = True
 
-    def _wfa_montar(gatilho, _n, is_m, oos_m, inteligencia, holdout, run_id,
-                    ativo, store_atual, vazio):
+    def _wfa_montar(gatilho, _n, is_m, oos_m, inteligencia, holdout, travar,
+                    run_id, ativo, store_atual, vazio):
         e = VARREDURA.estado
         if not run_id:
             return ("escolha uma mineração salva", *vazio)

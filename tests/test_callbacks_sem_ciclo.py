@@ -171,3 +171,41 @@ def test_o_anel_passando_por_um_terceiro_tambem_trava():
            ("c", {"y.v"}, {"z.v"}),
            ("b", {"z.v"}, {"x.v"})]
     assert _ciclo(_grafo_de_retencao(cbs, ignorar=set()))
+
+
+def test_wfa_montar_recebe_todos_os_nomes_que_usa():
+    """Regressão: `wfa_executar` delega o trabalho a `_wfa_montar`, e uma vez
+    um parâmetro novo (`travar`) foi adicionado ao callback mas não repassado
+    ao helper — o corpo usava `travar` sem recebê-lo e o walk-forward
+    quebrava com NameError, que nenhum teste de ciclo pega.
+
+    Confere, lendo o código-fonte, que todo nome livre usado dentro de
+    `_wfa_montar` (fora globais e o que ele define) chega como parâmetro."""
+    import ast
+    import inspect
+    from pathlib import Path
+
+    fonte = Path(inspect.getfile(
+        __import__("ui.callbacks", fromlist=["x"]))).read_text(encoding="utf-8")
+    arvore = ast.parse(fonte)
+    alvo = next(n for n in ast.walk(arvore)
+                if isinstance(n, ast.FunctionDef) and n.name == "_wfa_montar")
+
+    params = {a.arg for a in alvo.args.args}
+    # nomes atribuídos, importados ou definidos dentro do corpo
+    locais = set(params)
+    for n in ast.walk(alvo):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+            locais.add(n.id)
+        elif isinstance(n, ast.FunctionDef) and n is not alvo:
+            locais.add(n.name)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            locais.update(a.asname or a.name.split(".")[0] for a in n.names)
+
+    # os nomes que o corpo LÊ e que parecem variáveis de dados do callback
+    suspeitos = {"travar", "holdout", "is_m", "oos_m", "inteligencia",
+                 "run_id", "ativo", "store_atual", "gatilho"}
+    usados = {n.id for n in ast.walk(alvo)
+              if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    faltando = (usados & suspeitos) - locais
+    assert not faltando, f"_wfa_montar usa sem receber: {faltando}"
