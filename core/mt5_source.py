@@ -77,3 +77,34 @@ def offset_servidor(symbol: str) -> timedelta:
             "há dias, terminal sem cotação nova)."
         )
     return offset
+
+
+def buscar_barras(symbol: str, desde: datetime, ate: datetime) -> pl.DataFrame:
+    """`desde`/`ate` são hora de corretor (a mesma convenção já salva no
+    banco, vinda das exportações manuais). A API do MT5 devolve `time` em
+    UTC de verdade — por isso o pedido sai em UTC (`- offset`) e o
+    resultado volta para hora de corretor (`+ offset`) antes de devolver,
+    para casar com o que já está gravado.
+    """
+    import MetaTrader5 as mt5
+
+    if not mt5.symbol_select(symbol, True):
+        raise MT5Error(f"não foi possível selecionar o símbolo {symbol} no MT5.")
+
+    offset = offset_servidor(symbol)
+    taxas = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1,
+                                  desde - offset, ate - offset)
+    if taxas is None or len(taxas) == 0:
+        raise MT5Error(
+            f"o MT5 não devolveu nenhuma barra para {symbol} entre "
+            f"{desde} e {ate}. Confira se o símbolo está certo e se há "
+            "histórico baixado no terminal para esse período."
+        )
+
+    df = pl.DataFrame(taxas)
+    return df.select(
+        (pl.from_epoch("time", time_unit="s") + offset).alias("ts"),
+        pl.col("open"), pl.col("high"), pl.col("low"), pl.col("close"),
+        pl.col("tick_volume"), pl.col("real_volume").alias("volume"),
+        pl.col("spread"),
+    ).sort("ts")

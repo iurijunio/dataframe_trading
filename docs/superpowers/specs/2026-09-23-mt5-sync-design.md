@@ -108,16 +108,30 @@ def sincronizar(con, symbol: str, price_decimals: int) -> ing.IngestResult
 
 ## 6. Fuso horário — o ponto delicado
 
-O MT5 guarda `ts` sempre em UTC, sem shift. O `database.duckdb` de hoje
-guarda os horários **como o MT5 exportou** (hora do corretor, sem conversão
-— é assim que a base atual já funciona, calibrada pela planilha manual).
-`offset_servidor` existe para que o range pedido ao MT5 (`desde`/`ate`)
-corresponda à mesma hora de corretor que já está salva — **não** para
-converter os dados recebidos, que devem sair da API já no fuso do corretor
-(o próprio MT5 devolve os horários no fuso do terminal/corretor quando a
-consulta é feita certa). Se a calibração mostrar um offset inesperado (não
-múltiplo de hora), a sincronização para e avisa, em vez de gravar hora
-errada silenciosamente.
+O `database.duckdb` de hoje guarda os horários **como a exportação manual
+do MT5 sempre entregou**: hora de corretor, sem conversão nenhuma — é assim
+que a base já funciona desde 2021. A API Python, por outro lado, devolve
+`time` em **UTC de verdade** (confirmado na documentação oficial:
+mql5.com/en/docs/python_metatrader5). São dois relógios diferentes para o
+mesmo instante, e a diferença entre eles é o que `offset_servidor` calibra.
+
+Decisão implementada em `buscar_barras` (22/09/2026, corrigida numa revisão
+por agente que pegou o sinal trocado na primeira versão): o **pedido**
+sai em UTC (`desde - offset`, `ate - offset` — subtrai o offset da hora de
+corretor para chegar em UTC) e o **resultado** volta para hora de corretor
+(`+ offset` no `ts` devolvido), para casar com o que já está gravado. Os
+dois lados têm teste dedicado com offset não-zero
+(`test_buscar_barras_pede_em_utc_e_devolve_em_hora_de_corretor`), provado
+por mutação — com offset zero (o caso comum nos outros testes) um sinal
+trocado não apareceria.
+
+Se a calibração mostrar um offset que não é múltiplo de hora inteira, ou
+implausível (mais de 14h — sinal de tick parado com o mercado fechado há
+dias), a sincronização para e avisa, em vez de gravar hora errada
+silenciosamente. **Mesmo assim, a direção do sinal só fica 100% confirmada
+na Tarefa 8 (conferência manual com o terminal MT5 de verdade)** — a
+dedução acima é a mais consistente com a documentação oficial, mas nenhum
+teste com fakes prova o comportamento real da API.
 
 ## 7. O que fica de fora (próximo projeto)
 

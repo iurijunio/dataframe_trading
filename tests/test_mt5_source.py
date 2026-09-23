@@ -144,3 +144,117 @@ def test_offset_servidor_recusa_tick_parado_ha_dias(monkeypatch):
 
     with pytest.raises(src.MT5Error, match="implausível"):
         src.offset_servidor("WIN$N")
+
+
+# ------------------------------------------------------------ buscar_barras
+
+class _FakeTickFresco(_FakeTick):
+    """Tick sempre 'agora', para nao acionar a recusa de offset implausivel
+    quando o teste nao quer testar isso."""
+    def __init__(self):
+        super().__init__(int(datetime.now(timezone.utc).timestamp()))
+
+
+class _FakeMT5Rates:
+    TIMEFRAME_M1 = 1
+
+    def __init__(self, taxas=None, symbol_ok=True):
+        self._taxas = taxas
+        self._symbol_ok = symbol_ok
+
+    def symbol_info_tick(self, symbol):
+        return _FakeTickFresco()
+
+    def symbol_select(self, symbol, enable):
+        return self._symbol_ok
+
+    def copy_rates_range(self, symbol, timeframe, desde, ate):
+        return self._taxas
+
+
+def _taxas_numpy():
+    import numpy as np
+    dtype = [("time", "i8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
+             ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"),
+             ("real_volume", "i8")]
+    linhas = [
+        (1758441600, 100000.0, 100100.0, 99950.0, 100050.0, 120, 5, 0),
+        (1758441660, 100050.0, 100120.0, 100000.0, 100080.0, 95, 5, 0),
+    ]
+    return np.array(linhas, dtype=dtype)
+
+
+def test_buscar_barras_converte_epoch_e_renomeia_colunas(monkeypatch):
+    fake = _FakeMT5Rates(taxas=_taxas_numpy())
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    df = src.buscar_barras("WIN$N", datetime(2026, 9, 21), datetime(2026, 9, 22))
+
+    assert list(df.columns) == ["ts", "open", "high", "low", "close",
+                                 "tick_volume", "volume", "spread"]
+    assert df.height == 2
+    esperado = datetime.fromtimestamp(1758441600, tz=timezone.utc).replace(tzinfo=None)
+    assert df["ts"][0] == esperado
+    assert df["open"][0] == 100000.0
+    assert df["high"][0] == 100100.0
+    assert df["low"][0] == 99950.0
+    assert df["close"][0] == 100050.0
+    assert df["tick_volume"][0] == 120
+    assert df["volume"][0] == 0  # real_volume da linha, nao spread
+    assert df["spread"][0] == 5
+
+
+def test_buscar_barras_recusa_simbolo_que_nao_seleciona(monkeypatch):
+    fake = _FakeMT5Rates(taxas=_taxas_numpy(), symbol_ok=False)
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    with pytest.raises(src.MT5Error, match="selecionar"):
+        src.buscar_barras("WIN$N", datetime(2026, 9, 21), datetime(2026, 9, 22))
+
+
+def test_buscar_barras_recusa_resultado_vazio(monkeypatch):
+    fake = _FakeMT5Rates(taxas=None)
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    with pytest.raises(src.MT5Error, match="não devolveu"):
+        src.buscar_barras("WIN$N", datetime(2026, 9, 21), datetime(2026, 9, 22))
+
+
+class _FakeMT5RatesComOffset(_FakeMT5Rates):
+    """Servidor 3h a frente de UTC (offset != 0), pra provar a direcao da
+    conta: pedido em UTC (- offset), resultado de volta em hora de
+    corretor (+ offset) -- com offset zero (_FakeMT5Rates comum) as duas
+    contas dao no mesmo, e um sinal trocado passaria despercebido."""
+
+    def __init__(self, taxas):
+        super().__init__(taxas=taxas)
+        self.pedido = {}
+
+    def symbol_info_tick(self, symbol):
+        epoch = int(datetime.now(timezone.utc).timestamp()) + 3 * 3600
+        return _FakeTick(epoch)
+
+    def copy_rates_range(self, symbol, timeframe, desde, ate):
+        self.pedido["desde"] = desde
+        self.pedido["ate"] = ate
+        return self._taxas
+
+
+def test_buscar_barras_pede_em_utc_e_devolve_em_hora_de_corretor(monkeypatch):
+    fake = _FakeMT5RatesComOffset(taxas=_taxas_numpy())
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    desde_pedido = datetime(2026, 9, 21, 9, 0)
+    ate_pedido = datetime(2026, 9, 22, 9, 0)
+    df = src.buscar_barras("WIN$N", desde_pedido, ate_pedido)
+
+    # a API pediu 3h ANTES do que a tela pediu (desde/ate estao em hora de
+    # corretor; a API quer UTC, e o corretor esta 3h a frente de UTC)
+    assert fake.pedido["desde"] == desde_pedido - timedelta(hours=3)
+    assert fake.pedido["ate"] == ate_pedido - timedelta(hours=3)
+
+    # o epoch devolvido pela API (UTC de verdade) volta 3h A FRENTE, para
+    # casar com a hora de corretor que ja esta gravada no banco
+    esperado = (datetime.fromtimestamp(1758441600, tz=timezone.utc)
+                .replace(tzinfo=None) + timedelta(hours=3))
+    assert df["ts"][0] == esperado
