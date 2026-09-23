@@ -71,7 +71,16 @@ def offset_servidor(symbol: str) -> timedelta:
 
     horas = round(bruto.total_seconds() / 3600)
     offset = timedelta(hours=horas)
-    if abs((bruto - offset).total_seconds()) > 120:
+    # O último tick negociado raramente é EXATAMENTE "agora" -- alguns
+    # minutos de atraso são normais (mercado mais parado, perto do
+    # fechamento). 120s era curto demais: um atraso comum de tick, em cima
+    # de um fuso de hora exata, já estourava e recusava sincronização
+    # válida. 15 min cobre atraso de tick real sem deixar passar um tick
+    # parado de verdade (esse caso vira "implausível" logo abaixo, ou —
+    # parado por só algumas horas — segue sem detecção seletiva alguma;
+    # aceitável, porque nunca gravamos hora errada: só a janela pedida ao
+    # MT5 fica levemente deslocada, e a folga de FOLGA_DIAS absorve isso).
+    if abs((bruto - offset).total_seconds()) > 900:
         raise MT5Error(
             f"fuso do servidor não é múltiplo de hora inteira ({bruto}); "
             "sincronização parada para não gravar hora errada."

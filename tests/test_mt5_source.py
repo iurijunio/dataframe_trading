@@ -123,6 +123,21 @@ def test_offset_servidor_recusa_simbolo_desconhecido(monkeypatch):
         src.offset_servidor("XXX$N")
 
 
+def test_offset_servidor_aceita_tick_com_poucos_minutos_de_atraso(monkeypatch):
+    """O último tick negociado raramente é EXATAMENTE agora — alguns
+    minutos de atraso são normais (mercado mais parado, perto do
+    fechamento). Bug real encontrado em produção: 2min37s de atraso sobre
+    um fuso de -3h (Brasil) estourava a margem antiga de 120s e recusava
+    uma sincronização válida."""
+    agora = datetime.now(timezone.utc)
+    epoch_servidor = int((agora - timedelta(hours=3) - timedelta(minutes=5)).timestamp())
+    _instalar_fake_mt5(monkeypatch, epoch_servidor)
+
+    offset = src.offset_servidor("WIN$N")
+
+    assert offset == timedelta(hours=-3)
+
+
 def test_offset_servidor_recusa_fuso_que_nao_e_hora_inteira(monkeypatch):
     """Se o offset não bate com nenhuma hora inteira, algo está errado na
     calibração: melhor parar do que gravar hora torta silenciosamente."""

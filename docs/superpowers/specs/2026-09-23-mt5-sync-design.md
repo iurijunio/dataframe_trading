@@ -133,6 +133,16 @@ na Tarefa 8 (conferência manual com o terminal MT5 de verdade)** — a
 dedução acima é a mais consistente com a documentação oficial, mas nenhum
 teste com fakes prova o comportamento real da API.
 
+**Achado real na conferência (22/09/2026):** a primeira tentativa com o
+terminal de verdade recusou com "fuso do servidor não é múltiplo de hora
+inteira (-1 day, 21:02:36)" — ou seja, -2h57m23s, perto de -3h (Brasil)
+mas 2min37s além. Causa: `offset_servidor` usa o horário do **último tick
+negociado** como proxy de "agora do servidor", e o último negócio real
+quase nunca acontece no segundo exato do clique — qualquer pausa normal
+de liquidez já passava da margem original de 120s. Corrigido para 900s
+(15 min), que absorve atraso de tick real sem deixar passar um tick
+parado de verdade (esse caso continua pego pelo limite de 14h).
+
 ## 7. O que fica de fora (próximo projeto)
 
 - Ações e os parquets de índices futuros internacionais (londonstrategicedge).
