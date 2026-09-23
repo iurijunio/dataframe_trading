@@ -49,7 +49,7 @@ linha do tempo de ciclos.
   `variantes.listar(estrategia: str | None = None) -> list[dict]`
   (`{"variante_id", "estrategia", "nome", "descricao", "criado_em"}`).
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 ```python
 # tests/test_variantes.py
@@ -100,13 +100,13 @@ def test_nome_duplicado_em_estrategias_diferentes_e_aceito(banco):
     assert a != b
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_variantes.py -q`
 Expected: FAIL com `ModuleNotFoundError: core.variantes` (ou tabela
 inexistente, dependendo de qual passo falha primeiro).
 
-- [ ] **Step 3: Schema**
+- [x] **Step 3: Schema**
 
 Em `core/schema.sql`, perto de `planos_operacao` (mesmo padrão de
 sequência dedicada):
@@ -125,7 +125,7 @@ CREATE SEQUENCE IF NOT EXISTS seq_variante_id START 1;
 ALTER TABLE mining_runs ADD COLUMN IF NOT EXISTS variante_id BIGINT;
 ```
 
-- [ ] **Step 4: `core/variantes.py`**
+- [x] **Step 4: `core/variantes.py`**
 
 ```python
 """Identidade da estratégia através de ciclos de reotimização.
@@ -180,18 +180,18 @@ def listar(estrategia: str | None = None) -> list[dict]:
     return [dict(zip(_COLUNAS, r)) for r in rows]
 ```
 
-- [ ] **Step 5: Rodar e ver passar**
+- [x] **Step 5: Rodar e ver passar**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_variantes.py -q`
 Expected: 4 passed
 
-- [ ] **Step 6: Provar que os testes pegam o defeito**
+- [x] **Step 6: Provar que os testes pegam o defeito**
 
 Trocar a checagem de duplicidade para comparar só `nome` (sem
 `estrategia`) e conferir que `test_nome_duplicado_em_estrategias_diferentes_e_aceito`
 falha; desfazer.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add core/schema.sql core/variantes.py tests/test_variantes.py
@@ -215,7 +215,7 @@ git -c user.name="Dataframe" -c user.email="iurijunio5@gmail.com" commit -m "fea
   "plano_estado"}` (`wfa_id`/`plano_id`/`plano_estado` são `None` quando
   aquela mineração não tem WFA salvo, ou o WFA não tem plano).
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 ```python
 # adicionar em tests/test_variantes.py
@@ -282,13 +282,13 @@ def test_linha_do_tempo_so_traz_minerações_desta_variante(banco):
     assert [l["run_id"] for l in linha] == [1]
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_variantes.py -q`
 Expected: FAIL com `AttributeError: module 'core.variantes' has no
 attribute 'linha_do_tempo'`
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```python
 # adicionar em core/variantes.py
@@ -324,18 +324,18 @@ quando o `wfa_id` acumula dois planos `aposentado` (reotimizado mais de
 uma vez, ou aposentado sem novo plano — `plano.aposentar()` existe
 exatamente pra isso).
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_variantes.py -q`
 Expected: 7 passed
 
-- [ ] **Step 5: Provar que os testes pegam o defeito**
+- [x] **Step 5: Provar que os testes pegam o defeito**
 
 Trocar `ORDER BY m.created_at` por `ORDER BY m.run_id DESC` e conferir
 que `test_linha_do_tempo_em_ordem_cronologica` falha (ordem invertida);
 desfazer.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/variantes.py tests/test_variantes.py
@@ -359,7 +359,7 @@ git -c user.name="Dataframe" -c user.email="iurijunio5@gmail.com" commit -m "fea
   variante_id=None)`, `Mineracao._persistir(nome, criterios=None,
   variante_id=None)`.
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Em `tests/test_salvar.py`, usando os helpers já existentes no arquivo
 (`mineracao_pronta`, `banco`):
@@ -388,7 +388,7 @@ def test_salvar_sem_variante_grava_nulo(banco):
     assert r[0] is None
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_salvar.py -q`
 Expected: `test_salvar_grava_variante_id_quando_informado` falha com
@@ -399,7 +399,7 @@ este arquivo for escrito antes da Task 1 estar commitada, vai falhar com
 "coluna não encontrada" em vez de `TypeError`; qualquer um dos dois é a
 falha esperada neste passo).
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 Em `core/optimizer.py`, no método `salvar`:
 
@@ -448,19 +448,19 @@ def _persistir(self, nome: str | None, criterios: dict | None = None,
 completo do `_persistir` antes de editar, o snippet acima mostra só as
 linhas que mudam)
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_salvar.py -q`
 Expected: todos os testes do arquivo passam, incluindo os dois novos.
 
-- [ ] **Step 5: Provar que os testes pegam o defeito**
+- [x] **Step 5: Provar que os testes pegam o defeito**
 
 Remover `variante_id` da lista de valores do INSERT (mas deixar na lista
 de colunas) — o `_persistir` deve estourar com erro de contagem de
 parâmetros, provando que o teste depende de verdade da coluna nova;
 desfazer.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/optimizer.py tests/test_salvar.py
@@ -479,7 +479,7 @@ git -c user.name="Dataframe" -c user.email="iurijunio5@gmail.com" commit -m "fea
 **Interfaces:**
 - Consumes: `core.variantes.listar`, `core.variantes.criar`.
 
-- [ ] **Step 1: os campos novos**
+- [x] **Step 1: os campos novos**
 
 Em `ui/components/mining.py`, ao lado de `mine-nome` (linha ~119):
 
@@ -498,7 +498,7 @@ Em `ui/components/mining.py`, ao lado de `mine-nome` (linha ~119):
             ], className="acoes acoes-salvar"),
 ```
 
-- [ ] **Step 2: popular o dropdown quando a estratégia muda**
+- [x] **Step 2: popular o dropdown quando a estratégia muda**
 
 Em `ui/callbacks.py`, um callback novo (perto do de `salvar`, linha
 ~763):
@@ -520,7 +520,7 @@ Em `ui/callbacks.py`, um callback novo (perto do de `salvar`, linha
 variantes de todas as estratégias, achado real na revisão do agente antes
 do commit desta tarefa)
 
-- [ ] **Step 3: usar no clique de Salvar**
+- [x] **Step 3: usar no clique de Salvar**
 
 Modificar o callback `salvar` (linha ~764-773):
 
@@ -555,20 +555,20 @@ estourava `ValueError` sem tratamento dentro do callback — a mensagem
 `"falhou ao salvar: …"` segue o mesmo padrão que `_persistir` já usa para
 erros de gravação, exibida via `estado_salvar`)
 
-- [ ] **Step 4: rodar a suíte inteira, inclusive o teste de ciclo**
+- [x] **Step 4: rodar a suíte inteira, inclusive o teste de ciclo**
 
 Run: `.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider`
 Expected: tudo continua passando; `test_callbacks_sem_ciclo.py` prova que
 `mine-variante` e `mine-variante-nova` têm dono só.
 
-- [ ] **Step 5: conferência manual, na tela**
+- [x] **Step 5: conferência manual, na tela**
 
 Subir o app, escolher uma estratégia, minerar (ou carregar mineração
 salva), digitar um nome em "ou nome de variante nova", clicar Salvar,
 conferir no banco que `mining_runs.variante_id` gravou. Trocar de
 estratégia e conferir que o dropdown de variante muda de opções.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add ui/components/mining.py ui/callbacks.py
@@ -591,7 +591,7 @@ git -c user.name="Dataframe" -c user.email="iurijunio5@gmail.com" commit -m "fea
 **Interfaces:**
 - Consumes: `strategies.registry.descobrir()`, `core.variantes.listar`.
 
-- [ ] **Step 1: o item no topo**
+- [x] **Step 1: o item no topo**
 
 Em `ui/app.py`, dentro de `topbar()`:
 
@@ -606,7 +606,7 @@ Em `ui/app.py`, dentro de `topbar()`:
                     ),
 ```
 
-- [ ] **Step 2: o componente da lista**
+- [x] **Step 2: o componente da lista**
 
 ```python
 # ui/components/estrategias_panel.py
@@ -662,7 +662,7 @@ def linha_variante(nome: str, ciclos: list[dict]) -> html.Div:
     )
 ```
 
-- [ ] **Step 3: o callback**
+- [x] **Step 3: o callback**
 
 ```python
 # ui/callbacks_estrategias.py
@@ -715,7 +715,7 @@ def register(app):
         return {"display": "block"}, rotulo, corpo
 ```
 
-- [ ] **Step 4: ligar no `modo` e registrar**
+- [x] **Step 4: ligar no `modo` e registrar**
 
 Em `ui/app.py`, dentro de `painel()`, depois de `candidata_panel.painel()`:
 
@@ -756,7 +756,7 @@ são registrados):
     callbacks_estrategias.register(app)
 ```
 
-- [ ] **Step 5: CSS mínimo**
+- [x] **Step 5: CSS mínimo**
 
 Em `ui/assets/style.css`, seguindo o padrão de `.cand-*`/`.mz-*` já
 existentes (cores e espaçamento das variáveis do arquivo, não valores
@@ -773,19 +773,19 @@ novos):
 .est-variante-nota{color:var(--muted);font-size:.9em;}
 ```
 
-- [ ] **Step 6: rodar a suíte inteira, inclusive o teste de ciclo**
+- [x] **Step 6: rodar a suíte inteira, inclusive o teste de ciclo**
 
 Run: `.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider`
 Expected: tudo passa; `test_callbacks_sem_ciclo.py` prova que os `Output`s
 novos têm dono só.
 
-- [ ] **Step 7: conferência manual, na tela**
+- [x] **Step 7: conferência manual, na tela**
 
 Subir o app, clicar em "Estratégias", ver a lista de módulos. Clicar num
 cartão, ver "nenhuma variante ainda" (banco limpo) ou a lista de
 variantes, se já tiver criado alguma na Task 4.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add ui/components/estrategias_panel.py ui/callbacks_estrategias.py ui/app.py ui/callbacks.py ui/assets/style.css
@@ -812,7 +812,7 @@ só o registro no banco.
 **Interfaces:**
 - Consumes: nenhuma função nova — só `DELETE` nas tabelas existentes.
 
-- [ ] **Step 1: conferir com o usuário, na tela, antes de rodar**
+- [x] **Step 1: conferir com o usuário, na tela, antes de rodar**
 
 Antes de tocar no banco real (`data/database.duckdb`, não um banco de
 teste), mostrar a contagem atual de linhas em `mining_runs`, `wfa_runs`,
@@ -831,7 +831,7 @@ with db.connect(read_only=True) as con:
 
 Run: `.venv\Scripts\python.exe scripts\limpar_minerações_antigas.py`
 
-- [ ] **Step 2: apagar, em ordem segura de dependência**
+- [x] **Step 2: apagar, em ordem segura de dependência**
 
 Ordem: tabelas-filha antes das tabelas-pai (`mining_trials`/`wfa_trades`
 antes de `mining_runs`/`wfa_runs`; `planos_operacao` antes de `wfa_runs`
@@ -846,19 +846,19 @@ with db.connect_write() as con, db.transacao(con):
 print("apagado.")
 ```
 
-- [ ] **Step 3: rodar contra o banco real**
+- [x] **Step 3: rodar contra o banco real**
 
 Run: `.venv\Scripts\python.exe scripts\limpar_minerações_antigas.py`
 (rodar de novo, agora com o `DELETE` incluído — só depois da confirmação
 do Step 1)
 Expected: contagens exibidas voltam a 0 numa nova checagem.
 
-- [ ] **Step 4: conferência manual, na tela**
+- [x] **Step 4: conferência manual, na tela**
 
 Subir o app, abrir Mineração/Walk-Forward/Candidata — as listas devem
 aparecer vazias, prontas para o primeiro ciclo já com variante.
 
-- [ ] **Step 5: remover o script descartável**
+- [x] **Step 5: remover o script descartável**
 
 ```bash
 rm scripts/limpar_minerações_antigas.py
@@ -867,6 +867,13 @@ rm scripts/limpar_minerações_antigas.py
 (o script não é commitado — existiu só para rodar uma vez contra o banco
 real; se algo der errado no Step 3, é mais seguro poder editá-lo à vontade
 sem afetar o histórico do git)
+
+**Nota de execução (23/09/2026):** rodado como `python -c "..."` inline em
+vez de um arquivo `scripts/`, mesmo efeito — nenhum arquivo descartável
+chegou a existir, então não havia o que remover no Step 5. Confirmado com
+o usuário antes (5 minerações, 4 WFAs, 0 planos) e depois (0/0/0/0/0 em
+`mining_trials`, `wfa_trades`, `planos_operacao`, `wfa_runs`,
+`mining_runs`).
 
 ---
 
