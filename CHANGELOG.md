@@ -96,6 +96,34 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
     só o alerta de reotimização não passou (percentil 39: 61% das
     combinações fixas fizeram mais no mesmo período).
   - 583 testes (eram 445).
+- **Modo Candidata, parte 3** (`core/tamanho.py`, `core/plano.py`): a tela
+  passa a **dimensionar contratos e gravar o plano de operação** — a etapa 3
+  do plano, que fecha o projeto A. Contas em
+  [docs/CALCULOS-CANDIDATA.md](docs/CALCULOS-CANDIDATA.md).
+  - **Perda de referência por contrato** vale o pior entre três leituras: a
+    média dos 5% piores pregões, o pior pregão já ocorrido (como leitura, não
+    como candidato a dimensionar) e um dia ruim de execução (todos os stops
+    do dia, o último com o dobro do tamanho). O risco digitado é **por
+    pregão, não por operação**.
+  - **Contratos pelo pior entre risco e margem**, com risco efetivo sempre do
+    número inteiro escolhido (nunca do fracionário) e `n = 0` como
+    reprovação explícita por capital insuficiente, com o motivo escrito.
+  - **Disjuntor em dois níveis**, calibrado pela taxa de alarme falso (20%
+    para reduzir a 1 contrato, 5% para desligar e reotimizar) em vez do
+    percentil fixo do desenho original — fixar no p95 e medir a chance de
+    desligar à toa contra o mesmo sorteio dava sempre 5%, por construção.
+  - **Camada 4 travada na primeira janela** do walk-forward: stop, alvo e
+    proteções ficam fixos a partir da primeira janela real, e só os
+    parâmetros da estratégia continuam sendo reotimizados — evita que o
+    plano de operação olhe o futuro escolhendo o melhor do período inteiro.
+  - **Tabela `planos_operacao`**, com retratos (não referências) de
+    parâmetros e perfil, para a mineração de origem poder ser apagada sem
+    derrubar o dimensionamento de quem está operando. Cascata nos três
+    pontos de exclusão (walk-forward, mineração, botão da tela).
+  - **Fechamento do projeto A**: a tela inteira rodou de ponta a ponta em
+    três walk-forwards reais (#8, #10, #11) — nenhum reprovou; #8 e #11
+    saíram aprovados com ressalva (um alerta cada), #10 aprovado liso.
+  - 736 testes (eram 583).
 
 ### Corrigido
 - **Sharpe da matriz agregado pelo dia de saída.** O cálculo novo nasceu

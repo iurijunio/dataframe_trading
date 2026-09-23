@@ -17,8 +17,12 @@ formato do [CALCULOS-WFA.md](CALCULOS-WFA.md).
 **Etapa 2 (aprovar ou reprovar, os 12 portões) concluída em 17/09/2026.**
 Rodada de ponta a ponta no walk-forward #8 (`rompimento_canal`, WIN$N, IS
 12/OOS 6, inteligência Ulcer): **aprovada com ressalva, 11 de 12** — ver
-[CALCULOS-CANDIDATA.md](CALCULOS-CANDIDATA.md). A etapa 3 (contratos, limite
-de desligamento e plano de operação) segue pendente.
+[CALCULOS-CANDIDATA.md](CALCULOS-CANDIDATA.md).
+
+**Etapa 3 (contratos, limite de desligamento e plano de operação) concluída
+em 22/09/2026.** Rodada de ponta a ponta nos walk-forwards #8, #10 e #11 —
+ver a seção nova do [CALCULOS-CANDIDATA.md](CALCULOS-CANDIDATA.md). O
+projeto A está fechado.
 
 ---
 
@@ -578,23 +582,34 @@ resultados, dado faltando é o erro comum — e não pode derrubar a tela inteir
 | 4.1 | Abrir uma vez, gravar registro imutável, portão 9 |
 
 ### Fase 5 — Tamanho e plano
-| # | Tarefa |
-|---|---|
-| 5.1 | CVaR do pregão, contratos, risco efetivo, margem; portões 6 e 7 |
-| 5.2 | `core/plano.py`: os seis grupos de campos, gravação, listagem, exclusão |
-| 5.3 | Fechar a 5.6 do PLANO-WFA (camada 4 travada ou reotimizável) |
+| # | Tarefa | Situação |
+|---|---|---|
+| 5.1 | CVaR do pregão, contratos, risco efetivo, margem; portões 6 e 7 | ✅ |
+| 5.2 | `core/plano.py`: os seis grupos de campos, gravação, listagem, exclusão | ✅ |
+| 5.3 | Fechar a 5.6 do PLANO-WFA (camada 4 travada ou reotimizável) | ✅ 18/09/2026 |
+
+**Decisão do usuário (18/09/2026): camada 4 travada.** A caixa "travar stop,
+alvo e proteções" nasce **marcada** — a primeira janela real escolhe o stop,
+o alvo e as proteções (`alvo_pontos`, `stop_pontos`, `breakeven_pct`,
+`step_gatilho_pct`, `step_distancia_pct`, `trailing_pontos`), e todas as
+janelas seguintes ficam com esses valores, reotimizando só os parâmetros da
+estratégia. Travar no valor da primeira janela, não no melhor do período
+inteiro, é o que evita olhar o futuro — o melhor do período inteiro só é
+conhecido depois que o período já acabou. Detalhe técnico em
+[PLANO-WFA.md](PLANO-WFA.md), tarefa 5.6.
 
 ### Fase 6 — Fechamento
 | # | Tarefa | Situação |
 |---|---|---|
-| 6.1 | Rodar a tela inteira num walk-forward real e registrar o veredito real | ✅ #8, 17/09/2026: aprovada com ressalva, 11 de 12 |
+| 6.1 | Rodar a tela inteira em walk-forwards reais e registrar o veredito | ✅ #8 (17/09/2026), #10 e #11 (22/09/2026) — ver [CALCULOS-CANDIDATA.md](CALCULOS-CANDIDATA.md) |
 | 6.2 | Revisão por agentes | ✅ |
-| 6.3 | `CALCULOS-CANDIDATA.md`, METODOLOGIA, PLANO, README, CHANGELOG | ✅ 17/09/2026 |
+| 6.3 | `CALCULOS-CANDIDATA.md`, METODOLOGIA, PLANO, README, CHANGELOG | ✅ 22/09/2026 |
 
 A 6.1 não é formalidade: com oito portões críticos, era provável que a
 candidata reprovasse. **Isso seria informação, não defeito** — mas precisava
-ser medido antes de a documentação afirmar qualquer coisa. No #8, só o
-alerta de reotimização (portão 11) não passou.
+ser medido antes de a documentação afirmar qualquer coisa. Nos três
+walk-forwards medidos, #8 e #11 saíram aprovados com ressalva (um alerta
+cada) e #10 aprovado liso, 12 de 12 — nenhum reprovou.
 
 ---
 

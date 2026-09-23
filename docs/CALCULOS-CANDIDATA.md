@@ -337,3 +337,52 @@ não aconteceram todos juntos, no mesmo caminho sorteado.
 
 Bom: até 10% do capital. Ruim: acima de 20%. É a mesma faixa usada no portão
 5 e na leitura de "quanto a estratégia aguenta" da tela.
+
+---
+
+## Quanto operar e quando parar — três walk-forwards reais (22/09/2026)
+
+A tela inteira (portões + bloco de tamanho) rodou de ponta a ponta nos três
+walk-forwards salvos de `rompimento_canal`, todos com capital de referência
+**R$ 10.000**, garantia não informada e capital para garantia em 50% (o
+padrão da tela).
+
+| | #8 (IS 12 / OOS 6, Estabilidade de Drawdown) | #10 (IS 16 / OOS 4, Centroid) | #11 (IS 18 / OOS 6, Platô Pessimista) |
+|---|---|---|---|
+| veredito | aprovada com ressalva, 11/12 | **aprovada, 12/12** | aprovada com ressalva, 11/12 |
+| ressalva | reotimizar não compensou (walk-forward atrás de 61% das combinações fixas) | nenhuma | a faixa minerada termina perto do valor escolhido |
+| contratos a 1% de risco | **0** (capital não comporta) | **0** (capital não comporta) | não medido |
+| contratos a 5% de risco | **1** | **1** | **1** |
+| risco efetivo (a 5%) | 4,26% | 3,63% | 3,02% |
+| perda de referência | R$ 426,00 (dia ruim de execução) | R$ 362,70 (dia ruim de execução) | R$ 302,16 (dia ruim de execução) |
+| reduzir para 1 contrato | R$ 593,20 | R$ 495,94 | R$ 438,48 |
+| desligar e reotimizar | R$ 831,05 · 8,3% do capital | R$ 694,98 · 6,9% do capital | R$ 616,68 · 6,2% do capital |
+| chance de desligar à toa | 5,0% | 5,1% | 5,0% |
+| dias perdendo seguidos | 15 | 8 | 7 |
+| dias sem novo topo | 125 | 80 | 112 |
+| pior lucro esperado no prazo | R$ 52,80 | -R$ 116,92 | R$ 38,20 |
+
+**Leitura em palavras simples:**
+
+- Com R$ 10.000 e 1% de risco por pregão, **nenhum dos três walk-forwards
+  comporta 1 contrato** — o dia ruim de execução (R$ 300 a R$ 430, um
+  contrato) já passa do 1% pedido (R$ 100). É a tela funcionando como
+  desenhada: recusar dimensionar em vez de arredondar para cima. A 5% de
+  risco, os três liberam exatamente 1 contrato, sempre limitado pelo risco
+  (nunca pela margem, que não foi informada).
+- **A chance de desligar à toa ficou entre 5,0% e 5,1% nos três** — a taxa de
+  alarme falso é o que se escolhe (o padrão da tela), não o que se mede, então
+  bater perto de 5% em todos confirma que o calibrador está funcionando, não
+  é coincidência dos dados.
+- **#10 é o único aprovado sem ressalva** dos três, e também o que teria a
+  menor perda esperada em reais (R$ 694,98 para desligar) — mas isso é
+  consequência de rodar num período mais curto (IS 16/OOS 4) e mais recente,
+  não uma nota melhor por si só; os três walk-forwards continuam sendo do
+  mesmo instrumento e estratégia, medidos em janelas diferentes.
+- **Nenhum dos três reprovou.** #8 e #11 saíram com um alerta cada (não um
+  crítico), o que confirma o desenho da etapa 2: portões críticos filtram o
+  que não presta, alertas avisam sem bloquear.
+
+Com isso fecha a etapa 3 e o projeto A: a tela Candidata mede robustez,
+dimensiona e grava o plano de operação, testada em três walk-forwards reais
+e não só em código.

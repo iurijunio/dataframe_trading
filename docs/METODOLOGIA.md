@@ -376,7 +376,7 @@ já não funcionou.
 | 7 Critério de validação | ✅ sete limiares, gargalo e lista de aprovadas |
 | 8 Salvar mineração | ✅ explícito, com nome |
 | 9 Carregar salva | ✅ restauração completa, com teste |
-| 10 Testes de robustez | ✅ dez testes do Backtest · tela **Candidata** aprova, aprova com ressalva ou reprova a estratégia para a incubação, com 12 portões ([contas](CALCULOS-CANDIDATA.md)) · ❌ outro ativo |
+| 10 Testes de robustez | ✅ dez testes do Backtest · tela **Candidata** aprova, aprova com ressalva ou reprova a estratégia para a incubação, com 12 portões, dimensiona contratos e grava o plano de operação ([contas](CALCULOS-CANDIDATA.md)) · ❌ outro ativo |
 | 11 Incubação | ❌ |
 | 12 Portfólio | ❌ |
 | 13–15 Live | ❌ falta integração com o MT5 |
