@@ -300,10 +300,9 @@ def linha_do_tempo(variante_id: int) -> list[dict]:
         FROM mining_runs m
         LEFT JOIN wfa_runs w ON w.run_id = m.run_id
         LEFT JOIN planos_operacao p ON p.wfa_id = w.wfa_id
-            AND p.estado = (
-                SELECT estado FROM planos_operacao p2
+            AND p.plano_id = (
+                SELECT MAX(p2.plano_id) FROM planos_operacao p2
                 WHERE p2.wfa_id = w.wfa_id
-                ORDER BY p2.plano_id DESC LIMIT 1
             )
         WHERE m.variante_id = ?
         ORDER BY m.created_at
@@ -318,10 +317,12 @@ def linha_do_tempo(variante_id: int) -> list[dict]:
 ```
 
 Nota: o plano "mais recente por wfa_id" é o que interessa (ativo OU o
-último aposentado, se nunca houve outro) — o `LEFT JOIN` com subquery
-evita trazer duas linhas quando um `wfa_id` tem mais de um plano
-histórico (reotimizado mais de uma vez sem minerar de novo, caso raro
-mas possível).
+último aposentado, se nunca houve outro) — o `LEFT JOIN` casa pelo
+`MAX(plano_id)`, não pelo `estado`. Casar por `estado` parece certo no
+caso comum (só um plano `ativo` por `wfa_id`), mas duplica a linha
+quando o `wfa_id` acumula dois planos `aposentado` (reotimizado mais de
+uma vez, ou aposentado sem novo plano — `plano.aposentar()` existe
+exatamente pra isso).
 
 - [ ] **Step 4: Rodar e ver passar**
 

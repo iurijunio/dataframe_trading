@@ -48,3 +48,26 @@ def listar(estrategia: str | None = None) -> list[dict]:
     with db.connect(read_only=True) as con:
         rows = con.execute(sql, args).fetchall()
     return [dict(zip(_COLUNAS, r)) for r in rows]
+
+
+def linha_do_tempo(variante_id: int) -> list[dict]:
+    sql = """
+        SELECT m.run_id, m.created_at, m.n_combinacoes,
+               w.wfa_id, p.plano_id, p.estado
+        FROM mining_runs m
+        LEFT JOIN wfa_runs w ON w.run_id = m.run_id
+        LEFT JOIN planos_operacao p ON p.wfa_id = w.wfa_id
+            AND p.plano_id = (
+                SELECT MAX(p2.plano_id) FROM planos_operacao p2
+                WHERE p2.wfa_id = w.wfa_id
+            )
+        WHERE m.variante_id = ?
+        ORDER BY m.created_at
+    """
+    with db.connect(read_only=True) as con:
+        rows = con.execute(sql, [variante_id]).fetchall()
+    return [
+        {"run_id": r[0], "criado_em": r[1], "n_combinacoes": r[2],
+         "wfa_id": r[3], "plano_id": r[4], "plano_estado": r[5]}
+        for r in rows
+    ]
