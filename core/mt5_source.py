@@ -7,10 +7,16 @@ ficam para outro projeto (ver docs/superpowers/specs/2026-09-23-mt5-sync-design.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import polars as pl
+
+from . import calendar as cal
+from . import db_manager as db
+from . import ingest as ing
+from . import rollovers as roll
 
 FOLGA_DIAS = 5
 
@@ -108,3 +114,48 @@ def buscar_barras(symbol: str, desde: datetime, ate: datetime) -> pl.DataFrame:
         pl.col("tick_volume"), pl.col("real_volume").alias("volume"),
         pl.col("spread"),
     ).sort("ts")
+
+
+@dataclass
+class SincronizacaoResult:
+    ingest: ing.IngestResult
+    trading_days: int
+    rollovers: int
+
+
+def sincronizar(con, symbol: str, price_decimals: int) -> SincronizacaoResult:
+    ultimo = con.execute(
+        "SELECT max(ts) FROM bars_m1 WHERE symbol = ?", [symbol]
+    ).fetchone()[0]
+    if ultimo is None:
+        raise MT5Error(
+            f"{symbol} não tem nenhuma barra salva ainda — a sincronização "
+            "automática só atualiza uma base que já existe. Faça a "
+            "primeira importação manual (cli.py ingest) antes."
+        )
+
+    desde = ultimo - timedelta(days=FOLGA_DIAS)
+    # `datetime.now()` é a hora da MÁQUINA local, não a hora de corretor
+    # que `buscar_barras` espera (mesma convenção do `ultimo` salvo). Em
+    # vez de calcular a hora de corretor certa aqui — o que exigiria
+    # offset_servidor, que esta função deliberadamente não chama —, pede-se
+    # uma margem folgada além de agora: o MT5 nunca devolve barra do
+    # futuro, então isso nunca traz dado inventado, só evita perder as
+    # últimas barras por causa do fuso da máquina que roda o botão ser
+    # diferente do fuso do corretor.
+    ate = datetime.now() + timedelta(days=1)
+
+    barras = buscar_barras(symbol, desde, ate)
+
+    agora = datetime.now()
+    destino = db.RAW_DIR / f"mt5_sync_{agora:%Y%m%d_%H%M%S}_{agora.microsecond:06d}.tsv"
+    exportar_tsv(barras, destino)
+
+    resultado = ing.ingest_csv(con, destino, symbol, price_decimals=price_decimals)
+
+    inst = db.load_instrument_yaml(symbol)
+    n_days = cal.rebuild_trading_days(con, symbol)
+    n_roll = roll.rebuild_rollovers(con, symbol, inst.get("rollover_policy"))
+    db.export_parquet(con, symbol)
+
+    return SincronizacaoResult(ingest=resultado, trading_days=n_days, rollovers=n_roll)

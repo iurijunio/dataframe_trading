@@ -17,6 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core import db_manager as db  # noqa: E402
 from core import ingest as ing  # noqa: E402
 from core import mt5_source as src  # noqa: E402
 
@@ -258,3 +259,133 @@ def test_buscar_barras_pede_em_utc_e_devolve_em_hora_de_corretor(monkeypatch):
     esperado = (datetime.fromtimestamp(1758441600, tz=timezone.utc)
                 .replace(tzinfo=None) + timedelta(hours=3))
     assert df["ts"][0] == esperado
+
+
+# -------------------------------------------------------------- sincronizar
+
+@pytest.fixture
+def con(tmp_path):
+    c = db.connect(tmp_path / "t.duckdb")
+    db.init_schema(c)
+    yield c
+    c.close()
+
+
+def test_sincronizar_recusa_sem_nenhuma_barra_salva(con, monkeypatch):
+    with pytest.raises(src.MT5Error, match="não tem nenhuma barra salva"):
+        src.sincronizar(con, "WIN$N", price_decimals=0)
+
+
+def test_sincronizar_busca_do_ultimo_ts_com_folga_ate_agora(con, tmp_path, monkeypatch):
+    # semeia uma barra existente via ingest_csv de verdade
+    seed = tmp_path / "seed.tsv"
+    ts0 = datetime(2026, 9, 1, 9, 0)
+    from tests.test_ingest import write_export  # reaproveita o helper existente
+    write_export(seed, [(ts0, 100000, 100050, 99950, 100010)])
+    ing.ingest_csv(con, seed, "WIN$N", price_decimals=0)
+
+    monkeypatch.setattr(db, "RAW_DIR", tmp_path / "raw")
+    chamadas = {}
+
+    def fake_buscar(symbol, desde, ate):
+        chamadas["desde"] = desde
+        chamadas["ate"] = ate
+        return pl.DataFrame({
+            "ts": [datetime(2026, 9, 2, 9, 0)],
+            "open": [100010], "high": [100060], "low": [99960], "close": [100020],
+            "tick_volume": [80], "volume": [0], "spread": [5],
+        })
+
+    monkeypatch.setattr(src, "buscar_barras", fake_buscar)
+
+    resultado = src.sincronizar(con, "WIN$N", price_decimals=0)
+
+    assert chamadas["desde"] == ts0 - timedelta(days=src.FOLGA_DIAS)
+    assert resultado.ingest.rows_inserted == 1
+    assert resultado.trading_days >= 1
+    assert (tmp_path / "raw").exists()
+
+
+def test_sincronizar_pede_ate_alem_de_agora_por_margem(con, tmp_path, monkeypatch):
+    """`ate` não pode ser exatamente `datetime.now()`: essa é a hora da
+    MÁQUINA local, não a hora de corretor que buscar_barras espera (mesma
+    convenção do `ultimo` salvo). Em vez de calcular a hora de corretor
+    certa aqui (o que exigiria offset_servidor, que sincronizar
+    deliberadamente não chama), pede-se uma margem folgada além de agora —
+    o MT5 nunca devolve barra do futuro, então isso nunca traz dado
+    inventado, só evita perder as últimas barras por causa do fuso da
+    máquina que roda o botão ser diferente do fuso do corretor."""
+    seed = tmp_path / "seed.tsv"
+    ts0 = datetime(2026, 9, 1, 9, 0)
+    from tests.test_ingest import write_export
+    write_export(seed, [(ts0, 100000, 100050, 99950, 100010)])
+    ing.ingest_csv(con, seed, "WIN$N", price_decimals=0)
+
+    monkeypatch.setattr(db, "RAW_DIR", tmp_path / "raw")
+    chamadas = {}
+
+    def fake_buscar(symbol, desde, ate):
+        chamadas["ate"] = ate
+        return pl.DataFrame({
+            "ts": [datetime(2026, 9, 2, 9, 0)],
+            "open": [100010], "high": [100060], "low": [99960], "close": [100020],
+            "tick_volume": [80], "volume": [0], "spread": [5],
+        })
+
+    monkeypatch.setattr(src, "buscar_barras", fake_buscar)
+    antes = datetime.now()
+
+    src.sincronizar(con, "WIN$N", price_decimals=0)
+
+    assert chamadas["ate"] >= antes + timedelta(hours=12)
+
+
+def test_sincronizar_nao_engole_yaml_de_instrumento_ausente(con, tmp_path, monkeypatch):
+    """cli.py cmd_ingest deixa FileNotFoundError estourar quando o YAML do
+    instrumento não existe — sincronizar precisa fazer o mesmo, em vez de
+    seguir em frente sem rollover_policy como se estivesse tudo bem."""
+    seed = tmp_path / "seed.tsv"
+    ts0 = datetime(2026, 9, 1, 9, 0)
+    from tests.test_ingest import write_export
+    write_export(seed, [(ts0, 100000, 100050, 99950, 100010)])
+    ing.ingest_csv(con, seed, "SEM$YAML", price_decimals=0)
+
+    monkeypatch.setattr(db, "RAW_DIR", tmp_path / "raw")
+    monkeypatch.setattr(
+        src, "buscar_barras",
+        lambda symbol, desde, ate: pl.DataFrame({
+            "ts": [datetime(2026, 9, 2, 9, 0)],
+            "open": [100010], "high": [100060], "low": [99960], "close": [100020],
+            "tick_volume": [80], "volume": [0], "spread": [5],
+        }),
+    )
+
+    with pytest.raises(FileNotFoundError):
+        src.sincronizar(con, "SEM$YAML", price_decimals=0)
+
+
+def test_sincronizar_duas_vezes_na_mesma_janela_nao_sobrescreve_o_tsv(con, tmp_path, monkeypatch):
+    """O nome do arquivo bruto precisa ter resolução fina o bastante para
+    duas sincronizações seguidas (ex: clique duplo) não se sobrescreverem —
+    senão a cópia bruta da primeira some sem deixar rastro."""
+    seed = tmp_path / "seed.tsv"
+    ts0 = datetime(2026, 9, 1, 9, 0)
+    from tests.test_ingest import write_export
+    write_export(seed, [(ts0, 100000, 100050, 99950, 100010)])
+    ing.ingest_csv(con, seed, "WIN$N", price_decimals=0)
+
+    monkeypatch.setattr(db, "RAW_DIR", tmp_path / "raw")
+    monkeypatch.setattr(
+        src, "buscar_barras",
+        lambda symbol, desde, ate: pl.DataFrame({
+            "ts": [datetime(2026, 9, 2, 9, 0)],
+            "open": [100010], "high": [100060], "low": [99960], "close": [100020],
+            "tick_volume": [80], "volume": [0], "spread": [5],
+        }),
+    )
+
+    src.sincronizar(con, "WIN$N", price_decimals=0)
+    src.sincronizar(con, "WIN$N", price_decimals=0)
+
+    arquivos = list((tmp_path / "raw").glob("mt5_sync_*.tsv"))
+    assert len(arquivos) == 2
