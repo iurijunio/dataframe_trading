@@ -274,6 +274,23 @@ ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS reotimizar_em DATE;
 
 CREATE SEQUENCE IF NOT EXISTS seq_plano_id START 1;
 
+-- ---------------------------------------------------- identidade da estrategia
+-- Reotimizar (minerar de novo, rodar o WFA de novo, gravar outro plano) nao
+-- deixa rastro de que aquilo e a MESMA estrategia de antes, so atualizada.
+-- Esta tabela agrupa os ciclos que pertencem a uma mesma variante; WFA e
+-- plano herdam por cascata (run_id -> variante_id), sem coluna propria.
+CREATE TABLE IF NOT EXISTS estrategia_variantes (
+    variante_id  BIGINT PRIMARY KEY,
+    estrategia   VARCHAR NOT NULL,
+    nome         VARCHAR NOT NULL,
+    descricao    VARCHAR,
+    criado_em    TIMESTAMP NOT NULL
+);
+CREATE SEQUENCE IF NOT EXISTS seq_variante_id START 1;
+
+-- ligacao opcional: minerar sem escolher variante continua funcionando
+ALTER TABLE mining_runs ADD COLUMN IF NOT EXISTS variante_id BIGINT;
+
 CREATE SEQUENCE IF NOT EXISTS seq_wfa_id START 1;
 
 CREATE SEQUENCE IF NOT EXISTS seq_ingest_id START 1;
