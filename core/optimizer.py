@@ -228,7 +228,8 @@ class Mineracao:
             and not self.estado["salva"] and not self.estado["salvando"]
 
     def salvar(self, nome: str | None = None,
-               criterios: dict | None = None) -> bool:
+               criterios: dict | None = None,
+               variante_id: int | None = None) -> bool:
         """Persiste a varredura em memória. Só acontece se você mandar.
 
         Roda em thread própria: gravar 300 mil combinações leva segundos, e
@@ -238,11 +239,13 @@ class Mineracao:
             return False
         self.estado["salvando"] = True
         self.estado["aviso_salvar"] = "salvando…"
-        threading.Thread(target=self._persistir, args=(nome, criterios),
+        threading.Thread(target=self._persistir,
+                         args=(nome, criterios, variante_id),
                          daemon=True).start()
         return True
 
-    def _persistir(self, nome: str | None, criterios: dict | None = None):
+    def _persistir(self, nome: str | None, criterios: dict | None = None,
+                   variante_id: int | None = None):
         e = self.estado
         try:
             ctx = self._contexto
@@ -257,8 +260,9 @@ class Mineracao:
                 con.execute(
                     "INSERT INTO mining_runs (run_id, symbol, strategy, "
                     "created_at, profile, space, folds, holdout_de, "
-                    "n_combinacoes, status, nome, wf_config, criterios) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "n_combinacoes, status, nome, wf_config, criterios, "
+                    "variante_id) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [run_id, ctx["symbol"], ctx["estrategia"], datetime.now(),
                      json.dumps(ctx["perfil"], default=str),
                      json.dumps({k: list(map(float, v))
@@ -267,7 +271,8 @@ class Mineracao:
                      str(ctx["janelas"].holdout_de), len(self._resultados), status,
                      nome or None,
                      json.dumps(ctx.get("wf_config") or {}, default=str),
-                     json.dumps(criterios) if criterios else None],
+                     json.dumps(criterios) if criterios else None,
+                     variante_id],
                 )
                 # Em LOTE, por uma tabela Arrow: o executemany confirmava
                 # linha a linha, ~9 ms por combinação — 300 mil levariam 45

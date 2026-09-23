@@ -441,6 +441,25 @@ def test_recriar_tabela_vazia_nao_quebra_com_ponto_e_virgula_em_comentario(banco
     assert "score_robusto" in cols and "outra" not in cols
 
 
+# ------------------------------------------------------- identidade da estrategia
+def test_salvar_grava_variante_id_quando_informado(banco):
+    m = mineracao_pronta()
+    m._persistir("cruzamento tentativa 1", variante_id=7)
+
+    with db.connect(read_only=True) as con:
+        r = con.execute("SELECT variante_id FROM mining_runs").fetchone()
+    assert r[0] == 7
+
+
+def test_salvar_sem_variante_grava_nulo(banco):
+    m = mineracao_pronta()
+    m._persistir(None)
+
+    with db.connect(read_only=True) as con:
+        r = con.execute("SELECT variante_id FROM mining_runs").fetchone()
+    assert r[0] is None
+
+
 def test_coluna_em_outra_ordem_nao_derruba_a_subida(banco):
     """A comparação levava a ORDEM em conta: uma tabela com dados e as mesmas
     colunas em outra posição fazia o init_schema levantar erro — e ele roda
