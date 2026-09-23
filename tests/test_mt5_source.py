@@ -9,7 +9,7 @@ aqui.
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import polars as pl
@@ -78,3 +78,69 @@ def test_exportar_tsv_recusa_valor_nulo(tmp_path):
     )
     with pytest.raises(ValueError, match="nulo"):
         src.exportar_tsv(barras, tmp_path / "com_nulo.tsv")
+
+
+# ---------------------------------------------------------- offset_servidor
+
+class _FakeTick:
+    def __init__(self, epoch):
+        self.time = epoch
+
+
+class _FakeMT5Offset:
+    """Substitui o módulo MetaTrader5 nos testes de offset_servidor."""
+
+    def __init__(self, epoch_servidor):
+        self._epoch = epoch_servidor
+
+    def symbol_info_tick(self, symbol):
+        if symbol != "WIN$N":
+            return None
+        return _FakeTick(self._epoch)
+
+
+def _instalar_fake_mt5(monkeypatch, epoch_servidor):
+    fake = _FakeMT5Offset(epoch_servidor)
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+    return fake
+
+
+def test_offset_servidor_calibra_fuso_de_horas_inteiras(monkeypatch):
+    """Servidor 3 horas à frente do UTC (ex: fuso do corretor)."""
+    agora = datetime.now(timezone.utc)
+    epoch_servidor = int((agora + timedelta(hours=3)).timestamp())
+    _instalar_fake_mt5(monkeypatch, epoch_servidor)
+
+    offset = src.offset_servidor("WIN$N")
+
+    assert offset == timedelta(hours=3)
+
+
+def test_offset_servidor_recusa_simbolo_desconhecido(monkeypatch):
+    _instalar_fake_mt5(monkeypatch, 0)
+    with pytest.raises(src.MT5Error, match="não encontrado"):
+        src.offset_servidor("XXX$N")
+
+
+def test_offset_servidor_recusa_fuso_que_nao_e_hora_inteira(monkeypatch):
+    """Se o offset não bate com nenhuma hora inteira, algo está errado na
+    calibração: melhor parar do que gravar hora torta silenciosamente."""
+    agora = datetime.now(timezone.utc)
+    epoch_servidor = int((agora + timedelta(hours=3, minutes=17)).timestamp())
+    _instalar_fake_mt5(monkeypatch, epoch_servidor)
+
+    with pytest.raises(src.MT5Error, match="múltiplo de hora"):
+        src.offset_servidor("WIN$N")
+
+
+def test_offset_servidor_recusa_tick_parado_ha_dias(monkeypatch):
+    """Um tick de 3 dias atrás (mercado fechado, terminal sem cotação nova)
+    também bate 'múltiplo de hora inteira' — 72h é múltiplo de hora — e
+    passaria disfarçado de fuso válido sem um limite de plausibilidade.
+    Nenhum corretor real fica a mais de 14h de UTC."""
+    agora = datetime.now(timezone.utc)
+    epoch_servidor = int((agora - timedelta(days=3)).timestamp())
+    _instalar_fake_mt5(monkeypatch, epoch_servidor)
+
+    with pytest.raises(src.MT5Error, match="implausível"):
+        src.offset_servidor("WIN$N")
