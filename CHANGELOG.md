@@ -124,6 +124,32 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
     três walk-forwards reais (#8, #10, #11) — nenhum reprovou; #8 e #11
     saíram aprovados com ressalva (um alerta cada), #10 aprovado liso.
   - 736 testes (eram 583).
+- **Sincronização automática com o MT5** (`core/mt5_source.py`,
+  `ui/callbacks_mt5.py`): projeto B — troca a exportação manual do CSV por
+  um botão na tela, reaproveitando 100% da ingestão que já existia (gera
+  um TSV no mesmo formato da exportação manual e chama
+  `core.ingest.ingest_csv` sem alterá-la, zero lógica de merge nova).
+  Escopo desta versão: só `WIN$N`. Desenho em
+  [docs/superpowers/specs/2026-09-23-mt5-sync-design.md](docs/superpowers/specs/2026-09-23-mt5-sync-design.md).
+  - **Calibra o fuso do broker contra UTC** (`offset_servidor`): o MT5
+    guarda `time` em UTC de verdade, mas a base já grava hora de corretor
+    desde 2021 (como a exportação manual sempre entregou). Pedido sai em
+    UTC, resultado volta para hora de corretor.
+  - **Recusa em vez de adivinhar**: fuso que não é múltiplo de hora
+    inteira, offset implausível (mais de 14h — tick parado com o mercado
+    fechado há dias), símbolo não selecionado, terminal fechado ou sem
+    login — cada um com mensagem clara em português, nunca uma stack
+    trace crua na tela.
+  - **Conferido com o terminal real (23/09/2026)**: offset calibrado em
+    -3h (Brasília), sem deslocamento de hora nas barras salvas; 75.275
+    barras novas na primeira rodada, e uma segunda rodada de propósito
+    provou que sincronizar de novo não duplica nem perde dado (1 barra
+    nova + 1 revisada pelo corretor + 1.509 idênticas).
+  - **Achado na conferência**: a margem de tolerância do fuso (120s)
+    era curta demais para o mundo real — o último tick negociado quase
+    nunca acontece no segundo exato do clique, e qualquer pausa normal de
+    liquidez já recusava uma sincronização válida. Alargada para 15 min.
+  - 759 testes (eram 736).
 
 ### Corrigido
 - **Sharpe da matriz agregado pelo dia de saída.** O cálculo novo nasceu

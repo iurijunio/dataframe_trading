@@ -656,7 +656,7 @@ primeira versão deste documento.
 | # | Projeto | Passos | Quando |
 |---|---|---|---|
 | **A** | **Candidata** — este plano | 10 | agora |
-| **B** | Sincronização com o MT5 | infra | **em paralelo com A** |
+| **B** | Sincronização com o MT5 | infra | ✅ 23/09/2026 — ver [spec](superpowers/specs/2026-09-23-mt5-sync-design.md) |
 | C | Incubação com conferência | 11 | depois de A e B |
 | D | Portfólio | 12 | com 2 candidatas |
 | E | Execução e monitoramento | 13–16 | depois de C |

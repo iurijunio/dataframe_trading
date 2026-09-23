@@ -143,6 +143,32 @@ de liquidez já passava da margem original de 120s. Corrigido para 900s
 (15 min), que absorve atraso de tick real sem deixar passar um tick
 parado de verdade (esse caso continua pego pelo limite de 14h).
 
+## 6.1 Conferido em produção (23/09/2026)
+
+Terminal MT5 aberto e logado, botão clicado na tela com `WIN$N`
+selecionado. Depois de corrigida a margem de tolerância (§6, commit
+`3153ee9`):
+
+- **Offset calibrado**: -3h (servidor do corretor em relação a UTC — bate
+  com o horário de Brasília, sem horário de verão).
+- **Sem deslocamento de hora**: `cli.py status --symbol "WIN$N"` mostrou
+  o período terminando em `2026-09-23 09:48:00`/`09:49:00`, batendo com o
+  horário real do pregão (WIN$ abre 09:00 BRT) — as barras salvas casam
+  com o que já estava na base desde 2021, sem pulo nem repetição de hora.
+- **Primeira rodada**: 75.275 barras novas, 1.926 revisadas, 1.380
+  pregões, 33 rolagens — a base foi de 2026-03-13 até 2026-09-23.
+- **Segunda rodada, de propósito** (em vez de repetir com zero mudança,
+  o mercado seguia aberto entre as duas): 1 barra nova (o minuto
+  seguinte) + 1 revisada (o corretor ajustou máxima/mínima do candle mais
+  recente depois de fechado, comportamento normal) + 1.509 idênticas —
+  prova a mesma coisa que "0 barras novas" provaria: rodar de novo não
+  duplica nem perde dado, e a regra "mais novo vence" da importação
+  manual funciona igual no caminho automático.
+- **Arquivo bruto salvo** em `data/raw/mt5_sync_<timestamp>.tsv`, no
+  mesmo padrão da exportação manual.
+
+Projeto B fechado.
+
 ## 7. O que fica de fora (próximo projeto)
 
 - Ações e os parquets de índices futuros internacionais (londonstrategicedge).
