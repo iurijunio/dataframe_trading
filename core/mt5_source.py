@@ -116,6 +116,22 @@ def buscar_barras(symbol: str, desde: datetime, ate: datetime) -> pl.DataFrame:
     ).sort("ts")
 
 
+def conectar() -> None:
+    import MetaTrader5 as mt5
+
+    if not mt5.initialize():
+        erro = mt5.last_error()
+        raise MT5Error(
+            f"não foi possível conectar ao terminal MT5 ({erro}). "
+            "Abra o MetaTrader 5 e faça login antes de sincronizar."
+        )
+
+
+def desconectar() -> None:
+    import MetaTrader5 as mt5
+    mt5.shutdown()
+
+
 @dataclass
 class SincronizacaoResult:
     ingest: ing.IngestResult
@@ -145,7 +161,11 @@ def sincronizar(con, symbol: str, price_decimals: int) -> SincronizacaoResult:
     # diferente do fuso do corretor.
     ate = datetime.now() + timedelta(days=1)
 
-    barras = buscar_barras(symbol, desde, ate)
+    conectar()
+    try:
+        barras = buscar_barras(symbol, desde, ate)
+    finally:
+        desconectar()
 
     agora = datetime.now()
     destino = db.RAW_DIR / f"mt5_sync_{agora:%Y%m%d_%H%M%S}_{agora.microsecond:06d}.tsv"

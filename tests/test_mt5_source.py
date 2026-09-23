@@ -297,6 +297,8 @@ def test_sincronizar_busca_do_ultimo_ts_com_folga_ate_agora(con, tmp_path, monke
         })
 
     monkeypatch.setattr(src, "buscar_barras", fake_buscar)
+    monkeypatch.setattr(src, "conectar", lambda: None)
+    monkeypatch.setattr(src, "desconectar", lambda: None)
 
     resultado = src.sincronizar(con, "WIN$N", price_decimals=0)
 
@@ -333,6 +335,8 @@ def test_sincronizar_pede_ate_alem_de_agora_por_margem(con, tmp_path, monkeypatc
         })
 
     monkeypatch.setattr(src, "buscar_barras", fake_buscar)
+    monkeypatch.setattr(src, "conectar", lambda: None)
+    monkeypatch.setattr(src, "desconectar", lambda: None)
     antes = datetime.now()
 
     src.sincronizar(con, "WIN$N", price_decimals=0)
@@ -359,6 +363,8 @@ def test_sincronizar_nao_engole_yaml_de_instrumento_ausente(con, tmp_path, monke
             "tick_volume": [80], "volume": [0], "spread": [5],
         }),
     )
+    monkeypatch.setattr(src, "conectar", lambda: None)
+    monkeypatch.setattr(src, "desconectar", lambda: None)
 
     with pytest.raises(FileNotFoundError):
         src.sincronizar(con, "SEM$YAML", price_decimals=0)
@@ -383,9 +389,110 @@ def test_sincronizar_duas_vezes_na_mesma_janela_nao_sobrescreve_o_tsv(con, tmp_p
             "tick_volume": [80], "volume": [0], "spread": [5],
         }),
     )
+    monkeypatch.setattr(src, "conectar", lambda: None)
+    monkeypatch.setattr(src, "desconectar", lambda: None)
 
     src.sincronizar(con, "WIN$N", price_decimals=0)
     src.sincronizar(con, "WIN$N", price_decimals=0)
 
     arquivos = list((tmp_path / "raw").glob("mt5_sync_*.tsv"))
     assert len(arquivos) == 2
+
+
+# ---------------------------------------------------- conectar/desconectar
+
+class _FakeMT5Conexao:
+    TIMEFRAME_M1 = 1
+
+    def __init__(self, inicializa=True):
+        self._inicializa = inicializa
+        self.desligado = False
+
+    def initialize(self):
+        return self._inicializa
+
+    def last_error(self):
+        return (-1, "terminal não encontrado")
+
+    def shutdown(self):
+        self.desligado = True
+
+
+def test_conectar_recusa_com_mensagem_clara_se_terminal_fechado(monkeypatch):
+    fake = _FakeMT5Conexao(inicializa=False)
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    with pytest.raises(src.MT5Error, match="Abra o MetaTrader 5"):
+        src.conectar()
+
+
+def test_desconectar_chama_shutdown(monkeypatch):
+    fake = _FakeMT5Conexao(inicializa=True)
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+
+    src.desconectar()
+
+    assert fake.desligado is True
+
+
+def test_sincronizar_desconecta_mesmo_se_buscar_barras_falhar(con, tmp_path, monkeypatch):
+    """conectar()/desconectar() precisam envolver buscar_barras num
+    finally — senão um erro no meio (símbolo ruim, sem histórico) deixa a
+    conexão presa no terminal."""
+    seed = tmp_path / "seed.tsv"
+    ts0 = datetime(2026, 9, 1, 9, 0)
+    from tests.test_ingest import write_export
+    write_export(seed, [(ts0, 100000, 100050, 99950, 100010)])
+    ing.ingest_csv(con, seed, "WIN$N", price_decimals=0)
+
+    monkeypatch.setattr(db, "RAW_DIR", tmp_path / "raw")
+    chamadas = {"conectou": False, "desconectou": False}
+
+    def fake_conectar():
+        chamadas["conectou"] = True
+
+    def fake_desconectar():
+        chamadas["desconectou"] = True
+
+    def fake_buscar_que_falha(symbol, desde, ate):
+        raise src.MT5Error("falha proposital do teste")
+
+    monkeypatch.setattr(src, "conectar", fake_conectar)
+    monkeypatch.setattr(src, "desconectar", fake_desconectar)
+    monkeypatch.setattr(src, "buscar_barras", fake_buscar_que_falha)
+
+    with pytest.raises(src.MT5Error, match="falha proposital"):
+        src.sincronizar(con, "WIN$N", price_decimals=0)
+
+    assert chamadas["conectou"] is True
+    assert chamadas["desconectou"] is True
+
+
+def test_sincronizar_conecta_e_desconecta_uma_vez_no_caminho_de_sucesso(con, tmp_path, monkeypatch):
+    """Sem barras_que_falha no meio, conectar/desconectar continuam
+    acontecendo — exatamente uma vez cada, não zero (regressão que
+    esconderia a chamada real ao terminal) nem duas (desconectar chamado
+    tambem fora do finally, por engano)."""
+    seed = tmp_path / "seed.tsv"
+    ts0 = datetime(2026, 9, 1, 9, 0)
+    from tests.test_ingest import write_export
+    write_export(seed, [(ts0, 100000, 100050, 99950, 100010)])
+    ing.ingest_csv(con, seed, "WIN$N", price_decimals=0)
+
+    monkeypatch.setattr(db, "RAW_DIR", tmp_path / "raw")
+    contagem = {"conectou": 0, "desconectou": 0}
+
+    monkeypatch.setattr(src, "conectar", lambda: contagem.__setitem__("conectou", contagem["conectou"] + 1))
+    monkeypatch.setattr(src, "desconectar", lambda: contagem.__setitem__("desconectou", contagem["desconectou"] + 1))
+    monkeypatch.setattr(
+        src, "buscar_barras",
+        lambda symbol, desde, ate: pl.DataFrame({
+            "ts": [datetime(2026, 9, 2, 9, 0)],
+            "open": [100010], "high": [100060], "low": [99960], "close": [100020],
+            "tick_volume": [80], "volume": [0], "spread": [5],
+        }),
+    )
+
+    src.sincronizar(con, "WIN$N", price_decimals=0)
+
+    assert contagem == {"conectou": 1, "desconectou": 1}
