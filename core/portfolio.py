@@ -9,10 +9,15 @@ docs/superpowers/specs/2026-09-23-portfolio-correlacao-design.md.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime
+
+import numpy as np
 
 from . import db_manager as db
 from . import variantes as V
+
+_MIN_DIAS_COMUNS = 20
 
 
 def criar(nome: str) -> int:
@@ -75,3 +80,49 @@ def membros(portfolio_id: int) -> list[dict]:
             "sem_plano_ativo": ativo is None,
         })
     return out
+
+
+def _retornos_diarios(wfa_id: int) -> dict:
+    with db.connect(read_only=True) as con:
+        rows = con.execute(
+            "SELECT exit_ts, liquido FROM wfa_trades WHERE wfa_id = ?",
+            [wfa_id]).fetchall()
+    diario: dict = defaultdict(float)
+    for exit_ts, liquido in rows:
+        diario[exit_ts.date()] += liquido
+    return dict(diario)
+
+
+def correlacao(portfolio_id: int) -> dict:
+    ms = membros(portfolio_id)
+    ativos = [m for m in ms if not m["sem_plano_ativo"]]
+    avisos = [f"{m['nome']}: sem plano ativo" for m in ms if m["sem_plano_ativo"]]
+
+    series = {m["nome"]: _retornos_diarios(m["wfa_id"]) for m in ativos}
+    nomes = list(series)
+    n = len(nomes)
+    matriz = [[1.0 if i == j else None for j in range(n)] for i in range(n)]
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            a, b = series[nomes[i]], series[nomes[j]]
+            comuns = sorted(set(a) & set(b))
+            if len(comuns) < _MIN_DIAS_COMUNS:
+                avisos.append(
+                    f"{nomes[i]} × {nomes[j]}: período curto demais para correlação")
+                continue
+            xa = np.array([a[d] for d in comuns])
+            xb = np.array([b[d] for d in comuns])
+            if xa.std() == 0 or xb.std() == 0:
+                # retorno constante no periodo (ex.: so um trade fechando
+                # sempre o mesmo valor) - corrcoef daria 0/0 = nan, um
+                # numero "real" mas sem sentido, silenciosamente
+                avisos.append(
+                    f"{nomes[i]} × {nomes[j]}: sem variação suficiente no "
+                    f"período para correlação")
+                continue
+            r = float(np.corrcoef(xa, xb)[0, 1])
+            matriz[i][j] = matriz[j][i] = r
+
+    return {"variantes": nomes, "matriz": matriz, "risco_diario": None,
+            "avisos": avisos}

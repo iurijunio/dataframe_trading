@@ -532,6 +532,14 @@ def correlacao(portfolio_id: int) -> dict:
                 continue
             xa = np.array([a[d] for d in comuns])
             xb = np.array([b[d] for d in comuns])
+            if xa.std() == 0 or xb.std() == 0:
+                # retorno constante no periodo daria corrcoef 0/0 = nan,
+                # um numero "real" sem sentido, se deixado passar direto
+                # (achado real na revisao do agente)
+                avisos.append(
+                    f"{nomes[i]} × {nomes[j]}: sem variação suficiente no "
+                    f"período para correlação")
+                continue
             r = float(np.corrcoef(xa, xb)[0, 1])
             matriz[i][j] = matriz[j][i] = r
 
