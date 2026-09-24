@@ -125,3 +125,68 @@ def test_linha_do_tempo_so_traz_minerações_desta_variante(banco):
     linha = variantes.linha_do_tempo(vid_a)
 
     assert [l["run_id"] for l in linha] == [1]
+
+
+def test_plano_ativo_acha_a_mineracao_com_plano_ativo(banco):
+    vid = variantes.criar("conservadora", "rompimento_canal")
+    _mineracao_no_banco(1, vid)
+    _wfa_no_banco(10, 1)
+    plano_id = plano.salvar(
+        wfa_id=10, run_id=1, symbol="WIN$N", strategy="rompimento_canal",
+        nome="teste", params={}, profile={}, capital=100_000.0,
+        contratos=1, risco_pedido_pct=1.0, risco_efetivo_pct=0.9,
+        perda_referencia=300.0, de_onde="teste", margem=None,
+        uso_margem_pct=50.0, camada4_travada=True, disjuntor={},
+        expectativa={}, reotimizacao={}, definicoes={}, regua={})
+
+    ativo = variantes.plano_ativo(vid)
+
+    assert ativo == {"run_id": 1, "wfa_id": 10, "plano_id": plano_id}
+
+
+def test_plano_ativo_ignora_planos_aposentados(banco):
+    vid = variantes.criar("conservadora", "rompimento_canal")
+    _mineracao_no_banco(1, vid)
+    _wfa_no_banco(10, 1)
+    kwargs = dict(
+        wfa_id=10, run_id=1, symbol="WIN$N", strategy="rompimento_canal",
+        params={}, profile={}, capital=100_000.0,
+        contratos=1, risco_pedido_pct=1.0, risco_efetivo_pct=0.9,
+        perda_referencia=300.0, de_onde="teste", margem=None,
+        uso_margem_pct=50.0, camada4_travada=True, disjuntor={},
+        expectativa={}, reotimizacao={}, definicoes={}, regua={})
+    plano.salvar(nome="v1", **kwargs)
+    p1 = plano.salvar(nome="v2", **kwargs)
+    plano.aposentar(p1)
+
+    assert variantes.plano_ativo(vid) is None
+
+
+def test_plano_ativo_none_quando_variante_nao_tem_mineracao(banco):
+    vid = variantes.criar("solitaria", "rompimento_canal")
+    assert variantes.plano_ativo(vid) is None
+
+
+def test_plano_ativo_desempata_pelo_plano_id_mais_alto(banco):
+    """Duas mineracoes/wfa's diferentes da mesma variante, cada uma com
+    plano ativo (raro, mas o banco nao impede) - o desempate e pelo
+    plano_id mais alto, nao pela mineracao mais recente."""
+    vid = variantes.criar("conservadora", "rompimento_canal")
+    kwargs = dict(
+        symbol="WIN$N", strategy="rompimento_canal",
+        params={}, profile={}, capital=100_000.0,
+        contratos=1, risco_pedido_pct=1.0, risco_efetivo_pct=0.9,
+        perda_referencia=300.0, de_onde="teste", margem=None,
+        uso_margem_pct=50.0, camada4_travada=True, disjuntor={},
+        expectativa={}, reotimizacao={}, definicoes={}, regua={})
+    _mineracao_no_banco(1, vid, criado_em=datetime(2026, 1, 1))
+    _wfa_no_banco(10, 1)
+    plano.salvar(wfa_id=10, run_id=1, nome="v1", **kwargs)
+
+    _mineracao_no_banco(2, vid, criado_em=datetime(2026, 6, 1))
+    _wfa_no_banco(20, 2)
+    p2 = plano.salvar(wfa_id=20, run_id=2, nome="v2", **kwargs)
+
+    ativo = variantes.plano_ativo(vid)
+
+    assert ativo == {"run_id": 2, "wfa_id": 20, "plano_id": p2}

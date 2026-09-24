@@ -71,3 +71,24 @@ def linha_do_tempo(variante_id: int) -> list[dict]:
          "wfa_id": r[3], "plano_id": r[4], "plano_estado": r[5]}
         for r in rows
     ]
+
+
+def plano_ativo(variante_id: int) -> dict | None:
+    # Se a variante tiver mais de um wfa com plano 'ativo' ao mesmo tempo
+    # (raro - normalmente reotimizar aposenta o anterior, mas nada no
+    # banco impede duas mineracoes/wfa's diferentes com plano ativo cada
+    # uma), o desempate e pelo plano_id mais alto (o criado por ultimo),
+    # nao pela mineracao mais recente - sao ordens que costumam coincidir
+    # mas nao sao garantidamente a mesma coisa.
+    sql = """
+        SELECT m.run_id, w.wfa_id, p.plano_id
+        FROM mining_runs m
+        JOIN wfa_runs w ON w.run_id = m.run_id
+        JOIN planos_operacao p ON p.wfa_id = w.wfa_id AND p.estado = 'ativo'
+        WHERE m.variante_id = ?
+        ORDER BY p.plano_id DESC
+        LIMIT 1
+    """
+    with db.connect(read_only=True) as con:
+        r = con.execute(sql, [variante_id]).fetchone()
+    return {"run_id": r[0], "wfa_id": r[1], "plano_id": r[2]} if r else None
