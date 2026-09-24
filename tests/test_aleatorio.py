@@ -323,6 +323,25 @@ def test_calibracao_ok_verdadeiro_quando_todas_as_janelas_batem_o_alvo():
     assert r["calibracao_ok"] is True
 
 
+def test_calibracao_ok_com_piso_de_1_trade_em_janela_pequena():
+    """Achado real em produção: com poucos trades no alvo, a relação entre
+    sinais sorteados e trades que saem pode PULAR o alvo inteiro (24-26
+    sinais dão 18 trades, 27+ dão 21 — nunca exatamente 19). `5% de 19` é
+    0,95, ou seja, exige acerto exato — inatingível aqui mesmo com o
+    `calibrar` achando o melhor `n` possível (erro mínimo = 1, não 0).
+    Sem um piso absoluto de 1 trade de folga, toda janela com alvo abaixo
+    de ~20 trades trava como pendente para sempre."""
+    def rodar(janela, n_sinais, semente):
+        n_trades = (n_sinais - 8) if n_sinais < 27 else (n_sinais - 6)
+        n_trades = max(0, n_trades)
+        return n_trades, float(n_trades)
+
+    r = aleatorio.teste_janelas(rodar, ["w1"], [19], lucro_real=10.0,
+                                n=5, semente=7)
+    assert r["trades_obtidos"] == [18]     # o mais próximo possível de 19
+    assert r["calibracao_ok"] is True
+
+
 def test_janelas_e_alvos_de_tamanhos_diferentes_e_erro():
     with pytest.raises(ValueError):
         aleatorio.teste_janelas(_rodar_barato(), ["w1", "w2"], [700],

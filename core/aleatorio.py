@@ -235,8 +235,14 @@ def teste_janelas(rodar_janela, janelas, alvos, lucro_real: float,
         trades_obtidos.append(int(n_trades))
 
     tolerancia = 0.05
+    # piso de 1 trade: `alvo * 5%` fica abaixo de 1 para qualquer alvo <
+    # 20, exigindo acerto EXATO — e a relação sinais->trades é discreta e
+    # pode pular o alvo por inteiro (achado real: 24-26 sinais davam 18
+    # trades, 27+ davam 21, nunca 19). Sem o piso, toda janela com poucos
+    # trades travava pendente para sempre, mesmo com `calibrar` já tendo
+    # achado o menor erro possível.
     calibracao_ok = all(
-        abs(t - a) <= a * tolerancia for t, a in zip(trades_obtidos, alvos)
+        abs(t - a) <= max(a * tolerancia, 1) for t, a in zip(trades_obtidos, alvos)
     )
 
     sorteados = np.empty(n, dtype=float)
