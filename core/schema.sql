@@ -291,6 +291,24 @@ CREATE SEQUENCE IF NOT EXISTS seq_variante_id START 1;
 -- ligacao opcional: minerar sem escolher variante continua funcionando
 ALTER TABLE mining_runs ADD COLUMN IF NOT EXISTS variante_id BIGINT;
 
+-- portfolio: agrupa variantes, nunca plano/wfa/mineracao diretamente -
+-- "o que esta ativo hoje" e sempre resolvido na hora via
+-- variantes.plano_ativo, para reotimizar uma variante atualizar o
+-- portfolio sozinho, sem editar nada aqui.
+CREATE TABLE IF NOT EXISTS portfolios (
+    portfolio_id  BIGINT PRIMARY KEY,
+    nome          VARCHAR NOT NULL,
+    criado_em     TIMESTAMP NOT NULL
+);
+CREATE SEQUENCE IF NOT EXISTS seq_portfolio_id START 1;
+
+CREATE TABLE IF NOT EXISTS portfolio_variantes (
+    portfolio_id  BIGINT NOT NULL,
+    variante_id   BIGINT NOT NULL,
+    adicionado_em TIMESTAMP NOT NULL,
+    PRIMARY KEY (portfolio_id, variante_id)
+);
+
 CREATE SEQUENCE IF NOT EXISTS seq_wfa_id START 1;
 
 CREATE SEQUENCE IF NOT EXISTS seq_ingest_id START 1;
