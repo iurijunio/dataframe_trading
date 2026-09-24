@@ -170,3 +170,70 @@ def test_membro_sem_plano_ativo_fica_de_fora_da_matriz(banco):
     r = P.correlacao(pid)
     assert r["variantes"] == ["a"]
     assert any("sem plano ativo" in a for a in r["avisos"])
+
+
+# ------------------------------------------------------------- risco diario
+def _gravar_trade_risco(wfa_id, entry_ts, exit_ts, mae_pontos, liquido):
+    # sem linha em `instruments` para o simbolo do teste, `_trades_para_risco`
+    # cai no padrao point_value=1.0 - mae_pontos vira mae_reais 1:1, de
+    # proposito, pra deixar os numeros dos testes faceis de conferir a mao
+    with db.connect_write() as con:
+        con.execute(
+            "INSERT INTO wfa_trades (wfa_id, n, entry_ts, exit_ts, mae, "
+            "contratos, liquido) VALUES (?,?,?,?,?,?,?)",
+            [wfa_id, 0, entry_ts, exit_ts, mae_pontos, 1, liquido])
+
+
+def test_risco_diario_none_sem_sobreposicao_nenhuma(banco):
+    pid = P.criar("p1")
+    vid = variantes.criar("a", "rompimento_canal")
+    _mineracao_com_plano_ativo(1, vid, wfa_id=10)
+    P.adicionar_variante(pid, vid)
+    _gravar_trade_risco(10, datetime(2026, 1, 1, 9), datetime(2026, 1, 1, 17),
+                        mae_pontos=100, liquido=50.0)
+
+    r = P.correlacao(pid)
+    assert r["risco_diario"] is None
+
+
+def test_risco_diario_trades_sem_sobreposicao_de_horario_fica_leve(banco):
+    """Duas variantes que operam em janelas de horário que NUNCA se cruzam
+    no mesmo dia não devem produzir um risco parecido com a soma dos dois
+    piores casos - é essa a armadilha que a simulação evita."""
+    pid = P.criar("p1")
+    vid_a = variantes.criar("a", "rompimento_canal")
+    vid_b = variantes.criar("b", "rompimento_canal")
+    _mineracao_com_plano_ativo(1, vid_a, wfa_id=10)
+    _mineracao_com_plano_ativo(2, vid_b, wfa_id=11)
+    P.adicionar_variante(pid, vid_a)
+    P.adicionar_variante(pid, vid_b)
+    dia = datetime(2026, 1, 1)
+    _gravar_trade_risco(10, dia.replace(hour=9), dia.replace(hour=10),
+                        mae_pontos=500, liquido=-100.0)
+    _gravar_trade_risco(11, dia.replace(hour=14), dia.replace(hour=15),
+                        mae_pontos=500, liquido=-100.0)
+
+    r = P.correlacao(pid)
+    assert r["risco_diario"] is not None
+    assert r["risco_diario"]["p90"] > -700
+
+
+def test_risco_diario_trades_sempre_sobrepostos_fica_proximo_da_soma(banco):
+    """Duas variantes que operam o dia inteiro (janela igual) se encontram
+    em toda simulação - o p90 deve chegar perto da soma dos dois MAEs."""
+    pid = P.criar("p1")
+    vid_a = variantes.criar("a", "rompimento_canal")
+    vid_b = variantes.criar("b", "rompimento_canal")
+    _mineracao_com_plano_ativo(1, vid_a, wfa_id=10)
+    _mineracao_com_plano_ativo(2, vid_b, wfa_id=11)
+    P.adicionar_variante(pid, vid_a)
+    P.adicionar_variante(pid, vid_b)
+    dia = datetime(2026, 1, 1)
+    _gravar_trade_risco(10, dia.replace(hour=9), dia.replace(hour=17),
+                        mae_pontos=500, liquido=-100.0)
+    _gravar_trade_risco(11, dia.replace(hour=9), dia.replace(hour=17),
+                        mae_pontos=500, liquido=-100.0)
+
+    r = P.correlacao(pid)
+    assert -1000.0 < r["risco_diario"]["p90"] < -600
+    assert r["risco_diario"]["pior_dia"] == "2026-01-01"

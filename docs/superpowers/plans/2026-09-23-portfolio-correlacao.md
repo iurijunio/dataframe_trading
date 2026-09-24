@@ -711,13 +711,23 @@ def _trades_para_risco(wfa_id: int) -> list[dict]:
         ponto = float(r[0]) if r and r[0] else 1.0
         rows = con.execute(
             "SELECT entry_ts, exit_ts, mae, contratos, liquido "
-            "FROM wfa_trades WHERE wfa_id = ?", [wfa_id]).fetchall()
+            "FROM wfa_trades WHERE wfa_id = ? ORDER BY entry_ts",
+            [wfa_id]).fetchall()
     return [
         {"entry_ts": r[0], "exit_ts": r[1],
          "mae_reais": abs(r[2] or 0) * ponto * (r[3] or 1),
          "liquido": r[4] or 0.0}
         for r in rows if r[0] and r[1]
     ]
+```
+
+(`ORDER BY entry_ts` — achado da revisão: sem isso, a ordem dos trades
+não é garantida pelo DuckDB, e a simulação Monte Carlo consome o RNG na
+ordem em que os trades chegam, então dois `correlacao()` seguidos
+poderiam, em teoria, dar `p90` diferente. Confirmado deterministic com
+`ORDER BY`.)
+
+```python
 
 
 def _simular_pior_ponto(trades: list[dict], rng) -> float:
