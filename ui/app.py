@@ -21,8 +21,8 @@ from dash import Dash, dcc, html
 from ui import data as D
 from ui import theme as T
 from ui.components import (analytics_charts, candidata_panel, controls,
-                           estrategias_panel, mining, results_grid,
-                           stats_cards, wfa_panel)
+                           estrategias_panel, mining, portfolio_panel,
+                           results_grid, stats_cards, wfa_panel)
 
 # O simbolo NAO mora mais no codigo: vem do banco. Este e so o padrao de
 # arranque, o primeiro instrumento com barras.
@@ -60,7 +60,8 @@ def topbar(simbolo):
                                  {"label": "Mineração", "value": "mineracao"},
                                  {"label": "Walk-Forward", "value": "wfa"},
                                  {"label": "Candidata", "value": "candidata"},
-                                 {"label": "Estratégias", "value": "estrategias"}],
+                                 {"label": "Estratégias", "value": "estrategias"},
+                                 {"label": "Portfólio", "value": "portfolio"}],
                     ),
                 ],
                 className="brand-wrap",
@@ -176,6 +177,8 @@ def painel(inicio, fim):
             candidata_panel.painel(),
 
             estrategias_panel.painel(),
+
+            portfolio_panel.painel(),
         ],
         className="main",
     )
@@ -265,6 +268,9 @@ def build() -> Dash:
             # a varredura corre, e recalcular três painéis sobre 5.000
             # combinações nessa cadência travava a tela inteira.
             dcc.Store(id="store-mine"),
+            # qual portfolio esta aberto na tela de Portfólio - sobrevive
+            # entre re-renders de Adicionar/Remover variante
+            dcc.Store(id="store-portfolio-aberto"),
             # so pulsa enquanto a mineracao corre; ver callbacks.pulso
             dcc.Interval(id="tick", interval=800, disabled=True),
             topbar(simbolo),

@@ -981,3 +981,13 @@ body{
 .est-variante{display:flex;justify-content:space-between;padding:8px 0;
   border-bottom:1px solid var(--line);}
 .est-variante-nota{color:var(--muted);font-size:.9em;}
+
+.pf-sem-plano{color:var(--warn);}
+.pf-heatmap{display:grid;gap:2px;margin-top:12px;}
+.pf-heat-linha{display:contents;}
+.pf-heat-canto{}
+.pf-heat-rotulo{padding:6px 8px;font-size:.85em;color:var(--muted);
+  display:flex;align-items:center;}
+.pf-heat-cel{padding:6px 8px;text-align:center;border-radius:4px;
+  font-family:var(--mono);font-size:.85em;}
+.btn-sm{padding:2px 8px;font-size:.8em;}

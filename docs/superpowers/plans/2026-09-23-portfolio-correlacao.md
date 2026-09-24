@@ -1099,14 +1099,23 @@ assinatura do callback `abrir_detalhe`:
         prevent_initial_call=True,
     )
     def abrir_detalhe(_cliques_cartao, _add, _remover, variante_add, pid):
+        # Input de padrao-matching (ALL) dispara so por um cartao NOVO
+        # aparecer no DOM (n_clicks=0, nunca clicado de verdade) - sem o
+        # `valor_disparo`, criar um segundo portfolio "roubava" a tela de
+        # quem estava vendo outro (achado real na revisao do agente,
+        # confirmado manualmente: criar "Segundo" com "Primeiro" aberto).
         gatilho = ctx.triggered_id
-        if isinstance(gatilho, dict) and gatilho.get("type") == "pf-cartao":
+        valor_disparo = ctx.triggered[0]["value"] if ctx.triggered else None
+        if (isinstance(gatilho, dict) and gatilho.get("type") == "pf-cartao"
+                and valor_disparo):
             pid = gatilho["portfolio_id"]
         elif gatilho == "pf-btn-add" and pid is not None and variante_add:
             P.adicionar_variante(pid, variante_add)
-        elif isinstance(gatilho, dict) and gatilho.get("type") == "pf-btn-remover":
-            if pid is not None:
-                P.remover_variante(pid, gatilho["variante_id"])
+        elif (isinstance(gatilho, dict) and gatilho.get("type") == "pf-btn-remover"
+              and valor_disparo and pid is not None):
+            P.remover_variante(pid, gatilho["variante_id"])
+        elif isinstance(gatilho, dict) and not valor_disparo:
+            pass  # cartao/botao novo so apareceu no DOM, nao e navegacao
 
         if pid is None:
             return ({"display": "none"}, no_update, no_update, no_update,
