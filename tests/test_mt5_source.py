@@ -279,7 +279,13 @@ def test_buscar_barras_pede_em_utc_e_devolve_em_hora_de_corretor(monkeypatch):
 # -------------------------------------------------------------- sincronizar
 
 @pytest.fixture
-def con(tmp_path):
+def con(tmp_path, monkeypatch):
+    # sincronizar() chama export_parquet, que grava em PARQUET_DIR - sem
+    # isolar isso aqui, os testes deste arquivo escrevem por cima do
+    # espelho Parquet REAL (mesmo símbolo "WIN$N" da produção), corrompendo
+    # data/parquet/WIN_N/ com dado sintético do teste. Achado real: rodar a
+    # suíte apagou 660 mil barras de 2026 do espelho, sobrando 2.
+    monkeypatch.setattr(db, "PARQUET_DIR", tmp_path / "parquet")
     c = db.connect(tmp_path / "t.duckdb")
     db.init_schema(c)
     yield c
