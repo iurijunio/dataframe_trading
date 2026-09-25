@@ -71,6 +71,17 @@ def topbar(simbolo):
             html.Span(id="meta-tempo", style={"display": "none"}),
             html.Div(
                 [
+                    html.Button(id="reotimizar-selo",
+                                className="reotimizar-selo", n_clicks=0,
+                                style={"display": "none"}),
+                    html.Div(id="reotimizar-lista",
+                             className="reotimizar-lista",
+                             style={"display": "none"}),
+                ],
+                className="reotimizar-wrap",
+            ),
+            html.Div(
+                [
                     html.Button("Sincronizar com MT5", id="btn-mt5-sync",
                                 n_clicks=0, className="btn-ghost"),
                     html.Span(id="mt5-sync-status", className="mt5-sync-status"),

@@ -991,3 +991,14 @@ body{
 .pf-heat-cel{padding:6px 8px;text-align:center;border-radius:4px;
   font-family:var(--mono);font-size:.85em;}
 .btn-sm{padding:2px 8px;font-size:.8em;}
+
+.reotimizar-wrap{position:relative;margin-left:12px;}
+.reotimizar-selo{border:none;border-radius:999px;padding:4px 10px;
+  font-family:var(--mono);font-weight:600;font-size:.85em;cursor:pointer;}
+.reotimizar-selo.proximo{background:rgba(255,201,60,.18);color:var(--warn);}
+.reotimizar-selo.vencido{background:rgba(255,77,125,.18);color:var(--neg);}
+.reotimizar-lista{position:absolute;top:100%;right:0;margin-top:6px;
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  padding:8px;min-width:260px;z-index:20;}
+.reotimizar-item{padding:6px 4px;font-size:.85em;border-bottom:1px solid var(--line);}
+.reotimizar-item:last-child{border-bottom:none;}

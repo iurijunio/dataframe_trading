@@ -763,6 +763,44 @@ def register(app):
         MINERACAO.parar()
         return 0
 
+    # --------------------------------------------------- gatilho de reotimizar
+    @app.callback(
+        Output("reotimizar-selo", "children"),
+        Output("reotimizar-selo", "className"),
+        Output("reotimizar-selo", "style"),
+        Output("reotimizar-lista", "children"),
+        Input("modo", "value"),
+    )
+    def montar_selo_reotimizar(_qual):
+        from core import plano as PL
+        itens = PL.vencendo()
+        if not itens:
+            return "", "reotimizar-selo", {"display": "none"}, []
+
+        vencidos = any(i["dias_restantes"] < 0 for i in itens)
+        cor = "reotimizar-selo vencido" if vencidos else "reotimizar-selo proximo"
+        linhas = [
+            html.Div(
+                f"{i['variante_nome'] or 'sem variante'} · {i['strategy']} · "
+                + (f"venceu há {-i['dias_restantes']} dia(s)"
+                   if i["dias_restantes"] < 0
+                   else f"vence em {i['reotimizar_em']:%d/%m}"),
+                className="reotimizar-item",
+            )
+            for i in itens
+        ]
+        return str(len(itens)), cor, {"display": "inline-flex"}, linhas
+
+    @app.callback(
+        Output("reotimizar-lista", "style"),
+        Input("reotimizar-selo", "n_clicks"),
+        State("reotimizar-lista", "style"),
+        prevent_initial_call=True,
+    )
+    def alternar_lista_reotimizar(_n, estilo):
+        aberto = (estilo or {}).get("display") == "block"
+        return {"display": "none" if aberto else "block"}
+
     # --------------------------------------------------- salvar sob demanda
     @app.callback(
         Output("mine-variante", "options"),
