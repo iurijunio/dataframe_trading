@@ -15,7 +15,7 @@ reescrito não é histórico.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from . import db_manager as db
 from . import engine
@@ -358,3 +358,28 @@ def montar(wfa_id: int, d: dict, ref: dict, dim: dict, disj: dict,
         # reprodutibilidade
         **retrato_da_base(d.get("symbol")),
     }
+
+
+def vencendo(dias_aviso: int = 7, hoje: date | None = None) -> list[dict]:
+    hoje = hoje or date.today()
+    limite = hoje + timedelta(days=dias_aviso)
+    sql = """
+        SELECT p.plano_id, p.nome, p.symbol, p.strategy, p.reotimizar_em,
+               ev.nome
+        FROM planos_operacao p
+        LEFT JOIN wfa_runs w ON w.wfa_id = p.wfa_id
+        LEFT JOIN mining_runs m ON m.run_id = w.run_id
+        LEFT JOIN estrategia_variantes ev ON ev.variante_id = m.variante_id
+        WHERE p.estado = 'ativo'
+          AND p.reotimizar_em IS NOT NULL
+          AND p.reotimizar_em <= ?
+        ORDER BY p.reotimizar_em
+    """
+    with db.connect(read_only=True) as con:
+        rows = con.execute(sql, [limite]).fetchall()
+    return [
+        {"plano_id": r[0], "nome": r[1], "symbol": r[2], "strategy": r[3],
+         "reotimizar_em": r[4], "variante_nome": r[5],
+         "dias_restantes": (r[4] - hoje).days}
+        for r in rows
+    ]

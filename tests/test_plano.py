@@ -8,6 +8,7 @@ pode mudar o tamanho de posição de quem já está operando.
 from __future__ import annotations
 
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import db_manager as db  # noqa: E402
-from core import optimizer, plano, wfa_store  # noqa: E402
+from core import optimizer, plano, variantes, wfa_store  # noqa: E402
 
 
 @pytest.fixture
@@ -373,3 +374,97 @@ def test_aviso_da_ressalva_de_reotimizar(banco):
     com = plano.aviso_ao_gravar({"ressalvas": [{"nome": "Reotimizar compensou?"}]})
     assert com and "não compensou" in com.lower()
     assert plano.aviso_ao_gravar({"ressalvas": [{"nome": "Algum vizinho dá prejuízo?"}]}) is None
+
+
+# ------------------------------------------------------------ gatilho: vencendo
+def test_vencendo_plano_no_passado_tem_dias_restantes_negativo(banco):
+    hoje = date(2026, 9, 24)
+    _wfa_no_banco()
+    plano.salvar(**_campos(reotimizar_em=hoje - timedelta(days=4)))
+
+    v = plano.vencendo(dias_aviso=7, hoje=hoje)
+
+    assert len(v) == 1
+    assert v[0]["dias_restantes"] == -4
+
+
+def test_vencendo_dentro_da_janela_aparece(banco):
+    hoje = date(2026, 9, 24)
+    _wfa_no_banco()
+    plano.salvar(**_campos(reotimizar_em=hoje + timedelta(days=5)))
+
+    v = plano.vencendo(dias_aviso=7, hoje=hoje)
+    assert len(v) == 1
+
+
+def test_vencendo_no_limite_exato_da_janela_aparece(banco):
+    """`dias_aviso=7` inclui o dia exatamente 7 dias à frente — não é
+    "menos de 7", é "até 7"."""
+    hoje = date(2026, 9, 24)
+    _wfa_no_banco()
+    plano.salvar(**_campos(reotimizar_em=hoje + timedelta(days=7)))
+
+    v = plano.vencendo(dias_aviso=7, hoje=hoje)
+    assert len(v) == 1
+
+
+def test_vencendo_fora_da_janela_nao_aparece(banco):
+    hoje = date(2026, 9, 24)
+    _wfa_no_banco()
+    plano.salvar(**_campos(reotimizar_em=hoje + timedelta(days=30)))
+
+    assert plano.vencendo(dias_aviso=7, hoje=hoje) == []
+
+
+def test_vencendo_ignora_plano_aposentado(banco):
+    hoje = date(2026, 9, 24)
+    _wfa_no_banco()
+    velho = plano.salvar(**_campos(reotimizar_em=hoje - timedelta(days=10)))
+    plano.aposentar(velho)
+
+    assert plano.vencendo(dias_aviso=7, hoje=hoje) == []
+
+
+def test_vencendo_ignora_plano_sem_reotimizar_em(banco):
+    hoje = date(2026, 9, 24)
+    _wfa_no_banco()
+    plano.salvar(**_campos(reotimizar_em=None))
+
+    assert plano.vencendo(dias_aviso=7, hoje=hoje) == []
+
+
+def test_vencendo_traz_nome_da_variante(banco):
+    hoje = date(2026, 9, 24)
+    vid = variantes.criar("conservadora", "rompimento_canal")
+    with db.connect_write() as con:
+        con.execute(
+            "INSERT INTO mining_runs (run_id, symbol, strategy, created_at, "
+            "n_combinacoes, status, variante_id) VALUES (?,?,?,?,?,?,?)",
+            [1, "WIN$N", "rompimento_canal", "2026-01-01", 10, "concluida", vid])
+    _wfa_no_banco()
+    plano.salvar(**_campos(reotimizar_em=hoje - timedelta(days=1)))
+
+    v = plano.vencendo(dias_aviso=7, hoje=hoje)
+    assert v[0]["variante_nome"] == "conservadora"
+
+
+def test_vencendo_sem_variante_traz_none(banco):
+    hoje = date(2026, 9, 24)
+    _wfa_no_banco()
+    plano.salvar(**_campos(reotimizar_em=hoje - timedelta(days=1)))
+
+    v = plano.vencendo(dias_aviso=7, hoje=hoje)
+    assert v[0]["variante_nome"] is None
+
+
+def test_vencendo_ordenado_pelo_mais_vencido_primeiro(banco):
+    hoje = date(2026, 9, 24)
+    _wfa_no_banco(wfa_id=1)
+    _wfa_no_banco(run_id=2, wfa_id=2)
+    plano.salvar(**_campos(wfa_id=1, run_id=1,
+                           reotimizar_em=hoje - timedelta(days=1)))
+    plano.salvar(**_campos(wfa_id=2, run_id=2,
+                           reotimizar_em=hoje - timedelta(days=10)))
+
+    v = plano.vencendo(dias_aviso=7, hoje=hoje)
+    assert [p["dias_restantes"] for p in v] == [-10, -1]
