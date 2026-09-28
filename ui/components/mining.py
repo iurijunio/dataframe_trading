@@ -103,18 +103,36 @@ def barra_acoes():
     """
     return html.Section(
         [
+            # topo: rodar/parar, contagem e carregar/excluir mineração salva
             html.Div([
-                html.Button("Minerar", id="btn-minerar", n_clicks=0,
-                            className="btn-primary", disabled=True),
-                html.Button("Parar", id="btn-parar", n_clicks=0,
-                            className="btn-ghost btn-parar"),
-            ], className="acoes acoes-run"),
+                html.Div([
+                    html.Button("Minerar", id="btn-minerar", n_clicks=0,
+                                className="btn-primary", disabled=True),
+                    html.Button("Parar", id="btn-parar", n_clicks=0,
+                                className="btn-ghost btn-parar"),
+                ], className="acoes acoes-run"),
 
-            html.Div([
-                html.Div(id="espaco-busca", className="contagem"),
-                html.Div(id="mine-contagem", className="contagem"),
-            ], className="contagens"),
+                html.Div([
+                    html.Div(id="espaco-busca", className="contagem"),
+                    html.Div(id="mine-contagem", className="contagem"),
+                ], className="contagens"),
 
+                html.Div([
+                    dcc.Dropdown(id="mine-carregar", className="dd dd-carregar",
+                                 placeholder="carregar mineração salva…",
+                                 options=[]),
+                    # dois cliques para apagar: o primeiro vira "confirmar?".
+                    # Apagar é irreversível e o alvo fica num seletor onde a
+                    # linha errada está a um pixel da certa.
+                    html.Button("Excluir", id="btn-excluir-mine", n_clicks=0,
+                                className="btn-ghost btn-excluir", disabled=True),
+                ], className="acoes acoes-carregar"),
+            ], className="barra-linha barra-linha-topo"),
+
+            # baixo, em linha própria: salvar a varredura atual - nome,
+            # variante e o botão só cabem sem espremer numa linha à parte
+            # (achado real, 23/09/2026: espremidos na linha de cima o
+            # campo de nome ficava largura zero, impossível digitar)
             html.Div([
                 dcc.Input(id="mine-nome", type="text", className="inp",
                           placeholder="nome da mineração", debounce=True),
@@ -127,17 +145,6 @@ def barra_acoes():
                 html.Button("Salvar", id="btn-salvar", n_clicks=0,
                             className="btn-ghost btn-salvar", disabled=True),
             ], className="acoes acoes-salvar"),
-
-            html.Div([
-                dcc.Dropdown(id="mine-carregar", className="dd dd-carregar",
-                             placeholder="carregar mineração salva…",
-                             options=[]),
-                # dois cliques para apagar: o primeiro vira "confirmar?".
-                # Apagar é irreversível e o alvo fica num seletor onde a
-                # linha errada está a um pixel da certa.
-                html.Button("Excluir", id="btn-excluir-mine", n_clicks=0,
-                            className="btn-ghost btn-excluir", disabled=True),
-            ], className="acoes acoes-carregar"),
         ],
         className="barra-acoes",
     )

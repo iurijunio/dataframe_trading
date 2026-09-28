@@ -284,17 +284,20 @@ body{
 
 .acoes{display:flex;gap:9px;align-items:stretch;}
 .acoes .btn-primary{flex:1;margin-top:0;}
-/* faixa de acoes da mineracao, acima dos resultados */
+/* faixa de acoes da mineracao, acima dos resultados - duas linhas: topo
+   (rodar/parar, contagem, carregar/excluir) e embaixo, sozinha, salvar
+   (nome + variante) - numa linha so, tudo espremia a largura zero */
 .barra-acoes{
-  display:flex;align-items:center;gap:14px;flex:0 0 auto;
+  display:flex;flex-direction:column;gap:10px;flex:0 0 auto;
   background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   padding:11px 15px;
 }
+.barra-linha-topo{display:flex;align-items:center;gap:14px;}
 .barra-acoes .acoes{gap:8px;}
 .acoes-run{flex:0 0 auto;}
 .acoes-run .btn-primary{width:auto;padding:9px 22px;}
-.acoes-salvar{flex:0 0 320px;margin-left:auto;}
-.acoes-salvar .inp{flex:1;padding:8px 10px;}
+.acoes-salvar{width:100%;flex-wrap:wrap;}
+.acoes-salvar .inp{flex:1;min-width:200px;padding:8px 10px;}
 .dd-carregar{flex:0 0 260px;}
 .contagens{display:flex;flex-direction:column;gap:3px;min-width:0;}
 .contagem{
