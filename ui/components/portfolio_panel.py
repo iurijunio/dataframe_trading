@@ -6,9 +6,15 @@ ver docs/superpowers/specs/2026-09-23-portfolio-correlacao-design.md §2.
 """
 from __future__ import annotations
 
+import plotly.graph_objects as go
 from dash import dcc, html
 
+from .. import theme as T
 from .cartao import brl, card
+
+# uma cor por variante, na ordem em que entram no portfolio - ciano e
+# violeta primeiro (as duas cores de marca), o resto so para diferenciar
+_PALETA = [T.ACCENT, T.ACCENT_2, T.WARN, T.POS, T.NEG, T.INK_2]
 
 
 def painel():
@@ -29,6 +35,24 @@ def painel():
                 id="pf-detalhe", className="panel", style={"display": "none"},
                 children=[
                     html.H3(id="pf-detalhe-titulo"),
+                    # a curva manda: é a leitura principal, mesma filosofia
+                    # do Backtest e do Walk-Forward - o resto é apoio
+                    html.Div(
+                        [html.H4("Curva de capital", className="panel-title"),
+                         html.Span("uma linha por variante, capital do plano "
+                                   "ativo + trades OOS reais",
+                                   className="panel-note")],
+                        className="panel-head",
+                    ),
+                    dcc.Graph(id="pf-curva", figure=figura_curva_vazia(),
+                              className="graph pf-graph",
+                              config={"displayModeBar": False, "responsive": True}),
+
+                    html.Div([
+                        html.Div(id="pf-heatmap", className="pf-col"),
+                        html.Div(id="pf-risco", className="pf-col"),
+                    ], className="pf-grid-2"),
+
                     html.Div([
                         dcc.Dropdown(id="pf-add-variante", className="dd dd-sm",
                                     placeholder="adicionar variante…",
@@ -36,9 +60,7 @@ def painel():
                         html.Button("Adicionar", id="pf-btn-add", n_clicks=0,
                                     className="btn-ghost"),
                     ], className="acoes"),
-                    html.Div(id="pf-membros"),
-                    html.Div(id="pf-risco"),
-                    html.Div(id="pf-heatmap"),
+                    html.Div(id="pf-membros", className="pf-membros"),
                     html.Div(id="pf-avisos"),
                 ],
             ),
@@ -58,17 +80,22 @@ def cartao_portfolio(portfolio_id: int, nome: str, n_membros: int) -> html.Div:
 
 
 def linha_membro(variante_id: int, nome: str, estrategia: str,
-                 sem_plano_ativo: bool) -> html.Div:
+                 sem_plano_ativo: bool, resumo: dict | None = None) -> html.Div:
     nota = "sem plano ativo" if sem_plano_ativo else "plano ativo"
-    return html.Div(
-        [html.Span(f"{nome} · {estrategia}", className="est-variante-nome"),
-         html.Span(nota, className="est-variante-nota"
-                   + (" pf-sem-plano" if sem_plano_ativo else "")),
-         html.Button("remover", id={"type": "pf-btn-remover",
-                                    "variante_id": variante_id},
-                     className="btn-ghost btn-sm", n_clicks=0)],
-        className="est-variante",
-    )
+    filhos = [
+        html.Span(f"{nome} · {estrategia}", className="est-variante-nome"),
+        html.Span(nota, className="est-variante-nota"
+                  + (" pf-sem-plano" if sem_plano_ativo else "")),
+    ]
+    if resumo is not None:
+        sinal = "pf-pos" if resumo["retorno"] >= 0 else "pf-neg"
+        filhos.append(html.Span(
+            f"{brl(resumo['retorno'])} · {resumo['trades']} trade(s)",
+            className=f"est-variante-resumo {sinal}"))
+    filhos.append(html.Button("remover", id={"type": "pf-btn-remover",
+                                             "variante_id": variante_id},
+                              className="btn-ghost btn-sm", n_clicks=0))
+    return html.Div(filhos, className="est-variante")
 
 
 def card_risco(risco: dict | None) -> html.Div:
@@ -113,3 +140,59 @@ def heatmap(nomes: list[str], matriz: list[list]) -> html.Div:
         className="pf-heatmap",
         style={"gridTemplateColumns": f"auto repeat({n}, 1fr)"},
     )
+
+
+def figura_curva_vazia(mensagem="adicione variantes com plano ativo para "
+                                "ver a curva de capital.") -> go.Figure:
+    fig = go.Figure()
+    fig.update_layout(
+        paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,
+        margin=dict(l=8, r=8, t=8, b=8),
+        xaxis=dict(visible=False), yaxis=dict(visible=False),
+        annotations=[dict(text=mensagem, showarrow=False,
+                          font=dict(color=T.MUTED, size=13))],
+    )
+    return fig
+
+
+def figura_curva(series: dict) -> go.Figure:
+    """Uma linha por variante: capital do plano ativo + trades OOS reais,
+    acumulados em R$ - mesma leitura da curva do walk-forward, só que
+    sobrepondo as variantes do portfólio em vez de uma janela só."""
+    if not series:
+        return figura_curva_vazia()
+
+    fig = go.Figure()
+    for i, (nome, dados) in enumerate(series.items()):
+        pontos = dados["pontos"]
+        if not pontos:
+            # plano ativo mas nenhum trade OOS ainda - sem timestamp
+            # nenhum para ancorar um ponto, não tem curva pra desenhar
+            # (achado real: x/y de tamanho diferente quebrava o Scatter)
+            continue
+        cor = _PALETA[i % len(_PALETA)]
+        xs = [pontos[0]["ts"]] + [p["ts"] for p in pontos]
+        ys = [dados["capital_inicial"]] + [p["capital"] for p in pontos]
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines", name=nome,
+            line=dict(color=cor, width=1.8),
+            hovertemplate=f"%{{x|%d/%m/%Y}}<br>{nome}: R$ %{{y:,.2f}}<extra></extra>",
+        ))
+
+    if not fig.data:
+        return figura_curva_vazia(
+            "nenhuma variante com trades OOS ainda para desenhar a curva.")
+
+    fig.update_layout(
+        paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,
+        font=dict(family="JetBrains Mono, monospace", size=11, color=T.MUTED),
+        margin=dict(l=8, r=8, t=28, b=8),
+        hoverlabel=dict(bgcolor=T.SURFACE_2, bordercolor=T.ACCENT_DIM,
+                        font=dict(color=T.INK, family="JetBrains Mono, monospace")),
+        legend=dict(orientation="h", y=1.14, font=dict(color=T.MUTED)),
+        xaxis=dict(gridcolor=T.LINE_SOFT, linecolor=T.LINE,
+                  tickfont=dict(color=T.MUTED)),
+        yaxis=dict(gridcolor=T.LINE_SOFT, linecolor=T.LINE,
+                  tickfont=dict(color=T.MUTED), tickprefix="R$ "),
+    )
+    return fig

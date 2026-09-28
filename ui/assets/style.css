@@ -981,9 +981,10 @@ body{
   cursor:pointer;display:flex;flex-direction:column;gap:4px;}
 .est-cartao-nome{font-weight:600;}
 .est-cartao-nota{font-size:.85em;color:var(--muted);}
-.est-variante{display:flex;justify-content:space-between;padding:8px 0;
+.est-variante{display:flex;align-items:center;gap:14px;padding:8px 0;
   border-bottom:1px solid var(--line);}
-.est-variante-nota{color:var(--muted);font-size:.9em;}
+.est-variante-nome{margin-right:auto;}
+.est-variante-nota{color:var(--muted);font-size:.9em;white-space:nowrap;}
 
 .pf-sem-plano{color:var(--warn);}
 .pf-heatmap{display:grid;gap:2px;margin-top:12px;}
@@ -1005,3 +1006,21 @@ body{
   padding:8px;min-width:260px;z-index:20;}
 .reotimizar-item{padding:6px 4px;font-size:.85em;border-bottom:1px solid var(--line);}
 .reotimizar-item:last-child{border-bottom:none;}
+
+.pf-graph{height:320px;margin:10px 0 18px;}
+.pf-grid-2{display:flex;gap:16px;margin-bottom:18px;flex-wrap:wrap;}
+.pf-grid-2 .pf-col{flex:1;min-width:280px;}
+.pf-membros{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.est-variante-resumo{font-family:var(--mono);font-size:.85em;white-space:nowrap;}
+.pf-pos{color:var(--pos);}
+.pf-neg{color:var(--neg);}
+
+/* #pf-detalhe nunca ganhou altura propria como os outros paineis
+   (Backtest/Mineracao tem altura calculada a dedo em px) - dentro de
+   .modo-bloco{min-height:0}, o flex-shrink padrao espremia o painel
+   inteiro pra caber na viewport, e .panel{overflow:hidden} cortava o
+   que sobrava em vez de rolar (achado real do usuario, print da tela
+   cortada mesmo apos reiniciar o servidor). flex-shrink:0 devolve pro
+   painel o tamanho natural do conteudo, e quem rola e o .main de fora
+   (que ja tem overflow-y:auto, so nunca precisou disso antes). */
+#painel-portfolio .panel{flex-shrink:0;overflow:visible;}

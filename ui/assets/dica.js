@@ -93,4 +93,10 @@
     if (Date.now() - abertoPeloFoco > 250) esconder();
   }, true);
   window.addEventListener("resize", esconder);
+  // um clique costuma disparar um callback do Dash que troca o proprio no
+  // sob o mouse (ex.: Adicionar/remover no Portfolio) - o navegador nao
+  // garante mouseout quando o elemento em hover e removido assim, e o
+  // balao ficava orfao, preso na posicao antiga, por cima do que veio
+  // depois (achado real, 28/09/2026). Fecha ANTES do clique processar.
+  document.addEventListener("mousedown", esconder, true);
 })();

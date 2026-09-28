@@ -237,3 +237,49 @@ def test_risco_diario_trades_sempre_sobrepostos_fica_proximo_da_soma(banco):
     r = P.correlacao(pid)
     assert -1000.0 < r["risco_diario"]["p90"] < -600
     assert r["risco_diario"]["pior_dia"] == "2026-01-01"
+
+
+# ------------------------------------------------------------ curva de capital
+def test_curvas_acumula_a_partir_do_capital_do_plano(banco):
+    pid = P.criar("p1")
+    _membro_pronto(pid, "a", 10, [(0, 500.0), (1, -200.0), (2, 300.0)])
+
+    r = P.curvas(pid)
+
+    serie = r["series"]["a"]
+    assert serie["capital_inicial"] == 100_000.0
+    assert [p["capital"] for p in serie["pontos"]] == [
+        100_500.0, 100_300.0, 100_600.0]
+    assert r["avisos"] == []
+
+
+def test_curvas_ordena_por_data_de_saida(banco):
+    pid = P.criar("p1")
+    # grava fora de ordem de proposito - a curva tem que reordenar por exit_ts
+    vid = variantes.criar("a", "rompimento_canal")
+    _mineracao_com_plano_ativo(1, vid, wfa_id=10)
+    P.adicionar_variante(pid, vid)
+    from datetime import datetime
+    with db.connect_write() as con:
+        con.execute(
+            "INSERT INTO wfa_trades (wfa_id, n, entry_ts, exit_ts, liquido, "
+            "mae, contratos) VALUES (?,?,?,?,?,?,?)",
+            [10, 0, datetime(2026, 1, 3), datetime(2026, 1, 3), 300.0, 0, 1])
+        con.execute(
+            "INSERT INTO wfa_trades (wfa_id, n, entry_ts, exit_ts, liquido, "
+            "mae, contratos) VALUES (?,?,?,?,?,?,?)",
+            [10, 1, datetime(2026, 1, 1), datetime(2026, 1, 1), 500.0, 0, 1])
+
+    serie = P.curvas(pid)["series"]["a"]
+    assert [p["capital"] for p in serie["pontos"]] == [100_500.0, 100_800.0]
+
+
+def test_curvas_so_traz_membros_com_plano_ativo(banco):
+    pid = P.criar("p1")
+    _membro_pronto(pid, "a", 10, [(0, 100.0)])
+    vid_b = variantes.criar("b", "rompimento_canal")
+    P.adicionar_variante(pid, vid_b)
+
+    r = P.curvas(pid)
+    assert list(r["series"]) == ["a"]
+    assert any("sem plano ativo" in a for a in r["avisos"])

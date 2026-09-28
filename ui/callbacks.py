@@ -1003,6 +1003,11 @@ def register(app):
         x = x_atual if x_atual in variaram else variaram[0]
         if y_atual in validos_y and y_atual != x:
             y = y_atual
+        # padrão do eixo Y é fator de recuperação (mesmo critério padrão de
+        # otimização do MT5, ver scatter.METRICAS) - só cai num parâmetro
+        # se "fr" não estiver disponível por algum motivo
+        elif "fr" != x:
+            y = "fr"
         else:
             y = next((k for k in variaram if k != x), "fr")
         return opts_p, opts_y, opts_p, x, y

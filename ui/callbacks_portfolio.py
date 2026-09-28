@@ -38,6 +38,7 @@ def register(app):
     @app.callback(
         Output("pf-detalhe", "style"),
         Output("pf-detalhe-titulo", "children"),
+        Output("pf-curva", "figure"),
         Output("pf-membros", "children"),
         Output("pf-heatmap", "children"),
         Output("pf-risco", "children"),
@@ -72,18 +73,33 @@ def register(app):
 
         if pid is None:
             return ({"display": "none"}, no_update, no_update, no_update,
-                    no_update, no_update, pid)
+                    no_update, no_update, no_update, pid)
 
         nome = next((p["nome"] for p in P.listar() if p["portfolio_id"] == pid), "")
         ms = P.membros(pid)
+
+        curvas = P.curvas(pid)
+        series = curvas["series"]
         linhas_membros = [
-            PP.linha_membro(m["variante_id"], m["nome"], m["estrategia"],
-                            m["sem_plano_ativo"]) for m in ms
+            PP.linha_membro(
+                m["variante_id"], m["nome"], m["estrategia"],
+                m["sem_plano_ativo"],
+                resumo=_resumo_membro(series.get(m["nome"])))
+            for m in ms
         ] or [html.P("nenhuma variante neste portfólio ainda.")]
 
         r = P.correlacao(pid)
-        avisos = html.Ul([html.Li(a) for a in r["avisos"]]) if r["avisos"] else None
+        # "sem plano ativo" já sai de correlacao() E de curvas() para o
+        # mesmo membro - junta sem duplicar a linha na lista de avisos
+        avisos_txt = list(dict.fromkeys(r["avisos"] + curvas["avisos"]))
+        avisos = html.Ul([html.Li(a) for a in avisos_txt]) if avisos_txt else None
 
-        return ({"display": "block"}, nome, linhas_membros,
-                PP.heatmap(r["variantes"], r["matriz"]),
+        return ({"display": "block"}, nome, PP.figura_curva(series),
+                linhas_membros, PP.heatmap(r["variantes"], r["matriz"]),
                 PP.card_risco(r["risco_diario"]), avisos, pid)
+
+    def _resumo_membro(dados: dict | None) -> dict | None:
+        if not dados or not dados["pontos"]:
+            return None
+        return {"retorno": dados["pontos"][-1]["capital"] - dados["capital_inicial"],
+                "trades": len(dados["pontos"])}

@@ -205,3 +205,39 @@ def _risco_diario(membros_ativos: list[dict]) -> dict | None:
         return None
     pior_dia = min(piores_por_dia, key=piores_por_dia.get)
     return {"p90": piores_por_dia[pior_dia], "pior_dia": str(pior_dia)}
+
+
+def curvas(portfolio_id: int) -> dict:
+    """Curva de capital de cada variante ativa, trade a trade, em R$.
+
+    Começa no capital inicial gravado no plano ativo daquela variante e
+    acumula o `liquido` real dos trades OOS, na ordem em que fecharam -
+    mesma leitura da curva do walk-forward, só que uma linha por membro
+    do portfólio em vez de uma janela só.
+    """
+    from . import plano as PL
+
+    ms = membros(portfolio_id)
+    avisos = [f"{m['nome']}: sem plano ativo" for m in ms if m["sem_plano_ativo"]]
+    series = {}
+    for m in ms:
+        if m["sem_plano_ativo"]:
+            continue
+        ativo = V.plano_ativo(m["variante_id"])
+        d = PL.detalhes(ativo["plano_id"]) if ativo else None
+        capital = d["capital"] if d else None
+        if capital is None:
+            avisos.append(f"{m['nome']}: sem capital gravado no plano")
+            continue
+        with db.connect(read_only=True) as con:
+            rows = con.execute(
+                "SELECT exit_ts, liquido FROM wfa_trades "
+                "WHERE wfa_id = ? ORDER BY exit_ts", [m["wfa_id"]]).fetchall()
+        acumulado = capital
+        pontos = []
+        for ts, liquido in rows:
+            acumulado += liquido or 0.0
+            pontos.append({"ts": ts, "capital": acumulado})
+        series[m["nome"]] = {"capital_inicial": capital, "pontos": pontos}
+
+    return {"series": series, "avisos": avisos}
