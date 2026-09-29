@@ -6,12 +6,13 @@ ver docs/superpowers/specs/2026-09-23-portfolio-correlacao-design.md §2.
 """
 from __future__ import annotations
 
+import math
+
 import plotly.graph_objects as go
 from dash import dcc, html
 
 from .. import theme as T
-from . import stats_cards
-from .cartao import brl, card
+from .cartao import brl, card, inteiro, num, pct
 
 # uma cor por variante, na ordem em que entram no portfolio - ciano e
 # violeta primeiro (as duas cores de marca), o resto so para diferenciar
@@ -62,7 +63,19 @@ def painel():
                               className="graph pf-graph",
                               config={"displayModeBar": False, "responsive": True}),
 
-                    html.Div(id="pf-metricas", className="cards pf-metricas"),
+                    html.Div(
+                        [html.H4("Comparativo", className="panel-title"),
+                         html.Span("cada variante isolada (capital do "
+                                   "próprio plano) vs. o portfólio "
+                                   "combinado (capital do portfólio) - "
+                                   "cor mais verde é melhor, mais rosa é "
+                                   "pior, dentro de cada coluna",
+                                   className="panel-note")],
+                        className="panel-head",
+                    ),
+                    html.Div(id="pf-tabela"),
+
+                    html.Div(id="pf-simulacao"),
 
                     html.Div([
                         html.Div(id="pf-heatmap", className="pf-col"),
@@ -114,18 +127,129 @@ def linha_membro(variante_id: int, nome: str, estrategia: str,
     return html.Div(filhos, className="est-variante")
 
 
-def cartoes_metricas(m: dict | None, capital_definido: bool = True) -> list:
-    """Fator de recuperação, drawdown, sharpe etc. do portfólio COMBINADO
-    (todos os trades de todas as variantes ativas juntos) - mesma régua
-    de `core.metrics.resumo` que o Backtest e o Walk-Forward usam, via
-    `stats_cards.cartoes` (mesmos cartões, mesmo texto do (?))."""
-    if m is None:
+_COLUNAS_COMPARATIVO = [
+    ("capital_inicial", "capital", brl, None),
+    ("lucro_liquido", "lucro líquido", brl, False),
+    ("max_drawdown", "max drawdown", brl, True),
+    ("max_drawdown_pct_capital", "dd % capital", lambda v: pct(v, 1), True),
+    ("fator_recuperacao", "fator recuperação", lambda v: num(v), False),
+    ("profit_factor", "profit factor", lambda v: num(v), False),
+    ("win_rate", "win rate", lambda v: pct(v, 1), False),
+    ("sharpe", "sharpe", lambda v: num(v), False),
+    ("trades", "trades", inteiro, None),
+]
+
+
+_COR_MELHOR = "rgba(0,245,160,.30)"
+_COR_PIOR = "rgba(255,77,125,.30)"
+
+
+def _cor_comparativo(v: float, vmin: float, vmax: float, invertido: bool) -> str:
+    # profit_factor e fator_recuperacao viram +inf quando ainda não houve
+    # NENHUMA perda (edge real, sem "quanto" pra dividir) - achado da
+    # revisão: sem tratar à parte, um inf no min/max fazia TODA linha
+    # finita da coluna cair pra frac=(finito/inf)=0, ou seja, pintava tudo
+    # de "pior" mesmo quando só a linha do inf era, de fato, a melhor.
+    if math.isinf(v):
+        return _COR_PIOR if (v < 0) == (not invertido) else _COR_MELHOR
+    if vmax == vmin:
+        return "rgba(255,255,255,.03)"
+    frac = (v - vmin) / (vmax - vmin)
+    if invertido:
+        frac = 1 - frac
+    frac = max(0.0, min(1.0, frac))
+    # interpola rosa (pior, 255,77,125) -> verde (melhor, 0,245,160) -
+    # mesma dupla de cores que o resto da tela já usa pra pos/neg
+    r = round(255 + (0 - 255) * frac)
+    g = round(77 + (245 - 77) * frac)
+    b = round(125 + (160 - 125) * frac)
+    return f"rgba({r},{g},{b},.30)"
+
+
+def tabela_comparativa(linhas: list[tuple[str, dict, bool]],
+                       capital_definido: bool = True) -> html.Div:
+    """`linhas`: [(nome, resumo, destaque), ...] - `resumo` é o dict de
+    `core.metrics.resumo` (mais "capital_inicial"), `destaque` marca a
+    linha do portfólio combinado. Sombreado tipo heatmap POR COLUNA (mais
+    verde é melhor, mais rosa é pior, dentro daquela métrica) - dá pra
+    comparar o DD (e o resto) de cada variante com o do conjunto batendo
+    o olho, sem fazer conta de cabeça (pedido real do usuário: "preciso
+    comparar ao menos o DD de cada uma e do portfólio pra ver se
+    compensa")."""
+    if not linhas:
         if not capital_definido:
-            return [html.P("defina o capital do portfólio para ver as "
-                           "métricas.")]
-        return [html.P("adicione pelo menos uma variante com plano ativo "
-                       "e trades para ver as métricas do portfólio.")]
-    return list(stats_cards.cartoes(m).values())
+            return html.P("defina o capital do portfólio para ver o "
+                          "comparativo.")
+        return html.P("adicione pelo menos uma variante com plano ativo "
+                      "e trades para ver o comparativo.")
+
+    faixas = {}
+    for chave, _, _, invertido in _COLUNAS_COMPARATIVO:
+        if invertido is None:
+            continue
+        # +inf fora do min/max: senão TODA linha finita da coluna cai pra
+        # frac=(finito/inf)=0 e pinta tudo de "pior" (achado da revisão) -
+        # a própria linha com inf ganha cor fixa em `_cor_comparativo`.
+        vals = [r[chave] for _, r, _ in linhas
+               if r.get(chave) is not None and not math.isinf(r[chave])]
+        faixas[chave] = (min(vals), max(vals)) if vals else None
+
+    cabecalho = html.Tr(
+        [html.Th("")] + [html.Th(rot) for _, rot, _, _ in _COLUNAS_COMPARATIVO])
+    corpo = []
+    for nome, r, destaque in linhas:
+        celulas = [html.Td(nome, className="pf-tab-nome")]
+        for chave, _, fmt, invertido in _COLUNAS_COMPARATIVO:
+            v = r.get(chave)
+            texto = fmt(v) if v is not None else "—"
+            estilo = {}
+            if invertido is not None and v is not None and faixas.get(chave):
+                vmin, vmax = faixas[chave]
+                estilo = {"backgroundColor": _cor_comparativo(v, vmin, vmax, invertido)}
+            celulas.append(html.Td(texto, style=estilo))
+        classe = "pf-tab-linha" + (" pf-tab-destaque" if destaque else "")
+        corpo.append(html.Tr(celulas, className=classe))
+
+    return html.Table([html.Thead(cabecalho), html.Tbody(corpo)],
+                      className="pf-tabela")
+
+
+def card_simulacao(sim: dict | None) -> html.Div:
+    """Critério de Kelly e risco de ruína do portfólio combinado - pedido
+    do usuário depois de ver a primeira versão da tela: "risco de ruína,
+    capital inicial recomendado, critério de Kelly... você não chegou a
+    cogitar dados que realmente importam?"."""
+    if sim is None:
+        return html.P("defina o capital do portfólio e tenha pelo menos "
+                      "um trade combinado para ver o Kelly e o risco de "
+                      "ruína.")
+    cr = sim["capital_recomendado"]
+    if cr is None:
+        nota_cr = ("nenhum capital testado (até 4x o atual) chega no risco "
+                   "desejado - considere reduzir o risco por trade")
+    else:
+        nota_cr = f"mantém o risco de ruína em até {pct(sim['prob_max_pct'], 0)}"
+    return html.Div([
+        card("critério de kelly", pct(sim["kelly_pct"], 1),
+             explica="Fração ótima do capital a arriscar por trade, a "
+                     "partir do win rate e do payoff (f* = p - (1-p)/b). "
+                     "Kelly cheio é agressivo demais na prática - a "
+                     "maioria usa meio-Kelly.",
+             nota=f"meio-kelly: {pct(sim['kelly_meio_pct'], 1)}"),
+        card("risco de ruína (capital atual)",
+             pct(sim["prob_ruina_atual_pct"], 1),
+             explica=f"Chance, por simulação de Monte Carlo (reembaralhando "
+                     f"os trades reais milhares de vezes), do drawdown "
+                     f"simulado passar de {sim['limiar_dd_pct']:.0f}% do "
+                     f"capital do portfólio - não é o capital zerar.",
+             sinal=("neg" if sim["prob_ruina_atual_pct"] > sim["prob_max_pct"]
+                    else "pos")),
+        card("capital inicial recomendado",
+             brl(cr) if cr is not None else "—",
+             explica="Menor capital, entre uma faixa testada ao redor do "
+                     "atual, que mantém o risco de ruína dentro do limite.",
+             nota=nota_cr),
+    ], className="cards pf-metricas")
 
 
 def card_risco(risco: dict | None) -> html.Div:

@@ -65,7 +65,8 @@ def register(app):
         Output("pf-capital", "value"),
         Output("pf-capital-msg", "children"),
         Output("pf-curva", "figure"),
-        Output("pf-metricas", "children"),
+        Output("pf-tabela", "children"),
+        Output("pf-simulacao", "children"),
         Output("pf-membros", "children"),
         Output("pf-heatmap", "children"),
         Output("pf-risco", "children"),
@@ -104,7 +105,7 @@ def register(app):
         if pid is None:
             return ({"display": "none"}, no_update, no_update, no_update,
                     no_update, no_update, no_update, no_update, no_update,
-                    no_update, pid)
+                    no_update, no_update, pid)
 
         capital_msg = None
         if gatilho == "pf-btn-salvar-capital" and valor_disparo:
@@ -141,12 +142,24 @@ def register(app):
         avisos = html.Ul([html.Li(a) for a in avisos_txt]) if avisos_txt else None
 
         capital_definido = bool(p_atual) and p_atual["capital"] is not None
-        metricas = PP.cartoes_metricas(P.resumo(pid),
-                                        capital_definido=capital_definido)
+        linhas_tabela = [
+            (nome_m, res, False)
+            for nome_m, res in P.resumo_membros(pid).items()
+        ]
+        resumo_pf = P.resumo(pid)
+        if resumo_pf is not None:
+            linhas_tabela.append((
+                "Portfólio (combinado)",
+                {"capital_inicial": p_atual["capital"], **resumo_pf},
+                True))
+        tabela = PP.tabela_comparativa(linhas_tabela,
+                                       capital_definido=capital_definido)
+        simulacao = PP.card_simulacao(P.simulacao_capital(pid))
 
         return ({"display": "block"}, nome, capital_valor, capital_msg,
-                PP.figura_curva(series, curvas["combinada"]), metricas,
-                linhas_membros, PP.heatmap(r["variantes"], r["matriz"]),
+                PP.figura_curva(series, curvas["combinada"]), tabela,
+                simulacao, linhas_membros,
+                PP.heatmap(r["variantes"], r["matriz"]),
                 PP.card_risco(r["risco_diario"]), avisos, pid)
 
     def _resumo_membro(dados: dict | None) -> dict | None:

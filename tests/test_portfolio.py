@@ -370,6 +370,83 @@ def test_resumo_ordena_trades_por_data_para_o_drawdown(banco):
     assert r["max_drawdown"] == pytest.approx(1500.0)
 
 
+# ---------------------------------------------------- comparativo por membro
+def test_resumo_membros_calcula_cada_variante_isolada(banco):
+    """Pedido real do usuário: comparar o DD de cada estratégia com o do
+    portfólio combinado, lado a lado, pra ver se juntar compensa."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(0, 100.0), (1, -40.0)])
+    _membro_pronto(pid, "b", 11, [(0, 50.0)])
+
+    r = P.resumo_membros(pid)
+
+    assert set(r.keys()) == {"a", "b"}
+    assert r["a"]["trades"] == 2
+    assert r["a"]["lucro_liquido"] == pytest.approx(60.0)
+    assert r["b"]["trades"] == 1
+    assert r["b"]["lucro_liquido"] == pytest.approx(50.0)
+
+
+def test_resumo_membros_ignora_membro_sem_plano_ou_sem_trade(banco):
+    pid = P.criar("p1")
+    _membro_pronto(pid, "a", 10, [(0, 100.0)])
+    vid_b = variantes.criar("b", "rompimento_canal")
+    P.adicionar_variante(pid, vid_b)  # sem plano ativo
+
+    r = P.resumo_membros(pid)
+    assert set(r.keys()) == {"a"}
+
+
+# --------------------------------------------- Kelly e risco de ruina
+def test_simulacao_capital_none_sem_capital_do_portfolio(banco):
+    pid = P.criar("p1")
+    _membro_pronto(pid, "a", 10, [(0, 100.0)])
+    assert P.simulacao_capital(pid) is None
+
+
+def test_simulacao_capital_kelly_positivo_para_serie_com_edge_positivo(banco):
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    # 15 ganhos de 100 pra 5 perdas de 50 - edge positivo real, win_rate
+    # 75% e payoff 2:1, o par que a fórmula de Kelly usa
+    trades = [(i, 100.0) for i in range(15)] + [(i, -50.0) for i in range(15, 20)]
+    _membro_pronto(pid, "a", 10, trades)
+
+    r = P.simulacao_capital(pid)
+    assert r["kelly_pct"] > 0
+    assert r["kelly_meio_pct"] == pytest.approx(r["kelly_pct"] / 2)
+
+
+def test_simulacao_capital_recomenda_capital_maior_quando_risco_alto(banco):
+    """Capital pequeno demais pra uma série volátil deve dar probabilidade
+    de ruína alta E recomendar um capital maior que o atual (ou nenhum,
+    se nem o maior testado bastar) - nunca ficar quieto como se R$ 1.000
+    fosse suficiente pra aguentar um trade de -R$ 5.000."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 1_000.0)
+    trades = [(i, 50.0) for i in range(10)] + [(10, -5_000.0)]
+    _membro_pronto(pid, "a", 10, trades)
+
+    r = P.simulacao_capital(pid, limiar_dd_pct=40.0)
+    assert r["prob_ruina_atual_pct"] > 50.0
+    assert (r["capital_recomendado"] is None
+           or r["capital_recomendado"] > 1_000.0)
+
+
+def test_simulacao_capital_atual_ja_seguro_recomenda_ele_mesmo(banco):
+    """Capital já folgado o bastante pra série real não deve pedir pra
+    aumentar à toa - recomenda o próprio capital atual (menor fator
+    testado, 0.25x, com risco baixo o suficiente)."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 1_000_000.0)
+    _membro_pronto(pid, "a", 10, [(i, float((i % 3) - 1) * 100) for i in range(60)])
+
+    r = P.simulacao_capital(pid, limiar_dd_pct=40.0, prob_max_pct=50.0)
+    assert r["prob_ruina_atual_pct"] < 10.0
+    assert r["capital_recomendado"] == pytest.approx(1_000_000.0 * 0.25)
+
+
 def test_resumo_none_sem_variante_ativa(banco):
     pid = P.criar("p1")
     P.definir_capital(pid, 100_000.0)

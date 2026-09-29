@@ -297,6 +297,24 @@ def curvas(portfolio_id: int) -> dict:
     return {"series": series, "combinada": combinada, "avisos": avisos}
 
 
+def _trades_combinados_ordenados(portfolio_id: int) -> list[tuple]:
+    """(exit_ts, liquido, custo) de TODAS as variantes ativas, na ordem
+    cronológica REAL de fechamento - não "todos os trades de uma variante,
+    depois todos da outra" (a ordem natural de iterar os membros), que
+    mediria drawdown/Sharpe sobre um caminho que nunca existiu de verdade
+    (achado real do usuário: "888,94 de drawdown, é isso mesmo?" - não
+    era). Base compartilhada por `resumo()` e `simulacao_capital()`."""
+    todos_trades = []
+    for m in membros(portfolio_id):
+        _capital, aviso = _capital_do_membro(m)
+        if aviso:
+            continue
+        for ts, liq, cst in _trades_liquido(m["wfa_id"]):
+            todos_trades.append((ts, liq or 0.0, cst or 0.0))
+    todos_trades.sort(key=lambda t: t[0])
+    return todos_trades
+
+
 def resumo(portfolio_id: int) -> dict | None:
     """As métricas do portfólio como um todo (fator de recuperação, max
     drawdown, sharpe, profit factor...) - a mesma régua do Backtest e do
@@ -313,23 +331,98 @@ def resumo(portfolio_id: int) -> dict | None:
     if capital_portfolio is None:
         return None
 
-    ms = membros(portfolio_id)
-    todos_trades = []  # (exit_ts, liquido, custo) de todas as variantes
-    for m in ms:
-        _capital, aviso = _capital_do_membro(m)
-        if aviso:
-            continue
-        for ts, liq, cst in _trades_liquido(m["wfa_id"]):
-            todos_trades.append((ts, liq or 0.0, cst or 0.0))
-
+    todos_trades = _trades_combinados_ordenados(portfolio_id)
     if not todos_trades:
         return None
-    # a ordem entra DIRETO no cumsum do equity la em metrics.resumo - juntar
-    # "todos os trades de a, depois todos os de b" (a ordem natural do loop
-    # acima) media o drawdown sobre um caminho que nunca existiu de verdade.
-    # Só a ordem cronológica por data de fechamento da o caminho real da
-    # curva combinada, a mesma que `curvas()` já usa (achado real do
-    # usuario: "888,94 de drawdown, é isso mesmo?" - não era).
-    todos_trades.sort(key=lambda t: t[0])
     saida_ts, liquido, custo = zip(*todos_trades)
     return metrics.resumo(liquido, custo, saida_ts, capital_portfolio)
+
+
+def resumo_membros(portfolio_id: int) -> dict[str, dict]:
+    """As mesmas métricas de `resumo()`, mas uma por VARIANTE isolada (com
+    o capital do próprio plano dela) - pra comparar lado a lado com o
+    portfólio combinado e ver se juntar as estratégias realmente compensa
+    (achado real do usuário: "preciso comparar ao menos o DD de cada uma
+    e do portfólio pra ver se compensa"). Só entram membros com plano
+    ativo e pelo menos um trade OOS; os demais ficam de fora (mesmo
+    critério de `curvas()`)."""
+    from . import metrics
+
+    out = {}
+    for m in membros(portfolio_id):
+        capital, aviso = _capital_do_membro(m)
+        if aviso:
+            continue
+        rows = _trades_liquido(m["wfa_id"])
+        if not rows:
+            continue
+        saida_ts, liquido, custo = zip(*rows)
+        out[m["nome"]] = {"capital_inicial": capital,
+                          **metrics.resumo(liquido, custo, saida_ts, capital)}
+    return out
+
+
+_N_SIM_RUINA = 2000
+_FATORES_CAPITAL_TESTADOS = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
+
+
+def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
+                      prob_max_pct: float = 10.0) -> dict | None:
+    """Critério de Kelly e risco de ruína do portfólio COMBINADO - pra
+    responder "esse conjunto de estratégias compensa, e com quanto
+    capital?" (pedido real do usuário depois de ver a tela pela primeira
+    vez).
+
+    Kelly: fração ótima de capital a arriscar por trade, a partir do
+    win_rate e do payoff já calculados em `resumo()` - f* = p - (1-p)/b.
+    Também devolve meio-Kelly (metade da fração): Kelly cheio é agressivo
+    demais pra qualquer curva real, é o meio-Kelly que a maioria usa.
+
+    Risco de ruína: aqui "ruína" é o drawdown simulado passar de
+    `limiar_dd_pct` do capital, NÃO o capital chegar a zero - na prática
+    ninguém opera até zerar, para bem antes (escolha do usuário,
+    29/09/2026). Reembaralha (bootstrap, com reposição) os trades reais
+    do portfólio combinado, simula a curva pra uma faixa de capitais ao
+    redor do capital atual, e recomenda o menor capital testado que
+    mantém a probabilidade de ruína em `prob_max_pct` ou menos.
+
+    `None` quando `resumo()` também seria `None` (sem trade ou sem
+    capital do portfólio definido)."""
+    m = resumo(portfolio_id)
+    capital_atual = _capital_do_portfolio(portfolio_id)
+    if m is None or capital_atual is None:
+        return None
+
+    p = m["win_rate"] / 100.0
+    b = m["payoff"]
+    kelly_pct = max((p - (1 - p) / b) if b else 0.0, 0.0) * 100.0
+
+    liquido = np.array([t[1] for t in _trades_combinados_ordenados(portfolio_id)])
+    n = liquido.size
+    rng = np.random.default_rng(0)
+
+    def prob_ruina(capital: float) -> float:
+        amostras = rng.choice(liquido, size=(_N_SIM_RUINA, n), replace=True)
+        equity = capital + np.cumsum(amostras, axis=1)
+        pico = np.maximum.accumulate(equity, axis=1)
+        dd_pct = np.divide(pico - equity, pico, out=np.zeros_like(equity),
+                           where=pico > 0) * 100.0
+        return float((dd_pct.max(axis=1) > limiar_dd_pct).mean() * 100.0)
+
+    prob_atual = prob_ruina(capital_atual)
+    capital_recomendado = None
+    for fator in _FATORES_CAPITAL_TESTADOS:
+        c = capital_atual * fator
+        if prob_ruina(c) <= prob_max_pct:
+            capital_recomendado = c
+            break
+
+    return {
+        "kelly_pct": kelly_pct,
+        "kelly_meio_pct": kelly_pct / 2,
+        "capital_atual": capital_atual,
+        "prob_ruina_atual_pct": prob_atual,
+        "capital_recomendado": capital_recomendado,
+        "limiar_dd_pct": limiar_dd_pct,
+        "prob_max_pct": prob_max_pct,
+    }

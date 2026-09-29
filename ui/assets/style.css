@@ -1031,3 +1031,15 @@ body{
 #pf-capital-msg{align-self:center;}
 .pf-capital-loading{display:flex;align-items:center;}
 .pf-heat-legenda{display:block;margin-top:6px;}
+
+.pf-tabela{width:100%;border-collapse:collapse;margin:10px 0 18px;
+  font-family:var(--mono);font-size:.85em;}
+.pf-tabela th{padding:6px 10px;text-align:right;color:var(--muted);
+  font-weight:500;font-size:.9em;border-bottom:1px solid var(--line);
+  white-space:nowrap;}
+.pf-tabela th:first-child,.pf-tabela td:first-child{text-align:left;}
+.pf-tabela td{padding:6px 10px;text-align:right;white-space:nowrap;
+  border-bottom:1px solid var(--line-soft);}
+.pf-tab-nome{color:var(--ink);font-weight:500;}
+.pf-tab-destaque td{font-weight:600;border-top:1px solid var(--line);}
+.pf-tab-destaque .pf-tab-nome{color:var(--accent);}
