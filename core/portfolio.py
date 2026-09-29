@@ -395,7 +395,19 @@ def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
 
     p = m["win_rate"] / 100.0
     b = m["payoff"]
-    kelly_pct = max((p - (1 - p) / b) if b else 0.0, 0.0) * 100.0
+    # payoff=0.0 e um valor sentinela sobrecarregado: tanto "nenhuma perda
+    # registrada ainda" (b indefinido, NAO zero de verdade) quanto "nenhum
+    # ganho registrado" (aí sim, sem vantagem nenhuma) caem nele. Tratar
+    # os dois como Kelly=0% escondia o primeiro caso - que é bom (edge
+    # forte demais pra fórmula calcular), não neutro (achado do usuário:
+    # "13% o quê? não ficou claro").
+    kelly_indefinido = b == 0 and p > 0
+    if kelly_indefinido:
+        kelly_pct = None
+    elif b == 0:
+        kelly_pct = 0.0
+    else:
+        kelly_pct = max(p - (1 - p) / b, 0.0) * 100.0
 
     liquido = np.array([t[1] for t in _trades_combinados_ordenados(portfolio_id)])
     n = liquido.size
@@ -419,7 +431,8 @@ def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
 
     return {
         "kelly_pct": kelly_pct,
-        "kelly_meio_pct": kelly_pct / 2,
+        "kelly_meio_pct": None if kelly_pct is None else kelly_pct / 2,
+        "kelly_indefinido": kelly_indefinido,
         "capital_atual": capital_atual,
         "prob_ruina_atual_pct": prob_atual,
         "capital_recomendado": capital_recomendado,

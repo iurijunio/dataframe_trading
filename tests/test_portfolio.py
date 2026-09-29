@@ -416,6 +416,23 @@ def test_simulacao_capital_kelly_positivo_para_serie_com_edge_positivo(banco):
     r = P.simulacao_capital(pid)
     assert r["kelly_pct"] > 0
     assert r["kelly_meio_pct"] == pytest.approx(r["kelly_pct"] / 2)
+    assert r["kelly_indefinido"] is False
+
+
+def test_simulacao_capital_kelly_indefinido_sem_nenhuma_perda(banco):
+    """payoff=0.0 é sentinela pra DUAS situações bem diferentes: "sem
+    vantagem nenhuma" e "ainda sem trade perdedor pra medir o tamanho da
+    perda". Achado do usuário ("13% o quê? não ficou claro"): tratar as
+    duas como Kelly=0% escondia justamente o caso bom (edge forte demais
+    pra fórmula calcular) atrás do caso neutro."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(i, 100.0) for i in range(10)])  # só ganhos
+
+    r = P.simulacao_capital(pid)
+    assert r["kelly_indefinido"] is True
+    assert r["kelly_pct"] is None
+    assert r["kelly_meio_pct"] is None
 
 
 def test_simulacao_capital_recomenda_capital_maior_quando_risco_alto(banco):

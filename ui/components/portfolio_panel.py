@@ -229,13 +229,31 @@ def card_simulacao(sim: dict | None) -> html.Div:
                    "desejado - considere reduzir o risco por trade")
     else:
         nota_cr = f"mantém o risco de ruína em até {pct(sim['prob_max_pct'], 0)}"
+
+    if sim["kelly_indefinido"]:
+        card_kelly = card(
+            "risco por trade (critério de kelly)", "indefinido",
+            explica="Kelly precisa do tamanho médio de ganho E de perda "
+                    "pra calcular quanto % do capital arriscar por trade "
+                    "- essa série ainda não teve NENHUMA perda, então não "
+                    "dá pra medir o \"quanto\" da perda ainda (não é o "
+                    "mesmo que \"sem vantagem\").",
+            nota="ainda sem trade perdedor na amostra", texto=True)
+    else:
+        card_kelly = card(
+            "risco por trade (critério de kelly)", pct(sim["kelly_pct"], 1),
+            explica="Não é sobre número de contratos: é a fração DO "
+                    "CAPITAL a arriscar em cada trade (não o total da "
+                    "posição) pra maximizar o crescimento composto da "
+                    "curva a longo prazo. Ex.: com R$ 100.000 e Kelly de "
+                    "13%, arriscar R$ 13.000 por trade - o stop de cada "
+                    "estratégia é que converte isso em número de "
+                    "contratos. Kelly cheio é agressivo demais na "
+                    "prática - a maioria usa meio-Kelly.",
+            nota=f"meio-kelly: {pct(sim['kelly_meio_pct'], 1)}")
+
     return html.Div([
-        card("critério de kelly", pct(sim["kelly_pct"], 1),
-             explica="Fração ótima do capital a arriscar por trade, a "
-                     "partir do win rate e do payoff (f* = p - (1-p)/b). "
-                     "Kelly cheio é agressivo demais na prática - a "
-                     "maioria usa meio-Kelly.",
-             nota=f"meio-kelly: {pct(sim['kelly_meio_pct'], 1)}"),
+        card_kelly,
         card("risco de ruína (capital atual)",
              pct(sim["prob_ruina_atual_pct"], 1),
              explica=f"Chance, por simulação de Monte Carlo (reembaralhando "
