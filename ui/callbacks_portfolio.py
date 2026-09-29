@@ -8,6 +8,30 @@ from core import variantes as V
 
 from .components import portfolio_panel as PP
 
+_CAPITAL_PADRAO = "10000"
+
+
+def _parse_capital(texto) -> float | None:
+    """Aceita "200000", "200.000,50" (formato BR) ou "200000.50" - digitado
+    livre, sem os botões de +/- que o navegador desenha em <input
+    type=number> (achado real do usuário: queria digitar direto, sem
+    stepper)."""
+    if texto is None:
+        return None
+    limpo = str(texto).strip().replace("R$", "").replace(" ", "")
+    if not limpo:
+        return None
+    if "," in limpo:
+        limpo = limpo.replace(".", "").replace(",", ".")
+    try:
+        return float(limpo)
+    except ValueError:
+        return None
+
+
+def _fmt_capital(v: float) -> str:
+    return f"{v:.0f}" if v == int(v) else str(v)
+
 
 def register(app):
     @app.callback(
@@ -38,6 +62,8 @@ def register(app):
     @app.callback(
         Output("pf-detalhe", "style"),
         Output("pf-detalhe-titulo", "children"),
+        Output("pf-capital", "value"),
+        Output("pf-capital-msg", "children"),
         Output("pf-curva", "figure"),
         Output("pf-metricas", "children"),
         Output("pf-membros", "children"),
@@ -48,11 +74,14 @@ def register(app):
         Input({"type": "pf-cartao", "portfolio_id": ALL}, "n_clicks"),
         Input("pf-btn-add", "n_clicks"),
         Input({"type": "pf-btn-remover", "variante_id": ALL}, "n_clicks"),
+        Input("pf-btn-salvar-capital", "n_clicks"),
         State("pf-add-variante", "value"),
+        State("pf-capital", "value"),
         State("store-portfolio-aberto", "data"),
         prevent_initial_call=True,
     )
-    def abrir_detalhe(_cliques_cartao, _add, _remover, variante_add, pid):
+    def abrir_detalhe(_cliques_cartao, _add, _remover, _salvar_capital,
+                       variante_add, capital_digitado, pid):
         # Input de padrao-matching (ALL) dispara so por um cartao NOVO
         # aparecer no DOM (n_clicks=0, nunca clicado de verdade) - sem o
         # `valor_disparo`, criar um segundo portfolio "roubava" a tela de
@@ -74,9 +103,25 @@ def register(app):
 
         if pid is None:
             return ({"display": "none"}, no_update, no_update, no_update,
-                    no_update, no_update, no_update, no_update, pid)
+                    no_update, no_update, no_update, no_update, no_update,
+                    no_update, pid)
 
-        nome = next((p["nome"] for p in P.listar() if p["portfolio_id"] == pid), "")
+        capital_msg = None
+        if gatilho == "pf-btn-salvar-capital" and valor_disparo:
+            try:
+                P.definir_capital(pid, _parse_capital(capital_digitado))
+                capital_msg = "capital salvo."
+            except (ValueError, TypeError):
+                capital_msg = "capital inválido - digite um valor positivo."
+
+        p_atual = next((p for p in P.listar() if p["portfolio_id"] == pid), None)
+        nome = p_atual["nome"] if p_atual else ""
+        if capital_msg == "capital inválido - digite um valor positivo.":
+            capital_valor = capital_digitado
+        elif p_atual and p_atual["capital"] is not None:
+            capital_valor = _fmt_capital(p_atual["capital"])
+        else:
+            capital_valor = _CAPITAL_PADRAO
         ms = P.membros(pid)
 
         curvas = P.curvas(pid)
@@ -95,9 +140,11 @@ def register(app):
         avisos_txt = list(dict.fromkeys(r["avisos"] + curvas["avisos"]))
         avisos = html.Ul([html.Li(a) for a in avisos_txt]) if avisos_txt else None
 
-        metricas = PP.cartoes_metricas(P.resumo(pid))
+        capital_definido = bool(p_atual) and p_atual["capital"] is not None
+        metricas = PP.cartoes_metricas(P.resumo(pid),
+                                        capital_definido=capital_definido)
 
-        return ({"display": "block"}, nome,
+        return ({"display": "block"}, nome, capital_valor, capital_msg,
                 PP.figura_curva(series, curvas["combinada"]), metricas,
                 linhas_membros, PP.heatmap(r["variantes"], r["matriz"]),
                 PP.card_risco(r["risco_diario"]), avisos, pid)

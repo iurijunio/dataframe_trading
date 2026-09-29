@@ -242,6 +242,7 @@ def test_risco_diario_trades_sempre_sobrepostos_fica_proximo_da_soma(banco):
 # ------------------------------------------------------------ curva de capital
 def test_curvas_acumula_a_partir_do_capital_do_plano(banco):
     pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
     _membro_pronto(pid, "a", 10, [(0, 500.0), (1, -200.0), (2, 300.0)])
 
     r = P.curvas(pid)
@@ -285,13 +286,17 @@ def test_curvas_so_traz_membros_com_plano_ativo(banco):
     assert any("sem plano ativo" in a for a in r["avisos"])
 
 
-def test_curvas_combinada_soma_os_capitais_iniciais(banco):
+def test_curvas_combinada_usa_o_capital_do_portfolio_nao_a_soma(banco):
+    """Achado real do usuário: somar o capital de cada plano assumia
+    contas separadas por variante. Na prática é a MESMA conta rodando as
+    duas juntas - o capital combinado é o do PORTFÓLIO, não a soma."""
     pid = P.criar("p1")
+    P.definir_capital(pid, 150_000.0)
     _membro_pronto(pid, "a", 10, [(0, 100.0)])
     _membro_pronto(pid, "b", 11, [(0, -50.0)])
 
     r = P.curvas(pid)
-    assert r["combinada"]["capital_inicial"] == 200_000.0  # 2 x 100.000
+    assert r["combinada"]["capital_inicial"] == 150_000.0  # nao 200.000
 
 
 def test_curvas_combinada_intercala_por_data_de_fechamento(banco):
@@ -299,19 +304,21 @@ def test_curvas_combinada_intercala_por_data_de_fechamento(banco):
     seguir a ordem cronológica real, não uma variante inteira e depois
     a outra."""
     pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
     _membro_pronto(pid, "a", 10, [(0, 100.0), (2, 100.0)])   # dias 0 e 2
     _membro_pronto(pid, "b", 11, [(1, -30.0)])                # dia 1, no meio
 
     r = P.curvas(pid)
     capitais = [p["capital"] for p in r["combinada"]["pontos"]]
-    # 200.000 + 100 (dia 0, "a") = 200.100
-    # 200.100 - 30 (dia 1, "b") = 200.070
-    # 200.070 + 100 (dia 2, "a") = 200.170
-    assert capitais == [200_100.0, 200_070.0, 200_170.0]
+    # 100.000 + 100 (dia 0, "a") = 100.100
+    # 100.100 - 30 (dia 1, "b") = 100.070
+    # 100.070 + 100 (dia 2, "a") = 100.170
+    assert capitais == [100_100.0, 100_070.0, 100_170.0]
 
 
 def test_curvas_combinada_none_sem_nenhum_trade(banco):
     pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
     vid = variantes.criar("a", "rompimento_canal")
     P.adicionar_variante(pid, vid)  # sem plano ativo nenhum
 
@@ -319,9 +326,21 @@ def test_curvas_combinada_none_sem_nenhum_trade(banco):
     assert r["combinada"] is None
 
 
+def test_curvas_combinada_none_sem_capital_do_portfolio(banco):
+    """Trades existem, mas ninguém disse quanto a conta do portfólio
+    tem - sem isso não dá pra desenhar uma curva em R$ honesta."""
+    pid = P.criar("p1")  # capital nunca definido
+    _membro_pronto(pid, "a", 10, [(0, 100.0)])
+
+    r = P.curvas(pid)
+    assert r["combinada"] is None
+    assert any("capital do portfólio" in a for a in r["avisos"])
+
+
 # ------------------------------------------------------------------ resumo
 def test_resumo_agrega_trades_de_todas_as_variantes(banco):
     pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
     _membro_pronto(pid, "a", 10, [(0, 100.0), (1, -40.0)])
     _membro_pronto(pid, "b", 11, [(0, 50.0)])
 
@@ -330,6 +349,51 @@ def test_resumo_agrega_trades_de_todas_as_variantes(banco):
     assert r["lucro_liquido"] == pytest.approx(110.0)  # 100 - 40 + 50
 
 
+def test_resumo_ordena_trades_por_data_para_o_drawdown(banco):
+    """Achado real do usuário ("é isso mesmo o drawdown combinado?"): os
+    trades das duas variantes entravam na conta member-a-member (todos os
+    de "a", depois todos os de "b"), não intercalados por data como em
+    `curvas()`. O lucro total bate igual nas duas ordens, mas o CAMINHO da
+    curva - e portanto o drawdown máximo - muda de verdade quando a ordem
+    cronológica dá um pico mais alto antes da queda."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 1_000.0)
+    # sequencial (a inteiro, depois b): 1000 -500(a)=500 +1000(b)=1500 -1000(b)=500
+    #   -> dd = 1000 (de 1500 a 500)
+    # cronologico (b dia0, a dia1, b dia2): 1000 +1000(b)=2000 -500(a)=1500 -1000(b)=500
+    #   -> dd = 1500 (de 2000 a 500)
+    _membro_pronto(pid, "a", 10, [(1, -500.0)])
+    _membro_pronto(pid, "b", 11, [(0, 1000.0), (2, -1000.0)])
+
+    r = P.resumo(pid)
+    assert r["lucro_liquido"] == pytest.approx(-500.0)
+    assert r["max_drawdown"] == pytest.approx(1500.0)
+
+
 def test_resumo_none_sem_variante_ativa(banco):
     pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
     assert P.resumo(pid) is None
+
+
+def test_resumo_none_sem_capital_do_portfolio(banco):
+    pid = P.criar("p1")
+    _membro_pronto(pid, "a", 10, [(0, 100.0)])
+    assert P.resumo(pid) is None
+
+
+# --------------------------------------------------------- capital do portfolio
+def test_definir_capital_aparece_no_listar(banco):
+    pid = P.criar("p1")
+    assert P.listar()[0]["capital"] is None
+
+    P.definir_capital(pid, 250_000.0)
+    assert P.listar()[0]["capital"] == 250_000.0
+
+
+def test_definir_capital_recusa_valor_nao_positivo(banco):
+    pid = P.criar("p1")
+    with pytest.raises(ValueError, match="positivo"):
+        P.definir_capital(pid, 0)
+    with pytest.raises(ValueError, match="positivo"):
+        P.definir_capital(pid, -100.0)

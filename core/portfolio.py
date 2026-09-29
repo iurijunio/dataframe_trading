@@ -37,16 +37,28 @@ def criar(nome: str) -> int:
 def listar() -> list[dict]:
     with db.connect(read_only=True) as con:
         rows = con.execute(
-            "SELECT p.portfolio_id, p.nome, p.criado_em, "
+            "SELECT p.portfolio_id, p.nome, p.criado_em, p.capital, "
             "count(pv.variante_id) "
             "FROM portfolios p "
             "LEFT JOIN portfolio_variantes pv "
             "ON pv.portfolio_id = p.portfolio_id "
-            "GROUP BY p.portfolio_id, p.nome, p.criado_em "
+            "GROUP BY p.portfolio_id, p.nome, p.criado_em, p.capital "
             "ORDER BY p.nome"
         ).fetchall()
     return [{"portfolio_id": r[0], "nome": r[1], "criado_em": r[2],
-             "n_membros": r[3]} for r in rows]
+             "capital": r[3], "n_membros": r[4]} for r in rows]
+
+
+def definir_capital(portfolio_id: int, capital: float) -> None:
+    """Capital da CONTA que roda o portfólio inteiro - independente do
+    capital de cada plano individual (esse só dimensiona a posição
+    daquela variante sozinha). É a partir dele que a curva combinada e
+    as métricas do portfólio partem."""
+    if capital is None or capital <= 0:
+        raise ValueError("capital do portfólio precisa ser um valor positivo")
+    with db.connect_write() as con, db.transacao(con):
+        con.execute("UPDATE portfolios SET capital = ? WHERE portfolio_id = ?",
+                    [float(capital), portfolio_id])
 
 
 def adicionar_variante(portfolio_id: int, variante_id: int) -> None:
@@ -230,21 +242,30 @@ def _capital_do_membro(m: dict) -> tuple[float | None, str | None]:
     return capital, None
 
 
+def _capital_do_portfolio(portfolio_id: int) -> float | None:
+    with db.connect(read_only=True) as con:
+        r = con.execute("SELECT capital FROM portfolios WHERE portfolio_id = ?",
+                        [portfolio_id]).fetchone()
+    return r[0] if r else None
+
+
 def curvas(portfolio_id: int) -> dict:
     """Curva de capital de cada variante ativa, trade a trade, em R$, mais
-    a curva COMBINADA do portfólio (soma dos capitais iniciais, trades de
-    todas as variantes intercalados em ordem cronológica de fechamento).
+    a curva COMBINADA do portfólio (todas as variantes intercaladas em
+    ordem cronológica de fechamento, partindo do capital DO PORTFÓLIO -
+    a mesma conta rodando as duas juntas, não a soma do capital de cada
+    plano, que assumiria contas separadas por variante).
 
     Começa no capital inicial gravado no plano ativo de cada variante e
     acumula o `liquido` real dos trades OOS, na ordem em que fecharam -
     mesma leitura da curva do walk-forward, só que uma linha por membro
-    do portfólio (mais uma linha extra, a soma) em vez de uma janela só.
+    do portfólio (mais uma linha extra, a combinada) em vez de uma
+    janela só.
     """
     ms = membros(portfolio_id)
     avisos = []
     series = {}
     todos_trades = []  # (exit_ts, liquido) de TODAS as variantes, pra combinada
-    capital_total = 0.0
 
     for m in ms:
         capital, aviso = _capital_do_membro(m)
@@ -259,17 +280,19 @@ def curvas(portfolio_id: int) -> dict:
             pontos.append({"ts": ts, "capital": acumulado})
             todos_trades.append((ts, liquido or 0.0))
         series[m["nome"]] = {"capital_inicial": capital, "pontos": pontos}
-        capital_total += capital
 
     combinada = None
-    if todos_trades:
+    capital_portfolio = _capital_do_portfolio(portfolio_id)
+    if todos_trades and capital_portfolio is None:
+        avisos.append("defina o capital do portfólio para ver a curva combinada")
+    elif todos_trades:
         todos_trades.sort(key=lambda t: t[0])
-        acumulado = capital_total
+        acumulado = capital_portfolio
         pontos = []
         for ts, liquido in todos_trades:
             acumulado += liquido
             pontos.append({"ts": ts, "capital": acumulado})
-        combinada = {"capital_inicial": capital_total, "pontos": pontos}
+        combinada = {"capital_inicial": capital_portfolio, "pontos": pontos}
 
     return {"series": series, "combinada": combinada, "avisos": avisos}
 
@@ -278,25 +301,35 @@ def resumo(portfolio_id: int) -> dict | None:
     """As métricas do portfólio como um todo (fator de recuperação, max
     drawdown, sharpe, profit factor...) - a mesma régua do Backtest e do
     Walk-Forward (`core.metrics.resumo`), aplicada na curva COMBINADA:
-    todos os trades de todas as variantes ativas, juntos.
+    todos os trades de todas as variantes ativas, juntos, a partir do
+    capital DO PORTFÓLIO (não a soma do capital de cada plano).
 
-    `None` quando não há trade nenhum pra medir (nenhuma variante ativa,
-    ou nenhuma delas operou ainda)."""
+    `None` quando não há trade nenhum pra medir, ou quando o capital do
+    portfólio ainda não foi definido - sem ele, drawdown %, Sharpe etc.
+    não têm uma base de verdade pra dividir."""
     from . import metrics
 
+    capital_portfolio = _capital_do_portfolio(portfolio_id)
+    if capital_portfolio is None:
+        return None
+
     ms = membros(portfolio_id)
-    liquido, custo, saida_ts = [], [], []
-    capital_total = 0.0
+    todos_trades = []  # (exit_ts, liquido, custo) de todas as variantes
     for m in ms:
-        capital, aviso = _capital_do_membro(m)
+        _capital, aviso = _capital_do_membro(m)
         if aviso:
             continue
-        capital_total += capital
         for ts, liq, cst in _trades_liquido(m["wfa_id"]):
-            liquido.append(liq or 0.0)
-            custo.append(cst or 0.0)
-            saida_ts.append(ts)
+            todos_trades.append((ts, liq or 0.0, cst or 0.0))
 
-    if not liquido:
+    if not todos_trades:
         return None
-    return metrics.resumo(liquido, custo, saida_ts, capital_total)
+    # a ordem entra DIRETO no cumsum do equity la em metrics.resumo - juntar
+    # "todos os trades de a, depois todos os de b" (a ordem natural do loop
+    # acima) media o drawdown sobre um caminho que nunca existiu de verdade.
+    # Só a ordem cronológica por data de fechamento da o caminho real da
+    # curva combinada, a mesma que `curvas()` já usa (achado real do
+    # usuario: "888,94 de drawdown, é isso mesmo?" - não era).
+    todos_trades.sort(key=lambda t: t[0])
+    saida_ts, liquido, custo = zip(*todos_trades)
+    return metrics.resumo(liquido, custo, saida_ts, capital_portfolio)

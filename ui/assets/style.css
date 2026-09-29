@@ -1026,3 +1026,8 @@ body{
 #painel-portfolio .panel{flex-shrink:0;overflow:visible;}
 
 .pf-metricas{margin:4px 0 18px;}
+
+#pf-capital{max-width:260px;flex:0 0 auto;padding:9px 12px;}
+#pf-capital-msg{align-self:center;}
+.pf-capital-loading{display:flex;align-items:center;}
+.pf-heat-legenda{display:block;margin-top:6px;}

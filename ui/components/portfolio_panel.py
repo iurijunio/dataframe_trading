@@ -36,13 +36,25 @@ def painel():
                 id="pf-detalhe", className="panel", style={"display": "none"},
                 children=[
                     html.H3(id="pf-detalhe-titulo"),
+                    html.Div([
+                        dcc.Input(id="pf-capital", type="text",
+                                  inputMode="numeric", className="inp",
+                                  value="10000",
+                                  placeholder="capital do portfólio (R$)"),
+                        html.Button("Salvar capital", id="pf-btn-salvar-capital",
+                                    n_clicks=0, className="btn-ghost"),
+                        dcc.Loading(
+                            html.Span(id="pf-capital-msg", className="panel-note"),
+                            type="circle", className="pf-capital-loading"),
+                    ], className="acoes"),
                     # a curva manda: é a leitura principal, mesma filosofia
                     # do Backtest e do Walk-Forward - o resto é apoio
                     html.Div(
                         [html.H4("Curva de capital", className="panel-title"),
-                         html.Span("uma linha por variante + a linha branca "
-                                   "combinada (soma), capital do plano ativo "
-                                   "+ trades OOS reais",
+                         html.Span("uma linha por variante (capital do "
+                                   "plano ativo + trades OOS reais) + a "
+                                   "linha branca combinada, a partir do "
+                                   "capital do portfólio",
                                    className="panel-note")],
                         className="panel-head",
                     ),
@@ -102,12 +114,15 @@ def linha_membro(variante_id: int, nome: str, estrategia: str,
     return html.Div(filhos, className="est-variante")
 
 
-def cartoes_metricas(m: dict | None) -> list:
+def cartoes_metricas(m: dict | None, capital_definido: bool = True) -> list:
     """Fator de recuperação, drawdown, sharpe etc. do portfólio COMBINADO
     (todos os trades de todas as variantes ativas juntos) - mesma régua
     de `core.metrics.resumo` que o Backtest e o Walk-Forward usam, via
     `stats_cards.cartoes` (mesmos cartões, mesmo texto do (?))."""
     if m is None:
+        if not capital_definido:
+            return [html.P("defina o capital do portfólio para ver as "
+                           "métricas.")]
         return [html.P("adicione pelo menos uma variante com plano ativo "
                        "e trades para ver as métricas do portfólio.")]
     return list(stats_cards.cartoes(m).values())
@@ -133,6 +148,21 @@ def _cor_celula(r: float | None) -> str:
     return f"rgba({cor},{alpha:.2f})"
 
 
+def _leitura_correlacao(r: float | None) -> str:
+    """0,00 e 1,00 na diagonal não tem leitura (mesma variante vs. ela
+    mesma) - fora dela, quanto mais perto de zero, mais a variante ajuda a
+    diversificar o portfólio; perto de 1 ela é redundante (some junto);
+    perto de -1 ela compensa (uma cai quando a outra sobe)."""
+    if r is None:
+        return ""
+    a = abs(r)
+    if a < 0.3:
+        return "baixa - boa diversificação"
+    if a < 0.6:
+        return "moderada"
+    return "alta - redundante" if r > 0 else "alta - compensa bem"
+
+
 def heatmap(nomes: list[str], matriz: list[list]) -> html.Div:
     if len(nomes) < 2:
         return html.P("adicione pelo menos duas variantes com plano ativo "
@@ -146,14 +176,21 @@ def heatmap(nomes: list[str], matriz: list[list]) -> html.Div:
         for j in range(n):
             v = matriz[i][j]
             texto = f"{v:.2f}" if v is not None else "—"
+            titulo = _leitura_correlacao(v) if i != j else ""
             linha.append(html.Div(
-                texto, className="pf-heat-cel",
+                texto, className="pf-heat-cel", title=titulo,
                 style={"backgroundColor": _cor_celula(v)}))
         linhas.append(linha)
     return html.Div(
-        [html.Div(linha, className="pf-heat-linha") for linha in linhas],
-        className="pf-heatmap",
-        style={"gridTemplateColumns": f"auto repeat({n}, 1fr)"},
+        [html.Div(
+            [html.Div(linha, className="pf-heat-linha") for linha in linhas],
+            className="pf-heatmap",
+            style={"gridTemplateColumns": f"auto repeat({n}, 1fr)"},
+        ),
+         html.Span("passe o mouse sobre um valor: até 0,3 é baixa "
+                   "correlação (bom p/ diversificar) · 0,3–0,6 moderada · "
+                   "acima de 0,6 alta (redundante)",
+                   className="panel-note pf-heat-legenda")],
     )
 
 

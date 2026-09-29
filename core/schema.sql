@@ -300,6 +300,13 @@ CREATE TABLE IF NOT EXISTS portfolios (
     nome          VARCHAR NOT NULL,
     criado_em     TIMESTAMP NOT NULL
 );
+-- capital da CONTA que roda o portfolio inteiro - independente do
+-- capital de cada plano individual (esse so dimensiona a POSICAO daquela
+-- variante sozinha). Sem isto, a curva combinada nao tem de onde partir:
+-- somar o capital de cada plano assumia contas separadas por variante,
+-- quando na pratica e a MESMA conta rodando as duas juntas (achado real
+-- do usuario, 28/09/2026). NULL ate o usuario digitar.
+ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS capital DOUBLE;
 CREATE SEQUENCE IF NOT EXISTS seq_portfolio_id START 1;
 
 CREATE TABLE IF NOT EXISTS portfolio_variantes (
