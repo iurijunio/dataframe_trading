@@ -39,6 +39,7 @@ def register(app):
         Output("pf-detalhe", "style"),
         Output("pf-detalhe-titulo", "children"),
         Output("pf-curva", "figure"),
+        Output("pf-metricas", "children"),
         Output("pf-membros", "children"),
         Output("pf-heatmap", "children"),
         Output("pf-risco", "children"),
@@ -73,7 +74,7 @@ def register(app):
 
         if pid is None:
             return ({"display": "none"}, no_update, no_update, no_update,
-                    no_update, no_update, no_update, pid)
+                    no_update, no_update, no_update, no_update, pid)
 
         nome = next((p["nome"] for p in P.listar() if p["portfolio_id"] == pid), "")
         ms = P.membros(pid)
@@ -94,7 +95,10 @@ def register(app):
         avisos_txt = list(dict.fromkeys(r["avisos"] + curvas["avisos"]))
         avisos = html.Ul([html.Li(a) for a in avisos_txt]) if avisos_txt else None
 
-        return ({"display": "block"}, nome, PP.figura_curva(series),
+        metricas = PP.cartoes_metricas(P.resumo(pid))
+
+        return ({"display": "block"}, nome,
+                PP.figura_curva(series, curvas["combinada"]), metricas,
                 linhas_membros, PP.heatmap(r["variantes"], r["matriz"]),
                 PP.card_risco(r["risco_diario"]), avisos, pid)
 

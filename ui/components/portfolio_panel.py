@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from dash import dcc, html
 
 from .. import theme as T
+from . import stats_cards
 from .cartao import brl, card
 
 # uma cor por variante, na ordem em que entram no portfolio - ciano e
@@ -39,14 +40,17 @@ def painel():
                     # do Backtest e do Walk-Forward - o resto é apoio
                     html.Div(
                         [html.H4("Curva de capital", className="panel-title"),
-                         html.Span("uma linha por variante, capital do plano "
-                                   "ativo + trades OOS reais",
+                         html.Span("uma linha por variante + a linha branca "
+                                   "combinada (soma), capital do plano ativo "
+                                   "+ trades OOS reais",
                                    className="panel-note")],
                         className="panel-head",
                     ),
                     dcc.Graph(id="pf-curva", figure=figura_curva_vazia(),
                               className="graph pf-graph",
                               config={"displayModeBar": False, "responsive": True}),
+
+                    html.Div(id="pf-metricas", className="cards pf-metricas"),
 
                     html.Div([
                         html.Div(id="pf-heatmap", className="pf-col"),
@@ -96,6 +100,17 @@ def linha_membro(variante_id: int, nome: str, estrategia: str,
                                              "variante_id": variante_id},
                               className="btn-ghost btn-sm", n_clicks=0))
     return html.Div(filhos, className="est-variante")
+
+
+def cartoes_metricas(m: dict | None) -> list:
+    """Fator de recuperação, drawdown, sharpe etc. do portfólio COMBINADO
+    (todos os trades de todas as variantes ativas juntos) - mesma régua
+    de `core.metrics.resumo` que o Backtest e o Walk-Forward usam, via
+    `stats_cards.cartoes` (mesmos cartões, mesmo texto do (?))."""
+    if m is None:
+        return [html.P("adicione pelo menos uma variante com plano ativo "
+                       "e trades para ver as métricas do portfólio.")]
+    return list(stats_cards.cartoes(m).values())
 
 
 def card_risco(risco: dict | None) -> html.Div:
@@ -155,10 +170,12 @@ def figura_curva_vazia(mensagem="adicione variantes com plano ativo para "
     return fig
 
 
-def figura_curva(series: dict) -> go.Figure:
-    """Uma linha por variante: capital do plano ativo + trades OOS reais,
-    acumulados em R$ - mesma leitura da curva do walk-forward, só que
-    sobrepondo as variantes do portfólio em vez de uma janela só."""
+def figura_curva(series: dict, combinada: dict | None = None) -> go.Figure:
+    """Uma linha por variante (fina, colorida) mais a linha COMBINADA do
+    portfólio (grossa, branca, por cima das outras) - capital do plano
+    ativo + trades OOS reais, acumulados em R$. Mesma leitura da curva do
+    walk-forward, só que sobrepondo as variantes do portfólio em vez de
+    uma janela só."""
     if not series:
         return figura_curva_vazia()
 
@@ -175,13 +192,23 @@ def figura_curva(series: dict) -> go.Figure:
         ys = [dados["capital_inicial"]] + [p["capital"] for p in pontos]
         fig.add_trace(go.Scatter(
             x=xs, y=ys, mode="lines", name=nome,
-            line=dict(color=cor, width=1.8),
+            line=dict(color=cor, width=1.4),
             hovertemplate=f"%{{x|%d/%m/%Y}}<br>{nome}: R$ %{{y:,.2f}}<extra></extra>",
         ))
 
-    if not fig.data:
+    if not fig.data and not (combinada and combinada["pontos"]):
         return figura_curva_vazia(
             "nenhuma variante com trades OOS ainda para desenhar a curva.")
+
+    if combinada and combinada["pontos"]:
+        pontos = combinada["pontos"]
+        xs = [pontos[0]["ts"]] + [p["ts"] for p in pontos]
+        ys = [combinada["capital_inicial"]] + [p["capital"] for p in pontos]
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines", name="Portfólio (combinado)",
+            line=dict(color=T.INK, width=2.6),
+            hovertemplate="%{x|%d/%m/%Y}<br>combinado: R$ %{y:,.2f}<extra></extra>",
+        ))
 
     fig.update_layout(
         paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,

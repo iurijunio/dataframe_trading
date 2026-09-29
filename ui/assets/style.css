@@ -1024,3 +1024,5 @@ body{
    painel o tamanho natural do conteudo, e quem rola e o .main de fora
    (que ja tem overflow-y:auto, so nunca precisou disso antes). */
 #painel-portfolio .panel{flex-shrink:0;overflow:visible;}
+
+.pf-metricas{margin:4px 0 18px;}

@@ -283,3 +283,53 @@ def test_curvas_so_traz_membros_com_plano_ativo(banco):
     r = P.curvas(pid)
     assert list(r["series"]) == ["a"]
     assert any("sem plano ativo" in a for a in r["avisos"])
+
+
+def test_curvas_combinada_soma_os_capitais_iniciais(banco):
+    pid = P.criar("p1")
+    _membro_pronto(pid, "a", 10, [(0, 100.0)])
+    _membro_pronto(pid, "b", 11, [(0, -50.0)])
+
+    r = P.curvas(pid)
+    assert r["combinada"]["capital_inicial"] == 200_000.0  # 2 x 100.000
+
+
+def test_curvas_combinada_intercala_por_data_de_fechamento(banco):
+    """Trade de "b" fecha ENTRE os dois de "a" - a combinada tem que
+    seguir a ordem cronológica real, não uma variante inteira e depois
+    a outra."""
+    pid = P.criar("p1")
+    _membro_pronto(pid, "a", 10, [(0, 100.0), (2, 100.0)])   # dias 0 e 2
+    _membro_pronto(pid, "b", 11, [(1, -30.0)])                # dia 1, no meio
+
+    r = P.curvas(pid)
+    capitais = [p["capital"] for p in r["combinada"]["pontos"]]
+    # 200.000 + 100 (dia 0, "a") = 200.100
+    # 200.100 - 30 (dia 1, "b") = 200.070
+    # 200.070 + 100 (dia 2, "a") = 200.170
+    assert capitais == [200_100.0, 200_070.0, 200_170.0]
+
+
+def test_curvas_combinada_none_sem_nenhum_trade(banco):
+    pid = P.criar("p1")
+    vid = variantes.criar("a", "rompimento_canal")
+    P.adicionar_variante(pid, vid)  # sem plano ativo nenhum
+
+    r = P.curvas(pid)
+    assert r["combinada"] is None
+
+
+# ------------------------------------------------------------------ resumo
+def test_resumo_agrega_trades_de_todas_as_variantes(banco):
+    pid = P.criar("p1")
+    _membro_pronto(pid, "a", 10, [(0, 100.0), (1, -40.0)])
+    _membro_pronto(pid, "b", 11, [(0, 50.0)])
+
+    r = P.resumo(pid)
+    assert r["trades"] == 3
+    assert r["lucro_liquido"] == pytest.approx(110.0)  # 100 - 40 + 50
+
+
+def test_resumo_none_sem_variante_ativa(banco):
+    pid = P.criar("p1")
+    assert P.resumo(pid) is None
