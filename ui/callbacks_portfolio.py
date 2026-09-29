@@ -167,3 +167,39 @@ def register(app):
             return None
         return {"retorno": dados["pontos"][-1]["capital"] - dados["capital_inicial"],
                 "trades": len(dados["pontos"])}
+
+    @app.callback(
+        Output("pf-cresc-grafico", "figure"),
+        Output("pf-cresc-resumo", "children"),
+        Input("pf-cresc-btn", "n_clicks"),
+        State("pf-cresc-capital", "value"),
+        State("pf-cresc-risco", "value"),
+        State("pf-cresc-trades", "value"),
+        State("store-portfolio-aberto", "data"),
+        prevent_initial_call=True,
+    )
+    def simular_crescimento(_n, capital_txt, risco_txt, trades_txt, pid):
+        if pid is None:
+            return no_update, no_update
+
+        capital = _parse_capital(capital_txt)
+        risco = _parse_capital(risco_txt)
+        n_trades = _parse_capital(trades_txt)
+        try:
+            n_trades = int(n_trades) if n_trades is not None else None
+            sim = P.simular_crescimento(pid, capital_inicial=capital,
+                                        risco_pct=risco, n_trades=n_trades)
+        except (ValueError, TypeError):
+            return (PP.figura_crescimento_vazia(
+                        "capital, risco e nº de trades precisam ser "
+                        "números positivos."),
+                    None)
+
+        if sim is None:
+            return (PP.figura_crescimento_vazia(
+                        "adicione trades com pelo menos uma perda real "
+                        "(sem perda não dá pra medir o tamanho de \"1R\" "
+                        "pra simular)."),
+                    None)
+
+        return PP.figura_crescimento(sim), PP.resumo_crescimento(sim)

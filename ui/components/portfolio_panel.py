@@ -77,6 +77,35 @@ def painel():
 
                     html.Div(id="pf-simulacao"),
 
+                    html.Div(
+                        [html.H4("Simulação de crescimento", className="panel-title"),
+                         html.Span("projeta o capital pra frente reembaralhando "
+                                   "os trades reais do portfólio, escalados pro "
+                                   "risco que você informar - não é o histórico, "
+                                   "é um \"e se\" com os dados que você digitar",
+                                   className="panel-note")],
+                        className="panel-head",
+                    ),
+                    html.Div([
+                        dcc.Input(id="pf-cresc-capital", type="text",
+                                  inputMode="numeric", className="inp",
+                                  value="10000", placeholder="capital inicial (R$)"),
+                        dcc.Input(id="pf-cresc-risco", type="text",
+                                  inputMode="numeric", className="inp",
+                                  value="5", placeholder="risco por trade (%)"),
+                        dcc.Input(id="pf-cresc-trades", type="text",
+                                  inputMode="numeric", className="inp",
+                                  value="100", placeholder="nº de trades a simular"),
+                        html.Button("Simular", id="pf-cresc-btn", n_clicks=0,
+                                    className="btn-ghost"),
+                    ], className="acoes"),
+                    dcc.Loading(html.Div([
+                        dcc.Graph(id="pf-cresc-grafico", figure=figura_crescimento_vazia(),
+                                  className="graph pf-graph",
+                                  config={"displayModeBar": False, "responsive": True}),
+                        html.Div(id="pf-cresc-resumo"),
+                    ]), type="circle"),
+
                     html.Div([
                         html.Div(id="pf-heatmap", className="pf-col"),
                         html.Div(id="pf-risco", className="pf-col"),
@@ -402,3 +431,59 @@ def figura_curva(series: dict, combinada: dict | None = None) -> go.Figure:
                   tickfont=dict(color=T.MUTED), tickprefix="R$ "),
     )
     return fig
+
+
+def figura_crescimento_vazia(
+        mensagem="digite capital, risco por trade e nº de trades, e "
+                 "clique em Simular.") -> go.Figure:
+    return figura_curva_vazia(mensagem)
+
+
+def figura_crescimento(sim: dict) -> go.Figure:
+    """Leque de cenários: mediana (p50, linha cheia) com a faixa entre o
+    cenário pessimista (p10) e o otimista (p90) sombreada por baixo/cima -
+    mesma leitura de banda de confiança usada em projeção financeira, pra
+    não passar a falsa certeza de uma única linha "seria assim"."""
+    n = len(sim["p50"])
+    xs = list(range(n))
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=xs, y=sim["p90"], mode="lines", name="p90 (otimista)",
+        line=dict(color=T.POS, width=0.8),
+        hovertemplate="trade %{x}<br>p90: R$ %{y:,.2f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=xs, y=sim["p10"], mode="lines", name="p10 (pessimista)",
+        line=dict(color=T.NEG, width=0.8),
+        fill="tonexty", fillcolor="rgba(255,255,255,.05)",
+        hovertemplate="trade %{x}<br>p10: R$ %{y:,.2f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=xs, y=sim["p50"], mode="lines", name="p50 (mediana)",
+        line=dict(color=T.INK, width=2.2),
+        hovertemplate="trade %{x}<br>mediana: R$ %{y:,.2f}<extra></extra>",
+    ))
+    fig.update_layout(
+        paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,
+        font=dict(family="JetBrains Mono, monospace", size=11, color=T.MUTED),
+        margin=dict(l=8, r=8, t=28, b=8),
+        hoverlabel=dict(bgcolor=T.SURFACE_2, bordercolor=T.ACCENT_DIM,
+                        font=dict(color=T.INK, family="JetBrains Mono, monospace")),
+        legend=dict(orientation="h", y=1.14, font=dict(color=T.MUTED)),
+        xaxis=dict(title="trades à frente", gridcolor=T.LINE_SOFT,
+                  linecolor=T.LINE, tickfont=dict(color=T.MUTED)),
+        yaxis=dict(gridcolor=T.LINE_SOFT, linecolor=T.LINE,
+                  tickfont=dict(color=T.MUTED), tickprefix="R$ "),
+    )
+    return fig
+
+
+def resumo_crescimento(sim: dict) -> html.Div:
+    return html.Div([
+        card("capital final (mediana)", brl(sim["capital_final_mediana"]),
+             explica="Valor do meio entre todos os cenários simulados no "
+                     "último trade - metade terminou acima, metade abaixo."),
+        card("chance de dobrar o capital", pct(sim["prob_dobrar_pct"], 1)),
+        card("chance de zerar", pct(sim["prob_zerar_pct"], 1),
+             sinal=("neg" if sim["prob_zerar_pct"] > 5.0 else None)),
+    ], className="cards pf-metricas")

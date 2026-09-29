@@ -464,6 +464,83 @@ def test_simulacao_capital_atual_ja_seguro_recomenda_ele_mesmo(banco):
     assert r["capital_recomendado"] == pytest.approx(1_000_000.0 * 0.25)
 
 
+# -------------------------------------------- simulacao de crescimento
+def test_simular_crescimento_none_sem_nenhuma_perda(banco):
+    """Sem perda registrada não dá pra medir "1R" (o tamanho da perda
+    média) - a simulação de crescimento fica indefinida, igual ao Kelly."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(i, 100.0) for i in range(10)])
+
+    r = P.simular_crescimento(pid, capital_inicial=100_000.0, risco_pct=5.0,
+                              n_trades=50)
+    assert r is None
+
+
+def test_simular_crescimento_recusa_parametros_nao_positivos(banco):
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(0, 100.0), (1, -50.0)])
+
+    with pytest.raises(ValueError):
+        P.simular_crescimento(pid, capital_inicial=0, risco_pct=5.0, n_trades=50)
+    with pytest.raises(ValueError):
+        P.simular_crescimento(pid, capital_inicial=100_000.0, risco_pct=0,
+                              n_trades=50)
+    with pytest.raises(ValueError):
+        P.simular_crescimento(pid, capital_inicial=100_000.0, risco_pct=5.0,
+                              n_trades=0)
+    with pytest.raises(ValueError):
+        P.simular_crescimento(pid, capital_inicial=100_000.0, risco_pct=5.0,
+                              n_trades=-10)
+
+
+def test_simular_crescimento_recusa_n_trades_absurdo(banco):
+    """Sem teto, um número digitado por engano (ex.: "1000000" em vez de
+    "100") aloca uma matriz de dezenas de GB em rng.choice e trava o
+    servidor - achado da revisão."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(0, 100.0), (1, -50.0)])
+
+    with pytest.raises(ValueError):
+        P.simular_crescimento(pid, capital_inicial=100_000.0, risco_pct=5.0,
+                              n_trades=1_000_000)
+
+
+def test_simular_crescimento_mediana_cresce_para_serie_com_edge_forte(banco):
+    """Série com edge bem positivo (75% de acerto, payoff 2:1) simulada
+    com risco moderado deve fazer a mediana da curva terminar ACIMA do
+    capital inicial - não é só ruído, é crescimento composto de verdade."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    trades = [(i, 200.0) for i in range(15)] + [(i, -100.0) for i in range(15, 20)]
+    _membro_pronto(pid, "a", 10, trades)
+
+    r = P.simular_crescimento(pid, capital_inicial=100_000.0, risco_pct=5.0,
+                              n_trades=200, n_simulacoes=1000)
+    assert r["capital_final_mediana"] > 100_000.0
+    assert len(r["p50"]) == 201  # ponto 0 (capital inicial) + 200 trades
+    assert r["p50"][0] == pytest.approx(100_000.0)
+    assert r["p10"][-1] <= r["p50"][-1] <= r["p90"][-1]
+
+
+def test_simular_crescimento_capital_nunca_fica_negativo(banco):
+    """Um único trade perdedor de "1R" arriscando mais de 100% do capital
+    (risco_pct > 100, entrada absurda mas não bloqueada) faria o capital
+    ir a negativo sem o clamp - "dever" não existe numa simulação de
+    banca, o pior cenário é zerar."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 1_000.0)
+    trades = [(i, 50.0) for i in range(10)] + [(10, -5_000.0)]
+    _membro_pronto(pid, "a", 10, trades)
+
+    r = P.simular_crescimento(pid, capital_inicial=1_000.0, risco_pct=150.0,
+                              n_trades=30, n_simulacoes=1000)
+    todos_pontos = r["p10"] + r["p50"] + r["p90"]
+    assert min(todos_pontos) >= 0.0
+
+
 def test_resumo_none_sem_variante_ativa(banco):
     pid = P.criar("p1")
     P.definir_capital(pid, 100_000.0)

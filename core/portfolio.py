@@ -364,6 +364,7 @@ def resumo_membros(portfolio_id: int) -> dict[str, dict]:
 
 _N_SIM_RUINA = 2000
 _FATORES_CAPITAL_TESTADOS = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
+_N_TRADES_MAX = 20_000
 
 
 def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
@@ -438,4 +439,71 @@ def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
         "capital_recomendado": capital_recomendado,
         "limiar_dd_pct": limiar_dd_pct,
         "prob_max_pct": prob_max_pct,
+    }
+
+
+def simular_crescimento(portfolio_id: int, capital_inicial: float,
+                        risco_pct: float, n_trades: int,
+                        n_simulacoes: int = 2000) -> dict | None:
+    """Projeta a curva de capital pra FRENTE, simulando `n_trades` trades
+    futuros com o `risco_pct` escolhido pelo usuário - pedido real:
+    "um gráfico que simule o aumento de capital de acordo com os dados
+    que eu informar".
+
+    A distribuição de resultados vem dos trades REAIS do portfólio
+    combinado (a mesma base do risco de ruína), não de uma média
+    abstrata: cada trade histórico vira um múltiplo de "1R" (liquido
+    dividido pela perda média histórica, a mesma convenção de R-múltiplo
+    da literatura de gestão de risco) e é reembaralhado (bootstrap) pra
+    simular o futuro. Em cada trade simulado, o valor arriscado é
+    `capital_do_momento * risco_pct` - o risco em R$ cresce e encolhe
+    junto com o capital, a mesma composição que faz o critério de Kelly
+    funcionar de verdade (rode com `risco_pct = kelly_pct` de
+    `simulacao_capital()` pra ver o crescimento geométrico ótimo).
+
+    `None` sem trade histórico nenhum, ou sem nenhuma perda registrada
+    (sem perda não dá pra medir o tamanho de 1R - mesma situação do
+    Kelly indefinido)."""
+    if capital_inicial is None or capital_inicial <= 0:
+        raise ValueError("capital inicial precisa ser positivo")
+    if risco_pct is None or risco_pct <= 0:
+        raise ValueError("risco por trade precisa ser positivo")
+    if n_trades is None or n_trades <= 0:
+        raise ValueError("número de trades precisa ser positivo")
+    if n_trades > _N_TRADES_MAX:
+        # sem teto, um numero digitado por engano (ex.: "1000000" em vez
+        # de "100") aloca uma matriz de dezenas de GB em rng.choice e
+        # trava o servidor inteiro (achado da revisao)
+        raise ValueError(f"número de trades não pode passar de {_N_TRADES_MAX}")
+
+    todos = _trades_combinados_ordenados(portfolio_id)
+    if not todos:
+        return None
+    liquido = np.array([t[1] for t in todos])
+    perdas = liquido[liquido < 0]
+    if perdas.size == 0:
+        return None
+    r_unidade = float(-perdas.mean())  # "1R" = perda média histórica
+    r_multiplos = liquido / r_unidade
+
+    rng = np.random.default_rng(0)
+    amostras = rng.choice(r_multiplos, size=(n_simulacoes, n_trades), replace=True)
+
+    f = risco_pct / 100.0
+    trajetorias = np.empty((n_simulacoes, n_trades + 1))
+    trajetorias[:, 0] = capital_inicial
+    capital = np.full(n_simulacoes, capital_inicial, dtype=np.float64)
+    for t in range(n_trades):
+        capital = np.maximum(capital + amostras[:, t] * capital * f, 0.0)
+        trajetorias[:, t + 1] = capital
+
+    p10, p50, p90 = np.percentile(trajetorias, [10, 50, 90], axis=0)
+    finais = trajetorias[:, -1]
+    return {
+        "p10": p10.tolist(),
+        "p50": p50.tolist(),
+        "p90": p90.tolist(),
+        "capital_final_mediana": float(p50[-1]),
+        "prob_dobrar_pct": float((finais >= capital_inicial * 2).mean() * 100.0),
+        "prob_zerar_pct": float((finais <= 0.0).mean() * 100.0),
     }
