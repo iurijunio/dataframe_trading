@@ -722,6 +722,8 @@ body{
 .wfa-avisos{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .wfa-prog-aviso{font-family:var(--mono);font-size:11px;color:var(--warn);}
 .wfa-prog-aviso:empty{display:none;}
+.mine-aviso{font-family:var(--mono);font-size:11px;color:var(--warn);margin-left:10px;}
+.mine-aviso:empty{display:none;}
 .wfa-prog.ocioso .wfa-prog-txt{color:var(--muted);}
 /* "rodando" é o mesmo estado "em andamento" dos três testes demorados da
    Candidata — reusa a cor e o pulsar da varredura do Walk-Forward em vez

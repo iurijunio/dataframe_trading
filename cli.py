@@ -139,7 +139,12 @@ def cmd_status(args) -> None:
 
 
 def cmd_verify(args) -> None:
-    """Prova que o .duckdb e descartavel: reconstroi do Parquet e compara."""
+    """Prova que as BARRAS do .duckdb se reconstroem do Parquet e compara.
+
+    So as barras sao descartaveis. As tabelas do Ao vivo (contas,
+    portfolio_membros, ao_vivo_eventos, planos_operacao) NAO se reconstroem
+    de arquivo nenhum: nao apague o .duckdb, faca copia dele.
+    """
     sym = args.symbol
     with db.connect() as con:
         antes = con.execute(
@@ -207,8 +212,9 @@ def cmd_minas(args) -> None:
           "planos de operação que nasceram delas.")
     for motivo in recusadas:
         print(f"  não apagada: {motivo}")
-    print("o arquivo .duckdb não encolhe sozinho; para compactar, apague-o e "
-          "rode 'cli.py verify' — mas isso também apaga as minerações salvas.")
+    print("o arquivo .duckdb não encolhe sozinho. NÃO o apague para compactar: "
+          "ele guarda contas, ligações e o diário do Ao vivo, que não se "
+          "refazem. Para guardar uma cópia, feche o app e copie o arquivo.")
 
 
 def main() -> None:

@@ -87,10 +87,11 @@ def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
         # sozinho. Sem variante, vale a regra antiga (por walk-forward).
         alvo, arg = (("variante_id = ?", variante_id) if variante_id is not None
                      else ("wfa_id = ?", wfa_id))
-        saem = [x[0] for x in con.execute(
-            f"SELECT plano_id FROM planos_operacao WHERE {alvo} "
+        saem_linhas = [(x[0], x[1]) for x in con.execute(
+            f"SELECT plano_id, estado FROM planos_operacao WHERE {alvo} "
             "AND (estado = 'ativo' OR aposentado_em > ?)", [arg, vale]
         ).fetchall()]
+        saem = [p for p, _ in saem_linhas]
         if saem:
             con.execute(
                 "UPDATE planos_operacao SET estado = 'aposentado', "
@@ -117,10 +118,12 @@ def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
         diario.registrar(con, "plano_gravado", "usuario", plano_id=pid,
                          variante_id=variante_id,
                          motivo=f"vale a partir de {vale:%d/%m/%Y}")
-        for antigo in saem:
+        for antigo, estado_antes in saem_linhas:
+            # o estado REAL de antes: um plano já aposentado mas ainda em
+            # vigor não estava "ativo", e o diário é permanente
             diario.registrar(con, "plano_aposentado", "sistema",
                              plano_id=antigo, variante_id=variante_id,
-                             de="ativo", para="aposentado",
+                             de=estado_antes, para="aposentado",
                              motivo=f"substituído pelo plano #{pid}")
     return int(pid)
 
@@ -201,7 +204,8 @@ def motivo_protecao(con, plano_ids, hoje: date | None = None) -> str | None:
                     + (f" na variante {variante}" if variante else ""))
     for pid, _estado, apos, _var, _pf in linhas:
         if apos is not None and apos > hoje:
-            return f"o plano #{pid} ainda vale até {apos - timedelta(days=1):%d/%m}"
+            return (f"o plano #{pid} ainda está em vigor — "
+                    f"sai de vigor em {apos:%d/%m}")
     for pid, _estado, _apos, variante, pf in linhas:
         if pf is not None:
             return (f"o plano #{pid} é da variante {variante}, que está no "
@@ -226,6 +230,8 @@ def aposentar(plano_id: int, agora: datetime | None = None) -> bool:
             return False
         estado, atual, variante_id = r
         nova = min(atual, data) if atual is not None else data
+        if estado == "aposentado" and nova == atual:
+            return True     # nada muda: não polui o diário com evento falso
         con.execute("UPDATE planos_operacao SET estado = 'aposentado', "
                     "aposentado_em = ? WHERE plano_id = ?", [nova, plano_id])
         diario.registrar(con, "plano_aposentado", "usuario", plano_id=plano_id,

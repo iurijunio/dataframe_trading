@@ -99,3 +99,26 @@ def test_montar_leva_a_impressao_do_wfa(banco):
     campos = plano.montar(1, {"codigo_hash": "h1", "symbol": "WIN$N"}, {}, {},
                           {}, {}, {})
     assert campos["codigo_hash"] == "h1"
+
+
+def test_evento_de_quem_ja_estava_aposentado_diz_de_aposentado(banco):
+    v = _var()
+    mineracao(1, variante_id=v)
+    wfa(1, 1)
+    p1 = plano.salvar(**campos_plano(), agora=datetime(2026, 9, 1, 10))
+    plano.salvar(**campos_plano(), agora=QUI)            # p1 sai em 02/10
+    # regravar na quarta (vale 01/10): p1 ainda está em vigor, já aposentado
+    plano.salvar(**campos_plano(), agora=datetime(2026, 9, 30, 10))
+    des = [e["de"] for e in diario.eventos(tipo="plano_aposentado",
+                                           plano_id=p1)]
+    assert sorted(des) == ["aposentado", "ativo"]
+
+
+def test_aposentar_duas_vezes_na_mesma_data_grava_um_evento(banco):
+    v = _var()
+    mineracao(1, variante_id=v)
+    wfa(1, 1)
+    pid = plano.salvar(**campos_plano(), agora=datetime(2026, 9, 1, 10))
+    assert plano.aposentar(pid, agora=QUI) is True
+    assert plano.aposentar(pid, agora=QUI) is True
+    assert len(diario.eventos(tipo="plano_aposentado", plano_id=pid)) == 1

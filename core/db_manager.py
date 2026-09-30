@@ -1,8 +1,11 @@
 """Conexao com o DuckDB, criacao do schema e espelho Parquet.
 
-Regra de ouro deste modulo: o .duckdb e um CACHE. A verdade sao os CSVs em
-data/raw/ e o espelho Parquet em data/parquet/. Apagar o banco e reconstruir
-tem que dar exatamente a mesma coisa - e existe teste que cobra isso.
+Regra de ouro deste modulo: as BARRAS do .duckdb sao cache. A verdade delas
+sao os CSVs em data/raw/ e o espelho Parquet em data/parquet/; reconstruir
+as barras tem que dar exatamente a mesma coisa - e existe teste que cobra
+isso. Mas o banco tambem guarda o que NAO se reconstroi: contas,
+portfolio_membros, ao_vivo_eventos (o diario) e planos_operacao. Nao o apague;
+faca copia do arquivo com o app fechado.
 """
 
 from __future__ import annotations

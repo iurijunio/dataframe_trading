@@ -51,7 +51,7 @@ def test_ativo_e_protegido(banco):
 def test_aposentado_ainda_em_vigor_e_protegido(banco):
     _, pid = _cadeia()
     plano.aposentar(pid, agora=QUI)          # sai de vigor na sexta
-    assert "até" in _motivo([pid], hoje=date(2026, 10, 1))
+    assert "sai de vigor" in _motivo([pid], hoje=date(2026, 10, 1))
     assert _motivo([pid], hoje=date(2026, 10, 2)) is None
 
 

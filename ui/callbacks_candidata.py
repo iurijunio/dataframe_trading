@@ -272,7 +272,10 @@ def gravar_plano(ver: dict, risco, margem, uso_margem,
     fator = dim["n"] / max(int((d.get("profile") or {}).get("contratos") or 1), 1)
     expect = plano.expectativa(pnl, d.get("capital"), fator, boot=boot)
     campos = plano.montar(wid, d, ref, dim, disj, ver, expect)
-    pid = plano.salvar(**campos)
+    try:
+        pid = plano.salvar(**campos)
+    except RuntimeError:
+        return "não gravado: banco ocupado, tente de novo"
     quando = campos.get("reotimizar_em")
     aviso = plano.aviso_ao_gravar(ver)
     vale = plano.detalhes(pid)["vale_a_partir"]

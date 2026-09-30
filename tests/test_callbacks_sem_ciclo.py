@@ -27,6 +27,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ui.app import build  # noqa: E402
 
+import pytest  # noqa: E402
+from core import db_manager as db  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _esquema_no_banco_isolado(_banco_isolado):
+    # o layout lê o banco na montagem; o conftest já desviou o DB_PATH, aqui
+    # só criamos o esquema vazio nesse banco descartável
+    # e um instrumento com algumas barras: o layout monta o intervalo do gráfico
+    with db.connect_write() as con:
+        db.init_schema(con)
+        con.execute("INSERT INTO instruments (symbol, description) "
+                    "VALUES ('WIN$N', 'teste')")
+        for i in range(10):
+            con.execute(
+                "INSERT INTO bars_m1 (symbol, ts, open, high, low, close, "
+                "src_ingest_id) VALUES ('WIN$N', TIMESTAMP '2026-01-05 09:00:00'"
+                f" + INTERVAL {i} MINUTE, 100, 101, 99, 100, 1)")
+
 
 def _no(d) -> str:
     i = d["id"]

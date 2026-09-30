@@ -1422,6 +1422,10 @@ def register(app):
                     holdout=estende, agregado=ag, veredito=ver, passos=passos,
                     capital=capital, camada4_travada=travados is not None,
                     camada4_valores=camada4_valores,
+                    # impressão digital do código NO MOMENTO DA CORRIDA: se o
+                    # arquivo mudar até o Salvar, o registro deve dizer com
+                    # qual código o número foi de fato medido
+                    codigo_hash=codigo.hash_estrategia(d["estrategia"]),
                     deploy=next((p.params for p in passos if p.janela.deploy),
                                 None))
         # O Store só é regravado quando MUDA. O dcc.Store redispara quem o
@@ -1607,6 +1611,8 @@ def register(app):
             optimizer.excluir_salva(int(run_id))
         except ValueError as e:
             return False, "Excluir", no_update, str(e)
+        except RuntimeError:
+            return False, "Excluir", no_update, "banco ocupado, tente de novo"
         MINERACAO.esquecer()
         return True, "Excluir", None, ""
 
@@ -1672,9 +1678,14 @@ def register(app):
                 profile=d["perfil"] if d else None,
                 capital=_WFA.get("capital"), sharpes_matriz=sharpes,
                 camada4_travada=_WFA.get("camada4_travada"),
-                codigo_hash=codigo.hash_estrategia(_WFA["strategy"]))
+                codigo_hash=_WFA.get("codigo_hash"))
             aviso = (f"walk-forward #{wid} salvo · "
                      f"{len(trades)} trades gravados para o portfólio")
+            if (_WFA.get("codigo_hash")
+                    and codigo.hash_estrategia(_WFA["strategy"])
+                    != _WFA["codigo_hash"]):
+                aviso += (" · ⚠ o código da estratégia mudou desde que "
+                          "este walk-forward rodou")
         elif gatilho == "store-wfa-lista":
             aviso = no_update           # quem excluiu já escreveu o aviso
 
@@ -1714,6 +1725,9 @@ def register(app):
             wfa_store.excluir(int(wfa_id))
         except ValueError as e:
             return "Excluir", no_update, str(e), no_update
+        except RuntimeError:
+            return ("Excluir", no_update, "banco ocupado, tente de novo",
+                    no_update)
         return ("Excluir", None, f"walk-forward #{wfa_id} excluído",
                 {"excluido": int(wfa_id), "t": __import__("time").time()})
 

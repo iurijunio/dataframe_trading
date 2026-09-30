@@ -101,6 +101,8 @@ def register(app):
                 P.remover_variante(pid, gatilho["variante_id"])
             except ValueError as e:
                 aviso_remover = str(e)
+            except RuntimeError:
+                aviso_remover = "banco ocupado, tente de novo"
         elif isinstance(gatilho, dict) and not valor_disparo:
             # cartao/botao novo so apareceu no DOM - nao e navegacao nenhuma,
             # so re-renderiza o que ja estava aberto (ou nada, se pid None)
