@@ -174,25 +174,74 @@ def detalhes(plano_id: int) -> dict | None:
     return _linha(r) if r else None
 
 
-def aposentar(plano_id: int) -> bool:
-    """Tira o plano de operação sem apagá-lo.
+def motivo_protecao(con, plano_ids, hoje: date | None = None) -> str | None:
+    """Por que estes planos não podem sumir — ou None se podem.
 
-    É o caminho normal: trocou de parâmetro, mudou o risco ou o disjuntor
-    disparou, aposenta este e grava outro. O que ficou gravado é o que foi
-    decidido na época, e continua valendo como registro.
+    Protegido é o que opera ou pode operar: (a) ativo; (b) aposentado mas
+    ainda em vigor (o pregão de hoje pode estar usando); (c) de uma
+    variante que está em algum portfólio, ligado ou não. Recebe `con`
+    porque é chamada de dentro da transação que ia apagar.
     """
-    if detalhes(plano_id) is None:
-        return False
+    ids = [int(p) for p in plano_ids or []]
+    if not ids:
+        return None
+    hoje = hoje or date.today()
+    linhas = con.execute(
+        "SELECT p.plano_id, p.estado, p.aposentado_em, ev.nome, pf.nome "
+        "FROM planos_operacao p "
+        "LEFT JOIN estrategia_variantes ev ON ev.variante_id = p.variante_id "
+        "LEFT JOIN portfolio_membros pm ON pm.variante_id = p.variante_id "
+        "     AND pm.removido_em IS NULL "
+        "LEFT JOIN portfolios pf ON pf.portfolio_id = pm.portfolio_id "
+        f"WHERE p.plano_id IN ({', '.join('?' * len(ids))}) "
+        "ORDER BY p.plano_id", ids).fetchall()
+    for pid, estado, _apos, variante, _pf in linhas:
+        if estado == "ativo":
+            return (f"o plano #{pid} está ativo"
+                    + (f" na variante {variante}" if variante else ""))
+    for pid, _estado, apos, _var, _pf in linhas:
+        if apos is not None and apos > hoje:
+            return f"o plano #{pid} ainda vale até {apos - timedelta(days=1):%d/%m}"
+    for pid, _estado, _apos, variante, pf in linhas:
+        if pf is not None:
+            return (f"o plano #{pid} é da variante {variante}, que está no "
+                    f"portfólio {pf}")
+    return None
+
+
+def aposentar(plano_id: int, agora: datetime | None = None) -> bool:
+    """Tira o plano de operação sem apagá-lo — a partir do PRÓXIMO pregão.
+
+    O pregão em curso termina com o plano com que começou; para parar
+    agora, o caminho é o interruptor da ligação. Se já estava marcado para
+    sair antes, fica a data mais cedo: aposentar de novo não prolonga.
+    """
+    agora = agora or datetime.now()
+    data = proximo_dia_util(agora.date())
     with db.connect_write() as con, db.transacao(con):
-        con.execute("UPDATE planos_operacao SET estado = 'aposentado' "
-                    "WHERE plano_id = ?", [plano_id])
+        r = con.execute("SELECT estado, aposentado_em, variante_id "
+                        "FROM planos_operacao WHERE plano_id = ?",
+                        [plano_id]).fetchone()
+        if r is None:
+            return False
+        estado, atual, variante_id = r
+        nova = min(atual, data) if atual is not None else data
+        con.execute("UPDATE planos_operacao SET estado = 'aposentado', "
+                    "aposentado_em = ? WHERE plano_id = ?", [nova, plano_id])
+        diario.registrar(con, "plano_aposentado", "usuario", plano_id=plano_id,
+                         variante_id=variante_id, de=estado, para="aposentado",
+                         motivo=f"sai de vigor em {nova:%d/%m/%Y}")
     return True
 
 
 def excluir(plano_id: int) -> bool:
-    if detalhes(plano_id) is None:
-        return False
     with db.connect_write() as con, db.transacao(con):
+        if con.execute("SELECT 1 FROM planos_operacao WHERE plano_id = ?",
+                       [plano_id]).fetchone() is None:
+            return False
+        motivo = motivo_protecao(con, [plano_id])
+        if motivo:
+            raise ValueError(f"o plano #{plano_id} não pode ser apagado: {motivo}")
         con.execute("DELETE FROM planos_operacao WHERE plano_id = ?",
                     [plano_id])
     return True

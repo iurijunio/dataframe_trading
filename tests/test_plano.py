@@ -124,9 +124,13 @@ def test_aposentar_nao_apaga(banco):
 
 
 def test_excluir_plano_apaga_so_ele(banco):
+    """Só o que não opera nem pode operar pode ser apagado — aqui, planos
+    sem variante e já fora de vigor."""
+    from datetime import datetime
     _wfa_no_banco()
-    a = plano.salvar(**_campos())
-    b = plano.salvar(**_campos())
+    a = plano.salvar(**_campos(), agora=datetime(2026, 9, 1, 10))
+    b = plano.salvar(**_campos(), agora=datetime(2026, 9, 2, 10))
+    plano.aposentar(b, agora=datetime(2026, 9, 3, 10))
     assert plano.excluir(a) is True
     assert [p["plano_id"] for p in plano.listar()] == [b]
 
