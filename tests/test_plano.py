@@ -142,11 +142,10 @@ def test_excluir_plano_apaga_so_ele(banco):
     assert [p["plano_id"] for p in plano.listar()] == [b]
 
 
-def test_regravar_o_walk_forward_aposenta_o_plano_e_nao_o_perde(banco):
-    """Regravar o MESMO walk-forward apaga o registro antigo e cria outro id.
-    Sem tratar o plano, ele ficava apontando para um id que não existe mais:
-    invisível nas duas telas, achável só por consulta à mão. Agora ele muda
-    de dono e fica aposentado — decisão gravada não se apaga."""
+def test_regravar_o_walk_forward_com_plano_mantem_os_dois(banco):
+    """Regravar o MESMO walk-forward substituía o registro e aposentava o
+    plano ativo em silêncio (a estratégia saía do ar). Agora, se o antigo
+    tem plano, ele fica e o novo entra ao lado; o plano não muda nada."""
     import numpy as np
 
     from core import wfa
@@ -165,16 +164,23 @@ def test_regravar_o_walk_forward_aposenta_o_plano_e_nao_o_perde(banco):
             run_id=1, symbol="WIN$N", strategy="rompimento_canal",
             nome="x", is_meses=18, oos_meses=6, inteligencia="ulcer",
             holdout=False, agregado={"steps": 1}, veredito={"estado": "boa"},
-            passos=passos(), capital=10_000.0)
+            passos=passos(), capital=10_000.0, codigo_hash="h1")
 
     primeiro = grava_wfa()
     pid = plano.salvar(**_campos(wfa_id=primeiro))
-    segundo = grava_wfa()          # mesma configuração: SUBSTITUI o anterior
+    segundo = grava_wfa()
 
     d = plano.detalhes(pid)
-    assert d is not None and d["estado"] == "aposentado"
-    assert d["wfa_id"] == segundo
-    assert [p["plano_id"] for p in plano.listar(wfa_id=segundo)] == [pid]
+    assert segundo != primeiro
+    assert d["estado"] == "ativo" and d["wfa_id"] == primeiro
+    assert wfa_store.detalhes(primeiro) is not None
+    assert wfa_store.detalhes(segundo)["codigo_hash"] == "h1"
+    rotulos = {w["wfa_id"]: w["rotulo"] for w in wfa_store.listar()}
+    assert "tem plano" in rotulos[primeiro]
+    assert "tem plano" not in rotulos[segundo]
+    terceiro = grava_wfa()                 # o SEGUNDO não tem plano: substitui
+    assert wfa_store.detalhes(segundo) is None
+    assert {w["wfa_id"] for w in wfa_store.listar()} == {primeiro, terceiro}
 
 
 def test_camada4_nao_informada_nao_vira_destravada(banco):

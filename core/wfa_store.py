@@ -41,7 +41,8 @@ def _passo_para_banco(p) -> dict:
 def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
            inteligencia, holdout, agregado, veredito, passos,
            trades=None, profile=None, capital=None,
-           sharpes_matriz=None, camada4_travada=None) -> int:
+           sharpes_matriz=None, camada4_travada=None,
+           codigo_hash=None) -> int:
     """Grava um walk-forward e devolve o id.
 
     Um WFA por combinação de (mineração, IS, OOS, inteligência, holdout): se
@@ -65,16 +66,13 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
              bool(holdout)]).fetchall()]
         wfa_id = con.execute("SELECT nextval('seq_wfa_id')").fetchone()[0]
         for antigo in antigos:
+            # antigo com plano FICA: substituí-lo aposentava o plano ativo em
+            # silêncio e a estratégia saía do ar (spec Ao vivo §4.1). O novo
+            # entra ao lado, e a lista marca qual tem plano.
+            if con.execute("SELECT 1 FROM planos_operacao WHERE wfa_id = ?",
+                           [antigo]).fetchone():
+                continue
             con.execute("DELETE FROM wfa_trades WHERE wfa_id = ?", [antigo])
-            # Os planos de operação do registro substituído mudam de dono e
-            # ficam APOSENTADOS. Apagá-los destruiria decisão gravada; deixá-los
-            # apontando para o `wfa_id` que acabou de sumir era pior ainda —
-            # o plano continuava no banco, invisível nas duas telas, e só uma
-            # consulta à mão o encontrava. É o mesmo tipo de acidente dos 551
-            # trades órfãos, uma tabela adiante.
-            con.execute(
-                "UPDATE planos_operacao SET wfa_id = ?, estado = 'aposentado' "
-                "WHERE wfa_id = ?", [wfa_id, antigo])
             con.execute("DELETE FROM wfa_runs WHERE wfa_id = ?", [antigo])
         # colunas nomeadas: a tabela vai ganhar colunas com o tempo
         con.execute(
@@ -82,8 +80,8 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
             "created_at, nome, is_meses, oos_meses, inteligencia, holdout, "
             "janelas, oos_lucro, oos_trades, wfe_global, consistencia, dd_oos, "
             "veredito, passos, deploy, profile, capital, sharpes_matriz, "
-            "camada4_travada) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "camada4_travada, codigo_hash) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [wfa_id, run_id, symbol, strategy, datetime.now(), nome or None,
              int(is_meses), int(oos_meses), inteligencia, bool(holdout),
              int(agregado.get("steps", 0)),
@@ -97,7 +95,8 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
              json.dumps(profile) if profile else None,
              float(capital) if capital is not None else None,
              json.dumps(sharpes_matriz) if sharpes_matriz else None,
-             None if camada4_travada is None else bool(camada4_travada)])
+             None if camada4_travada is None else bool(camada4_travada),
+             codigo_hash])
 
         # Os trades da curva OOS, um por linha. É o que o portfólio vai
         # consumir: correlação de verdade pede a série, e exposição
@@ -127,7 +126,9 @@ def listar(strategy: str | None = None, run_id: int | None = None) -> list[dict]
         where.append("run_id = ?")
         args.append(run_id)
     sql = ("SELECT wfa_id, run_id, nome, is_meses, oos_meses, inteligencia, "
-           "holdout, wfe_global, consistencia, oos_lucro, veredito, created_at "
+           "holdout, wfe_global, consistencia, oos_lucro, veredito, created_at, "
+           "(SELECT count(*) FROM planos_operacao p "
+           "WHERE p.wfa_id = wfa_runs.wfa_id) "
            "FROM wfa_runs"
            + (" WHERE " + " AND ".join(where) if where else "")
            + " ORDER BY wfa_id DESC LIMIT 50")
@@ -136,13 +137,14 @@ def listar(strategy: str | None = None, run_id: int | None = None) -> list[dict]
 
     fora = []
     for (wid, rid, nome, is_m, oos_m, intel, hold, wfe, cons, lucro,
-         ver, quando) in linhas:
+         ver, quando, n_planos) in linhas:
         wfe_txt = f"WFE {wfe * 100:.0f}%" if wfe is not None else "WFE —"
         fora.append({
             "wfa_id": wid, "run_id": rid, "veredito": ver,
             "rotulo": (f"#{wid} · {nome or 'sem nome'} · IS{is_m}/OOS{oos_m}"
                        f" · {wfe_txt} · {cons:.0f}% janelas+"
                        + (" · holdout" if hold else "")
+                       + (" · tem plano" if n_planos else "")
                        + f" · {quando:%d/%m %H:%M}"),
             "is_meses": is_m, "oos_meses": oos_m, "inteligencia": intel,
             "holdout": bool(hold),
@@ -164,7 +166,7 @@ def detalhes(wfa_id: int) -> dict | None:
         r = con.execute(
             "SELECT run_id, symbol, strategy, nome, is_meses, oos_meses, "
             "inteligencia, holdout, passos, deploy, profile, capital, "
-            "sharpes_matriz, camada4_travada FROM wfa_runs WHERE wfa_id = ?",
+            "sharpes_matriz, camada4_travada, codigo_hash FROM wfa_runs WHERE wfa_id = ?",
             [wfa_id]).fetchone()
     if not r:
         return None
@@ -181,6 +183,7 @@ def detalhes(wfa_id: int) -> dict | None:
         # None em registro anterior a esta coluna: a tela diz "nao informado",
         # que e diferente de "estava solta"
         "camada4_travada": None if r[13] is None else bool(r[13]),
+        "codigo_hash": r[14],
     }
 
 
