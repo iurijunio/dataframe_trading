@@ -15,6 +15,7 @@ from datetime import datetime
 import numpy as np
 
 from . import db_manager as db
+from . import diario
 from . import variantes as V
 
 _MIN_DIAS_COMUNS = 20
@@ -38,15 +39,16 @@ def listar() -> list[dict]:
     with db.connect(read_only=True) as con:
         rows = con.execute(
             "SELECT p.portfolio_id, p.nome, p.criado_em, p.capital, "
-            "count(pv.variante_id) "
+            "count(pm.ligacao_id), coalesce(p.ligado, false), "
+            "p.conta_demo_id, p.conta_real_id "
             "FROM portfolios p "
-            "LEFT JOIN portfolio_variantes pv "
-            "ON pv.portfolio_id = p.portfolio_id "
-            "GROUP BY p.portfolio_id, p.nome, p.criado_em, p.capital "
-            "ORDER BY p.nome"
+            "LEFT JOIN portfolio_membros pm "
+            "ON pm.portfolio_id = p.portfolio_id AND pm.removido_em IS NULL "
+            "GROUP BY ALL ORDER BY p.nome"
         ).fetchall()
     return [{"portfolio_id": r[0], "nome": r[1], "criado_em": r[2],
-             "capital": r[3], "n_membros": r[4]} for r in rows]
+             "capital": r[3], "n_membros": r[4], "ligado": bool(r[5]),
+             "conta_demo_id": r[6], "conta_real_id": r[7]} for r in rows]
 
 
 def definir_capital(portfolio_id: int, capital: float) -> None:
@@ -61,35 +63,75 @@ def definir_capital(portfolio_id: int, capital: float) -> None:
                     [float(capital), portfolio_id])
 
 
-def adicionar_variante(portfolio_id: int, variante_id: int) -> None:
+def adicionar_variante(portfolio_id: int, variante_id: int) -> int:
+    """Entra ligada, no papel: papel não envia ordem, e começar ligada não
+    faz a incubação perder dias. Já presente: não faz nada."""
     with db.connect_write() as con, db.transacao(con):
+        r = con.execute(
+            "SELECT ligacao_id FROM portfolio_membros WHERE portfolio_id = ? "
+            "AND variante_id = ? AND removido_em IS NULL",
+            [portfolio_id, variante_id]).fetchone()
+        if r:
+            return int(r[0])
+        agora = datetime.now()
+        lig = con.execute("SELECT nextval('seq_ligacao_id')").fetchone()[0]
         con.execute(
-            "INSERT OR IGNORE INTO portfolio_variantes "
-            "(portfolio_id, variante_id, adicionado_em) VALUES (?,?,?)",
-            [portfolio_id, variante_id, datetime.now()])
+            "INSERT INTO portfolio_membros (ligacao_id, portfolio_id, "
+            "variante_id, adicionado_em, fase, fase_desde, ligada) "
+            "VALUES (?,?,?,?,'papel',?,true)",
+            [lig, portfolio_id, variante_id, agora, agora])
+        diario.registrar(con, "membro_adicionado", "usuario",
+                         portfolio_id=portfolio_id, ligacao_id=lig,
+                         variante_id=variante_id, para="papel")
+    return int(lig)
 
 
 def remover_variante(portfolio_id: int, variante_id: int) -> None:
+    """Remoção só marca: a ligação guarda a incubação e vai etiquetar
+    ordens na parte 4. Com o portfólio ligado, recusa."""
     with db.connect_write() as con, db.transacao(con):
-        con.execute(
-            "DELETE FROM portfolio_variantes "
-            "WHERE portfolio_id = ? AND variante_id = ?",
-            [portfolio_id, variante_id])
+        ligado = con.execute("SELECT coalesce(ligado, false) FROM portfolios "
+                             "WHERE portfolio_id = ?", [portfolio_id]).fetchone()
+        r = con.execute(
+            "SELECT ligacao_id, ligada FROM portfolio_membros "
+            "WHERE portfolio_id = ? AND variante_id = ? AND removido_em IS NULL",
+            [portfolio_id, variante_id]).fetchone()
+        if r is None:
+            return
+        if ligado and ligado[0]:
+            raise ValueError("desligue o portfólio antes de remover uma variante")
+        lig, ligada = r
+        agora = datetime.now()
+        if ligada:
+            con.execute("UPDATE portfolio_membros SET ligada = false, "
+                        "desligada_por = 'usuario', desligada_em = ? "
+                        "WHERE ligacao_id = ?", [agora, lig])
+            diario.registrar(con, "membro_desligado", "usuario",
+                             portfolio_id=portfolio_id, ligacao_id=lig,
+                             variante_id=variante_id, motivo="removida")
+        con.execute("UPDATE portfolio_membros SET removido_em = ? "
+                    "WHERE ligacao_id = ?", [agora, lig])
+        diario.registrar(con, "membro_removido", "usuario",
+                         portfolio_id=portfolio_id, ligacao_id=lig,
+                         variante_id=variante_id)
 
 
 def membros(portfolio_id: int) -> list[dict]:
     with db.connect(read_only=True) as con:
         rows = con.execute(
-            "SELECT ev.variante_id, ev.nome, ev.estrategia "
-            "FROM portfolio_variantes pv "
-            "JOIN estrategia_variantes ev ON ev.variante_id = pv.variante_id "
-            "WHERE pv.portfolio_id = ? ORDER BY ev.nome", [portfolio_id]
+            "SELECT ev.variante_id, ev.nome, ev.estrategia, pm.ligacao_id, "
+            "pm.fase, pm.ligada "
+            "FROM portfolio_membros pm "
+            "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
+            "WHERE pm.portfolio_id = ? AND pm.removido_em IS NULL "
+            "ORDER BY ev.nome", [portfolio_id]
         ).fetchall()
     out = []
-    for vid, nome, estrategia in rows:
+    for vid, nome, estrategia, lig, fase, ligada in rows:
         ativo = V.plano_ativo(vid)
         out.append({
             "variante_id": vid, "nome": nome, "estrategia": estrategia,
+            "ligacao_id": lig, "fase": fase, "ligada": bool(ligada),
             "wfa_id": ativo["wfa_id"] if ativo else None,
             "sem_plano_ativo": ativo is None,
         })
