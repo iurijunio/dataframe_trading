@@ -25,7 +25,8 @@ def _modulo(estrategia):
 
 def montar(armado, aberta, hoje=None):
     """As quatro seções da tela, lidas do banco agora."""
-    contas = AV.listar_contas()
+    contas = AV.listar_contas(incluir_arquivadas=True)
+    ativas = [c for c in contas if not c.get("arquivada_em")]
     pfs = P.listar()
     portfolios = ([AP.cartao_portfolio(p, contas, armado) for p in pfs]
                   or [html.P("nenhum portfólio ainda — crie na tela Portfólio",
@@ -46,17 +47,25 @@ def montar(armado, aberta, hoje=None):
         ficha = None
         if aberta == l["ligacao_id"]:
             r = AV.rastreio(l["ligacao_id"], hoje)
-            ficha = AP.ficha_rastreio(r, _modulo(l["estrategia"]), armado)
+            ficha = AP.ficha_rastreio(r, _modulo(l["estrategia"]), armado, hoje)
         blocos.append(AP.cartao_variante(l, armado, ficha))
     variantes = blocos or [html.P("nenhuma variante em portfólio ainda",
                                   className="av-nota")]
 
-    contas_div = ([AP.linha_conta(c, armado) for c in contas]
+    contas_div = ([AP.linha_conta(c, armado) for c in ativas]
                   or [html.P("nenhuma conta cadastrada", className="av-nota")])
 
     orfaos = AV.planos_sem_variante()
     arruma = []
+    # uma linha por mineração: os ids dos campos são o run_id, e dois planos
+    # da mesma mineração repetiriam o id (Dash quebra)
+    por_run = {}
     for o in orfaos:
+        if o["run_id"] in por_run:
+            por_run[o["run_id"]]["plano_ids"].append(o["plano_id"])
+        else:
+            por_run[o["run_id"]] = {**o, "plano_ids": [o["plano_id"]]}
+    for o in por_run.values():
         mesmas = V.listar(o["strategy"])
         op_var = [{"label": v["nome"], "value": v["variante_id"]} for v in mesmas]
         ativos = [p for p in PL.listar(apenas_ativos=True)

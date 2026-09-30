@@ -7,6 +7,8 @@ existir: tela vazia confunde.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from dash import dcc, html
 
 from . import ficha as FI
@@ -86,15 +88,53 @@ def _campo_txt(campo, alvo, valor, placeholder, numerico=False):
                      className="inp", **({"inputMode": "numeric"} if numerico else {}))
 
 
+def _reais(v):
+    return "—" if v is None else brl(v)
+
+
+def _pct(v):
+    return "—" if v is None else f"{v:.2f}".replace(".", ",") + "%"
+
+
+def _disjuntor_texto(d) -> str:
+    """O freio do plano em palavras. Aceita campo faltando ou nulo."""
+    d = d or {}
+    n1, n2 = d.get("nivel1") or {}, d.get("nivel2") or {}
+    n = n1.get("perdas_seguidas")
+    return (f"reduz para 1 contrato se cair {_reais(n1.get('queda'))} ou após "
+            f"{'—' if n is None else n} perdas seguidas · desliga se cair "
+            f"{_reais(n2.get('queda'))}")
+
+
+_EVENTOS = {
+    "plano_gravado": "plano gravado", "membro_desligado": "variante pausada",
+    "membro_ligado": "variante ligada", "portfolio_ligado": "portfólio ligado",
+    "fase_mudou": "mudou de fase", "conta_editada": "conta editada",
+    "plano_aposentado": "plano aposentado",
+    "plano_vinculado": "plano vinculado",
+    "variante_renomeada": "variante renomeada",
+    "membro_adicionado": "entrou no portfólio",
+    "membro_removido": "saiu do portfólio",
+    "portfolio_desligado": "portfólio desligado",
+    "portfolio_conta_mudou": "contas do portfólio mudaram",
+    "conta_criada": "conta criada", "conta_arquivada": "conta arquivada",
+}
+
+
 def _data(d, fmt="%d/%m/%Y"):
     return d.strftime(fmt) if d else "—"
 
 
 def cartao_portfolio(p: dict, contas: list[dict], armado) -> html.Div:
-    demo = [{"label": c["nome"], "value": c["conta_id"]}
-            for c in contas if c["tipo"] == "demo"]
-    real = [{"label": c["nome"], "value": c["conta_id"]}
-            for c in contas if c["tipo"] == "real"]
+    # conta arquivada ainda gravada no portfólio continua na lista, marcada:
+    # senão salvar apagaria a escolha sem ninguém perceber
+    def opcoes(tipo):
+        return [{"label": c["nome"] + (" (arquivada)" if c.get("arquivada_em")
+                                       else ""), "value": c["conta_id"]}
+                for c in contas if c["tipo"] == tipo
+                and (not c.get("arquivada_em")
+                     or c["conta_id"] in (p["conta_demo_id"], p["conta_real_id"]))]
+    demo, real = opcoes("demo"), opcoes("real")
     pid = p["portfolio_id"]
     estado = (html.Span("ligado", className="av-roda") if p["ligado"]
               else html.Span("desligado", className="av-nota"))
@@ -139,7 +179,8 @@ def cartao_variante(l: dict, armado, ficha=None) -> html.Div:
     return html.Div(filhos, className="av-cartao")
 
 
-def ficha_rastreio(r: dict, estrategia_mod, armado) -> html.Div:
+def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
+    hoje = hoje or date.today()
     l, det, mina, w = r["ligacao"], r["plano"], r["mineracao"], r["wfa"]
     vid = l["variante_id"]
     blocos = [html.Div([
@@ -159,7 +200,7 @@ def ficha_rastreio(r: dict, estrategia_mod, armado) -> html.Div:
         html.H4("1. Origem — mineração"),
         html.P(f"mineração #{mina['run_id']} · {mina['nome'] or 'sem nome'} · "
                f"{_data(mina['created_at'])} · {mina['n_combinacoes']} "
-               f"combinações testadas · holdout a partir de "
+               f"combinações testadas · dados reservados a partir de "
                f"{mina.get('holdout_de') or '—'}")
         if mina else html.P("mineração apagada ou anterior às variantes",
                             className="av-nota"),
@@ -168,10 +209,11 @@ def ficha_rastreio(r: dict, estrategia_mod, armado) -> html.Div:
     blocos.append(html.Div([
         html.H4("2. Walk-Forward"),
         html.P(f"walk-forward #{w['wfa_id']} · {w['nome'] or 'sem nome'} · "
-               f"IS {w['is_meses']} / OOS {w['oos_meses']} meses · "
+               f"{w['is_meses'] if w['is_meses'] is not None else '—'} meses de otimização / "
+               f"{w['oos_meses'] if w['oos_meses'] is not None else '—'} meses de teste · "
                f"{w['inteligencia'] or '—'} · lucro fora da amostra "
-               f"{brl(w['oos_lucro'] or 0)} em {w['oos_trades'] or 0} trades · "
-               f"queda máx. {brl(w['dd_oos'] or 0)} · veredito "
+               f"{_reais(w['oos_lucro'])} em {w['oos_trades'] if w['oos_trades'] is not None else '—'} trades · "
+               f"queda máx. {_reais(w['dd_oos'])} · veredito "
                f"{w['veredito'] or '—'}")
         if w else html.P("sem walk-forward", className="av-nota"),
     ]))
@@ -192,11 +234,13 @@ def ficha_rastreio(r: dict, estrategia_mod, armado) -> html.Div:
                 "⚠ código mudou desde o plano" if cod["confere"] is False else
                 "código não conferido (plano anterior a 30/09/2026)")
         corpo = [html.P(
-            f"plano #{det['plano_id']} · capital {brl(det['capital'] or 0)} · "
-            f"{det['contratos']} contrato(s) · risco por pregão "
-            f"{det['risco_efetivo_pct'] or 0:.2f}% · vale a partir de "
+            f"plano #{det['plano_id']} · capital {_reais(det['capital'])} · "
+            f"{det['contratos'] if det['contratos'] is not None else '—'} "
+            f"contrato(s) · risco por pregão "
+            f"{_pct(det['risco_efetivo_pct'])} · vale a partir de "
             f"{_data(det['vale_a_partir'])} · reotimizar até "
             f"{_data(det['reotimizar_em'])} · {conf}")]
+        corpo.append(html.P("freio: " + _disjuntor_texto(det.get("disjuntor"))))
         if estrategia_mod is not None:
             corpo.append(FI.ficha(estrategia=estrategia_mod,
                                   params=det["params"], perfil=det["profile"],
@@ -204,7 +248,10 @@ def ficha_rastreio(r: dict, estrategia_mod, armado) -> html.Div:
         else:
             corpo.append(html.P("código da estratégia não encontrado",
                                 className="av-motivo"))
-        blocos.append(html.Div([html.H4("4. Plano"), *corpo]))
+        vale = det["vale_a_partir"]
+        titulo = ("4. Plano" if not vale or vale <= hoje else
+                  f"4. Plano (ainda não vale — entra em {_data(vale, '%d/%m')})")
+        blocos.append(html.Div([html.H4(titulo), *corpo]))
     # 5. histórico
     blocos.append(html.Div([
         html.H4("5. Histórico"),
@@ -215,7 +262,7 @@ def ficha_rastreio(r: dict, estrategia_mod, armado) -> html.Div:
             for p in r["planos"]] or [html.Li("nenhum plano ainda")],
             className="av-avisos"),
         html.Ul([html.Li(f"{_data(e['quando'], '%d/%m/%Y %H:%M')} · "
-                         f"{e['tipo'].replace('_', ' ')}"
+                         f"{_EVENTOS.get(e['tipo'], e['tipo'].replace('_', ' '))}"
                          + (f" · {e['motivo']}" if e['motivo'] else ""))
                  for e in r["eventos"][:30]], className="av-avisos"),
     ]))
@@ -236,11 +283,16 @@ def linha_conta(c: dict, armado) -> html.Div:
     ], className="av-linha")
 
 
+def _planos_txt(o):
+    ids = o.get("plano_ids") or [o["plano_id"]]
+    return ("plano " if len(ids) == 1 else "planos ") + ", ".join(f"#{i}" for i in ids)
+
+
 def linha_orfao(o: dict, opcoes_variante: list[dict],
                 opcoes_manter: list[dict], armado) -> html.Div:
     rid = o["run_id"]
     return html.Div([
-        html.Span(f"plano #{o['plano_id']} · {o['strategy']} · "
+        html.Span(f"{_planos_txt(o)} · {o['strategy']} · "
                   f"{o['nome'] or 'sem nome'} · mineração #{rid}",
                   className="av-nome"),
         _campo_dd("vincular-variante", rid, None, opcoes_variante,

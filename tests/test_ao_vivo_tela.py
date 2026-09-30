@@ -121,3 +121,58 @@ def test_sem_nada(banco):
     assert "nenhuma variante" in textos(vars_)
     assert "nenhuma conta" in textos(contas)
     assert "nada a arrumar" in textos(arruma)
+
+
+def test_ficha_mostra_disjuntor_em_palavras(banco):
+    v = variantes.criar("romp-canal-02", "rompimento_canal")
+    mineracao(47, variante_id=v)
+    wfa(13, 47)
+    plano.salvar(**campos_plano(
+        wfa_id=13, run_id=47, disjuntor={
+            "nivel1": {"queda": 300.0, "perdas_seguidas": 3, "acao": "x"},
+            "nivel2": {"queda": 900.0, "acao": "y"}}),
+        agora=datetime(2026, 9, 1, 10))
+    lig = P.adicionar_variante(P.criar("pf"), v)
+    _, vars_, _, _ = CA.montar(None, lig, QUI)
+    t = textos(vars_)
+    assert "reduz para 1 contrato se cair R$ 300,00 ou após 3 perdas seguidas" in t
+    assert "desliga se cair R$ 900,00" in t
+
+
+def test_plano_ainda_nao_vale_no_titulo(banco):
+    v = variantes.criar("romp-canal-02", "rompimento_canal")
+    mineracao(47, variante_id=v)
+    wfa(13, 47)
+    plano.salvar(**campos_plano(wfa_id=13, run_id=47),
+                 agora=datetime(2026, 9, 1, 10))
+    lig = P.adicionar_variante(P.criar("pf"), v)
+    _, vars_, _, _ = CA.montar(None, lig, date(2026, 8, 20))
+    assert "ainda não vale — entra em" in textos(vars_)
+
+
+def test_plano_sem_risco_nem_capital_mostra_travessao(banco):
+    v = variantes.criar("romp-canal-02", "rompimento_canal")
+    mineracao(47, variante_id=v)
+    wfa(13, 47)
+    plano.salvar(**campos_plano(wfa_id=13, run_id=47, capital=None,
+                                risco_efetivo_pct=None, disjuntor={}),
+                 agora=datetime(2026, 9, 1, 10))
+    lig = P.adicionar_variante(P.criar("pf"), v)
+    _, vars_, _, _ = CA.montar(None, lig, QUI)
+    t = textos(vars_)
+    assert "capital —" in t and "risco por pregão —" in t
+    assert "capital R$ 0,00" not in t and "risco por pregão 0,00%" not in t
+
+
+def test_dois_planos_orfaos_da_mesma_mineracao_uma_linha(banco):
+    wfa(18, 50)
+    wfa(19, 50)
+    a = plano.salvar(**campos_plano(wfa_id=18, run_id=50),
+                     agora=datetime(2026, 9, 1, 10))
+    b = plano.salvar(**campos_plano(wfa_id=19, run_id=50),
+                     agora=datetime(2026, 9, 1, 11))
+    _, _, _, arruma = CA.montar(None, None, QUI)
+    t = textos(arruma)
+    assert f"#{a}" in t and f"#{b}" in t
+    alvo = [i for i in ids(arruma) if "vincular-variante" in i]
+    assert len(alvo) == 1
