@@ -321,3 +321,89 @@ CREATE SEQUENCE IF NOT EXISTS seq_wfa_id START 1;
 CREATE SEQUENCE IF NOT EXISTS seq_ingest_id START 1;
 CREATE SEQUENCE IF NOT EXISTS seq_profile_id START 1;
 CREATE SEQUENCE IF NOT EXISTS seq_run_id START 1;
+
+-- ----------------------------------------------------------------- ao vivo
+-- Spec: docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md.
+-- O que está ligado, em que fase e para qual conta. Diferente do resto do
+-- banco, isto NÃO se reconstrói a partir dos CSVs: é decisão do usuário.
+
+-- conta nunca se apaga, só se arquiva: as ordens da parte 4 vão apontar
+-- para ela. Nome único entre as não arquivadas é checado em código (o
+-- DuckDB não tem UNIQUE parcial).
+CREATE SEQUENCE IF NOT EXISTS seq_conta_id START 1;
+CREATE TABLE IF NOT EXISTS contas (
+    conta_id         BIGINT PRIMARY KEY,
+    nome             VARCHAR NOT NULL,
+    tipo             VARCHAR NOT NULL,     -- 'demo' | 'real'
+    limite_perda_dia DOUBLE,               -- R$, opcional (mesa proprietária)
+    criado_em        TIMESTAMP NOT NULL,
+    arquivada_em     TIMESTAMP
+);
+
+ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS ligado BOOLEAN DEFAULT false;
+ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS conta_demo_id BIGINT;
+ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS conta_real_id BIGINT;
+
+-- substitui portfolio_variantes: a chave composta de lá não deixa uma
+-- variante voltar ao portfólio sem apagar o histórico, e a parte 4 precisa
+-- de um número por ligação para etiquetar a ordem no MT5
+CREATE SEQUENCE IF NOT EXISTS seq_ligacao_id START 1;
+CREATE TABLE IF NOT EXISTS portfolio_membros (
+    ligacao_id         BIGINT PRIMARY KEY,
+    portfolio_id       BIGINT NOT NULL,
+    variante_id        BIGINT NOT NULL,
+    adicionado_em      TIMESTAMP NOT NULL,
+    removido_em        TIMESTAMP,          -- remoção só marca, nunca apaga
+    fase               VARCHAR NOT NULL,   -- 'papel'|'demo'|'real_minimo'|'real'
+    fase_desde         TIMESTAMP NOT NULL,
+    ligada             BOOLEAN NOT NULL,
+    desligada_por      VARCHAR,            -- 'usuario' | 'disjuntor'
+    desligada_em       TIMESTAMP,
+    desligada_plano_id BIGINT              -- plano em vigor ao desligar (informativo)
+);
+
+-- diário: SÓ INSERÇÃO. Nenhum código faz UPDATE/DELETE aqui (há teste que
+-- varre o fonte). É a única informação que não se recria depois.
+CREATE SEQUENCE IF NOT EXISTS seq_evento_id START 1;
+CREATE TABLE IF NOT EXISTS ao_vivo_eventos (
+    evento_id     BIGINT PRIMARY KEY,
+    quando        TIMESTAMP NOT NULL,
+    tipo          VARCHAR NOT NULL,
+    origem        VARCHAR NOT NULL,     -- 'usuario' | 'disjuntor' | 'sistema'
+    portfolio_id  BIGINT,
+    ligacao_id    BIGINT,
+    variante_id   BIGINT,
+    conta_id      BIGINT,
+    plano_id      BIGINT,
+    de            VARCHAR,
+    para          VARCHAR,
+    motivo        VARCHAR
+);
+
+-- o plano sabe de que variante é SEM depender da mineração (retrato): a
+-- mineração pode ser apagada, o histórico da variante não
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS variante_id BIGINT;
+-- vigência: o plano novo só vale no próximo pregão, e o antigo vale até lá
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS vale_a_partir DATE;
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS aposentado_em DATE;
+-- impressão digital do código que gerou os números (ver core/codigo.py)
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS codigo_hash VARCHAR;
+ALTER TABLE wfa_runs        ADD COLUMN IF NOT EXISTS codigo_hash VARCHAR;
+
+-- migração (roda a cada subida, idempotente): cada portfolio_variantes
+-- vira membro no papel, ligado — SÓ se não existe membro nenhum para o
+-- par, REMOVIDO OU NÃO. Contar só os ativos ressuscitaria a variante
+-- removida a cada reinício.
+INSERT INTO portfolio_membros (ligacao_id, portfolio_id, variante_id,
+    adicionado_em, fase, fase_desde, ligada)
+SELECT nextval('seq_ligacao_id'), pv.portfolio_id, pv.variante_id,
+       pv.adicionado_em, 'papel', pv.adicionado_em, true
+FROM portfolio_variantes pv
+WHERE NOT EXISTS (SELECT 1 FROM portfolio_membros m
+                  WHERE m.portfolio_id = pv.portfolio_id
+                    AND m.variante_id = pv.variante_id);
+
+UPDATE planos_operacao SET variante_id = (
+    SELECT m.variante_id FROM mining_runs m
+    WHERE m.run_id = planos_operacao.run_id)
+WHERE variante_id IS NULL;
