@@ -87,3 +87,16 @@ def test_evento_falho_desfaz_a_mudanca(banco, monkeypatch):
     with pytest.raises(RuntimeError):
         AV.ligar_portfolio(pid)
     assert P.listar()[0]["ligado"] is False
+
+
+def test_arquivar_conta_inexistente_recusa_sem_evento(banco):
+    with pytest.raises(ValueError, match="não existe"):
+        AV.arquivar_conta(999)
+    assert not diario.eventos(tipo="conta_arquivada")
+
+
+def test_arquivar_duas_vezes_nao_repete_evento(banco):
+    cid = AV.criar_conta("Mesa A", "real")
+    AV.arquivar_conta(cid)
+    AV.arquivar_conta(cid)
+    assert len(diario.eventos(tipo="conta_arquivada", conta_id=cid)) == 1

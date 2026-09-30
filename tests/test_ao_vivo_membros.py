@@ -105,3 +105,19 @@ def test_por_invalido_recusa(banco):
     lig = P.adicionar_variante(pid, vid)
     with pytest.raises(ValueError):
         AV.desligar_membro(lig, por="robo")
+
+
+def test_religar_registra_o_plano_em_vigor(banco):
+    from datetime import datetime
+
+    from core import plano
+    from tests._cadeia import campos_plano, mineracao, wfa
+    pid, vid = _pv()
+    mineracao(1, vid)
+    wfa(1, 1)
+    plano_id = plano.salvar(**campos_plano(), agora=datetime(2026, 9, 1, 10))
+    lig = P.adicionar_variante(pid, vid)
+    AV.desligar_membro(lig)
+    AV.ligar_membro(lig)
+    [e] = diario.eventos(tipo="membro_ligado", ligacao_id=lig)
+    assert e["plano_id"] == plano_id

@@ -80,8 +80,14 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA,
 
 def arquivar_conta(conta_id) -> None:
     with db.connect_write() as con, db.transacao(con):
-        con.execute("UPDATE contas SET arquivada_em = ? WHERE conta_id = ? "
-                    "AND arquivada_em IS NULL", [datetime.now(), conta_id])
+        r = con.execute("SELECT arquivada_em FROM contas WHERE conta_id = ?",
+                        [conta_id]).fetchone()
+        if r is None:
+            raise ValueError(f"conta #{conta_id} não existe")
+        if r[0] is not None:
+            return                        # já arquivada: sem evento repetido
+        con.execute("UPDATE contas SET arquivada_em = ? WHERE conta_id = ?",
+                    [datetime.now(), conta_id])
         diario.registrar(con, "conta_arquivada", "usuario", conta_id=conta_id)
 
 
@@ -187,11 +193,13 @@ def ligar_membro(ligacao_id) -> None:
         pid, vid, ligada, _rem, por = _membro(con, ligacao_id)
         if ligada:
             return
+        vigor = V.plano_em_vigor(vid, con=con)
         con.execute("UPDATE portfolio_membros SET ligada = true, "
                     "desligada_por = NULL, desligada_em = NULL, "
                     "desligada_plano_id = NULL WHERE ligacao_id = ?",
                     [ligacao_id])
         diario.registrar(con, "membro_ligado", "usuario", portfolio_id=pid,
                          ligacao_id=ligacao_id, variante_id=vid,
+                         plano_id=vigor and vigor["plano_id"],
                          motivo="religada após disjuntor"
                          if por == "disjuntor" else None)
