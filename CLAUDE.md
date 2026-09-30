@@ -58,8 +58,9 @@ campo numérico altera dado real — anote o valor antes e restaure depois.
 - Código, nomes, comentários e textos de tela em **português**.
 - Comentário explica **por quê**, nunca o quê. Tom de referência: `core/wfa.py`.
 - **Nada em `core/` importa Dash.** `core/` são contas; `ui/` liga a tela.
-- **Nenhum teste toca `data/database.duckdb`.** Padrão: fixture com
-  `monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.duckdb")` (e
+- **Nenhum teste toca `data/database.duckdb`.** Todo teste já roda isolado do
+  banco real por `tests/conftest.py` (autouse); mesmo assim use a fixture
+  `banco`: `monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.duckdb")` (e
   `PARQUET_DIR` quando ler barras). Veja `tests/test_portfolio.py`.
 - Toda métrica nova na tela tem um (?) com faixa boa e ruim (`ui/components/cartao.py`).
 - Sem scipy, de propósito (`core/robustez.py` usa `math.erfc`).
@@ -127,18 +128,21 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
     "indefinido" separado.
   - Risco de ruína e simulador de crescimento usam **o mesmo modelo**: aposta de
     fração fixa, em múltiplos de R (R = perda média histórica). Não divergir.
+- **O `.duckdb` deixou de ser só cache:** `contas`, `portfolio_membros`,
+  `ao_vivo_eventos` e `planos` não se recriam — backup antes de qualquer
+  migração; nunca apagar o banco.
 - **Campo numérico:** `<input type=number>` focado muda de valor com a rolagem do
   mouse (bug do Chrome). Use `type="text"` + `inputMode="numeric"` + parse manual;
   `ui/assets/num_input.js` protege o resto do app.
 
 ## Documentos: qual confiar
 
-| Documento | Estado (29/09/2026) |
+| Documento | Estado (30/09/2026) |
 |---|---|
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
-| `CHANGELOG.md` | atualizado até o MT5; **não cobre variantes, portfólio nem gatilho** |
+| `CHANGELOG.md` | atualizado até a entrega 1a do Ao vivo (blindagem do banco); **não cobre variantes, portfólio nem gatilho** |
 | `README.md` | **desatualizado**: descreve o MVP (4 modos, "759 testes") |
 | `docs/METODOLOGIA.md` "Estado da plataforma" | **desatualizado**: marca Portfólio como ❌ |
 
@@ -153,9 +157,10 @@ comparativa, Kelly, risco de ruína, simulador de crescimento), parte 3 gatilho:
 fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execução ao vivo ❌.
 
 **Em andamento: tela "Ao vivo"** (projeto C + E), dividida em partes:
-1. **Seção 1** — blindagem do banco (1a) + sub-tela Estratégias com a ficha de
-   rastreio (1b). Spec aprovada: `docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md`.
-   Próximo passo: plano de tarefas da 1a.
+1. **Seção 1** — blindagem do banco (1a) ✅ + sub-tela Ao vivo › Estratégias com a
+   ficha de rastreio (1b). Spec aprovada: `docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md`.
+   Próximo passo: plano 1b (sub-tela Ao vivo › Estratégias com a ficha de
+   rastreio; em_operacao/repetidas/rastreio).
 2. Candles ao vivo (robô separado grava cada M1; completa buracos; reconfere o dia).
 3. Incubação em papel — **o papel roda sempre**, em qualquer fase.
 4. Ordens pelo próprio Dataframe (demo primeiro) + comparativo backtest ×

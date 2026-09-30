@@ -8,6 +8,36 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Tela Ao vivo, entrega 1a: blindagem do banco** (`core/`, commits
+  `a7e4fda` a `6005f58`; desenho em
+  [docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md](docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md)).
+  Antes de operar ao vivo, o banco precisava parar de ser só cache. Cada
+  proteção nasceu de um achado real nos dados:
+  - **Apagar mineração ou WFA recusa cadeia protegida.** Apagar uma
+    mineração apagava, em cascata, o plano que já estava em operação.
+  - **Regravar o WFA de um plano ativo não o aposenta mais.** Antes, regravar
+    aposentava o plano em silêncio.
+  - **Um plano ativo por variante, e o plano vale a partir do próximo
+    pregão.** Aposentar ou trocar de plano no meio do dia mudaria a regra de
+    uma operação já aberta (`plano_em_vigor` por data). Ligar de novo
+    registra o plano em vigor.
+  - **Plano sempre ligado a uma variante.** O plano #3 tinha ficado órfão,
+    sem variante. Agora dá para vincular um plano a uma variante e renomear
+    a variante.
+  - **Impressão digital do código da estratégia.** O código de
+    `rompimento_abertura` foi editado com o plano #4 ativo: o plano diz
+    operar uma coisa e o arquivo faz outra. O plano grava a impressão
+    digital e as telas avisam quando ela não bate.
+  - **Contas, portfólio ligado/desligado e variantes no portfólio com fase
+    e interruptor** (papel, demo, real mínimo, real): tabelas novas de
+    contas e ligações.
+  - **Diário de eventos** (`ao_vivo_eventos`), só de inserção: nada se
+    edita nem se apaga, então dá para reconstruir o que mudou e quando.
+  - **As telas mostram as recusas** (por que uma exclusão ou troca foi
+    barrada) em vez de falhar calado.
+  - **Correção de processo:** a suíte de testes escrevia no banco real.
+    Agora `tests/conftest.py` isola todo teste (autouse) do
+    `data/database.duckdb`. Suíte: 918 testes coletados.
 - **Modo Candidata, parte 1** (`core/candidata.py`, `core/aleatorio.py`,
   `ui/components/candidata_panel.py`, `ui/callbacks_candidata.py`): o quarto
   modo, ao lado de Backtest, Mineração e Walk-Forward. É o passo 10 da
