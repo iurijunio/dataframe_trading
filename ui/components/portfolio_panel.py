@@ -252,12 +252,13 @@ def card_simulacao(sim: dict | None) -> html.Div:
         return html.P("defina o capital do portfólio e tenha pelo menos "
                       "um trade combinado para ver o Kelly e o risco de "
                       "ruína.")
-    cr = sim["capital_recomendado"]
-    if cr is None:
-        nota_cr = ("nenhum capital testado (até 4x o atual) chega no risco "
-                   "desejado - considere reduzir o risco por trade")
+    rr = sim["risco_recomendado_pct"]
+    if rr is None:
+        nota_rr = ("nenhum risco testado (até 50% por trade) chega no "
+                   "risco de ruína desejado - a série é volátil demais "
+                   "pra qualquer aposta de fração fixa")
     else:
-        nota_cr = f"mantém o risco de ruína em até {pct(sim['prob_max_pct'], 0)}"
+        nota_rr = f"mantém o risco de ruína em até {pct(sim['prob_max_pct'], 0)}"
 
     if sim["kelly_indefinido"]:
         card_kelly = card(
@@ -281,21 +282,26 @@ def card_simulacao(sim: dict | None) -> html.Div:
                     "prática - a maioria usa meio-Kelly.",
             nota=f"meio-kelly: {pct(sim['kelly_meio_pct'], 1)}")
 
+    prp = sim["prob_ruina_meio_kelly_pct"]
     return html.Div([
         card_kelly,
-        card("risco de ruína (capital atual)",
-             pct(sim["prob_ruina_atual_pct"], 1),
+        card("risco de ruína (no meio-kelly)",
+             pct(prp, 1) if prp is not None else "—",
              explica=f"Chance, por simulação de Monte Carlo (reembaralhando "
-                     f"os trades reais milhares de vezes), do drawdown "
-                     f"simulado passar de {sim['limiar_dd_pct']:.0f}% do "
-                     f"capital do portfólio - não é o capital zerar.",
-             sinal=("neg" if sim["prob_ruina_atual_pct"] > sim["prob_max_pct"]
-                    else "pos")),
-        card("capital inicial recomendado",
-             brl(cr) if cr is not None else "—",
-             explica="Menor capital, entre uma faixa testada ao redor do "
-                     "atual, que mantém o risco de ruína dentro do limite.",
-             nota=nota_cr),
+                     f"os trades reais milhares de vezes, apostando meio-"
+                     f"Kelly do capital em cada trade), do drawdown "
+                     f"simulado passar de {sim['limiar_dd_pct']:.0f}% - "
+                     f"não é o capital zerar. Sob fração fixa esse número "
+                     f"NÃO depende do capital inicial, só do risco %.",
+             sinal=(None if prp is None else
+                    "neg" if prp > sim["prob_max_pct"] else "pos")),
+        card("risco por trade recomendado",
+             pct(rr, 1) if rr is not None else "—",
+             explica="Maior risco % testado (numa grade de 1% a 50%) que "
+                     "mantém a probabilidade de ruína dentro do limite - "
+                     "uma validação empírica do Kelly pelos trades reais, "
+                     "tipicamente mais conservadora que a fórmula pura.",
+             nota=nota_rr),
     ], className="cards pf-metricas")
 
 

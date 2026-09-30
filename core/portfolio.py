@@ -363,16 +363,18 @@ def resumo_membros(portfolio_id: int) -> dict[str, dict]:
 
 
 _N_SIM_RUINA = 2000
-_FATORES_CAPITAL_TESTADOS = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
 _N_TRADES_MAX = 20_000
+# grade decrescente de risco por trade testada pro "risco % recomendado" -
+# o maior valor aqui que mantiver a ruina dentro do limite vence
+_RISCOS_TESTADOS_PCT = (50.0, 40.0, 30.0, 25.0, 20.0, 15.0, 10.0,
+                        7.0, 5.0, 3.0, 2.0, 1.0)
 
 
 def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
                       prob_max_pct: float = 10.0) -> dict | None:
     """Critério de Kelly e risco de ruína do portfólio COMBINADO - pra
-    responder "esse conjunto de estratégias compensa, e com quanto
-    capital?" (pedido real do usuário depois de ver a tela pela primeira
-    vez).
+    responder "esse conjunto de estratégias compensa, e com que risco?"
+    (pedido real do usuário depois de ver a tela pela primeira vez).
 
     Kelly: fração ótima de capital a arriscar por trade, a partir do
     win_rate e do payoff já calculados em `resumo()` - f* = p - (1-p)/b.
@@ -382,13 +384,23 @@ def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
     Risco de ruína: aqui "ruína" é o drawdown simulado passar de
     `limiar_dd_pct` do capital, NÃO o capital chegar a zero - na prática
     ninguém opera até zerar, para bem antes (escolha do usuário,
-    29/09/2026). Reembaralha (bootstrap, com reposição) os trades reais
-    do portfólio combinado, simula a curva pra uma faixa de capitais ao
-    redor do capital atual, e recomenda o menor capital testado que
-    mantém a probabilidade de ruína em `prob_max_pct` ou menos.
+    29/09/2026). Reembaralha (bootstrap) os trades reais do portfólio
+    combinado, convertidos em múltiplos de "1R" - a MESMA aposta de
+    fração fixa que `simular_crescimento` usa (achado do usuário: os
+    dois cartões pareciam discordar porque um simulava aposta de tamanho
+    fixo em R$ e o outro, fração do capital - agora concordam).
+
+    Sob fração fixa a probabilidade de ruína NÃO depende do capital
+    inicial - tudo escala proporcional - só do risco % escolhido. Por
+    isso, em vez de "capital recomendado", devolve `risco_recomendado_pct`:
+    o maior risco testado (numa grade decrescente) que mantém a
+    probabilidade de ruína em `prob_max_pct` ou menos - uma validação
+    empírica do Kelly, tipicamente mais conservadora que a fórmula pura.
 
     `None` quando `resumo()` também seria `None` (sem trade ou sem
-    capital do portfólio definido)."""
+    capital do portfólio definido). Kelly E risco de ruína ficam
+    indefinidos juntos quando não há nenhuma perda registrada (sem
+    perda não dá pra medir "1R")."""
     m = resumo(portfolio_id)
     capital_atual = _capital_do_portfolio(portfolio_id)
     if m is None or capital_atual is None:
@@ -411,23 +423,48 @@ def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
         kelly_pct = max(p - (1 - p) / b, 0.0) * 100.0
 
     liquido = np.array([t[1] for t in _trades_combinados_ordenados(portfolio_id)])
-    n = liquido.size
+    perdas = liquido[liquido < 0]
+    if perdas.size == 0:
+        return {
+            "kelly_pct": kelly_pct,
+            "kelly_meio_pct": None,
+            "kelly_indefinido": kelly_indefinido,
+            "capital_atual": capital_atual,
+            "prob_ruina_meio_kelly_pct": None,
+            "risco_recomendado_pct": None,
+            "limiar_dd_pct": limiar_dd_pct,
+            "prob_max_pct": prob_max_pct,
+        }
+
+    r_unidade = float(-perdas.mean())  # "1R" = perda média histórica
+    r_multiplos = liquido / r_unidade
+    n = r_multiplos.size
     rng = np.random.default_rng(0)
 
-    def prob_ruina(capital: float) -> float:
-        amostras = rng.choice(liquido, size=(_N_SIM_RUINA, n), replace=True)
-        equity = capital + np.cumsum(amostras, axis=1)
-        pico = np.maximum.accumulate(equity, axis=1)
-        dd_pct = np.divide(pico - equity, pico, out=np.zeros_like(equity),
+    def prob_ruina(risco_pct: float) -> float:
+        f = risco_pct / 100.0
+        amostras = rng.choice(r_multiplos, size=(_N_SIM_RUINA, n), replace=True)
+        capital = np.ones(_N_SIM_RUINA)  # normalizado: sob fração fixa o
+        pico = np.ones(_N_SIM_RUINA)     # capital inicial não muda o %
+        pior_dd = np.zeros(_N_SIM_RUINA)
+        for t in range(n):
+            capital = np.maximum(capital + amostras[:, t] * capital * f, 0.0)
+            pico = np.maximum(pico, capital)
+            dd = np.divide(pico - capital, pico, out=np.zeros_like(pico),
                            where=pico > 0) * 100.0
-        return float((dd_pct.max(axis=1) > limiar_dd_pct).mean() * 100.0)
+            pior_dd = np.maximum(pior_dd, dd)
+        return float((pior_dd > limiar_dd_pct).mean() * 100.0)
 
-    prob_atual = prob_ruina(capital_atual)
-    capital_recomendado = None
-    for fator in _FATORES_CAPITAL_TESTADOS:
-        c = capital_atual * fator
-        if prob_ruina(c) <= prob_max_pct:
-            capital_recomendado = c
+    # kelly_pct=0.0 e' "sem vantagem nenhuma" de verdade (ha' perda no
+    # historico, mas nenhum ganho) - meio-Kelly seria 0% (nao aposte
+    # nada), e simular ruina num risco% que nao e' Kelly nenhum, sob um
+    # rotulo que diz "no meio-kelly", e' um numero que parece medido mas
+    # nao mede o que o rotulo promete (achado da revisao).
+    prob_meio_kelly = prob_ruina(kelly_pct / 2) if kelly_pct else None
+    risco_recomendado = None
+    for risco in _RISCOS_TESTADOS_PCT:
+        if prob_ruina(risco) <= prob_max_pct:
+            risco_recomendado = risco
             break
 
     return {
@@ -435,8 +472,8 @@ def simulacao_capital(portfolio_id: int, limiar_dd_pct: float = 40.0,
         "kelly_meio_pct": None if kelly_pct is None else kelly_pct / 2,
         "kelly_indefinido": kelly_indefinido,
         "capital_atual": capital_atual,
-        "prob_ruina_atual_pct": prob_atual,
-        "capital_recomendado": capital_recomendado,
+        "prob_ruina_meio_kelly_pct": prob_meio_kelly,
+        "risco_recomendado_pct": risco_recomendado,
         "limiar_dd_pct": limiar_dd_pct,
         "prob_max_pct": prob_max_pct,
     }

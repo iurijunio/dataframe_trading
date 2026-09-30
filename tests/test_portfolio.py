@@ -435,33 +435,97 @@ def test_simulacao_capital_kelly_indefinido_sem_nenhuma_perda(banco):
     assert r["kelly_meio_pct"] is None
 
 
-def test_simulacao_capital_recomenda_capital_maior_quando_risco_alto(banco):
-    """Capital pequeno demais pra uma série volátil deve dar probabilidade
-    de ruína alta E recomendar um capital maior que o atual (ou nenhum,
-    se nem o maior testado bastar) - nunca ficar quieto como se R$ 1.000
-    fosse suficiente pra aguentar um trade de -R$ 5.000."""
+def test_simulacao_capital_indefinida_sem_nenhuma_perda(banco):
+    """Sem perda registrada não dá pra medir "1R" - nem Kelly nem risco de
+    ruína têm o que calcular (mesma amostra, mesma limitação)."""
     pid = P.criar("p1")
-    P.definir_capital(pid, 1_000.0)
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(i, 100.0) for i in range(10)])
+
+    r = P.simulacao_capital(pid)
+    assert r["prob_ruina_meio_kelly_pct"] is None
+    assert r["risco_recomendado_pct"] is None
+
+
+def test_simulacao_capital_prob_ruina_none_sem_vantagem_nenhuma(banco):
+    """kelly_pct=0.0 é "sem vantagem nenhuma" de verdade (há perda no
+    histórico, mas nenhum ganho) - meio-Kelly seria 0% (não aposte
+    nada). Medir ruína num risco % que não é Kelly nenhum, sob um rótulo
+    que diz "no meio-kelly", seria um número que parece medido mas não
+    mede o que o rótulo promete (achado da revisão)."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(i, -100.0) for i in range(10)])  # só perdas
+
+    r = P.simulacao_capital(pid)
+    assert r["kelly_pct"] == 0.0
+    assert r["prob_ruina_meio_kelly_pct"] is None
+
+
+def test_simulacao_capital_e_simular_crescimento_concordam_sobre_risco(banco):
+    """Achado real do usuário: o cartão de risco de ruína e o simulador de
+    crescimento pareciam discordar porque usavam modelos de aposta
+    diferentes (tamanho fixo em R$ vs. fração fixa do capital). Prova de
+    consistência de verdade (não vacuosa): série determinística (só
+    perdas de -1R iguais) onde `simulacao_capital` recomenda 2% e rejeita
+    3% - o PRÓPRIO drawdown medido por `simular_crescimento` (função
+    independente) tem que confirmar isso, ficando abaixo do limiar nos
+    2% recomendados e acima dele nos 3% rejeitados. "prob_zerar_pct" não
+    servia pra esse teste: com séries de edge positivo ele fica em 0%
+    pra qualquer risco testado, então passaria mesmo com um
+    risco_recomendado_pct errado (achado da revisão)."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(i, -100.0) for i in range(10)])  # só perdas
+
+    sim_risco = P.simulacao_capital(pid, limiar_dd_pct=25.0, prob_max_pct=10.0)
+    risco_seguro = sim_risco["risco_recomendado_pct"]
+    assert risco_seguro == pytest.approx(2.0)
+
+    seguro = P.simular_crescimento(pid, capital_inicial=100_000.0,
+                                   risco_pct=risco_seguro, n_trades=10,
+                                   n_simulacoes=100)
+    dd_seguro = 1 - seguro["p50"][-1] / 100_000.0
+    assert dd_seguro < 0.25
+
+    # um degrau de risco acima (3%) foi rejeitado por simulacao_capital -
+    # o simulador de crescimento, rodando por conta própria, tem que
+    # concordar que aquele nível já estoura o limiar
+    arriscado = P.simular_crescimento(pid, capital_inicial=100_000.0,
+                                      risco_pct=3.0, n_trades=10,
+                                      n_simulacoes=100)
+    dd_arriscado = 1 - arriscado["p50"][-1] / 100_000.0
+    assert dd_arriscado > 0.25
+
+
+def test_simulacao_capital_risco_recomendado_e_o_maior_ainda_seguro(banco):
+    """Série SEM variação nenhuma (toda perda de -1R exatamente igual) -
+    o bootstrap fica determinístico, então dá pra calcular o risco de
+    ruína na mão e comparar: com 10 trades e limiar de 25% de drawdown,
+    2% de risco sobrevive (dd acumulado ~18,3%) e 3% não (dd ~26,3%) -
+    o recomendado tem que ser exatamente 2%, nem mais nem menos."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
+    _membro_pronto(pid, "a", 10, [(i, -100.0) for i in range(10)])
+
+    r = P.simulacao_capital(pid, limiar_dd_pct=25.0, prob_max_pct=10.0)
+    assert r["risco_recomendado_pct"] == pytest.approx(2.0)
+
+
+def test_simulacao_capital_risco_alto_demais_nao_recomenda_nada(banco):
+    """Uma série com uma perda catastrófica isolada e um limiar de
+    drawdown apertado deve deixar claro que NENHUM risco testado (nem o
+    menor da grade, 1%) é seguro o bastante, em vez de recomendar um
+    risco % que na prática ainda é perigoso. Sob fração fixa, 1% de
+    risco já produz exatamente 1% de drawdown num trade de "1R" perdido -
+    com limiar de 0,5% até isso estoura."""
+    pid = P.criar("p1")
+    P.definir_capital(pid, 100_000.0)
     trades = [(i, 50.0) for i in range(10)] + [(10, -5_000.0)]
     _membro_pronto(pid, "a", 10, trades)
 
-    r = P.simulacao_capital(pid, limiar_dd_pct=40.0)
-    assert r["prob_ruina_atual_pct"] > 50.0
-    assert (r["capital_recomendado"] is None
-           or r["capital_recomendado"] > 1_000.0)
-
-
-def test_simulacao_capital_atual_ja_seguro_recomenda_ele_mesmo(banco):
-    """Capital já folgado o bastante pra série real não deve pedir pra
-    aumentar à toa - recomenda o próprio capital atual (menor fator
-    testado, 0.25x, com risco baixo o suficiente)."""
-    pid = P.criar("p1")
-    P.definir_capital(pid, 1_000_000.0)
-    _membro_pronto(pid, "a", 10, [(i, float((i % 3) - 1) * 100) for i in range(60)])
-
-    r = P.simulacao_capital(pid, limiar_dd_pct=40.0, prob_max_pct=50.0)
-    assert r["prob_ruina_atual_pct"] < 10.0
-    assert r["capital_recomendado"] == pytest.approx(1_000_000.0 * 0.25)
+    r = P.simulacao_capital(pid, limiar_dd_pct=0.5, prob_max_pct=1.0)
+    assert r["risco_recomendado_pct"] is None
 
 
 # -------------------------------------------- simulacao de crescimento
