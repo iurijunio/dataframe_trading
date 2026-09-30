@@ -306,6 +306,7 @@ def register(app):
         Output("painel-backtest", "style"), Output("painel-mineracao", "style"),
         Output("painel-wfa", "style"), Output("painel-candidata", "style"),
         Output("painel-estrategias", "style"), Output("painel-portfolio", "style"),
+        Output("painel-aovivo", "style"),
         Output("acao-backtest", "style"), Output("sec-mineracao", "style"),
         Output("sidebar", "style"),
         Input("modo", "value"),
@@ -335,7 +336,7 @@ def register(app):
         # achando que mudam alguma coisa.
         return (v(qual == "backtest"), v(qual == "mineracao"), v(qual == "wfa"),
                 v(qual == "candidata"), v(qual == "estrategias"),
-                v(qual == "portfolio"),
+                v(qual == "portfolio"), v(qual == "aovivo"),
                 VISIVEL if qual == "backtest" else OCULTO,
                 VISIVEL if qual == "mineracao" else OCULTO,
                 # BLOCK, e não flex: a barra lateral é um <aside> comum com
@@ -343,7 +344,8 @@ def register(app):
                 # container de LINHA, e as seções (Período, Estratégia,
                 # Parâmetros, Execução) se enfileiravam na horizontal — só a
                 # primeira cabia, e o resto sumia no corte do overflow.
-                OCULTO if qual in ("wfa", "candidata", "estrategias", "portfolio")
+                OCULTO if qual in ("wfa", "candidata", "estrategias", "portfolio",
+                            "aovivo")
                 else {"display": "block"})
 
     # ---- ou o valor fixo, ou a faixa de/passo/até - nunca os dois na tela
@@ -1948,3 +1950,6 @@ def register(app):
 
     from ui import callbacks_portfolio
     callbacks_portfolio.register(app)
+
+    from ui import callbacks_ao_vivo
+    callbacks_ao_vivo.register(app)

@@ -20,7 +20,8 @@ from dash import Dash, dcc, html
 
 from ui import data as D
 from ui import theme as T
-from ui.components import (analytics_charts, candidata_panel, controls,
+from ui.components import (analytics_charts, ao_vivo_panel, candidata_panel,
+                           controls,
                            estrategias_panel, mining, portfolio_panel,
                            results_grid, stats_cards, wfa_panel)
 
@@ -61,7 +62,8 @@ def topbar(simbolo):
                                  {"label": "Walk-Forward", "value": "wfa"},
                                  {"label": "Candidata", "value": "candidata"},
                                  {"label": "Estratégias", "value": "estrategias"},
-                                 {"label": "Portfólio", "value": "portfolio"}],
+                                 {"label": "Portfólio", "value": "portfolio"},
+                                 {"label": "Ao vivo", "value": "aovivo"}],
                     ),
                 ],
                 className="brand-wrap",
@@ -190,6 +192,7 @@ def painel(inicio, fim):
             estrategias_panel.painel(),
 
             portfolio_panel.painel(),
+            ao_vivo_panel.painel(),
         ],
         className="main",
     )
