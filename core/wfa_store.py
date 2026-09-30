@@ -17,6 +17,7 @@ import json
 from datetime import datetime
 
 from . import db_manager as db
+from . import plano as _plano
 
 
 def _passo_para_banco(p) -> dict:
@@ -185,6 +186,13 @@ def detalhes(wfa_id: int) -> dict | None:
 
 def excluir(wfa_id: int) -> bool:
     with db.connect_write() as con, db.transacao(con):
+        ids = [r[0] for r in con.execute(
+            "SELECT plano_id FROM planos_operacao WHERE wfa_id = ?",
+            [wfa_id]).fetchall()]
+        motivo = _plano.motivo_protecao(con, ids)
+        if motivo:
+            raise ValueError(
+                f"o walk-forward #{wfa_id} não pode ser apagado: {motivo}")
         con.execute("DELETE FROM wfa_trades WHERE wfa_id = ?", [wfa_id])
         # o plano de operação vai junto: sem isto ele fica apontando para um
         # walk-forward que não existe mais, e a tela mostraria plano sem

@@ -30,6 +30,7 @@ import numpy as np
 
 from . import db_manager as db
 from . import metrics, walkforward as wf
+from . import plano as _plano
 from .engine.execution import ExecutionProfile, run_strategy
 
 _BARS: dict | None = None
@@ -706,6 +707,16 @@ def excluir_salva(run_id: int) -> bool:
     resultado de busca, nao dado de mercado.
     """
     with db.connect_write() as con, db.transacao(con):
+        # nada que opera ou pode operar sai daqui (spec Ao vivo §4.1):
+        # a limpeza de minerações antigas derrubava o plano em operação
+        ids = [r[0] for r in con.execute(
+            "SELECT plano_id FROM planos_operacao WHERE run_id = ? OR wfa_id IN "
+            "(SELECT wfa_id FROM wfa_runs WHERE run_id = ?)",
+            [run_id, run_id]).fetchall()]
+        motivo = _plano.motivo_protecao(con, ids)
+        if motivo:
+            raise ValueError(
+                f"a mineração #{run_id} não pode ser apagada: {motivo}")
         con.execute("DELETE FROM mining_trials WHERE run_id = ?", [run_id])
         # os TRADES dos walk-forwards dela antes dos registros: apagar só
         # `wfa_runs` deixava todos os trades órfãos (551 na #40)

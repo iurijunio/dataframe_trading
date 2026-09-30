@@ -109,3 +109,55 @@ def test_excluir_plano_livre_apaga(banco):
     _, pid = _cadeia(com_variante=False)
     plano.aposentar(pid, agora=datetime(2026, 9, 2, 10))
     assert plano.excluir(pid) is True and plano.detalhes(pid) is None
+
+
+from core import optimizer, wfa_store  # noqa: E402
+
+
+def _conta(tabela):
+    with db.connect(read_only=True) as con:
+        return con.execute(f"SELECT count(*) FROM {tabela}").fetchone()[0]
+
+
+def test_apagar_mineracao_com_plano_ativo_recusa_e_nao_apaga_nada(banco):
+    _cadeia()
+    with db.connect_write() as con:
+        con.execute("INSERT INTO mining_trials (run_id, trial_id) VALUES (1, 1)")
+    with pytest.raises(ValueError, match="mineração #1 não pode ser apagada"):
+        optimizer.excluir_salva(1)
+    assert [_conta(t) for t in ("mining_runs", "mining_trials", "wfa_runs",
+                                "planos_operacao")] == [1, 1, 1, 1]
+
+
+def test_apagar_wfa_com_plano_ativo_recusa(banco):
+    _cadeia()
+    with pytest.raises(ValueError, match="walk-forward #1 não pode ser apagado"):
+        wfa_store.excluir(1)
+    assert _conta("wfa_runs") == 1
+
+
+def test_mineracao_sem_plano_de_variante_em_portfolio_pode_ser_apagada(banco):
+    """Minerações-lixo de uma variante em operação continuam apagáveis."""
+    v, _ = _cadeia()
+    _membro(v)
+    mineracao(2, variante_id=v)          # outra mineração, sem WFA nem plano
+    assert optimizer.excluir_salva(2) is True
+
+
+def test_mineracao_sem_protecao_apaga_em_cascata(banco):
+    _, pid = _cadeia(com_variante=False)
+    plano.aposentar(pid, agora=datetime(2026, 9, 2, 10))
+    assert optimizer.excluir_salva(1) is True
+    assert [_conta(t) for t in ("mining_runs", "wfa_runs",
+                                "planos_operacao")] == [0, 0, 0]
+
+
+def test_apagar_mineracao_acha_plano_pelo_wfa_mesmo_com_run_id_diferente(banco):
+    """O plano pode carregar outro run_id; o vínculo que vale é o do
+    walk-forward que pertence à mineração."""
+    _cadeia()
+    with db.connect_write() as con:
+        con.execute("UPDATE planos_operacao SET run_id = 99")
+    with pytest.raises(ValueError, match="mineração #1 não pode ser apagada"):
+        optimizer.excluir_salva(1)
+    assert _conta("mining_runs") == 1

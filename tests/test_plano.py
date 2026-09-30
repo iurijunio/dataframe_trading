@@ -84,30 +84,37 @@ def test_listar_traz_o_mais_novo_primeiro(banco):
     assert [p["plano_id"] for p in plano.listar()] == [b, a]
 
 
+def _fora_de_vigor(pid):
+    from datetime import datetime
+    plano.aposentar(pid, agora=datetime(2026, 9, 2, 10))
+
+
 def test_excluir_walk_forward_leva_os_planos_junto(banco):
-    """Sem a cascata, o plano fica apontando para um walk-forward que não
-    existe mais — e a tela mostraria plano sem origem."""
+    """Com o plano fora de vigor e sem portfólio, a cascata continua: sem
+    ela, o plano apontaria para um walk-forward que não existe mais."""
     _wfa_no_banco()
     pid = plano.salvar(**_campos())
+    _fora_de_vigor(pid)
     wfa_store.excluir(1)
     assert plano.detalhes(pid) is None
 
 
 def test_excluir_mineracao_leva_os_planos_dos_walk_forwards_dela(banco):
-    """A regra do usuário: apagar mineração apaga tudo que nasceu dela."""
+    """Regra de 18/09/2026, revista em 30/09/2026: apagar mineração apaga
+    tudo que nasceu dela — EXCETO plano que opera ou pode operar."""
     _wfa_no_banco(run_id=7, wfa_id=3)
     pid = plano.salvar(**_campos(wfa_id=3, run_id=7))
+    _fora_de_vigor(pid)
     optimizer.excluir_salva(7)
     assert plano.detalhes(pid) is None and plano.listar() == []
 
 
 def test_excluir_mineracao_nao_leva_plano_de_outra(banco):
-    """A cascata precisa acertar o alvo: apagar demais é pior que não
-    apagar."""
     _wfa_no_banco(run_id=7, wfa_id=3)
     _wfa_no_banco(run_id=8, wfa_id=4)
     fica = plano.salvar(**_campos(wfa_id=4, run_id=8))
-    plano.salvar(**_campos(wfa_id=3, run_id=7))
+    sai = plano.salvar(**_campos(wfa_id=3, run_id=7))
+    _fora_de_vigor(sai)
     optimizer.excluir_salva(7)
     assert [p["plano_id"] for p in plano.listar()] == [fica]
 
