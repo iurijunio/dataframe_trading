@@ -9,7 +9,7 @@ variante_id), sem coluna própria — ver docs/superpowers/specs/
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from . import db_manager as db
 
@@ -92,3 +92,31 @@ def plano_ativo(variante_id: int) -> dict | None:
     with db.connect(read_only=True) as con:
         r = con.execute(sql, [variante_id]).fetchone()
     return {"run_id": r[0], "wfa_id": r[1], "plano_id": r[2]} if r else None
+
+
+def plano_em_vigor(variante_id: int, dia: date | None = None,
+                   con=None) -> dict | None:
+    """O plano que vale naquele pregão (padrão: hoje).
+
+    Diferente de `plano_ativo` (o mais recente gravado, que a análise de
+    portfólio usa): o plano novo só vale a partir do próximo pregão, e o
+    anterior continua em vigor até lá. Lê `planos_operacao.variante_id`,
+    nunca a mineração — ela pode ter sido apagada. `con` para quem chama de
+    dentro de uma transação aberta.
+    """
+    dia = dia or date.today()
+    sql = """
+        SELECT plano_id, wfa_id, run_id FROM planos_operacao
+        WHERE variante_id = ?
+          AND (vale_a_partir IS NULL OR vale_a_partir <= ?)
+          AND ((estado = 'ativo' AND aposentado_em IS NULL)
+               OR aposentado_em > ?)
+        ORDER BY plano_id DESC LIMIT 1
+    """
+    args = [variante_id, dia, dia]
+    if con is not None:
+        r = con.execute(sql, args).fetchone()
+    else:
+        with db.connect(read_only=True) as c:
+            r = c.execute(sql, args).fetchone()
+    return {"plano_id": r[0], "wfa_id": r[1], "run_id": r[2]} if r else None
