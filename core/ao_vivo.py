@@ -5,8 +5,9 @@ Toda mudança de estado grava o evento do diário NA MESMA transação.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
+from . import codigo
 from . import db_manager as db
 from . import diario
 from . import plano as _plano
@@ -251,3 +252,145 @@ def vincular_plano(run_id, variante_id, manter_plano_id=None,
                                  plano_id=p, variante_id=variante_id,
                                  de="ativo", para="aposentado",
                                  motivo=f"fica o plano #{manter_plano_id}")
+
+
+# ------------------------------------------------ quem roda, e por quê
+_FASE_CONTA = {"demo": "demo", "real_minimo": "real", "real": "real"}
+
+
+def _dias_uteis(de: date, ate: date) -> int:
+    if de is None or de > ate:
+        return 0
+    return sum(1 for i in range((ate - de).days + 1)
+               if (de + timedelta(days=i)).weekday() < 5)
+
+
+def _motivo(pf_ligado, ligada, desligada_por, desligada_em, plano_vigor,
+            hash_atual) -> str | None:
+    """O PRIMEIRO motivo que impede rodar, na ordem da spec §4.6 — a tela
+    mostra um só, e o mais estrutural ganha (portfólio antes de variante,
+    variante antes de plano, plano antes de código)."""
+    if not pf_ligado:
+        return "portfólio desligado"
+    if not ligada and desligada_por == "disjuntor":
+        return f"desligada pelo disjuntor em {desligada_em:%d/%m}"
+    if not ligada:
+        return "pausada por você"
+    if plano_vigor is None:
+        return "sem plano em vigor"
+    if hash_atual is None:
+        return "código da estratégia não encontrado"
+    if plano_vigor["codigo_hash"] and plano_vigor["codigo_hash"] != hash_atual:
+        return "código mudou desde o plano"
+    return None
+
+
+def em_operacao(hoje: date | None = None) -> list[dict]:
+    """Cada variante de cada portfólio, com o plano que vale hoje e o
+    motivo de rodar ou não. Leitura só: é o que a tela Ao vivo desenha e,
+    na parte 3, o que o robô vai obedecer."""
+    hoje = hoje or date.today()
+    with db.connect(read_only=True) as con:
+        linhas = con.execute(
+            "SELECT pf.portfolio_id, pf.nome, coalesce(pf.ligado, false), "
+            "pf.conta_demo_id, pf.conta_real_id, pm.ligacao_id, "
+            "pm.variante_id, ev.nome, ev.estrategia, pm.fase, pm.fase_desde, "
+            "pm.ligada, pm.desligada_por, pm.desligada_em "
+            "FROM portfolio_membros pm "
+            "JOIN portfolios pf ON pf.portfolio_id = pm.portfolio_id "
+            "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
+            "WHERE pm.removido_em IS NULL ORDER BY pf.nome, ev.nome").fetchall()
+        contas_vivas = {r[0] for r in con.execute(
+            "SELECT conta_id FROM contas WHERE arquivada_em IS NULL").fetchall()}
+        hashes: dict[str, str | None] = {}
+        out = []
+        for (pf_id, pf_nome, pf_lig, c_demo, c_real, lig, vid, v_nome,
+             estrategia, fase, fase_desde, ligada, por, em) in linhas:
+            vigor = V.plano_em_vigor(vid, hoje, con=con)
+            plano_vigor = None
+            if vigor:
+                r = con.execute(
+                    "SELECT plano_id, symbol, reotimizar_em, vale_a_partir, "
+                    "created_at, codigo_hash FROM planos_operacao "
+                    "WHERE plano_id = ?", [vigor["plano_id"]]).fetchone()
+                plano_vigor = dict(zip(("plano_id", "symbol", "reotimizar_em",
+                                        "vale_a_partir", "created_at",
+                                        "codigo_hash"), r))
+            f = con.execute(
+                "SELECT plano_id, vale_a_partir FROM planos_operacao "
+                "WHERE variante_id = ? AND estado = 'ativo' "
+                "AND vale_a_partir > ? ORDER BY plano_id DESC LIMIT 1",
+                [vid, hoje]).fetchone()
+            futuro = {"plano_id": f[0], "vale_a_partir": f[1]} if f else None
+            if estrategia not in hashes:
+                hashes[estrategia] = codigo.hash_estrategia(estrategia)
+            motivo = _motivo(pf_lig, ligada, por, em, plano_vigor,
+                             hashes[estrategia])
+            avisos = []
+            if plano_vigor and not plano_vigor["codigo_hash"]:
+                avisos.append("código não conferido (plano anterior a 30/09/2026)")
+            tipo = _FASE_CONTA.get(fase)
+            if tipo:
+                conta = c_demo if tipo == "demo" else c_real
+                if conta is None or conta not in contas_vivas:
+                    avisos.append(f"conta {tipo} não escolhida ou arquivada")
+            if (plano_vigor and plano_vigor["reotimizar_em"]
+                    and plano_vigor["reotimizar_em"] < hoje):
+                avisos.append("plano vencido: reotimizar desde "
+                              f"{plano_vigor['reotimizar_em']:%d/%m/%Y}")
+            if futuro:
+                avisos.append(f"plano #{futuro['plano_id']} entra em "
+                              f"{futuro['vale_a_partir']:%d/%m}")
+            inicio = None
+            if plano_vigor:
+                inicio = (plano_vigor["vale_a_partir"]
+                          or _plano.proximo_dia_util(
+                              plano_vigor["created_at"].date()))
+            out.append({
+                "portfolio_id": pf_id, "portfolio_nome": pf_nome,
+                "portfolio_ligado": bool(pf_lig), "ligacao_id": lig,
+                "variante_id": vid, "variante_nome": v_nome,
+                "estrategia": estrategia, "fase": fase,
+                "fase_desde": fase_desde,
+                "dias_na_fase": (hoje - fase_desde.date()).days,
+                "ligada": bool(ligada), "desligada_por": por,
+                "desligada_em": em, "plano": plano_vigor,
+                "plano_futuro": futuro,
+                "pregoes_com_plano": _dias_uteis(inicio, hoje),
+                "motivo": motivo, "avisos": avisos, "roda": motivo is None,
+            })
+    # a mesma variante ligada em 2+ portfólios ligados roda 2+ vezes na
+    # MESMA conta — decisão do usuário: permitido, só avisa
+    for rep in repetidas(out):
+        outros = len(rep["portfolios"]) - 1
+        for item in out:
+            if (item["variante_id"] == rep["variante_id"]
+                    and item["portfolio_ligado"] and item["ligada"]):
+                item["avisos"].append(
+                    f"também em {outros} outro(s) portfólio(s) ligado(s) — "
+                    "os contratos somam na conta")
+    return out
+
+
+def repetidas(linhas: list[dict] | None = None) -> list[dict]:
+    linhas = em_operacao() if linhas is None else linhas
+    por_variante: dict[int, dict] = {}
+    for l in linhas:
+        if not (l["portfolio_ligado"] and l["ligada"]):
+            continue
+        d = por_variante.setdefault(l["variante_id"], {
+            "variante_id": l["variante_id"],
+            "variante_nome": l["variante_nome"], "portfolios": []})
+        d["portfolios"].append(l["portfolio_nome"])
+    return [d for d in por_variante.values() if len(d["portfolios"]) > 1]
+
+
+def planos_sem_variante() -> list[dict]:
+    """Planos ativos que não pertencem a nenhuma variante — não entram em
+    portfólio nenhum até serem vinculados (caso real: plano #3)."""
+    cols = ("plano_id", "run_id", "wfa_id", "strategy", "nome", "created_at")
+    with db.connect(read_only=True) as con:
+        return [dict(zip(cols, r)) for r in con.execute(
+            f"SELECT {', '.join(cols)} FROM planos_operacao "
+            "WHERE estado = 'ativo' AND variante_id IS NULL "
+            "ORDER BY plano_id").fetchall()]
