@@ -18,6 +18,7 @@ import json
 from datetime import date, datetime, timedelta
 
 from . import db_manager as db
+from . import diario
 from . import engine
 
 _JSON = ("params", "profile", "disjuntor", "expectativa", "reotimizacao",
@@ -48,7 +49,17 @@ _COLUNAS = ("plano_id", "wfa_id", "run_id", "symbol", "strategy", "nome",
             "de_onde", "margem", "uso_margem_pct", "camada4_travada",
             "disjuntor", "expectativa", "reotimizacao", "definicoes",
             "regua", "estado", "motor_versao", "base_ate", "base_barras",
-            "capital_livre", "reotimizar_em")
+            "capital_livre", "reotimizar_em", "variante_id", "vale_a_partir",
+            "aposentado_em", "codigo_hash")
+
+
+def proximo_dia_util(d: date) -> date:
+    """O próximo dia de semana depois de `d`. Feriado não precisa de
+    calendário: sem pregão, o plano simplesmente começa no seguinte."""
+    d = d + timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
 
 
 def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
@@ -56,24 +67,41 @@ def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
            perda_referencia, de_onde, margem, uso_margem_pct,
            camada4_travada, disjuntor, expectativa, reotimizacao,
            definicoes, regua, motor_versao=None, base_ate=None,
-           base_barras=None, capital_livre=None, reotimizar_em=None) -> int:
+           base_barras=None, capital_livre=None, reotimizar_em=None,
+           codigo_hash=None, agora: datetime | None = None) -> int:
     """Grava um plano e devolve o id.
 
     Nunca substitui: dois planos do mesmo walk-forward com risco diferente
-    são duas decisões, e as duas ficam.
+    são duas decisões, e as duas ficam. O novo só vale a partir do próximo
+    pregão — nunca se troca de parâmetro no meio do dia — e o anterior
+    continua valendo até lá.
     """
+    agora = agora or datetime.now()
+    vale = proximo_dia_util(agora.date())
     with db.connect_write() as con, db.transacao(con):
-        # só um plano ATIVO por walk-forward: dois ativos deixariam a
-        # incubação sem saber qual obedecer, e um duplo clique já criava
-        # esse caso. O anterior continua no banco, aposentado.
-        con.execute("UPDATE planos_operacao SET estado = 'aposentado' "
-                    "WHERE wfa_id = ? AND estado = 'ativo'", [wfa_id])
+        r = con.execute("SELECT variante_id FROM mining_runs WHERE run_id = ?",
+                        [run_id]).fetchone()
+        variante_id = r[0] if r else None
+        # um plano ativo por VARIANTE: reotimizar com mineração nova deixava
+        # o antigo ativo, e se o novo sumisse o antigo voltava a valer
+        # sozinho. Sem variante, vale a regra antiga (por walk-forward).
+        alvo, arg = (("variante_id = ?", variante_id) if variante_id is not None
+                     else ("wfa_id = ?", wfa_id))
+        saem = [x[0] for x in con.execute(
+            f"SELECT plano_id FROM planos_operacao WHERE {alvo} "
+            "AND (estado = 'ativo' OR aposentado_em > ?)", [arg, vale]
+        ).fetchall()]
+        if saem:
+            con.execute(
+                "UPDATE planos_operacao SET estado = 'aposentado', "
+                "aposentado_em = ? "
+                f"WHERE plano_id IN ({', '.join('?' * len(saem))})",
+                [vale, *saem])
         pid = con.execute("SELECT nextval('seq_plano_id')").fetchone()[0]
         con.execute(
             f"INSERT INTO planos_operacao ({', '.join(_COLUNAS)}) "
             f"VALUES ({', '.join('?' * len(_COLUNAS))})",
-            [pid, wfa_id, run_id, symbol, strategy, nome or None,
-             datetime.now(),
+            [pid, wfa_id, run_id, symbol, strategy, nome or None, agora,
              _js(params), _js(profile),
              float(capital) if capital is not None else None,
              int(contratos) if contratos is not None else None,
@@ -84,7 +112,16 @@ def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
              _js(disjuntor), _js(expectativa),
              _js(reotimizacao), _js(definicoes),
              _js(regua), "ativo", motor_versao, base_ate,
-             base_barras, capital_livre, reotimizar_em])
+             base_barras, capital_livre, reotimizar_em,
+             variante_id, vale, None, codigo_hash])
+        diario.registrar(con, "plano_gravado", "usuario", plano_id=pid,
+                         variante_id=variante_id,
+                         motivo=f"vale a partir de {vale:%d/%m/%Y}")
+        for antigo in saem:
+            diario.registrar(con, "plano_aposentado", "sistema",
+                             plano_id=antigo, variante_id=variante_id,
+                             de="ativo", para="aposentado",
+                             motivo=f"substituído pelo plano #{pid}")
     return int(pid)
 
 
@@ -356,6 +393,7 @@ def montar(wfa_id: int, d: dict, ref: dict, dim: dict, disj: dict,
                   "portoes": [_portao_para_json(p)
                               for p in (veredito or {}).get("portoes") or []]},
         # reprodutibilidade
+        "codigo_hash": d.get("codigo_hash"),
         **retrato_da_base(d.get("symbol")),
     }
 
