@@ -48,7 +48,7 @@ def _numero(texto):
     limpo = str(texto).replace("R$", "").replace(" ", "")
     if re.fullmatch(r"\d+", limpo) or re.fullmatch(r"\d+\.\d{1,2}", limpo):
         valor = float(limpo)
-    elif re.fullmatch(r"\d{1,3}(\.\d{3})+(,\d{1,2})?", limpo)             or re.fullmatch(r"\d+,\d{1,2}", limpo):
+    elif re.fullmatch(r"\d{1,3}(\.\d{3})+(,\d{1,2})?", limpo) \n            or re.fullmatch(r"\d+,\d{1,2}", limpo):
         valor = float(limpo.replace(".", "").replace(",", "."))
     else:
         raise ValueError(_ERRO_LIMITE)
