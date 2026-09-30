@@ -178,9 +178,13 @@ def test_regravar_o_walk_forward_com_plano_mantem_os_dois(banco):
     rotulos = {w["wfa_id"]: w["rotulo"] for w in wfa_store.listar()}
     assert "tem plano" in rotulos[primeiro]
     assert "tem plano" not in rotulos[segundo]
+    tem = {w["wfa_id"]: w["tem_plano"] for w in wfa_store.listar()}
+    assert tem[primeiro] is True and tem[segundo] is False
     terceiro = grava_wfa()                 # o SEGUNDO não tem plano: substitui
     assert wfa_store.detalhes(segundo) is None
     assert {w["wfa_id"] for w in wfa_store.listar()} == {primeiro, terceiro}
+    tem = {w["wfa_id"]: w["tem_plano"] for w in wfa_store.listar()}
+    assert tem[primeiro] is True and tem[terceiro] is False
 
 
 def test_camada4_nao_informada_nao_vira_destravada(banco):

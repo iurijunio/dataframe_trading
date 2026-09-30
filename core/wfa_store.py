@@ -47,6 +47,8 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
 
     Um WFA por combinação de (mineração, IS, OOS, inteligência, holdout): se
     você rodar o mesmo de novo, ele SUBSTITUI em vez de empilhar duplicata.
+    EXCETO quando o registro antigo tem plano de operação: aí ele fica e o
+    novo entra ao lado (substituí-lo aposentaria o plano em silêncio).
     Guardar dois registros idênticos com resultados idênticos só faria a
     lista crescer sem informar nada.
     """
@@ -150,6 +152,7 @@ def listar(strategy: str | None = None, run_id: int | None = None) -> list[dict]
             "holdout": bool(hold),
             # separados do rótulo: a tela Candidata monta um rótulo curto
             "nome": nome, "quando": quando,
+            "tem_plano": bool(n_planos),
         })
     return fora
 
@@ -166,7 +169,8 @@ def detalhes(wfa_id: int) -> dict | None:
         r = con.execute(
             "SELECT run_id, symbol, strategy, nome, is_meses, oos_meses, "
             "inteligencia, holdout, passos, deploy, profile, capital, "
-            "sharpes_matriz, camada4_travada, codigo_hash FROM wfa_runs WHERE wfa_id = ?",
+            "sharpes_matriz, camada4_travada, codigo_hash "
+            "FROM wfa_runs WHERE wfa_id = ?",
             [wfa_id]).fetchone()
     if not r:
         return None
