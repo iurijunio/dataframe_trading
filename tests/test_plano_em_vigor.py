@@ -65,3 +65,15 @@ def test_aceita_conexao_do_chamador(banco):
     v, p1, p2 = _variante_com_dois_planos()
     with db.connect_write() as con, db.transacao(con):
         assert variantes.plano_em_vigor(v, SEX, con=con)["plano_id"] == p2
+
+
+def test_no_dia_da_aposentadoria_ja_nao_vale(banco):
+    """Sozinho, sem plano mais novo para mascarar: no próprio dia de
+    aposentado_em o plano já não vale."""
+    v = variantes.criar("v", "rompimento_canal")
+    with db.connect_write() as con:
+        con.execute("INSERT INTO planos_operacao (plano_id, estado, "
+                    "variante_id, vale_a_partir, aposentado_em) "
+                    "VALUES (1, 'aposentado', ?, ?, ?)", [v, date(2026, 9, 1), SEX])
+    assert _vigor(v, QUI) == 1
+    assert variantes.plano_em_vigor(v, SEX) is None
