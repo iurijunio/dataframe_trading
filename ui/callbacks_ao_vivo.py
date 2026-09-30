@@ -4,7 +4,7 @@ redesenho único evita um callback por botão escrevendo nas mesmas
 saídas — que é como se chega a ciclo e a tela congelada sem erro."""
 from __future__ import annotations
 
-from dash import Input, Output, html, no_update
+from dash import ALL, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
 from core import ao_vivo as AV
@@ -21,6 +21,91 @@ def _modulo(estrategia):
         return registry.carregar(estrategia)
     except Exception:           # arquivo sumiu ou não carrega: a ficha avisa
         return None
+
+
+# o segundo clique confirma: ligar põe estratégia para rodar, aposentar e
+# arquivar não se desfazem pela tela. Desligar/pausar são imediatos — o
+# caminho seguro não pede confirmação.
+_DUPLO = {"pf-ligar": "confirme: clique de novo para LIGAR o portfólio",
+          "plano-aposentar": "confirme: clique de novo para aposentar o plano "
+                             "(ele sai de vigor no próximo pregão)",
+          "conta-arquivar": "confirme: clique de novo para arquivar a conta"}
+
+
+def _numero(texto):
+    """"1.500,50", "1500.5" ou vazio (None). Texto que não é número vira
+    recusa — um limite de mesa digitado errado não pode virar 'sem limite'."""
+    if texto is None or not str(texto).strip():
+        return None
+    limpo = str(texto).strip().replace("R$", "").replace(" ", "")
+    if "," in limpo:
+        limpo = limpo.replace(".", "").replace(",", ".")
+    try:
+        return float(limpo)
+    except ValueError:
+        raise ValueError("limite de perda diária inválido: digite só o valor "
+                         "em reais (ex.: 500 ou 1.500,00)") from None
+
+
+def _executar(nome, alvo, campos) -> str:
+    c = lambda campo: campos.get((campo, alvo))
+    if nome == "pf-ligar":
+        AV.ligar_portfolio(alvo)
+        return "portfólio ligado — as variantes dele rodam no papel"
+    if nome == "pf-desligar":
+        AV.desligar_portfolio(alvo)
+        return "portfólio desligado"
+    if nome == "pf-contas":
+        AV.definir_contas(alvo, c("conta-demo"), c("conta-real"))
+        return "contas do portfólio salvas"
+    if nome == "membro-ligar":
+        AV.ligar_membro(alvo)
+        return "variante ligada"
+    if nome == "membro-desligar":
+        AV.desligar_membro(alvo)
+        return "variante pausada"
+    if nome == "conta-criar":
+        AV.criar_conta(c("conta-nome"), c("conta-tipo"), _numero(c("conta-limite")))
+        return "conta criada"
+    if nome == "conta-salvar":
+        AV.editar_conta(alvo, nome=c("conta-nome"),
+                        limite_perda_dia=_numero(c("conta-limite")))
+        return "conta salva"
+    if nome == "conta-arquivar":
+        AV.arquivar_conta(alvo)
+        return "conta arquivada"
+    if nome == "plano-aposentar":
+        PL.aposentar(alvo)
+        d = PL.detalhes(alvo)
+        return f"plano #{alvo} sai de vigor em {d['aposentado_em']:%d/%m/%Y}"
+    if nome == "renomear":
+        V.renomear(alvo, c("renomear"))
+        return "variante renomeada"
+    if nome == "vincular":
+        var = c("vincular-variante")
+        if var is None:
+            raise ValueError("escolha a variante antes de vincular")
+        manter = c("vincular-manter")
+        AV.vincular_plano(alvo, int(var),
+                          manter_plano_id=int(manter) if manter else None)
+        return f"mineração #{alvo} vinculada à variante"
+    raise ValueError(f"ação desconhecida: {nome}")
+
+
+def acao(nome, alvo, campos, armado, aberta):
+    """Um clique da tela. Devolve (armado, aberta, aviso)."""
+    if nome == "abrir":
+        return None, (None if aberta == alvo else alvo), ""
+    chave = f"{nome}:{alvo}"
+    if nome in _DUPLO and armado != chave:
+        return chave, aberta, _DUPLO[nome]
+    try:
+        aviso = _executar(nome, alvo, campos)
+    except ValueError as e:
+        aviso = str(e)
+    except RuntimeError:            # connect_write desistiu: mineração gravando
+        aviso = "banco ocupado, tente de novo"
+    return None, aberta, aviso
 
 
 def montar(armado, aberta, hoje=None):
@@ -88,3 +173,34 @@ def register(app):
         if modo != "aovivo":
             raise PreventUpdate
         return montar(armado, aberta)
+
+    @app.callback(
+        Output("av-versao", "data"), Output("av-armado", "data"),
+        Output("av-aberta", "data"), Output("av-aviso", "children"),
+        Input({"type": "av-acao", "acao": ALL, "id": ALL}, "n_clicks"),
+        Input("av-btn-conta-criar", "n_clicks"),
+        State({"type": "av-campo", "campo": ALL, "id": ALL}, "value"),
+        State("av-conta-nome", "value"), State("av-conta-tipo", "value"),
+        State("av-conta-limite", "value"),
+        State("av-versao", "data"), State("av-armado", "data"),
+        State("av-aberta", "data"),
+        prevent_initial_call=True,
+    )
+    def agir(_cliques, _criar, _campos, nome, tipo, limite, versao, armado,
+             aberta):
+        # botão recém-desenhado aparece com n_clicks=0 e dispara o Input de
+        # padrão sem ninguém ter clicado: só vale clique de verdade
+        gat = ctx.triggered_id
+        valor = ctx.triggered[0]["value"] if ctx.triggered else None
+        if not gat or not valor:
+            raise PreventUpdate
+        campos = {(s["id"]["campo"], s["id"]["id"]): s.get("value")
+                  for s in ctx.states_list[0]}
+        if gat == "av-btn-conta-criar":
+            campos.update({("conta-nome", 0): nome, ("conta-tipo", 0): tipo,
+                           ("conta-limite", 0): limite})
+            nome_acao, alvo = "conta-criar", 0
+        else:
+            nome_acao, alvo = gat["acao"], gat["id"]
+        armado, aberta, aviso = acao(nome_acao, alvo, campos, armado, aberta)
+        return (versao or 0) + 1, armado, aberta, aviso
