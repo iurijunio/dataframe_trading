@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 from . import codigo
 from . import db_manager as db
 from . import diario
+from . import optimizer as _optimizer
 from . import plano as _plano
 from . import variantes as V
 
@@ -394,3 +395,82 @@ def planos_sem_variante() -> list[dict]:
             f"SELECT {', '.join(cols)} FROM planos_operacao "
             "WHERE estado = 'ativo' AND variante_id IS NULL "
             "ORDER BY plano_id").fetchall()]
+
+
+# ----------------------------------------------------- a ficha de rastreio
+_COLS_PLANO_HIST = ("plano_id", "estado", "created_at", "vale_a_partir",
+                    "aposentado_em", "run_id", "wfa_id", "contratos")
+_COLS_WFA = ("wfa_id", "nome", "created_at", "is_meses", "oos_meses",
+             "inteligencia", "holdout", "oos_lucro", "oos_trades", "dd_oos",
+             "veredito")
+
+
+def _mineracao(con, run_id):
+    if run_id is None:
+        return None
+    r = con.execute("SELECT run_id, nome, created_at, n_combinacoes "
+                    "FROM mining_runs WHERE run_id = ?", [run_id]).fetchone()
+    return dict(zip(("run_id", "nome", "created_at", "n_combinacoes"), r)) if r else None
+
+
+def _wfa(con, wfa_id):
+    if wfa_id is None:
+        return None
+    r = con.execute(f"SELECT {', '.join(_COLS_WFA)} FROM wfa_runs "
+                    "WHERE wfa_id = ?", [wfa_id]).fetchone()
+    return dict(zip(_COLS_WFA, r)) if r else None
+
+
+def rastreio(ligacao_id: int, hoje: date | None = None) -> dict:
+    """Tudo o que explica o que esta variante vai operar, lido primeiro dos
+    RETRATOS do plano (que sobrevivem à mineração) e só depois da mineração
+    e do walk-forward, se ainda existirem (spec §5.2)."""
+    hoje = hoje or date.today()
+    item = next((l for l in em_operacao(hoje)
+                 if l["ligacao_id"] == ligacao_id), None)
+    if item is None:
+        raise ValueError(f"a variante #{ligacao_id} não está em nenhum portfólio")
+    vid = item["variante_id"]
+    with db.connect(read_only=True) as con:
+        planos = [dict(zip(_COLS_PLANO_HIST, r)) for r in con.execute(
+            f"SELECT {', '.join(_COLS_PLANO_HIST)} FROM planos_operacao "
+            "WHERE variante_id = ? ORDER BY plano_id DESC", [vid]).fetchall()]
+        ultima = con.execute(
+            "SELECT m.run_id, w.wfa_id FROM mining_runs m "
+            "LEFT JOIN wfa_runs w ON w.run_id = m.run_id "
+            "WHERE m.variante_id = ? ORDER BY m.created_at DESC, "
+            "w.wfa_id DESC LIMIT 1", [vid]).fetchone()
+    base_id = (item["plano"]["plano_id"] if item["plano"]
+               else planos[0]["plano_id"] if planos else None)
+    det = _plano.detalhes(base_id) if base_id else None
+    run_id = det["run_id"] if det else (ultima[0] if ultima else None)
+    wfa_id = det["wfa_id"] if det else (ultima[1] if ultima else None)
+    with db.connect(read_only=True) as con:
+        mina = _mineracao(con, run_id)
+        wfa_d = _wfa(con, wfa_id)
+    if mina:
+        try:
+            salva = _optimizer.detalhes_salva(run_id) or {}
+        except Exception:  # mineração antiga/incompleta: segue sem o espaço
+            salva = {}
+        mina["espaco"] = salva.get("espaco") or {}
+        mina["holdout_de"] = salva.get("holdout_de")
+    alcance = ("plano" if det else "walk-forward" if wfa_d
+               else "mineração" if mina else "nada")
+    gravado = det.get("codigo_hash") if det else None
+    atual = codigo.hash_estrategia(item["estrategia"])
+    vistos, eventos = set(), []
+    for e in (diario.eventos(ligacao_id=ligacao_id)
+              + diario.eventos(variante_id=vid)):
+        if e["evento_id"] not in vistos:
+            vistos.add(e["evento_id"])
+            eventos.append(e)
+    eventos.sort(key=lambda e: e["evento_id"], reverse=True)
+    return {
+        "ligacao": item, "alcance": alcance, "plano": det,
+        "mineracao": mina, "wfa": wfa_d,
+        "candidata": det["regua"] if det else None,
+        "codigo": {"gravado": gravado, "atual": atual,
+                   "confere": None if not gravado else gravado == atual},
+        "planos": planos, "eventos": eventos,
+    }
