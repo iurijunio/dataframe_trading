@@ -126,6 +126,8 @@ def barra_acoes():
                     # linha errada está a um pixel da certa.
                     html.Button("Excluir", id="btn-excluir-mine", n_clicks=0,
                                 className="btn-ghost btn-excluir", disabled=True),
+                    # a recusa de apagar (plano em operação) aparece aqui
+                    html.Span(id="mine-aviso", className="mine-aviso"),
                 ], className="acoes acoes-carregar"),
             ], className="barra-linha barra-linha-topo"),
 

@@ -11,7 +11,8 @@ import numpy as np
 from dash import Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
-from core import candidata, plano, tamanho, wfa, wfa_runner, wfa_store
+from core import (candidata, codigo, diario, plano, tamanho, wfa, wfa_runner,
+                  wfa_store)
 from core import db_manager as db
 from core import optimizer
 from core.candidata_runner import TESTES
@@ -111,7 +112,8 @@ def _rotulo_curto(w: dict) -> str:
     quando = w.get("quando")
     data = f" · {quando:%d/%m}" if quando else ""
     return (f"#{w['wfa_id']} · {w.get('nome') or 'sem nome'} · "
-            f"IS {w['is_meses']} / OOS {w['oos_meses']}{data}")
+            f"IS {w['is_meses']} / OOS {w['oos_meses']}{data}"
+            + (" · tem plano" if w.get("tem_plano") else ""))
 
 
 def _valor_do_seletor(atual, ids: set, aberto_no_wfa, padrao=None):
@@ -273,8 +275,18 @@ def gravar_plano(ver: dict, risco, margem, uso_margem,
     pid = plano.salvar(**campos)
     quando = campos.get("reotimizar_em")
     aviso = plano.aviso_ao_gravar(ver)
-    return (f"plano #{pid} gravado · {dim['n']} contrato(s) · reotimizar até "
+    vale = plano.detalhes(pid)["vale_a_partir"]
+    trocados = [e["plano_id"] for e in diario.eventos(
+        tipo="plano_aposentado", motivo=f"substituído pelo plano #{pid}")]
+    atual = codigo.hash_estrategia(campos.get("strategy") or "")
+    mudou = bool(campos.get("codigo_hash")) and atual != campos["codigo_hash"]
+    return (f"plano #{pid} gravado · vale a partir de {vale:%d/%m/%Y} · "
+            f"{dim['n']} contrato(s) · reotimizar até "
             f"{quando.strftime('%d/%m/%Y') if quando else '—'}"
+            + (" · aposentou " + ", ".join(f"#{p}" for p in trocados)
+               if trocados else "")
+            + (" · ⚠ o código da estratégia mudou desde o walk-forward"
+               if mudou else "")
             + (f" · {aviso}" if aviso else ""))
 
 

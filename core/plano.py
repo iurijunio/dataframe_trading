@@ -272,8 +272,7 @@ DEFINICOES = {
                       "risco intradiário é coberto pelo limite do dia",
     "depois_de_reduzir": "volta ao número de contratos do plano quando o "
                          "saldo fizer um topo novo",
-    "depois_de_desligar": "só volta a operar depois de reotimizar e gravar "
-                          "um plano novo — nunca religando o mesmo",
+    "depois_de_desligar": "volta a operar quando o usuário religar",
 }
 
 

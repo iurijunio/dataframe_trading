@@ -388,6 +388,24 @@ def test_gravar_plano_grava_e_diz_o_numero(tmp_path, monkeypatch):
     CC._LEITURAS.clear()
 
 
+def test_gravar_plano_diz_quando_vale_e_quem_aposentou(tmp_path, monkeypatch):
+    wid = _wfa_gravavel(tmp_path, monkeypatch)
+    ver = {"wfa_id": wid, "estado": "aprovada", "reprovados": [],
+           "pendentes": [], "portoes": []}
+    primeiro = CC.gravar_plano(ver, 5.0, None, 50.0)
+    assert "vale a partir de" in primeiro and "aposentou" not in primeiro
+    segundo = CC.gravar_plano(ver, 2.0, None, 50.0)
+    assert "aposentou #" in segundo
+    CC._LEITURAS.clear()
+
+
+def test_rotulo_curto_marca_quem_tem_plano():
+    base = {"wfa_id": 7, "nome": "x", "is_meses": 12, "oos_meses": 6,
+            "quando": None}
+    assert "tem plano" not in CC._rotulo_curto(base)
+    assert CC._rotulo_curto({**base, "tem_plano": True}).endswith(" · tem plano")
+
+
 def test_gravar_plano_reprovado_nao_grava_nada(tmp_path, monkeypatch):
     """O botão apagado no navegador não é garantia: a trava é conferida de
     novo no servidor."""

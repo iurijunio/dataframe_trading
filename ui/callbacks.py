@@ -23,7 +23,7 @@ from dash.exceptions import PreventUpdate
 
 from dash import html
 
-from core import analytics, detalhes, metrics, robustez
+from core import analytics, codigo, detalhes, metrics, robustez
 from core import mineracao_stats as MS
 from core import wfa
 from core import wfa_store
@@ -1582,6 +1582,7 @@ def register(app):
         Output("btn-excluir-mine", "disabled"),
         Output("btn-excluir-mine", "children"),
         Output("mine-carregar", "value", allow_duplicate=True),
+        Output("mine-aviso", "children"),
         Input("mine-carregar", "value"),
         Input("btn-excluir-mine", "n_clicks"),
         State("btn-excluir-mine", "children"),
@@ -1593,16 +1594,21 @@ def register(app):
         Apagar é irreversível e o alvo mora num seletor onde a linha errada
         está a um pixel da certa. Escolher outra mineração desarma a
         confirmação — se você mexeu no seletor, não estava confirmando nada.
+        Recusada (plano em operação), diz o motivo e não mexe no seletor nem
+        esquece a mineração aberta.
         """
         if ctx.triggered_id == "mine-carregar":
-            return (not run_id), "Excluir", no_update
+            return (not run_id), "Excluir", no_update, ""
         if not run_id:
-            return True, "Excluir", no_update
+            return True, "Excluir", no_update, ""
         if rotulo != "Confirmar?":
-            return False, "Confirmar?", no_update
-        optimizer.excluir_salva(int(run_id))
+            return False, "Confirmar?", no_update, ""
+        try:
+            optimizer.excluir_salva(int(run_id))
+        except ValueError as e:
+            return False, "Excluir", no_update, str(e)
         MINERACAO.esquecer()
-        return True, "Excluir", None
+        return True, "Excluir", None, ""
 
     # ------------------------------------------- salvar / excluir um WFA
     @app.callback(
@@ -1665,7 +1671,8 @@ def register(app):
                 passos=_WFA["passos"], trades=trades,
                 profile=d["perfil"] if d else None,
                 capital=_WFA.get("capital"), sharpes_matriz=sharpes,
-                camada4_travada=_WFA.get("camada4_travada"))
+                camada4_travada=_WFA.get("camada4_travada"),
+                codigo_hash=codigo.hash_estrategia(_WFA["strategy"]))
             aviso = (f"walk-forward #{wid} salvo · "
                      f"{len(trades)} trades gravados para o portfólio")
         elif gatilho == "store-wfa-lista":
@@ -1703,7 +1710,10 @@ def register(app):
             return "Excluir", no_update, no_update, no_update
         if rotulo != "Confirmar?":
             return "Confirmar?", no_update, no_update, no_update
-        wfa_store.excluir(int(wfa_id))
+        try:
+            wfa_store.excluir(int(wfa_id))
+        except ValueError as e:
+            return "Excluir", no_update, str(e), no_update
         return ("Excluir", None, f"walk-forward #{wfa_id} excluído",
                 {"excluido": int(wfa_id), "t": __import__("time").time()})
 

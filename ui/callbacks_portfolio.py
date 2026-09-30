@@ -89,6 +89,7 @@ def register(app):
         # quem estava vendo outro (achado na revisao do agente).
         gatilho = ctx.triggered_id
         valor_disparo = ctx.triggered[0]["value"] if ctx.triggered else None
+        aviso_remover = None
         if (isinstance(gatilho, dict) and gatilho.get("type") == "pf-cartao"
                 and valor_disparo):
             pid = gatilho["portfolio_id"]
@@ -96,7 +97,10 @@ def register(app):
             P.adicionar_variante(pid, variante_add)
         elif (isinstance(gatilho, dict) and gatilho.get("type") == "pf-btn-remover"
               and valor_disparo and pid is not None):
-            P.remover_variante(pid, gatilho["variante_id"])
+            try:
+                P.remover_variante(pid, gatilho["variante_id"])
+            except ValueError as e:
+                aviso_remover = str(e)
         elif isinstance(gatilho, dict) and not valor_disparo:
             # cartao/botao novo so apareceu no DOM - nao e navegacao nenhuma,
             # so re-renderiza o que ja estava aberto (ou nada, se pid None)
@@ -138,7 +142,9 @@ def register(app):
         r = P.correlacao(pid)
         # "sem plano ativo" já sai de correlacao() E de curvas() para o
         # mesmo membro - junta sem duplicar a linha na lista de avisos
-        avisos_txt = list(dict.fromkeys(r["avisos"] + curvas["avisos"]))
+        avisos_txt = list(dict.fromkeys(
+            ([aviso_remover] if aviso_remover else [])
+            + r["avisos"] + curvas["avisos"]))
         avisos = html.Ul([html.Li(a) for a in avisos_txt]) if avisos_txt else None
 
         capital_definido = bool(p_atual) and p_atual["capital"] is not None

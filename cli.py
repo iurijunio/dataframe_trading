@@ -194,13 +194,19 @@ def cmd_minas(args) -> None:
     # fora do `connect_write` acima: `excluir_salva` abre a propria conexao de
     # escrita, e o DuckDB so aceita um escritor por vez
     from core import optimizer
+    apagadas, recusadas = 0, []
     for run_id in alvos:
-        # a mesma porta que o botao da tela usa. Apagar aqui na mao apagava so
-        # mining_trials e mining_runs, deixando walk-forwards e planos de
-        # operacao orfaos: sem erro, sem aviso e sem jeito de achar depois
-        optimizer.excluir_salva(run_id)
-    print(f"\n{len(alvos)} minerações apagadas, com os walk-forwards e os "
+        # a mesma porta que o botao da tela usa - inclusive a recusa de
+        # apagar cadeia com plano em operacao
+        try:
+            optimizer.excluir_salva(run_id)
+            apagadas += 1
+        except ValueError as e:
+            recusadas.append(str(e))
+    print(f"\n{apagadas} minerações apagadas, com os walk-forwards e os "
           "planos de operação que nasceram delas.")
+    for motivo in recusadas:
+        print(f"  não apagada: {motivo}")
     print("o arquivo .duckdb não encolhe sozinho; para compactar, apague-o e "
           "rode 'cli.py verify' — mas isso também apaga as minerações salvas.")
 
