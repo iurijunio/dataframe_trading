@@ -31,7 +31,9 @@ def _modulo(estrategia):
 _DUPLO = {"pf-ligar": "confirme: clique de novo para LIGAR o portfólio",
           "plano-aposentar": "confirme: clique de novo para aposentar o plano "
                              "(ele sai de vigor no próximo pregão)",
-          "conta-arquivar": "confirme: clique de novo para arquivar a conta"}
+          "conta-arquivar": "confirme: clique de novo para arquivar a conta",
+          "vincular": "confirme: clique de novo para vincular — o plano que "
+                      "não ficar será aposentado no próximo pregão"}
 
 
 _ERRO_LIMITE = ("limite de perda diária inválido: digite só o valor "
@@ -61,7 +63,8 @@ def _executar(nome, alvo, campos) -> str:
     c = lambda campo: campos.get((campo, alvo))
     if nome == "pf-ligar":
         AV.ligar_portfolio(alvo)
-        return "portfólio ligado — as variantes dele rodam no papel"
+        return ("portfólio ligado — as variantes ficam liberadas para o papel "
+                "(o robô de papel ainda não existe)")
     if nome == "pf-desligar":
         AV.desligar_portfolio(alvo)
         return "portfólio desligado"
@@ -124,11 +127,17 @@ def montar(armado, aberta, hoje=None):
     contas = AV.listar_contas(incluir_arquivadas=True)
     ativas = [c for c in contas if not c.get("arquivada_em")]
     pfs = P.listar()
-    portfolios = ([AP.cartao_portfolio(p, contas, armado) for p in pfs]
+    linhas = AV.em_operacao(hoje)
+    liberadas = {}
+    for l in linhas:
+        liberadas[l["portfolio_id"]] = (liberadas.get(l["portfolio_id"], 0)
+                                        + (1 if l["roda"] else 0))
+    portfolios = ([AP.cartao_portfolio(p, contas, armado,
+                                       liberadas.get(p["portfolio_id"], 0))
+                   for p in pfs]
                   or [html.P("nenhum portfólio ainda — crie na tela Portfólio",
                              className="av-nota")])
 
-    linhas = AV.em_operacao(hoje)
     blocos = []
     for rep in AV.repetidas(linhas):
         blocos.append(html.P(
@@ -166,7 +175,19 @@ def montar(armado, aberta, hoje=None):
         op_var = [{"label": v["nome"], "value": v["variante_id"]} for v in mesmas]
         ativos = [p for p in PL.listar(apenas_ativos=True)
                   if p["strategy"] == o["strategy"]]
-        op_manter = [{"label": f"plano #{p['plano_id']}", "value": p["plano_id"]}
+        nomes = {v["variante_id"]: v["nome"] for v in mesmas}
+
+        def rotulo(p, o=o, nomes=nomes):
+            if p["variante_id"] is not None:
+                origem = ("atual da variante "
+                          + nomes.get(p["variante_id"], f"#{p['variante_id']}"))
+            elif p["run_id"] == o["run_id"]:
+                origem = "desta mineração"
+            else:
+                origem = "de outra mineração sem variante"
+            return (f"plano #{p['plano_id']} · {origem} · gravado "
+                    f"{p['created_at']:%d/%m}")
+        op_manter = [{"label": rotulo(p), "value": p["plano_id"]}
                      for p in ativos]
         arruma.append(AP.linha_orfao(o, op_var, op_manter, armado))
     arruma = arruma or [html.P("nada a arrumar", className="av-nota")]
@@ -183,7 +204,16 @@ def register(app):
     def desenhar(modo, _versao, armado, aberta):
         if modo != "aovivo":
             raise PreventUpdate
-        return montar(armado, aberta)
+        try:
+            return montar(armado, aberta)
+        except (RuntimeError, ValueError) as e:
+            # banco ocupado ou dado que não lê: a tela avisa em vez de
+            # ficar congelada sem explicação
+            motivo = ("banco ocupado" if isinstance(e, RuntimeError)
+                      else str(e))
+            return (no_update, [html.P(
+                f"não foi possível ler agora: {motivo} — tente de novo",
+                className="av-motivo")], no_update, no_update)
 
     @app.callback(
         Output("av-versao", "data"), Output("av-armado", "data"),

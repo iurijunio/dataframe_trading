@@ -73,7 +73,7 @@ def test_definir_contas_valida_tipo_e_arquivada(banco):
     p = P.listar()[0]
     assert (p["conta_demo_id"], p["conta_real_id"]) == (demo, real)
     AV.arquivar_conta(demo)
-    with pytest.raises(ValueError, match="arquivada"):
+    with pytest.raises(ValueError, match="a conta D está arquivada"):
         AV.definir_contas(pid, demo, real)
 
 

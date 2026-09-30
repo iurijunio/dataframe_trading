@@ -11,6 +11,8 @@ from datetime import date
 
 from dash import dcc, html
 
+from core import plano as _plano
+
 from . import ficha as FI
 from .cartao import brl
 
@@ -41,8 +43,9 @@ def painel():
                      className="panel-head"),
             html.Div(id="av-aviso", className="av-aviso"),
         ], className="panel"),
-        _secao("Portfólios", "ligue o portfólio para as variantes dele rodarem "
-               "(por enquanto só no papel, sem enviar ordem)",
+        _secao("Portfólios", "ligue o portfólio para liberar as variantes dele "
+               "(por enquanto só libera para o papel: o robô de papel ainda não "
+               "existe e nenhuma ordem é enviada)",
                html.Div(id="av-portfolios", className="av-lista")),
         _secao("Variantes", "clique no nome para abrir a ficha: de onde veio o "
                "plano, o que ele opera e o que já mudou",
@@ -121,11 +124,47 @@ _EVENTOS = {
 }
 
 
+_METODOS = {"centroide_mediana": "centroide (mediana)",
+            "centroide_media": "centroide (média)", "vizinhanca": "vizinhança",
+            "ulcer": "Ulcer", "sharpe": "Sharpe", "drawdown": "drawdown",
+            "moda": "moda", "alpha": "alpha",
+            "plato_pessimista": "platô pessimista", "consenso": "consenso"}
+
+
+def _metodo(cod) -> str:
+    if not cod:
+        return "—"
+    return _METODOS.get(cod, str(cod).replace("_", " "))
+
+
+def _data_iso(v) -> str:
+    """Data guardada como texto AAAA-MM-DD, mostrada como DD/MM/AAAA; se não
+    for esse formato, mostra o texto como veio."""
+    if not v:
+        return "—"
+    try:
+        return date.fromisoformat(str(v)[:10]).strftime("%d/%m/%Y")
+    except ValueError:
+        return str(v)
+
+
+def _vale_legado(p, prefixo) -> str:
+    """Plano antigo sem data de início vale desde o primeiro pregão depois
+    de gravado — dizer isso em vez de um travessão."""
+    if p.get("vale_a_partir"):
+        return f"{prefixo} {_data(p['vale_a_partir'])}"
+    if p.get("created_at"):
+        return (f"desde {_data(_plano.proximo_dia_util(p['created_at'].date()))}"
+                " (primeiro pregão após a gravação)")
+    return f"{prefixo} —"
+
+
 def _data(d, fmt="%d/%m/%Y"):
     return d.strftime(fmt) if d else "—"
 
 
-def cartao_portfolio(p: dict, contas: list[dict], armado) -> html.Div:
+def cartao_portfolio(p: dict, contas: list[dict], armado,
+                     n_liberadas: int | None = None) -> html.Div:
     # conta arquivada ainda gravada no portfólio continua na lista, marcada:
     # senão salvar apagaria a escolha sem ninguém perceber
     def opcoes(tipo):
@@ -140,6 +179,9 @@ def cartao_portfolio(p: dict, contas: list[dict], armado) -> html.Div:
               else html.Span("desligado", className="av-nota"))
     interruptor = (_botao("Desligar", "pf-desligar", pid, armado) if p["ligado"]
                    else _botao("Ligar", "pf-ligar", pid, armado))
+    aviso = ([html.P("nenhuma variante deste portfólio está rodando",
+                     className="av-motivo")]
+             if p["ligado"] and n_liberadas == 0 else [])
     return html.Div([
         html.Div([html.Span(p["nome"], className="av-nome"), estado,
                   html.Span(f"{p['n_membros']} variante(s)", className="av-nota"),
@@ -150,13 +192,14 @@ def cartao_portfolio(p: dict, contas: list[dict], armado) -> html.Div:
                             "conta real"),
                   _botao("Salvar contas", "pf-contas", pid, armado)],
                  className="av-linha"),
+        *aviso,
     ], className="av-cartao" + (" av-ligado" if p["ligado"] else ""))
 
 
 def cartao_variante(l: dict, armado, ficha=None) -> html.Div:
     lig = l["ligacao_id"]
     plano = l["plano"]
-    situacao = (html.Span("roda", className="av-roda") if l["roda"]
+    situacao = (html.Span("liberada", className="av-roda") if l["roda"]
                 else html.Span(l["motivo"], className="av-motivo"))
     interruptor = (_botao("Pausar", "membro-desligar", lig, armado) if l["ligada"]
                    else _botao("Ligar", "membro-ligar", lig, armado))
@@ -201,7 +244,7 @@ def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
         html.P(f"mineração #{mina['run_id']} · {mina['nome'] or 'sem nome'} · "
                f"{_data(mina['created_at'])} · {mina['n_combinacoes']} "
                f"combinações testadas · dados reservados a partir de "
-               f"{mina.get('holdout_de') or '—'}")
+               f"{_data_iso(mina.get('holdout_de'))}")
         if mina else html.P("mineração apagada ou anterior às variantes",
                             className="av-nota"),
     ]))
@@ -211,7 +254,7 @@ def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
         html.P(f"walk-forward #{w['wfa_id']} · {w['nome'] or 'sem nome'} · "
                f"{w['is_meses'] if w['is_meses'] is not None else '—'} meses de otimização / "
                f"{w['oos_meses'] if w['oos_meses'] is not None else '—'} meses de teste · "
-               f"{w['inteligencia'] or '—'} · lucro fora da amostra "
+               f"{_metodo(w['inteligencia'])} · lucro fora da amostra "
                f"{_reais(w['oos_lucro'])} em {w['oos_trades'] if w['oos_trades'] is not None else '—'} trades · "
                f"queda máx. {_reais(w['dd_oos'])} · veredito "
                f"{w['veredito'] or '—'}")
@@ -237,8 +280,8 @@ def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
             f"plano #{det['plano_id']} · capital {_reais(det['capital'])} · "
             f"{det['contratos'] if det['contratos'] is not None else '—'} "
             f"contrato(s) · risco por pregão "
-            f"{_pct(det['risco_efetivo_pct'])} · vale a partir de "
-            f"{_data(det['vale_a_partir'])} · reotimizar até "
+            f"{_pct(det['risco_efetivo_pct'])} · "
+            f"{_vale_legado(det, 'vale a partir de')} · reotimizar até "
             f"{_data(det['reotimizar_em'])} · {conf}")]
         corpo.append(html.P("freio: " + _disjuntor_texto(det.get("disjuntor"))))
         if estrategia_mod is not None:
@@ -257,14 +300,15 @@ def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
         html.H4("5. Histórico"),
         html.Ul([html.Li(
             f"plano #{p['plano_id']} · {p['estado']} · gravado "
-            f"{_data(p['created_at'])} · vale de {_data(p['vale_a_partir'])}"
+            f"{_data(p['created_at'])} · {_vale_legado(p, 'vale de')}"
             + (f" até {_data(p['aposentado_em'])}" if p['aposentado_em'] else ""))
             for p in r["planos"]] or [html.Li("nenhum plano ainda")],
             className="av-avisos"),
         html.Ul([html.Li(f"{_data(e['quando'], '%d/%m/%Y %H:%M')} · "
                          f"{_EVENTOS.get(e['tipo'], e['tipo'].replace('_', ' '))}"
                          + (f" · {e['motivo']}" if e['motivo'] else ""))
-                 for e in r["eventos"][:30]], className="av-avisos"),
+                 for e in r["eventos"][:30]]
+                or [html.Li("nenhum evento ainda")], className="av-avisos"),
     ]))
     return html.Div(blocos, className="av-ficha")
 

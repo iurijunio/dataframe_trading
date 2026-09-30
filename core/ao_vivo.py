@@ -128,14 +128,14 @@ def desligar_portfolio(portfolio_id) -> None:
 def _conta_valida(con, conta_id, tipo):
     if conta_id is None:
         return
-    r = con.execute("SELECT tipo, arquivada_em FROM contas WHERE conta_id = ?",
-                    [conta_id]).fetchone()
+    r = con.execute("SELECT tipo, arquivada_em, nome FROM contas "
+                    "WHERE conta_id = ?", [conta_id]).fetchone()
     if r is None:
         raise ValueError(f"conta #{conta_id} não existe")
     if r[0] != tipo:
-        raise ValueError(f"a conta #{conta_id} não é do tipo {tipo}")
+        raise ValueError(f"a conta {r[2]} não é do tipo {tipo}")
     if r[1] is not None:
-        raise ValueError(f"a conta #{conta_id} está arquivada")
+        raise ValueError(f"a conta {r[2]} está arquivada")
 
 
 def definir_contas(portfolio_id, conta_demo_id, conta_real_id) -> None:
@@ -245,6 +245,14 @@ def vincular_plano(run_id, variante_id, manter_plano_id=None,
             diario.registrar(con, "plano_vinculado", "usuario", plano_id=p,
                              variante_id=variante_id,
                              motivo=f"mineração #{run_id}")
+        if len(ativos) > 1:
+            # plano antigo tem vale_a_partir vazio = "em vigor desde sempre";
+            # ao assumir o lugar do outro ele só passa a valer para ESTA
+            # variante no dia em que o aposentado sai, e os pregões contam
+            # daí
+            con.execute("UPDATE planos_operacao SET vale_a_partir = ? "
+                        "WHERE plano_id = ? AND vale_a_partir IS NULL",
+                        [sai_em, manter_plano_id])
         for p in ativos:
             if len(ativos) > 1 and p != manter_plano_id:
                 con.execute("UPDATE planos_operacao SET estado = 'aposentado', "

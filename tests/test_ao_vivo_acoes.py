@@ -54,10 +54,10 @@ def test_limite_invalido_vira_aviso(banco):
 
 def test_recusa_do_core_vira_aviso(banco):
     pf = P.criar("p")
-    real = AV.criar_conta("R", "real")
+    real = AV.criar_conta("Mesa A", "real")
     _, _, aviso = acao("pf-contas", pf, {("conta-demo", pf): real,
                                          ("conta-real", pf): None}, None, None)
-    assert "não é do tipo demo" in aviso
+    assert "a conta Mesa A não é do tipo demo" in aviso
 
 
 def test_banco_ocupado_vira_aviso(banco, monkeypatch):
@@ -98,9 +98,8 @@ def test_renomear_e_vincular(banco):
     wfa(18, 50)
     pid = plano.salvar(**campos_plano(wfa_id=18, run_id=50),
                        agora=datetime(2026, 9, 1, 10))
-    _, _, aviso = acao("vincular", 50, {("vincular-variante", 50): v,
-                                        ("vincular-manter", 50): None},
-                       None, None)
+    campos = {("vincular-variante", 50): v, ("vincular-manter", 50): None}
+    _, _, aviso = acao("vincular", 50, campos, "vincular:50", None)
     assert plano.detalhes(pid)["variante_id"] == v and "vinculad" in aviso
 
 
@@ -137,3 +136,17 @@ def test_limite_exibido_volta_identico(banco):
 def test_aposentar_plano_inexistente_vira_aviso(banco):
     _, _, aviso = acao("plano-aposentar", 999, {}, "plano-aposentar:999", None)
     assert aviso == "plano #999 não existe"
+
+
+def test_vincular_pede_confirmacao_antes_de_mexer(banco):
+    v = variantes.criar("v", "rompimento_canal")
+    mineracao(50)
+    wfa(18, 50)
+    pid = plano.salvar(**campos_plano(wfa_id=18, run_id=50),
+                       agora=datetime(2026, 9, 1, 10))
+    campos = {("vincular-variante", 50): v, ("vincular-manter", 50): None}
+    armado, _, aviso = acao("vincular", 50, campos, None, None)
+    assert armado == "vincular:50" and "confirme" in aviso
+    assert plano.detalhes(pid)["variante_id"] is None
+    armado, _, aviso = acao("vincular", 50, campos, armado, None)
+    assert armado is None and plano.detalhes(pid)["variante_id"] == v

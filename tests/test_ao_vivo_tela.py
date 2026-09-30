@@ -176,3 +176,63 @@ def test_dois_planos_orfaos_da_mesma_mineracao_uma_linha(banco):
     assert f"#{a}" in t and f"#{b}" in t
     alvo = [i for i in ids(arruma) if "vincular-variante" in i]
     assert len(alvo) == 1
+
+
+def test_portfolio_ligado_sem_variante_liberada_avisa(banco):
+    v, pid, pf, lig, orfao = _cenario()
+    AV.ligar_portfolio(pf)
+    AV.desligar_membro(lig)
+    portfolios, vars_, _, _ = CA.montar(None, None, QUI)
+    assert "nenhuma variante deste portfólio está rodando" in textos(portfolios)
+    AV.ligar_membro(lig)
+    portfolios, vars_, _, _ = CA.montar(None, None, QUI)
+    assert "nenhuma variante deste portfólio está rodando" not in textos(portfolios)
+    assert "liberada" in textos(vars_)
+
+
+def _opcoes(c):
+    if c is None or isinstance(c, (str, int, float)):
+        return []
+    out = []
+    if isinstance(c, (list, tuple)):
+        for x in c:
+            out += _opcoes(x)
+        return out
+    out += list(getattr(c, "options", None) or [])
+    return out + _opcoes(getattr(c, "children", None))
+
+
+def test_escolha_de_qual_plano_fica_tem_contexto(banco):
+    v = variantes.criar("v7", "rompimento_canal")
+    mineracao(53, variante_id=v)
+    wfa(24, 53)
+    p4 = plano.salvar(**campos_plano(wfa_id=24, run_id=53),
+                      agora=datetime(2026, 9, 28, 10))
+    mineracao(50)
+    wfa(18, 50)
+    p3 = plano.salvar(**campos_plano(wfa_id=18, run_id=50),
+                      agora=datetime(2026, 9, 25, 11))
+    _, _, _, arruma = CA.montar(None, None, QUI)
+    t = " | ".join(o["label"] for o in _opcoes(arruma))
+    assert "atual da variante v7" in t and "desta mineração" in t
+    assert "gravado 28/09" in t and "gravado 25/09" in t
+
+
+def test_ficha_sem_codigos_crus_e_datas_legiveis(banco):
+    v = variantes.criar("v", "rompimento_canal")
+    mineracao(47, variante_id=v)
+    wfa(13, 47)
+    pid = plano.salvar(**campos_plano(wfa_id=13, run_id=47),
+                       agora=datetime(2026, 9, 1, 10))   # terça
+    from core import db_manager as db
+    with db.connect_write() as con:
+        con.execute("UPDATE planos_operacao SET vale_a_partir = NULL")
+        con.execute("UPDATE wfa_runs SET inteligencia = 'centroide_mediana'")
+    lig = P.adicionar_variante(P.criar("pf"), v)
+    _, vars_, _, _ = CA.montar(None, lig, QUI)
+    t = textos(vars_)
+    assert "centroide (mediana)" in t and "centroide_mediana" not in t
+    assert "desde 02/09/2026 (primeiro pregão após a gravação)" in t
+    assert AP._data_iso("2026-03-27") == "27/03/2026"
+    assert AP._data_iso("lixo") == "lixo" and AP._data_iso(None) == "—"
+    assert AP._metodo("algo_novo") == "algo novo"

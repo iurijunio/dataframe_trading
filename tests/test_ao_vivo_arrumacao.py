@@ -13,7 +13,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import ao_vivo as AV  # noqa: E402
+from core import db_manager as db  # noqa: E402
 from core import diario, plano, variantes  # noqa: E402
+from core import portfolio as P  # noqa: E402
 from tests._cadeia import banco, campos_plano, mineracao, wfa  # noqa: E402,F401
 
 QUI = datetime(2026, 10, 1, 14, 0)
@@ -76,3 +78,24 @@ def test_renomear(banco):
     assert {x["nome"] for x in variantes.listar()} == {"romp-abert-m15", "b"}
     [e] = diario.eventos(tipo="variante_renomeada", variante_id=a)
     assert (e["de"], e["para"]) == ("a", "romp-abert-m15")
+
+
+def test_orfao_que_fica_so_passa_a_valer_quando_o_outro_sai(banco):
+    # plano antigo tem vale_a_partir vazio ("desde sempre"): sem acerto ele
+    # esconderia o plano em vigor hoje e contaria pregões desde a gravação
+    v, p2, p3, p4 = _orfa_e_destino()
+    with db.connect_write() as con:
+        con.execute("UPDATE planos_operacao SET vale_a_partir = NULL "
+                    "WHERE plano_id = ?", [p3])
+    AV.vincular_plano(50, v, manter_plano_id=p3, agora=QUI)
+    assert plano.detalhes(p3)["vale_a_partir"] == date(2026, 10, 2)
+    lig = P.adicionar_variante(P.criar("pf"), v)
+    [hoje] = [l for l in AV.em_operacao(date(2026, 10, 1))
+              if l["ligacao_id"] == lig]
+    assert hoje["plano"]["plano_id"] == p4
+    assert hoje["plano_futuro"] == {"plano_id": p3,
+                                    "vale_a_partir": date(2026, 10, 2)}
+    [amanha] = [l for l in AV.em_operacao(date(2026, 10, 2))
+                if l["ligacao_id"] == lig]
+    assert amanha["plano"]["plano_id"] == p3
+    assert amanha["pregoes_com_plano"] == 1
