@@ -449,10 +449,7 @@ def rastreio(ligacao_id: int, hoje: date | None = None) -> dict:
         mina = _mineracao(con, run_id)
         wfa_d = _wfa(con, wfa_id)
     if mina:
-        try:
-            salva = _optimizer.detalhes_salva(run_id) or {}
-        except Exception:  # mineração antiga/incompleta: segue sem o espaço
-            salva = {}
+        salva = _optimizer.detalhes_salva(run_id) or {}
         mina["espaco"] = salva.get("espaco") or {}
         mina["holdout_de"] = salva.get("holdout_de")
     alcance = ("plano" if det else "walk-forward" if wfa_d

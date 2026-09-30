@@ -56,12 +56,13 @@ def test_ficha_completa(banco):
     assert [p["plano_id"] for p in r["planos"]] == [pid]
     tipos = {e["tipo"] for e in r["eventos"]}
     assert {"membro_adicionado", "plano_gravado"} <= tipos
+    ids = [e["evento_id"] for e in r["eventos"]]
+    assert len(set(ids)) == len(ids)  # sem repetir entre os dois filtros
 
 
 def test_mineracao_apagada_usa_os_retratos(banco):
-    """Com a variante fora de portfólio a proteção libera apagar; a ficha
-    de outra ligação da MESMA variante, criada depois, ainda precisa ler o
-    plano pelo variante_id do próprio plano."""
+    """Com a mineração apagada direto do banco, a ficha ainda acha o plano
+    pelo variante_id gravado em planos_operacao."""
     v, pid, lig = _cadeia_completa()
     with db.connect_write() as con:
         con.execute("DELETE FROM mining_runs WHERE run_id = 47")
