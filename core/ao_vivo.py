@@ -9,6 +9,7 @@ from datetime import datetime
 
 from . import db_manager as db
 from . import diario
+from . import plano as _plano
 from . import variantes as V
 
 _TIPOS_CONTA = ("demo", "real")
@@ -203,3 +204,50 @@ def ligar_membro(ligacao_id) -> None:
                          plano_id=vigor and vigor["plano_id"],
                          motivo="religada após disjuntor"
                          if por == "disjuntor" else None)
+
+
+def vincular_plano(run_id, variante_id, manter_plano_id=None,
+                   agora: datetime | None = None) -> None:
+    """Põe uma mineração sem variante (e todos os planos dela) numa variante
+    da mesma estratégia. Se a variante acabar com dois planos ativos, o
+    usuário escolhe qual fica; o outro sai de vigor no próximo pregão."""
+    agora = agora or datetime.now()
+    sai_em = _plano.proximo_dia_util(agora.date())
+    with db.connect_write() as con, db.transacao(con):
+        m = con.execute("SELECT strategy, variante_id FROM mining_runs "
+                        "WHERE run_id = ?", [run_id]).fetchone()
+        v = con.execute("SELECT estrategia, nome FROM estrategia_variantes "
+                        "WHERE variante_id = ?", [variante_id]).fetchone()
+        if m is None or v is None:
+            raise ValueError("mineração ou variante não existe")
+        if m[1] is not None:
+            raise ValueError(f"a mineração #{run_id} já é da variante #{m[1]}")
+        if m[0] != v[0]:
+            raise ValueError(f"a variante {v[1]} é de outra estratégia ({v[0]})")
+        ativos = [r[0] for r in con.execute(
+            "SELECT plano_id FROM planos_operacao WHERE estado = 'ativo' "
+            "AND (variante_id = ? OR run_id = ?) ORDER BY plano_id",
+            [variante_id, run_id]).fetchall()]
+        if len(ativos) > 1 and manter_plano_id not in ativos:
+            raise ValueError(
+                "a variante ficaria com dois planos ativos: escolha qual fica ("
+                + " ou ".join(f"#{p}" for p in ativos) + ")")
+        planos = [r[0] for r in con.execute(
+            "SELECT plano_id FROM planos_operacao WHERE run_id = ?",
+            [run_id]).fetchall()]
+        con.execute("UPDATE mining_runs SET variante_id = ? WHERE run_id = ?",
+                    [variante_id, run_id])
+        con.execute("UPDATE planos_operacao SET variante_id = ? "
+                    "WHERE run_id = ?", [variante_id, run_id])
+        for p in planos:
+            diario.registrar(con, "plano_vinculado", "usuario", plano_id=p,
+                             variante_id=variante_id,
+                             motivo=f"mineração #{run_id}")
+        for p in ativos:
+            if len(ativos) > 1 and p != manter_plano_id:
+                con.execute("UPDATE planos_operacao SET estado = 'aposentado', "
+                            "aposentado_em = ? WHERE plano_id = ?", [sai_em, p])
+                diario.registrar(con, "plano_aposentado", "usuario",
+                                 plano_id=p, variante_id=variante_id,
+                                 de="ativo", para="aposentado",
+                                 motivo=f"fica o plano #{manter_plano_id}")

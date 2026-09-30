@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from . import db_manager as db
+from . import diario
 
 _COLUNAS = ("variante_id", "estrategia", "nome", "descricao", "criado_em")
 
@@ -120,3 +121,24 @@ def plano_em_vigor(variante_id: int, dia: date | None = None,
         with db.connect(read_only=True) as c:
             r = c.execute(sql, args).fetchone()
     return {"plano_id": r[0], "wfa_id": r[1], "run_id": r[2]} if r else None
+
+
+def renomear(variante_id: int, nome: str) -> None:
+    nome = (nome or "").strip()
+    if not nome:
+        raise ValueError("nome da variante não pode ser vazio")
+    with db.connect_write() as con, db.transacao(con):
+        r = con.execute("SELECT nome, estrategia FROM estrategia_variantes "
+                        "WHERE variante_id = ?", [variante_id]).fetchone()
+        if r is None:
+            raise ValueError(f"variante #{variante_id} não existe")
+        antigo, estrategia = r
+        if nome == antigo:
+            return
+        if con.execute("SELECT 1 FROM estrategia_variantes WHERE estrategia = ? "
+                       "AND nome = ?", [estrategia, nome]).fetchone():
+            raise ValueError(f"já existe uma variante '{nome}' para {estrategia}")
+        con.execute("UPDATE estrategia_variantes SET nome = ? "
+                    "WHERE variante_id = ?", [nome, variante_id])
+        diario.registrar(con, "variante_renomeada", "usuario",
+                         variante_id=variante_id, de=antigo, para=nome)
