@@ -102,3 +102,38 @@ def test_renomear_e_vincular(banco):
                                         ("vincular-manter", 50): None},
                        None, None)
     assert plano.detalhes(pid)["variante_id"] == v and "vinculad" in aviso
+
+
+def test_numero_formatos_aceitos():
+    from ui.callbacks_ao_vivo import _numero
+    assert _numero("1.500") == 1500.0
+    assert _numero("1.500,50") == 1500.5
+    assert _numero("1500.5") == 1500.5
+    assert _numero("1500") == 1500.0
+    assert _numero("R$ 500,5") == 500.5
+    assert _numero("  ") is None
+
+
+def test_limites_ambiguos_ou_invalidos_nao_salvam(banco):
+    for ruim in ["1,500.50", "nan", "inf", "-5", "0", "abc"]:
+        campos = {("conta-nome", 0): "X", ("conta-tipo", 0): "demo",
+                  ("conta-limite", 0): ruim}
+        _, _, aviso = acao("conta-criar", 0, campos, None, None)
+        assert "limite" in aviso, ruim
+    assert AV.listar_contas() == []
+
+
+def test_limite_exibido_volta_identico(banco):
+    from ui.callbacks_ao_vivo import _numero
+    from ui.components.ao_vivo_panel import limite_br, linha_conta
+    for v in (1500.5, 500.0, 1234567.25, 0.5):
+        assert _numero(limite_br(v)) == v
+    assert limite_br(500.0) == "500" and limite_br(1500.5) == "1.500,50"
+    AV.criar_conta("M", "real", 1500.5)
+    [c] = AV.listar_contas()
+    assert "1.500,50" in str(linha_conta(c, None))
+
+
+def test_aposentar_plano_inexistente_vira_aviso(banco):
+    _, _, aviso = acao("plano-aposentar", 999, {}, "plano-aposentar:999", None)
+    assert aviso == "plano #999 não existe"

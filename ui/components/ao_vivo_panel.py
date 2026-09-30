@@ -269,14 +269,23 @@ def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
     return html.Div(blocos, className="av-ficha")
 
 
+def limite_br(v) -> str:
+    """Limite no formato que o campo aceita de volta, sem arredondar:
+    1500.5 -> "1.500,50", 500.0 -> "500"."""
+    if v is None:
+        return ""
+    if float(v).is_integer():
+        return f"{int(v):,}".replace(",", ".")
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def linha_conta(c: dict, armado) -> html.Div:
     cid = c["conta_id"]
     return html.Div([
         html.Span(c["tipo"], className="av-nota"),
         _campo_txt("conta-nome", cid, c["nome"], "nome"),
         _campo_txt("conta-limite", cid,
-                   "" if c["limite_perda_dia"] is None
-                   else f"{c['limite_perda_dia']:.0f}",
+                   limite_br(c["limite_perda_dia"]),
                    "limite de perda diária (R$)", numerico=True),
         _botao("Salvar", "conta-salvar", cid, armado),
         _botao("Arquivar", "conta-arquivar", cid, armado),

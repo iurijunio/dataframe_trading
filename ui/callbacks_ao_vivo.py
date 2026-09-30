@@ -4,6 +4,8 @@ redesenho único evita um callback por botão escrevendo nas mesmas
 saídas — que é como se chega a ciclo e a tela congelada sem erro."""
 from __future__ import annotations
 
+import re
+
 from dash import ALL, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
@@ -32,19 +34,27 @@ _DUPLO = {"pf-ligar": "confirme: clique de novo para LIGAR o portfólio",
           "conta-arquivar": "confirme: clique de novo para arquivar a conta"}
 
 
+_ERRO_LIMITE = ("limite de perda diária inválido: digite só o valor "
+                "em reais (ex.: 500 ou 1.500,00)")
+
+
 def _numero(texto):
-    """"1.500,50", "1500.5" ou vazio (None). Texto que não é número vira
-    recusa — um limite de mesa digitado errado não pode virar 'sem limite'."""
+    """Limite em reais: "1.500,50", "1500,5", "1500.5", "1500" ou vazio
+    (None). Só aceita formas sem ambiguidade — "1,500.50" poderia ser lido
+    como 1,5 e um limite de mesa errado é dinheiro real. Não-número e
+    zero/negativo viram recusa; nunca 'sem limite' por engano."""
     if texto is None or not str(texto).strip():
         return None
-    limpo = str(texto).strip().replace("R$", "").replace(" ", "")
-    if "," in limpo:
-        limpo = limpo.replace(".", "").replace(",", ".")
-    try:
-        return float(limpo)
-    except ValueError:
-        raise ValueError("limite de perda diária inválido: digite só o valor "
-                         "em reais (ex.: 500 ou 1.500,00)") from None
+    limpo = str(texto).replace("R$", "").replace(" ", "")
+    if re.fullmatch(r"\d+", limpo) or re.fullmatch(r"\d+\.\d{1,2}", limpo):
+        valor = float(limpo)
+    elif re.fullmatch(r"\d{1,3}(\.\d{3})+(,\d{1,2})?", limpo)             or re.fullmatch(r"\d+,\d{1,2}", limpo):
+        valor = float(limpo.replace(".", "").replace(",", "."))
+    else:
+        raise ValueError(_ERRO_LIMITE)
+    if valor <= 0:
+        raise ValueError("o limite de perda diária precisa ser maior que zero")
+    return valor
 
 
 def _executar(nome, alvo, campos) -> str:
@@ -75,7 +85,8 @@ def _executar(nome, alvo, campos) -> str:
         AV.arquivar_conta(alvo)
         return "conta arquivada"
     if nome == "plano-aposentar":
-        PL.aposentar(alvo)
+        if not PL.aposentar(alvo):
+            raise ValueError(f"plano #{alvo} não existe")
         d = PL.detalhes(alvo)
         return f"plano #{alvo} sai de vigor em {d['aposentado_em']:%d/%m/%Y}"
     if nome == "renomear":
