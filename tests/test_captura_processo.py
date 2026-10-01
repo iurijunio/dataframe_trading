@@ -34,9 +34,11 @@ class MT5Falso:
         self.minutos, self.tick = minutos, tick
         self.conectado, self.aberto = conectado, aberto
         self.inits = 0
+        self.init_kwargs = []
 
-    def initialize(self, path=None):
+    def initialize(self, path=None, **kwargs):
         self.inits += 1
+        self.init_kwargs.append(kwargs)
         return self.aberto
 
     def terminal_info(self):
@@ -151,13 +153,109 @@ def test_simbolo_ausente_e_erro_de_configuracao(base):
 
 def test_mt5_sem_o_simbolo_e_erro_de_configuracao(base):
     # o teste acima também cairia por falta de YAML/base do XXX$N; aqui só
-    # o MT5 recusa o símbolo
+    # o MT5 recusa o símbolo — três voltas seguidas, para não confundir com
+    # o terminal que ainda está carregando a lista logo após o login
     agora = datetime(2026, 10, 1, 10, 0)
     mt5 = MT5Falso([], tick=agora)
     mt5.symbol_select = lambda s, on: False
     s = _servico(mt5, agora, base / "ao_vivo")
+    for _ in range(P.FALHAS_SIMBOLO - 1):
+        s.volta()
+        assert C.ler_estado(base / "ao_vivo" / "estado.json")["mt5"] == "sem_conexao"
     with pytest.raises(P.ErroDeConfiguracao, match="não tem WIN\\$N"):
         s.volta()
+
+
+def test_symbol_select_falhando_uma_vez_apos_o_login_nao_para_a_captura(base):
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora)
+    respostas = [False, False, True, False, False, True]
+    mt5.symbol_select = lambda s, on: respostas.pop(0)
+    s = _servico(mt5, agora, base / "ao_vivo")
+    s.volta()
+    s.volta()
+    s.volta()            # deu certo: a contagem recomeça
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["mt5"] == "conectado" and e["gravados_hoje"] == 5
+    # nova conexão (terminal reaberto): duas falhas ainda não são configuração
+    s.conectado = False
+    s.volta()
+    s.volta()
+    s.volta()
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["mt5"] == "conectado"
+
+
+def test_initialize_tem_timeout_curto(base):
+    agora = datetime(2026, 10, 1, 10, 0)
+    mt5 = MT5Falso([], tick=agora)
+    _servico(mt5, agora, base / "ao_vivo").volta()
+    assert mt5.init_kwargs == [{"timeout": 10_000}]
+
+
+def test_price_decimals_vem_do_yaml(base, monkeypatch):
+    real = db.load_instrument_yaml
+    monkeypatch.setattr(db, "load_instrument_yaml",
+                        lambda s: {**real(s), "price_decimals": 2})
+    s = P.Servico(mt5=MT5Falso([], tick=datetime(2026, 10, 1)), pasta=base / "ao_vivo")
+    assert s.price_decimals == 2
+
+
+def _conferencia_falhando(mt5):
+    """O MT5 falha só na releitura do dia inteiro (00:00 → 23:59)."""
+    original = mt5.copy_rates_range
+    chamadas = []
+
+    def falso(s, tf, desde, ate):
+        if ate - desde == timedelta(hours=23, minutes=59):
+            chamadas.append(desde)
+            raise RuntimeError("terminal não respondeu")
+        return original(s, tf, desde, ate)
+    mt5.copy_rates_range = falso
+    return chamadas
+
+
+def test_conferencia_que_falha_no_mt5_espera_a_janela_de_5_min(base):
+    agora = datetime(2026, 10, 1, 18, 40)
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 3),
+                   tick=datetime(2026, 10, 1, 18, 24))
+    chamadas = _conferencia_falhando(mt5)
+    mono = Mono()
+    s = _servico(mt5, agora, base / "ao_vivo", mono)
+    s.volta()
+    assert len(chamadas) == 1
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["conferencia"]["status"] == "falhou"
+
+    mono.t += 1          # a volta seguinte, 1 s depois
+    s.volta()
+    assert len(chamadas) == 1
+
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert len(chamadas) == 2
+
+
+def test_conferencia_vence_a_captura_mesmo_com_o_pc_atrasado(base):
+    # PC 5 min atrás do servidor: a marca da conferência sai da hora do
+    # servidor, não do relógio do PC
+    agora = datetime(2026, 10, 1, 18, 40)
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 3),
+                   tick=datetime(2026, 10, 1, 18, 45))
+    s = _servico(mt5, agora, base / "ao_vivo")
+    s.volta()
+    with db.connect(read_only=True) as con:
+        marca = con.execute("SELECT source_max_ts FROM ingest_log WHERE "
+                            "source_file = 'conferencia://2026-10-01'").fetchone()[0]
+    assert marca == datetime(2026, 10, 1, 18, 46)
+
+    # PC adiantado: vale o próprio PC, mais 1 min
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 2, 9, 0), 3),
+                   tick=datetime(2026, 10, 2, 18, 24))
+    s = _servico(mt5, datetime(2026, 10, 2, 18, 40), base / "ao_vivo")
+    s.volta()
+    with db.connect(read_only=True) as con:
+        marca = con.execute("SELECT source_max_ts FROM ingest_log WHERE "
+                            "source_file = 'conferencia://2026-10-02'").fetchone()[0]
+    assert marca == datetime(2026, 10, 2, 18, 41)
 
 
 def test_depois_do_fechamento_confere_o_dia_e_exporta_o_parquet(base):

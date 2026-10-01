@@ -49,6 +49,14 @@ ESPERA_PREGAO, ESPERA_FORA, ESPERA_SEM_MT5 = 1, 30, 5
 # diz 17:54 com a B3 indo até 18:24.
 MERCADO_VIVO = timedelta(minutes=10)
 
+# Logo após o login o terminal ainda carrega a lista de símbolos e o
+# symbol_select pode falhar uma vez: só três voltas seguidas recusando
+# viram erro de configuração (que fecha a captura de vez).
+FALHAS_SIMBOLO = 3
+# O padrão do initialize() é 60 s: com o terminal travado, a volta inteira
+# (e o estado que a tela lê) pararia junto.
+TIMEOUT_INICIALIZAR_MS = 10_000
+
 
 class ErroDeConfiguracao(RuntimeError):
     """Erro que reabrir não resolve: o .bat não deve tentar de novo."""
@@ -124,10 +132,10 @@ def _utc(d: datetime) -> datetime:
 class Servico:
     def __init__(self, mt5, simbolo="WIN$N", terminal=None, agora=datetime.now,
                  mono=time.monotonic, pasta=PASTA, terminal_aberto=terminal_aberto,
-                 price_decimals=0):
+                 price_decimals=None):
         self.mt5, self.simbolo, self.terminal = mt5, simbolo, terminal
         self.agora, self.mono, self.pasta = agora, mono, Path(pasta)
-        self.terminal_aberto, self.price_decimals = terminal_aberto, price_decimals
+        self.terminal_aberto = terminal_aberto
         # Sem o YAML não dá para refazer as rolagens na conferência. O erro
         # sobe na primeira volta, não aqui: o main precisa do Servico para
         # publicar o aviso no estado.
@@ -136,6 +144,10 @@ class Servico:
             self._sem_yaml = None
         except FileNotFoundError as e:
             self.inst, self._sem_yaml = {}, str(e)
+        # o arredondamento tem de ser o mesmo do ingest manual e do
+        # Sincronizar, senão cada um regravaria o candle do outro
+        self.price_decimals = (self.inst.get("price_decimals", 0)
+                               if price_decimals is None else price_decimals)
         self.relogio = C.RelogioServidor()
 
         self.carregado = False          # leitura inicial do banco já feita
@@ -144,6 +156,7 @@ class Servico:
         self.fechamento = None
         self.conectado = False          # initialize() feito e válido
         self.novo_login = False
+        self.falhas_simbolo = 0
         self.mt5_estado, self.mt5_desde = "fechado", None
         self.conta, self.contrato = None, None
         self.agora_srv, self.desvio = None, None
@@ -229,8 +242,9 @@ class Servico:
         mt5 = self.mt5
         if not self.conectado:
             if self.terminal_aberto():
-                ok = (mt5.initialize(path=self.terminal) if self.terminal
-                      else mt5.initialize())
+                espera = {"timeout": TIMEOUT_INICIALIZAR_MS}
+                ok = (mt5.initialize(path=self.terminal, **espera) if self.terminal
+                      else mt5.initialize(**espera))
                 self.conectado = self.novo_login = bool(ok)
         if not self.conectado:
             return self._fora_do_ar("fechado", agora)
@@ -243,17 +257,22 @@ class Servico:
             return self._fora_do_ar("fechado", agora)
         if not info.connected:
             return self._fora_do_ar("sem_conexao", agora)
-        self.mt5_estado, self.mt5_desde = "conectado", None
         if self.novo_login:
             # a cada (re)conexão: o usuário pode ter trocado de conta no terminal
             if not mt5.symbol_select(self.simbolo, True):
-                raise ErroDeConfiguracao(f"o MT5 não tem {self.simbolo}")
+                self.falhas_simbolo += 1
+                if self.falhas_simbolo >= FALHAS_SIMBOLO:
+                    raise ErroDeConfiguracao(f"o MT5 não tem {self.simbolo}")
+                # novo_login segue ligado: a volta seguinte tenta de novo
+                return self._fora_do_ar("sem_conexao", agora)
+            self.falhas_simbolo = 0
             conta = mt5.account_info()
             self.conta = ({"login": int(conta.login), "servidor": conta.server}
                           if conta is not None else None)
             # na série contínua (WIN$N) a Clear devolve basis vazio: None, não ""
             self.contrato = getattr(mt5.symbol_info(self.simbolo), "basis", None) or None
             self.novo_login = False
+        self.mt5_estado, self.mt5_desde = "conectado", None
         return True
 
     def _fora_do_ar(self, estado: str, agora) -> bool:
@@ -387,6 +406,10 @@ class Servico:
         except ErroDeConfiguracao:
             raise
         except Exception as e:
+            # Falha do MT5 antes do escritor também gasta a janela: sem isto
+            # a conferência se repetiria a cada volta de 1 s, com um traceback
+            # no log a cada vez — o log rotativo giraria em poucas horas.
+            self._mono_conferencia = m
             log.exception("conferência do dia falhou")
             self.conferencia = {"status": "falhou", "em": agora,
                                 "dias": self._dias_conferidos, "erro": str(e)}
@@ -403,7 +426,11 @@ class Servico:
         falhas = []
         for dia, df in barras.items():
             try:
-                r = C.conferir_dia(con, self.simbolo, dia, df, agora=agora,
+                # A conferência tem de vencer a captura do mesmo dia mesmo com
+                # o relógio do PC atrasado: a marca sai da hora mais adiantada
+                # entre PC e servidor, mais um minuto de folga.
+                marca = max(agora, self.agora_srv or agora) + timedelta(minutes=1)
+                r = C.conferir_dia(con, self.simbolo, dia, df, agora=marca,
                                    price_decimals=self.price_decimals)
             except ValueError as e:
                 # o MT5 não tem o dia (histórico curto, terminal recém-aberto):
