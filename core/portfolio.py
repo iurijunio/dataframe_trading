@@ -10,12 +10,13 @@ docs/superpowers/specs/2026-09-23-portfolio-correlacao-design.md.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
 
 import numpy as np
 
 from . import db_manager as db
 from . import diario
+from . import plano as _plano
 from . import variantes as V
 
 _MIN_DIAS_COMUNS = 20
@@ -116,7 +117,10 @@ def remover_variante(portfolio_id: int, variante_id: int) -> None:
                          variante_id=variante_id)
 
 
-def membros(portfolio_id: int) -> list[dict]:
+def membros(portfolio_id: int, hoje: date | None = None) -> list[dict]:
+    """Os membros do portfólio. `wfa_id` sai do plano ATIVO (o mais novo, que
+    a análise usa); a marca "gravado mesmo assim" sai do plano EM VIGOR
+    hoje — é ele que opera, e um plano novo só vale no pregão seguinte."""
     with db.connect(read_only=True) as con:
         rows = con.execute(
             "SELECT ev.variante_id, ev.nome, ev.estrategia, pm.ligacao_id, "
@@ -129,11 +133,13 @@ def membros(portfolio_id: int) -> list[dict]:
     out = []
     for vid, nome, estrategia, lig, fase, ligada in rows:
         ativo = V.plano_ativo(vid)
+        vigor = V.plano_em_vigor(vid, hoje)
         out.append({
             "variante_id": vid, "nome": nome, "estrategia": estrategia,
             "ligacao_id": lig, "fase": fase, "ligada": bool(ligada),
             "wfa_id": ativo["wfa_id"] if ativo else None,
             "sem_plano_ativo": ativo is None,
+            **_plano.marca_mesmo_assim(vigor["plano_id"] if vigor else None),
         })
     return out
 

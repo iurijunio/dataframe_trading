@@ -24,7 +24,7 @@ from core import plano as _plano
 
 from . import ficha as FI
 from . import pregao_panel as PG
-from .cartao import brl, dica
+from .cartao import brl, dica, etiqueta_mesmo_assim
 
 FASES = {"papel": "papel", "demo": "demo", "real_minimo": "real mínimo",
          "real": "real"}
@@ -428,7 +428,11 @@ def cartao_variante(l: dict, armado, ficha=None) -> html.Div:
     filhos = [
         html.Div([
             html.Div([html.Span(l["variante_nome"], className="av-nome-fixo"),
-                      *situacao], className="av-cab-esq"),
+                      *situacao,
+                      # do plano EM VIGOR (`em_operacao`): é ele que opera
+                      *([etiqueta_mesmo_assim(plano.get("pendencias"))]
+                        if plano and plano.get("gravado_mesmo_assim") else [])],
+                     className="av-cab-esq"),
             html.Div([interruptor, ver], className="av-cab-dir"),
         ], className="av-cab"),
         _kv(pares),
@@ -545,13 +549,7 @@ def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
             "nenhuma verificação registrada")
     forcado = []
     if det and det.get("gravado_mesmo_assim"):
-        pend = det.get("pendencias") or []
-        forcado = [html.Div(_etiqueta(
-            "gravado mesmo assim", "ambar",
-            "Este plano foi gravado passando por cima do veredito da "
-            "Candidata. Pendências no dia: "
-            + ("; ".join(f"{p.get('nome')} ({p.get('motivo')})" for p in pend)
-               or "nenhuma registrada") + "."))]
+        forcado = [html.Div(etiqueta_mesmo_assim(det.get("pendencias")))]
     etapas.append(_etapa(3, "Candidata", None, [
         _kv([("Veredito no dia da gravação", reg.get("veredito") or "—")],
             linhas=True),

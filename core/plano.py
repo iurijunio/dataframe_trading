@@ -167,6 +167,27 @@ def _linha(r) -> dict:
     return d
 
 
+def marca_mesmo_assim(plano_id: int | None, con=None) -> dict:
+    """`{"gravado_mesmo_assim", "pendencias"}` de um plano — o que o cartão
+    da variante (Ao vivo) e a linha do membro (Portfólio) mostram do plano
+    EM VIGOR. Sem plano, ou plano de antes da coluna (NULL): não marcado.
+    `con` para quem já está com uma conexão aberta."""
+    vazio = {"gravado_mesmo_assim": False, "pendencias": []}
+    if plano_id is None:
+        return vazio
+    sql = ("SELECT gravado_mesmo_assim, pendencias FROM planos_operacao "
+           "WHERE plano_id = ?")
+    if con is not None:
+        r = con.execute(sql, [plano_id]).fetchone()
+    else:
+        with db.connect(read_only=True) as c:
+            r = c.execute(sql, [plano_id]).fetchone()
+    if not r:
+        return vazio
+    return {"gravado_mesmo_assim": bool(r[0]),
+            "pendencias": json.loads(r[1]) if r[1] else []}
+
+
 def listar(wfa_id: int | None = None, apenas_ativos: bool = False
            ) -> list[dict]:
     """Os planos gravados, mais recentes primeiro."""

@@ -45,6 +45,20 @@ def dica(texto: str):
                      **{"data-dica": texto, "aria-label": texto})
 
 
+def etiqueta_mesmo_assim(pendencias) -> html.Span:
+    """A etiqueta âmbar "gravado mesmo assim", com o (?) listando o que
+    estava reprovado ou sem medir no dia da gravação. Uma peça só para a
+    ficha e o cartão da Ao vivo e a linha do Portfólio: o mesmo aviso não
+    pode ter três redações."""
+    lista = "; ".join(f"{p.get('nome')} ({p.get('motivo')})"
+                      for p in pendencias or []) or "nenhuma registrada"
+    return html.Span(["gravado mesmo assim",
+                      dica("Este plano foi gravado passando por cima do "
+                           "veredito da Candidata. Pendências no dia: "
+                           f"{lista}.")],
+                     className="av-tag av-tag-ambar")
+
+
 def _tamanho(valor, largo: bool) -> str:
     """Encolhe o corpo do cartão quando o valor não cabe.
 

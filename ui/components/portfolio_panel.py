@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from dash import dcc, html
 
 from .. import theme as T
-from .cartao import brl, card, inteiro, num, pct
+from .cartao import brl, card, etiqueta_mesmo_assim, inteiro, num, pct
 
 # uma cor por variante, na ordem em que entram no portfolio - ciano e
 # violeta primeiro (as duas cores de marca), o resto so para diferenciar
@@ -138,13 +138,18 @@ def cartao_portfolio(portfolio_id: int, nome: str, n_membros: int) -> html.Div:
 
 
 def linha_membro(variante_id: int, nome: str, estrategia: str,
-                 sem_plano_ativo: bool, resumo: dict | None = None) -> html.Div:
+                 sem_plano_ativo: bool, resumo: dict | None = None,
+                 gravado_mesmo_assim: bool = False,
+                 pendencias: list | None = None) -> html.Div:
     nota = "sem plano ativo" if sem_plano_ativo else "plano ativo"
     filhos = [
         html.Span(f"{nome} · {estrategia}", className="est-variante-nome"),
         html.Span(nota, className="est-variante-nota"
                   + (" pf-sem-plano" if sem_plano_ativo else "")),
     ]
+    if gravado_mesmo_assim:
+        # a marca é do plano EM VIGOR (`portfolio.membros`)
+        filhos.append(etiqueta_mesmo_assim(pendencias))
     if resumo is not None:
         sinal = "pf-pos" if resumo["retorno"] >= 0 else "pf-neg"
         filhos.append(html.Span(

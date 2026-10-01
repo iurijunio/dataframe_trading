@@ -378,6 +378,8 @@ def em_operacao(hoje: date | None = None) -> list[dict]:
                 plano_vigor = dict(zip(("plano_id", "symbol", "reotimizar_em",
                                         "vale_a_partir", "created_at",
                                         "codigo_hash"), r))
+                plano_vigor.update(_plano.marca_mesmo_assim(
+                    vigor["plano_id"], con=con))
             f = con.execute(
                 "SELECT plano_id, vale_a_partir FROM planos_operacao "
                 "WHERE variante_id = ? AND estado = 'ativo' "

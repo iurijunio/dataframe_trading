@@ -137,7 +137,9 @@ def register(app):
             PP.linha_membro(
                 m["variante_id"], m["nome"], m["estrategia"],
                 m["sem_plano_ativo"],
-                resumo=_resumo_membro(series.get(m["nome"])))
+                resumo=_resumo_membro(series.get(m["nome"])),
+                gravado_mesmo_assim=m.get("gravado_mesmo_assim", False),
+                pendencias=m.get("pendencias"))
             for m in ms
         ] or [html.P("nenhuma variante neste portfólio ainda.")]
 
