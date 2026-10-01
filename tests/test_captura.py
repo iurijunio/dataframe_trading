@@ -271,3 +271,19 @@ def test_escrever_estado_tenta_de_novo_se_o_windows_recusar(tmp_path, monkeypatc
     monkeypatch.setattr(C.os, "replace", replace_teimoso)
     C.escrever_estado(p, {"ok": 1})
     assert json.loads(p.read_text(encoding="utf-8")) == {"ok": 1}
+
+
+# ---- captura ativa: a trava dos comandos que reconstroem a base ----
+
+def test_captura_ativa_em_pelo_estado_de_menos_de_60_s(tmp_path):
+    p = tmp_path / "estado.json"
+    agora = datetime(2026, 10, 1, 10, 0)
+    assert C.captura_ativa_em(p, agora) is False          # nunca rodou
+    p.write_text(json.dumps({"atualizado_em": "2026-10-01T09:59:05"}), encoding="utf-8")
+    assert C.captura_ativa_em(p, agora) is True
+    p.write_text(json.dumps({"atualizado_em": "2026-10-01T09:58:59"}), encoding="utf-8")
+    assert C.captura_ativa_em(p, agora) is False
+    p.write_text(json.dumps({"mt5": "fechado"}), encoding="utf-8")
+    assert C.captura_ativa_em(p, agora) is False
+    p.write_text("{meio arquivo", encoding="utf-8")
+    assert C.captura_ativa_em(p, agora) is False

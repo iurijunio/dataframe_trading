@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core.captura import ler_estado  # noqa: E402
+from core.captura import captura_ativa_em, dias_pendentes  # noqa: E402
 from core import calendar as cal  # noqa: E402
 from core import db_manager as db  # noqa: E402
 from core import ingest as ing  # noqa: E402
@@ -80,14 +80,7 @@ ESTADO_CAPTURA = db.DATA / "ao_vivo" / "estado.json"
 
 
 def _captura_ativa() -> bool:
-    """O serviço de captura grava o estado a cada ciclo; estado com menos de
-    60 s é sinal de que ele ainda está rodando."""
-    estado = ler_estado(ESTADO_CAPTURA)
-    try:
-        feito = datetime.fromisoformat(str(estado["atualizado_em"]))
-    except (TypeError, KeyError, ValueError):
-        return False
-    return (datetime.now() - feito).total_seconds() < 60
+    return captura_ativa_em(ESTADO_CAPTURA, datetime.now())
 
 
 def cmd_derive(args) -> None:
@@ -172,6 +165,13 @@ def cmd_verify(args) -> None:
         sys.exit("feche a captura antes: ela esta gravando as barras de hoje, "
                  "que o Parquet ainda nao tem.")
     sym = args.symbol
+    # Com a captura fechada, o dia que ela gravou continua fora do Parquet
+    # ate a conferencia do dia rodar (ela so roda com a captura aberta).
+    with db.connect(read_only=True) as con:
+        pendentes = dias_pendentes(con, sym, datetime.now().date(), True)
+    if pendentes:
+        sys.exit("há dia gravado pela captura ainda sem conferência; abra a "
+                 "captura e espere a conferência.")
     with db.connect() as con:
         antes = con.execute(
             "SELECT count(*), sum(open), sum(high), sum(low), sum(close) "

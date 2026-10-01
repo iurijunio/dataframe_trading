@@ -16,6 +16,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from core import calendar as cal
+from core import captura as CAP
 from core import db_manager as db
 from core import diario
 from core import ingest as ing
@@ -27,6 +28,7 @@ SYMBOL = "WIN$N"
 MARCA_LOTE_ERRADO = "mt5_sync_2026092"
 LOTES_ESPERADOS = {3, 4}
 CSV_PADRAO = db.RAW_DIR / "m1-hist-16-03-2026.csv"
+ESTADO_CAPTURA = db.DATA / "ao_vivo" / "estado.json"
 MSG_SEM_HISTORICO = ("o MT5 não tem o histórico desde 09/03 (confira 'Máx. barras no "
                      "gráfico' em Ferramentas › Opções › Gráficos) — nada foi apagado")
 
@@ -218,6 +220,12 @@ def _relatorio(con) -> None:
 
 
 def executar(args) -> int:
+    # A captura grava sem segurar o banco aberto, então o "banco em uso" do
+    # backup não a pega; rodando junto, ela gravaria no meio da troca de
+    # lotes e os candles de hoje não estão no CSV para voltar.
+    if CAP.captura_ativa_em(ESTADO_CAPTURA, datetime.now()):
+        print("a captura está rodando: feche a janela Dataframe - Captura antes")
+        return 1
     con = db.connect(read_only=True)
     try:
         feita = R.ja_corrigida(con)

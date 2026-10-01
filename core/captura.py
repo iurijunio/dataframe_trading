@@ -198,3 +198,21 @@ def ler_estado(caminho: Path) -> dict | None:
         return json.loads(caminho.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+# O serviço publica o estado a cada volta (segundos no pregão, ~30 s fora);
+# um minuto sem publicar é processo morto.
+ESTADO_FRESCO_S = 60
+
+
+def captura_ativa_em(caminho: Path, agora: datetime) -> bool:
+    """A captura está gravando? Para os comandos que reconstroem a base
+    (cli.py verify, corrigir_base.py): rodando junto, eles apagariam os
+    candles de hoje, que o Parquet e o data/raw ainda não têm. Estado com
+    hora no futuro (relógio do PC voltou) conta como ativa: na dúvida, recusa."""
+    estado = ler_estado(caminho)
+    try:
+        feito = datetime.fromisoformat(str(estado["atualizado_em"]))
+    except (TypeError, KeyError, ValueError):
+        return False
+    return (agora - feito).total_seconds() < ESTADO_FRESCO_S
