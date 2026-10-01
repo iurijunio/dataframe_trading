@@ -252,25 +252,48 @@ def _sql_str(value) -> str:
 
 
 def export_parquet(con, symbol: str) -> Path:
-    """Reescreve o espelho Parquet do simbolo, particionado por ano."""
+    """Reescreve o espelho Parquet do simbolo, particionado por ano.
+
+    Grava numa pasta nova e troca de uma vez: a mineração e o walk-forward
+    leem este espelho enquanto a captura reexporta depois da conferência do
+    dia. Um COPY por cima da pasta em uso deixava um ano pela metade, e um
+    ano que deixou de ter barras ficava órfão."""
+    import shutil
+    import time as _t
+
     out = PARQUET_DIR / safe_symbol(symbol)
-    out.mkdir(parents=True, exist_ok=True)
-    con.execute(
-        f"""
-        COPY (
-            SELECT *, year(ts) AS year
-            FROM bars_m1
-            WHERE symbol = ?
-            ORDER BY ts
-        ) TO {_sql_str(out)}
-          (FORMAT PARQUET, PARTITION_BY (year),
-           OVERWRITE_OR_IGNORE 1, COMPRESSION zstd)
-        """,
-        [symbol],
-    )
-    written = list(out.rglob("*.parquet"))
-    if not written:
-        raise RuntimeError(f"COPY nao gravou nenhum arquivo em {out}")
+    novo = out.with_name(out.name + ".novo")
+    velho = out.with_name(out.name + ".velho")
+    shutil.rmtree(novo, ignore_errors=True)
+    if velho.exists() and out.exists():
+        shutil.rmtree(velho)          # sobra de troca anterior já concluída
+    elif velho.exists():
+        velho.rename(out)             # troca anterior interrompida: a cópia boa é a velha
+    novo.mkdir(parents=True)
+    con.execute(f"""COPY (SELECT *, year(ts) AS year FROM bars_m1 WHERE symbol = ?
+                    ORDER BY ts) TO {_sql_str(novo)}
+                    (FORMAT PARQUET, PARTITION_BY (year), OVERWRITE_OR_IGNORE 1,
+                     COMPRESSION zstd)""", [symbol])
+    if not list(novo.rglob("*.parquet")):
+        raise RuntimeError(f"COPY nao gravou nenhum arquivo em {novo}")
+    # No Windows uma pasta com arquivo aberto (leitor no meio) não se
+    # renomeia: espera o leitor soltar. Só este passo se repete.
+    if out.exists():
+        for i in range(40):
+            try:
+                out.rename(velho)
+                break
+            except PermissionError:
+                if i == 39:
+                    raise
+                _t.sleep(0.25)
+    try:
+        novo.rename(out)
+    except OSError:
+        if velho.exists():
+            velho.rename(out)         # desfaz: o espelho antigo volta inteiro
+        raise
+    shutil.rmtree(velho, ignore_errors=True)
     return out
 
 
@@ -284,6 +307,15 @@ def read_bars_parquet(symbol: str, start=None, end=None):
     espelho ganhar o seu lugar.
     """
     src = PARQUET_DIR / safe_symbol(symbol)
+    # A captura troca o espelho entre dois renames (out -> .velho, .novo -> out):
+    # nesse instante a pasta some por milissegundos. Espera a troca terminar
+    # em vez de acusar espelho ausente.
+    import time as _t
+    for _ in range(20):
+        if src.exists() or not (src.with_name(src.name + ".novo").exists()
+                                or src.with_name(src.name + ".velho").exists()):
+            break
+        _t.sleep(0.1)
     if not src.exists() or not list(src.rglob("*.parquet")):
         raise FileNotFoundError(
             f"Espelho Parquet ausente para {symbol}: {src}. "
