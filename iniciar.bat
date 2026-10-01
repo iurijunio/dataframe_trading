@@ -24,6 +24,10 @@ if not exist "data\database.duckdb" (
     exit /b 1
 )
 
+REM Captura em janela propria: fechar a tela nao para a captura; ela so
+REM para fechando a janela dela. Se ja houver uma aberta, a nova sai calada.
+start "Dataframe - Captura" /min cmd /c captura.bat
+
 echo.
 echo  Dataframe  -  http://127.0.0.1:8050
 echo  Feche esta janela para parar o servidor.

@@ -90,8 +90,15 @@ def buscar_barras(symbol: str, desde: datetime, ate: datetime) -> pl.DataFrame:
             "histórico baixado no terminal para esse período."
         )
 
-    df = pl.DataFrame(taxas)
-    return df.select(
+    return barras_de_taxas(taxas)
+
+
+def barras_de_taxas(taxas) -> pl.DataFrame:
+    """O que o `copy_rates_*` devolve, no formato do banco. Sem offset: o
+    epoch do MT5 já é o relógio de Brasília (ver `buscar_barras`). O botão
+    "Sincronizar" e o serviço de captura passam ambos por aqui, para nunca
+    divergirem na conversão."""
+    return pl.DataFrame(taxas).select(
         pl.from_epoch("time", time_unit="s").alias("ts"),
         pl.col("open"), pl.col("high"), pl.col("low"), pl.col("close"),
         pl.col("tick_volume"), pl.col("real_volume").alias("volume"),
