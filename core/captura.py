@@ -9,9 +9,15 @@ cada volta pede ao MT5 tudo o que fechou desde o último candle salvo.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import json
+import os
+import time as _t
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
 
 import polars as pl
+
+from . import ingest as ing
 
 # O minuto só fecha quando o seguinte começa; 5 s de folga cobrem o atraso
 # entre o último negócio e a barra seguinte aparecer no MT5.
@@ -56,3 +62,123 @@ class RelogioServidor:
         if self._tick is None or mono - self._visto > 10:
             return None
         return (agora_pc - self.agora(mono)).total_seconds()
+
+
+PREFIXO_CAPTURA = "captura://"
+PREFIXO_CONFERENCIA = "conferencia://"
+_COLUNAS = ("ts", "open", "high", "low", "close", "tick_volume", "volume", "spread")
+FOLGA_FECHAMENTO = timedelta(minutes=6)
+ABERTURA_ANTES = time(8, 55)
+FECHAMENTO_PADRAO = time(18, 24)
+
+
+def origem_captura(login, servidor) -> str:
+    return f"{PREFIXO_CAPTURA}{login}@{servidor}"
+
+
+def gravar(con, symbol: str, barras: pl.DataFrame, origem: str,
+           price_decimals: int = 0) -> dict:
+    """Grava só o que é novo ou diferente do banco. Sem isso cada volta de
+    1 s criaria um lote no ingest_log mesmo sem candle novo."""
+    zero = {"inseridos": 0, "revisados": 0}
+    if barras.height == 0:
+        return zero
+    barras = ing.validar(barras, origem, price_decimals)
+    linhas = con.execute(
+        f"SELECT {', '.join(_COLUNAS)} FROM bars_m1 "
+        "WHERE symbol = ? AND ts BETWEEN ? AND ?",
+        [symbol, barras["ts"].min(), barras["ts"].max()]).fetchall()
+    if linhas:
+        banco = pl.DataFrame(linhas, schema=list(_COLUNAS), orient="row").with_columns(
+            [pl.col(c).cast(barras.schema[c]) for c in _COLUNAS])
+        barras = barras.join(banco, on=list(_COLUNAS), how="anti")
+    if barras.height == 0:
+        return zero
+    r = ing.ingest_df(con, barras, symbol, origem, ing.sha256_df(barras),
+                      price_decimals=price_decimals)
+    return {"inseridos": r.rows_inserted, "revisados": r.rows_updated}
+
+
+def lacunas(ts_mt5, ts_banco) -> list[datetime]:
+    """Minuto que o MT5 tem e o banco não. Minuto que nenhum dos dois tem
+    (leilão, mercado parado) é minuto sem negócio, não alerta."""
+    return sorted(set(ts_mt5) - set(ts_banco))
+
+
+def fechamento_esperado(con, symbol: str) -> time:
+    """O mais frequente dos últimos 10 pregões: a B3 alterna 17:54/18:24
+    com o horário de verão americano, e um relógio fixo erraria metade do ano."""
+    linha = con.execute(
+        "SELECT CAST(last_ts AS TIME) AS t, count(*) AS n FROM ("
+        "  SELECT last_ts FROM trading_days WHERE symbol = ? "
+        "  ORDER BY date DESC LIMIT 10) GROUP BY 1 ORDER BY n DESC, t DESC LIMIT 1",
+        [symbol]).fetchone()
+    return linha[0] if linha else FECHAMENTO_PADRAO
+
+
+def em_pregao(agora: datetime, fechamento: time) -> bool:
+    if agora.weekday() >= 5:
+        return False
+    fim = (datetime.combine(agora.date(), fechamento) + FOLGA_FECHAMENTO).time()
+    return ABERTURA_ANTES <= agora.time() <= fim
+
+
+def dias_pendentes(con, symbol: str, hoje: date, fechou_hoje: bool) -> list[date]:
+    """Dias com candle gravado pela captura e ainda sem conferência. O
+    registro da conferência é uma linha no ingest_log — sobrevive a
+    reinício, sem tabela nova."""
+    dias = [r[0] for r in con.execute(
+        "SELECT DISTINCT CAST(b.ts AS DATE) AS d FROM bars_m1 b "
+        "JOIN ingest_log l ON l.ingest_id = b.src_ingest_id "
+        "WHERE b.symbol = ? AND l.source_file LIKE ? "
+        "AND NOT EXISTS (SELECT 1 FROM ingest_log c WHERE c.symbol = ? "
+        "  AND c.source_file = ? || strftime(CAST(b.ts AS DATE), '%Y-%m-%d')) "
+        "ORDER BY d",
+        [symbol, PREFIXO_CAPTURA + "%", symbol, PREFIXO_CONFERENCIA]).fetchall()]
+    return [d for d in dias if d < hoje or (d == hoje and fechou_hoje)]
+
+
+def conferir_dia(con, symbol: str, dia: date, barras_mt5: pl.DataFrame,
+                 agora: datetime, price_decimals: int = 0) -> dict:
+    """Relê o dia inteiro do MT5 depois do fechamento. `source_max_ts` =
+    hora em que rodou: vence a captura do mesmo dia sem depender do
+    desempate por sha256. Uma exportação manual vence a conferência só se
+    tiver candle mais novo que a hora em que a conferência rodou (feita na
+    mesma noite, perde: o "mais novo" é medido pela barra mais nova)."""
+    do_dia = barras_mt5.filter(pl.col("ts").dt.date() == dia)
+    if do_dia.height == 0:
+        raise ValueError(f"o MT5 não devolveu candles de {dia:%d/%m/%Y}")
+    r = ing.ingest_df(con, do_dia, symbol, f"{PREFIXO_CONFERENCIA}{dia:%Y-%m-%d}",
+                      ing.sha256_df(do_dia), source_max_ts=agora,
+                      price_decimals=price_decimals)
+    return {"revisados": r.rows_updated, "faltantes": r.rows_inserted}
+
+
+def escrever_estado(caminho: Path, dados: dict, tentativas: int = 3,
+                    espera: float = 0.05) -> None:
+    """.tmp + os.replace: quem lê nunca vê meio arquivo. No Windows o
+    replace falha se a tela estiver lendo naquele instante — tenta de novo."""
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    tmp = caminho.with_suffix(".tmp")
+    tmp.write_text(json.dumps(dados, default=_json, ensure_ascii=False), encoding="utf-8")
+    for i in range(tentativas):
+        try:
+            os.replace(tmp, caminho)
+            return
+        except PermissionError:
+            if i == tentativas - 1:
+                raise
+            _t.sleep(espera)
+
+
+def _json(v):
+    if isinstance(v, (datetime, date, time)):
+        return v.isoformat()
+    raise TypeError(f"não serializável: {type(v).__name__}")
+
+
+def ler_estado(caminho: Path) -> dict | None:
+    try:
+        return json.loads(caminho.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
