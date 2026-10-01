@@ -155,12 +155,12 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 
 ## Documentos: qual confiar
 
-| Documento | Estado (30/09/2026) |
+| Documento | Estado (01/10/2026) |
 |---|---|
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
-| `CHANGELOG.md` | atualizado até a entrega 1a do Ao vivo (blindagem do banco); **não cobre variantes, portfólio nem gatilho** |
+| `CHANGELOG.md` | atualizado até a parte 2 do Ao vivo (captura/Pregão); **não cobre variantes, portfólio nem gatilho** |
 | `README.md` | **desatualizado**: descreve o MVP (4 modos, "759 testes") |
 | `docs/METODOLOGIA.md` "Estado da plataforma" | **desatualizado**: marca Portfólio como ❌ |
 
@@ -203,6 +203,10 @@ Pendente, não iniciado:
 | `designer-ui` | toda tela nova ou mudança visual, e quando o usuário achar uma tela confusa — layout, textos e CSS, sem mudar comportamento |
 
 Depois de qualquer mudança de tela, avise em destaque: **feche e abra o
-`iniciar.bat`** — o app aberto não carrega código nem CSS novos.
+`iniciar.bat`** — o app aberto não carrega código nem CSS novos. Se mudou
+`captura.py`, `core/captura.py`, `core/ingest.py` ou `core/db_manager.py`,
+feche também a janela **Dataframe - Captura** antes de reabrir o
+`iniciar.bat`: a captura antiga segura a trava e a nova sai calada (código 4),
+então reabrir só o `iniciar.bat` deixa o código velho gravando.
 
 Só use agente onde ele poupa trabalho real; o resto faça direto.

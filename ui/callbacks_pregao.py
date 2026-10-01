@@ -16,6 +16,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
+import duckdb
 from dash import Input, Output, State, ctx, no_update
 
 from . import data as D
@@ -86,8 +87,9 @@ def tick_agora(estado: dict | None, tf: str, agora: datetime) -> dict | None:
     """O candle em formação pronto para o `tick`, ou None.
 
     Com a captura parada o `em_formacao` gravado é um retrato velho: ficaria
-    desenhado como se o mercado estivesse parado naquele preço. Levanta
-    RuntimeError se o banco estiver ocupado (só em 5/15 min)."""
+    desenhado como se o mercado estivesse parado naquele preço. Em 5/15 min
+    lê o banco e pode levantar RuntimeError (ocupado) ou duckdb.Error —
+    o pulso usa o `tick_seguro`."""
     if not PP.captura_ativa(estado, agora):
         return None
     f = (estado or {}).get("em_formacao")
@@ -97,6 +99,16 @@ def tick_agora(estado: dict | None, tf: str, agora: datetime) -> dict | None:
     balde = ([] if tf == "M1"
              else D.m1_fechados(SIMBOLO, PP.inicio_balde(ts, tf), ts))
     return PP.tick_formacao(estado, tf, balde)
+
+
+def tick_seguro(estado: dict | None, tf: str, agora: datetime) -> dict | None:
+    """O `tick_agora` sem derrubar o pulso: banco ocupado (RuntimeError do
+    connect) ou erro do próprio DuckDB na leitura só adiam o candle em
+    formação para o pulso seguinte, 2 s depois."""
+    try:
+        return tick_agora(estado, tf, agora)
+    except (duckdb.Error, RuntimeError):
+        return None
 
 
 def juntar(candles: list[dict], barra: dict | None) -> list[dict]:
@@ -117,10 +129,7 @@ def juntar(candles: list[dict], barra: dict | None) -> list[dict]:
 def serie_do_dia(estado: dict | None, tf: str, agora: datetime) -> list[dict]:
     dia = datetime.combine(D.dia_do_pregao(estado), datetime.min.time())
     dados = D.candles(SIMBOLO, dia, dia + timedelta(hours=23, minutes=59), tf)
-    try:
-        t = tick_agora(estado, tf, agora)
-    except RuntimeError:
-        t = None
+    t = tick_seguro(estado, tf, agora)
     dados["candles"] = juntar(dados["candles"], t["bar"] if t else None)
     return charts.price_series(dados)
 
@@ -181,10 +190,7 @@ def register_pregao(app):
         estado = D.estado_captura()
         agora = datetime.now()
         ultimo = (estado or {}).get("ultimo_salvo")
-        try:
-            t = tick_agora(estado, tf or "M1", agora)
-        except RuntimeError:
-            t = None        # banco ocupado: o candle em formação espera 2 s
+        t = tick_seguro(estado, tf or "M1", agora)
         return (PP.faixa(estado, agora), PP.placar(estado),
                 no_update if ultimo == visto else ultimo,
                 t if t is not None else no_update)

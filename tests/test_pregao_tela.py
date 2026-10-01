@@ -458,9 +458,14 @@ def test_placar_conferencia():
         "status": "concluida", "em": "2026-10-01T18:40:12",
         "dias": ["2026-10-01"]})))
     assert "concluída às 18:40" in t
-    t = _textos(PP.placar(_estado(conferencia={
-        "status": "falhou", "em": "2026-10-01T18:40:12", "erro": "x"})))
+    p = PP.placar(_estado(conferencia={
+        "status": "falhou", "em": "2026-10-01T18:40:12",
+        "erro": "IO Error: Could not set lock"}))
+    t = _textos(p)
     assert "falhou — tenta de novo em 5 min" in t
+    # o erro cru (em inglês) só no (?), nunca na nota do cartão
+    assert "Could not set lock" not in t
+    assert "Could not set lock" in str(p[3])
     assert "—" in _textos(PP.placar(None))
 
 
@@ -591,3 +596,37 @@ def test_janela_inicial_termina_no_candle_mais_novo():
     assert CP.janela_inicial(112) == {"from": 0, "to": 117}
     # 15 min no começo do dia: largura mínima, sem candle gigante
     assert CP.janela_inicial(13) == {"from": -22, "to": 18}
+
+
+def test_estado_do_futuro_nao_conta_como_captura_ativa():
+    # relógio do PC voltou (ou estado copiado de outra máquina): um
+    # atualizado_em à frente não prova que o serviço está vivo
+    e = _estado(atualizado_em=(AGORA + timedelta(seconds=10)).isoformat())
+    assert PP.captura_ativa(e, AGORA) is False
+    e = _estado(atualizado_em=(AGORA + timedelta(seconds=2)).isoformat())
+    assert PP.captura_ativa(e, AGORA) is True
+
+
+def _banco_falha(*a, **k):
+    import duckdb
+    raise duckdb.IOException("Could not set lock on file")
+
+
+def test_tick_seguro_engole_erro_do_duckdb(monkeypatch):
+    # o connect pode desistir com RuntimeError, mas a leitura em si pode
+    # levantar erro do próprio DuckDB (arquivo trocado no meio, IO)
+    from ui import callbacks_pregao as CP
+    monkeypatch.setattr(CP.D, "m1_fechados", _banco_falha)
+    e = _estado(em_formacao={"ts": "2026-10-01T09:57:00", "open": 8.0,
+                             "high": 8.5, "low": 7.5, "close": 8.2})
+    assert CP.tick_seguro(e, "M5", AGORA) is None
+
+
+def test_serie_do_dia_segue_sem_o_candle_em_formacao_com_erro_do_duckdb(monkeypatch):
+    from ui import callbacks_pregao as CP
+    monkeypatch.setattr(CP.D, "m1_fechados", _banco_falha)
+    monkeypatch.setattr(CP.D, "candles", lambda *a: {"candles": [{"time": 60}]})
+    monkeypatch.setattr(CP.charts, "price_series", lambda d: d["candles"])
+    e = _estado(em_formacao={"ts": "2026-10-01T09:57:00", "open": 8.0,
+                             "high": 8.5, "low": 7.5, "close": 8.2})
+    assert CP.serie_do_dia(e, "M5", AGORA) == [{"time": 60}]

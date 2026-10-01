@@ -24,6 +24,10 @@ from .cartao import dica as _dica
 # O serviço publica a cada volta (segundos no pregão, ~30 s fora dele).
 # Um minuto sem publicar é processo morto ou travado, não volta lenta.
 FRESCO = timedelta(seconds=60)
+# Hora gravada à frente da do PC: o relógio do Windows voltou depois da
+# última volta. Uns segundos são a corrida entre a captura gravar e a tela
+# ler; além disso o estado não prova que o serviço está vivo.
+FUTURO_TOLERADO = timedelta(seconds=5)
 # Uma mineração grava em lotes de dezenas de segundos; abaixo de 2 min o
 # serviço só está esperando a vez, e a fila dele não perde candle.
 BANCO_OCUPADO = timedelta(minutes=2)
@@ -52,7 +56,7 @@ def _idade(estado: dict | None, agora: datetime) -> timedelta | None:
 
 def captura_ativa(estado: dict | None, agora: datetime) -> bool:
     idade = _idade(estado, agora)
-    return idade is not None and idade < FRESCO
+    return idade is not None and -FUTURO_TOLERADO < idade < FRESCO
 
 
 def _fechamento(estado: dict) -> time:
@@ -306,6 +310,13 @@ def faixa(estado: dict | None, agora: datetime) -> list:
     return ([banda] if banda else []) + [cartoes]
 
 
+CONFERENCIA_EXPLICA = (
+    "Depois do fechamento a captura compara o dia inteiro com o MT5 e "
+    "corrige o que estiver diferente. Até ela terminar, o dia de hoje fica "
+    "fora da Mineração, do Walk-Forward e da Candidata, que leem o Parquet. "
+    "Bom: concluída na mesma noite. Ruim: falhou várias vezes seguidas.")
+
+
 def _conferencia(conf: dict) -> tuple[str, str, str]:
     """(valor, nota, tom) do cartão da conferência do dia."""
     status = conf.get("status")
@@ -316,7 +327,9 @@ def _conferencia(conf: dict) -> tuple[str, str, str]:
         return ((f"concluída às {em:%H:%M}" if em else "concluída"),
                 f"conferiu {dias}" if dias else "", "verde")
     if status == "falhou":
-        return "falhou — tenta de novo em 5 min", conf.get("erro") or "", "ambar"
+        # o erro vem cru do DuckDB/MT5, muitas vezes em inglês: fica no (?)
+        return ("falhou — tenta de novo em 5 min",
+                "detalhes na janela “Dataframe - Captura”", "ambar")
     return "pendente", "roda depois do fechamento", "cinza"
 
 
@@ -328,23 +341,30 @@ def placar(estado: dict | None) -> list:
     def n(chave):
         v = e.get(chave)
         return "—" if v is None else f"{int(v):,}".replace(",", ".")
-    conf = (("—", "", "cinza") if estado is None
-            else _conferencia(e.get("conferencia") or {}))
+    conf_d = e.get("conferencia") or {}
+    conf = (("—", "", "cinza") if estado is None else _conferencia(conf_d))
+    explica = CONFERENCIA_EXPLICA
+    if conf_d.get("status") == "falhou" and conf_d.get("erro"):
+        explica += f" Último erro: {conf_d['erro']}"
     return [
         _cartao("Gravados hoje", n("gravados_hoje"),
-                "candles de 1 min salvos no banco", "info"),
+                "candles de 1 min salvos no banco", "info",
+                "Candles de 1 minuto que a captura salvou hoje. Pregão "
+                "completo: cerca de 555 (até 18:24) ou 525 (até 17:54). "
+                "Bem abaixo disso com o pregão já encerrado quer dizer que "
+                "a captura ficou parada parte do dia."),
         _cartao("Recuperados", n("recuperados_hoje"), "lacunas preenchidas",
-                "info"),
+                "info",
+                "Minutos que a captura buscou depois, por terem faltado na "
+                "hora. Bom: 0. Alguns depois de uma queda da internet ou do "
+                "MT5 é normal. Muitos: a captura ficou fora do ar."),
         _cartao("Correções da corretora", n("revisados_hoje"),
                 "candles que mudaram depois", "info",
                 "A corretora às vezes corrige um candle já fechado (um "
                 "negócio que chegou atrasado); a captura regrava o candle "
                 "com o valor novo. Alguns por dia é normal; dezenas pedem "
                 "atenção."),
-        _cartao("Conferência do dia", conf[0], conf[1], conf[2],
-                "Depois do fechamento a captura compara o dia inteiro com o "
-                "MT5 e corrige o que estiver diferente. Até ela terminar, o "
-                "dia de hoje fica fora do Backtest e da Mineração."),
+        _cartao("Conferência do dia", conf[0], conf[1], conf[2], explica),
     ]
 
 
