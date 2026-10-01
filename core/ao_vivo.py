@@ -16,7 +16,7 @@ from . import variantes as V
 
 _TIPOS_CONTA = ("demo", "real")
 _COLS_CONTA = ("conta_id", "nome", "tipo", "limite_perda_dia", "criado_em",
-               "arquivada_em")
+               "arquivada_em", "login", "servidor", "terminal")
 _NADA = object()
 
 
@@ -28,26 +28,69 @@ def _nome_livre(con, nome, ignorar_id=None):
         raise ValueError(f"já existe uma conta ativa chamada '{nome}'")
 
 
-def criar_conta(nome, tipo, limite_perda_dia=None) -> int:
+def _texto_ou_none(v):
+    v = (v or "").strip() if isinstance(v, str) or v is None else v
+    return v or None
+
+
+def _login_valido(v):
+    if v is None:
+        return None
+    # bool é int em Python: True viraria conta 1 sem ninguém perceber
+    if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
+        raise ValueError("o número da conta deve ser um inteiro positivo")
+    return int(v)
+
+
+def _par_livre(con, login, servidor, ignorar_id=None):
+    # o mesmo número pode existir em corretoras diferentes, então a chave é o
+    # par; o DuckDB não tem UNIQUE parcial, por isso a checagem é aqui
+    if login is None or servidor is None:
+        return
+    r = con.execute(
+        "SELECT nome FROM contas WHERE login = ? AND servidor = ? "
+        "AND arquivada_em IS NULL AND conta_id IS DISTINCT FROM ?",
+        [login, servidor, ignorar_id]).fetchone()
+    if r:
+        raise ValueError(f"a conta {login} em {servidor} já está "
+                         f"cadastrada como '{r[0]}'")
+
+
+def criar_conta(nome, tipo, limite_perda_dia=None, *, login=None,
+                servidor=None, terminal=None) -> int:
     nome = (nome or "").strip()
     if not nome:
         raise ValueError("a conta precisa de um nome")
     if tipo not in _TIPOS_CONTA:
         raise ValueError("tipo de conta deve ser 'demo' ou 'real'")
+    login = _login_valido(login)
+    servidor = _texto_ou_none(servidor)
+    terminal = _texto_ou_none(terminal)
     with db.connect_write() as con, db.transacao(con):
         _nome_livre(con, nome)
+        _par_livre(con, login, servidor)
         cid = con.execute("SELECT nextval('seq_conta_id')").fetchone()[0]
-        con.execute("INSERT INTO contas VALUES (?,?,?,?,?,NULL)",
-                    [cid, nome, tipo, limite_perda_dia, datetime.now()])
+        con.execute(
+            "INSERT INTO contas (conta_id, nome, tipo, limite_perda_dia, "
+            "criado_em, arquivada_em, login, servidor, terminal) "
+            "VALUES (?,?,?,?,?,NULL,?,?,?)",
+            [cid, nome, tipo, limite_perda_dia, datetime.now(), login,
+             servidor, terminal])
         diario.registrar(con, "conta_criada", "usuario", conta_id=cid,
                          para=nome, motivo=tipo)
     return int(cid)
 
 
-def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA,
-                 limite_perda_dia=_NADA) -> None:
+_CAMPOS_EDITAVEIS = ("nome", "tipo", "limite_perda_dia", "login", "servidor",
+                     "terminal")
+
+
+def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
+                 login=_NADA, servidor=_NADA, terminal=_NADA) -> None:
     novos = {k: v for k, v in (("nome", nome), ("tipo", tipo),
-                               ("limite_perda_dia", limite_perda_dia))
+                               ("limite_perda_dia", limite_perda_dia),
+                               ("login", login), ("servidor", servidor),
+                               ("terminal", terminal))
              if v is not _NADA}
     if "nome" in novos:
         novos["nome"] = (novos["nome"] or "").strip()
@@ -55,14 +98,22 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA,
             raise ValueError("a conta precisa de um nome")
     if "tipo" in novos and novos["tipo"] not in _TIPOS_CONTA:
         raise ValueError("tipo de conta deve ser 'demo' ou 'real'")
+    if "login" in novos:
+        novos["login"] = _login_valido(novos["login"])
+    for k in ("servidor", "terminal"):
+        if k in novos:
+            novos[k] = _texto_ou_none(novos[k])
     with db.connect_write() as con, db.transacao(con):
-        r = con.execute("SELECT nome, tipo, limite_perda_dia FROM contas "
+        r = con.execute(f"SELECT {', '.join(_CAMPOS_EDITAVEIS)} FROM contas "
                         "WHERE conta_id = ?", [conta_id]).fetchone()
         if r is None:
             raise ValueError(f"conta #{conta_id} não existe")
-        atual = dict(zip(("nome", "tipo", "limite_perda_dia"), r))
+        atual = dict(zip(_CAMPOS_EDITAVEIS, r))
         if "nome" in novos:
             _nome_livre(con, novos["nome"], conta_id)
+        if "login" in novos or "servidor" in novos:
+            _par_livre(con, novos.get("login", atual["login"]),
+                       novos.get("servidor", atual["servidor"]), conta_id)
         if "tipo" in novos and novos["tipo"] != atual["tipo"]:
             # a fase das variantes decide para qual conta vai a ordem: trocar
             # o tipo de uma conta já escolhida mandaria demo para o real

@@ -340,6 +340,13 @@ CREATE TABLE IF NOT EXISTS contas (
     arquivada_em     TIMESTAMP
 );
 
+-- dados para o robô conferir, antes de cada ordem, que o MT5 está logado na
+-- conta certa. A senha NUNCA é guardada: o MT5 a lembra, o Dataframe só se
+-- conecta ao terminal já logado.
+ALTER TABLE contas ADD COLUMN IF NOT EXISTS login BIGINT;      -- número da conta no MT5
+ALTER TABLE contas ADD COLUMN IF NOT EXISTS servidor VARCHAR;  -- ex.: ClearInvestimentos-DEMO
+ALTER TABLE contas ADD COLUMN IF NOT EXISTS terminal VARCHAR;  -- terminal64.exe (só com 2+ MT5 instalados)
+
 ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS ligado BOOLEAN DEFAULT false;
 ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS conta_demo_id BIGINT;
 ALTER TABLE portfolios ADD COLUMN IF NOT EXISTS conta_real_id BIGINT;
