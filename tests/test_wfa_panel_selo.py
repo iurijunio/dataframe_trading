@@ -184,3 +184,11 @@ def test_regiao_larga_pinta_o_vizinho_abaixo_de_60_pct():
 def test_regiao_larga_sem_parametro_de_hoje_diz_o_porque():
     t = _textos(WP.regiao_larga(None, None, run_id=56))
     assert "fora do mercado" in t
+
+
+def test_regiao_larga_sem_janela_deploy_nao_diz_fora_do_mercado():
+    """Sem linha DEPLOY nenhuma não há "última janela fora do mercado" —
+    são duas histórias, e a tela não pode contar a errada."""
+    t = _textos(WP.regiao_larga(None, None, run_id=56, sem_deploy=True))
+    assert "fora do mercado" not in t
+    assert "DEPLOY" in t

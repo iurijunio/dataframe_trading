@@ -367,6 +367,11 @@ def pode_gravar(veredito: dict, dim: dict, params: dict | None = None,
         motivo = _trava_do_veredito(veredito)
         if motivo:
             return motivo
+    if forcar and params is None:
+        # sem o veredito para segurar, `deploy` NULL (registro antigo, ou
+        # walk-forward salvo sem linha DEPLOY) virava plano com `params: {}`
+        return ("o walk-forward não gravou os parâmetros de hoje (linha "
+                "DEPLOY): não há o que operar")
     return _trava_do_plano(dim, params)
 
 

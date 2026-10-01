@@ -258,10 +258,13 @@ def teste_janelas(rodar_janela, janelas, alvos, lucro_real: float,
     calibracao_ok = all(calibradas)
     usadas = [(j, s) for j, s, ok in zip(janelas, sinais_por_janela, calibradas)
               if ok]
-    if calibracao_ok:
-        real = lucro_real
-    elif lucros_reais is not None:
+    # com o lucro por janela, o lado real é SEMPRE a soma delas: usar
+    # `lucro_real` quando todas calibram trocava a base (total dos trades do
+    # walk-forward × soma por step) conforme a calibração
+    if lucros_reais is not None:
         real = float(sum(l for l, ok in zip(lucros_reais, calibradas) if ok))
+    elif calibracao_ok:
+        real = lucro_real
     else:
         real = None
 

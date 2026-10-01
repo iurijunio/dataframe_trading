@@ -498,13 +498,25 @@ def test_forcar_ignora_so_a_trava_do_veredito():
     reprovada = _ver("reprovada", reprovados=["Os parâmetros estão numa região larga?"])
     aguardando = _ver("aguardando testes completos",
                       pendentes=["Ganha de entradas sorteadas ao acaso?"])
-    assert plano.pode_gravar(reprovada, _dim()) is not None
-    assert plano.pode_gravar(reprovada, _dim(), forcar=True) is None
-    assert plano.pode_gravar(aguardando, _dim(), forcar=True) is None
+    params = {"periodo_canal": 27}
+    assert plano.pode_gravar(reprovada, _dim(), params=params) is not None
+    assert plano.pode_gravar(reprovada, _dim(), params=params, forcar=True) is None
+    assert plano.pode_gravar(aguardando, _dim(), params=params, forcar=True) is None
     fora = plano.pode_gravar(reprovada, _dim(), params={}, forcar=True)
     assert fora and "fora do mercado" in fora
-    sem_contrato = plano.pode_gravar(reprovada, _dim(n=0), forcar=True)
+    sem_contrato = plano.pode_gravar(reprovada, _dim(n=0), params=params,
+                                     forcar=True)
     assert sem_contrato and "arrisca mais" in sem_contrato
+
+
+def test_forcar_sem_parametro_gravado_recusa():
+    """`wfa_runs.deploy` NULL (registro antigo, ou walk-forward salvo sem
+    linha DEPLOY) chega como `params=None`. Sem o veredito para segurar, o
+    "Gravar mesmo assim" gravava um plano com `params: {}` — um plano que
+    não diz o que operar."""
+    reprovada = _ver("reprovada", reprovados=["Aguenta custo maior?"])
+    m = plano.pode_gravar(reprovada, _dim(), params=None, forcar=True)
+    assert m and "parâmetro" in m
 
 
 def test_pendencias_lista_o_que_falhou_e_o_que_nao_mediu():

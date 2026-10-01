@@ -407,6 +407,22 @@ def test_todas_calibradas_continua_como_antes():
     assert r["p"] == pytest.approx(1.0)
 
 
+def test_com_lucro_por_janela_o_lado_real_e_sempre_a_soma_delas():
+    """Com `lucros_reais`, o lado real é sempre a soma por janela — também
+    quando todas calibram. Senão a base trocava entre o total dos trades do
+    walk-forward (`lucro_real`) e a soma por step conforme a calibração, e
+    os dois podem divergir (trade fora de qualquer janela válida)."""
+    lucro_sorteio = {"w1": 10.0, "w2": 100.0}
+    rodar = _rodar_com_janela_teimosa(set(), lucro_sorteio)
+    r = aleatorio.teste_janelas(rodar, ["w1", "w2"], [100, 100],
+                                lucro_real=99_999.0, lucros_reais=[50.0, 20.0],
+                                n=10, semente=7)
+    assert r["calibracao_ok"] is True
+    assert r["lucro_real"] == pytest.approx(70.0)
+    # real 70 < sorteio 110 em toda repetição: p no teto
+    assert r["p"] == pytest.approx(1.0)
+
+
 def test_janelas_e_alvos_de_tamanhos_diferentes_e_erro():
     with pytest.raises(ValueError):
         aleatorio.teste_janelas(_rodar_barato(), ["w1", "w2"], [700],
@@ -669,6 +685,15 @@ def test_portao_aleatorio_sem_contagem_e_calibracao_ruim_vira_alerta():
     r = candidata.portao_aleatorio({"p": 0.01, "calibracao_ok": False})
     assert r["ok"] is False and r["critico"] is False
     assert "alguma janela" in r["valor"]
+
+
+def test_portao_aleatorio_sem_janela_nenhuma_fica_pendente():
+    """Zero janelas não é "o sorteio não imitou": não houve sorteio. Falta
+    de dado fica pendente, não vira alerta "0 de 0 janelas"."""
+    r = candidata.portao_aleatorio({"p": None, "calibracao_ok": True,
+                                    "n_janelas": 0, "n_calibradas": 0})
+    assert r["ok"] is None and r["critico"] is True
+    assert "nenhuma janela" in r["valor"]
 
 
 def test_portao_aleatorio_todas_calibradas_nao_fala_em_janelas():

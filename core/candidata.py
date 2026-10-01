@@ -712,6 +712,11 @@ def portao_aleatorio(resultado: dict, maximo: float = 0.05) -> dict:
     n_jan = resultado.get("n_janelas")
     n_cal = resultado.get("n_calibradas")
     p = resultado.get("p")
+    if n_jan == 0:
+        # sem janela não houve sorteio nenhum: falta de dado, não "o sorteio
+        # não imitou em 0 de 0"
+        return portao(nome, None, True, "nenhuma janela para sortear",
+                      exigido, dica)
     if n_jan is None:
         # resultado sem a contagem (formato de antes da calibração parcial):
         # só sabe dizer "todas calibraram" ou "alguma não"

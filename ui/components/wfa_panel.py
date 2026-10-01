@@ -856,7 +856,8 @@ def _compacto(v: float) -> str:
 
 
 def regiao_larga(perfil: dict | None, portoes: list[dict] | None,
-                 run_id=None, alcance: int = 4) -> html.Section:
+                 run_id=None, alcance: int = 4,
+                 sem_deploy: bool = False) -> html.Section:
     """"Parâmetros de hoje: a região é larga?" — a mesma régua da Candidata
     (`candidata.perfil_plato` + `portoes_plato`), já no Walk-Forward.
 
@@ -882,8 +883,13 @@ def regiao_larga(perfil: dict | None, portoes: list[dict] | None,
                   className="panel-note"),
     ], className="panel-head")
     if perfil is None:
-        corpo = [html.P("a última janela ficou fora do mercado: não há "
-                        "parâmetro de hoje para medir", className="regiao-nota")]
+        # duas histórias diferentes: a DEPLOY existe e ficou fora do mercado,
+        # ou nem existe (base curta demais para projetar a janela seguinte)
+        texto = ("este walk-forward não tem a linha DEPLOY (a dos parâmetros "
+                 "de hoje): não há o que medir" if sem_deploy else
+                 "a última janela ficou fora do mercado: não há parâmetro de "
+                 "hoje para medir")
+        corpo = [html.P(texto, className="regiao-nota")]
         return html.Section([titulo, *corpo], className="panel panel-regiao")
 
     corpo = [html.Div([_linha_portao(p) for p in portoes or []],

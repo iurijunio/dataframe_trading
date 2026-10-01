@@ -1343,11 +1343,11 @@ def register(app):
         """O bloco "Parâmetros de hoje: a região é larga?", com a conta da
         Candidata sobre os trials que a própria mineração gravou — os mesmos
         que a Candidata carrega (`optimizer.carregar_salva`)."""
-        deploy = next((p.params for p in passos if p.janela.deploy), None)
-        if not deploy:
-            return WP.regiao_larga(None, None, run_id)
+        linha = next((p for p in passos if p.janela.deploy), None)
+        if linha is None or not linha.params:
+            return WP.regiao_larga(None, None, run_id, sem_deploy=linha is None)
         perfil = candidata.perfil_plato(optimizer.carregar_salva(run_id),
-                                        espaco or {}, deploy)
+                                        espaco or {}, linha.params)
         return WP.regiao_larga(perfil, candidata.portoes_plato(perfil), run_id)
 
     def _wfa_montar(gatilho, _n, is_m, oos_m, inteligencia, holdout, travar,
