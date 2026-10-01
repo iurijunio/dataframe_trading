@@ -249,10 +249,11 @@ def vincular_plano(run_id, variante_id, manter_plano_id=None,
             # plano antigo tem vale_a_partir vazio = "em vigor desde sempre";
             # ao assumir o lugar do outro ele só passa a valer para ESTA
             # variante no dia em que o aposentado sai, e os pregões contam
-            # daí
+            # daí; o plano que já era da variante não muda: ele já vale
             con.execute("UPDATE planos_operacao SET vale_a_partir = ? "
-                        "WHERE plano_id = ? AND vale_a_partir IS NULL",
-                        [sai_em, manter_plano_id])
+                        "WHERE plano_id = ? AND run_id = ? "
+                        "AND vale_a_partir IS NULL",
+                        [sai_em, manter_plano_id, run_id])
         for p in ativos:
             if len(ativos) > 1 and p != manter_plano_id:
                 con.execute("UPDATE planos_operacao SET estado = 'aposentado', "

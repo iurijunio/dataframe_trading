@@ -99,3 +99,26 @@ def test_orfao_que_fica_so_passa_a_valer_quando_o_outro_sai(banco):
                 if l["ligacao_id"] == lig]
     assert amanha["plano"]["plano_id"] == p3
     assert amanha["pregoes_com_plano"] == 1
+
+
+def test_manter_o_plano_do_destino_nao_mexe_na_data_dele(banco):
+    # como no caso real: o plano da variante (#4) é mais novo que o órfão (#3)
+    v = variantes.criar("v7", "rompimento_canal")
+    mineracao(50)
+    wfa(18, 50)
+    p3 = plano.salvar(**campos_plano(wfa_id=18, run_id=50),
+                      agora=datetime(2026, 9, 25, 11))
+    mineracao(53, variante_id=v)
+    wfa(24, 53)
+    p4 = plano.salvar(**campos_plano(wfa_id=24, run_id=53),
+                      agora=datetime(2026, 9, 28, 10))
+    with db.connect_write() as con:
+        con.execute("UPDATE planos_operacao SET vale_a_partir = NULL "
+                    "WHERE plano_id = ?", [p4])
+    AV.vincular_plano(50, v, manter_plano_id=p4, agora=QUI)
+    assert plano.detalhes(p4)["vale_a_partir"] is None
+    lig = P.adicionar_variante(P.criar("pf"), v)
+    for dia in (date(2026, 10, 1), date(2026, 10, 2)):
+        [l] = [x for x in AV.em_operacao(dia) if x["ligacao_id"] == lig]
+        assert l["plano"]["plano_id"] == p4
+        assert not any("entra em" in a for a in l["avisos"])
