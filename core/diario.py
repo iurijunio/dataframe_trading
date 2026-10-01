@@ -18,7 +18,7 @@ TIPOS = frozenset({
     "membro_desligado", "fase_mudou",
     "conta_criada", "conta_editada", "conta_arquivada",
     "plano_gravado", "plano_aposentado", "plano_vinculado",
-    "variante_renomeada",
+    "variante_renomeada", "base_corrigida",
 })
 ORIGENS = frozenset({"usuario", "disjuntor", "sistema"})
 
