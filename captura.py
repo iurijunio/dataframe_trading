@@ -107,6 +107,14 @@ def _hora_do_tick(tick) -> datetime | None:
     return datetime.fromtimestamp(tick.time, timezone.utc).replace(tzinfo=None)
 
 
+def _espelho_em(simbolo: str) -> datetime:
+    """Quando o espelho Parquet foi gravado (hora local, como o ingested_at);
+    sem espelho, `datetime.min` — mais velho que qualquer conferência."""
+    pasta = db.PARQUET_DIR / db.safe_symbol(simbolo)
+    tempos = [p.stat().st_mtime for p in pasta.rglob("*.parquet")] if pasta.exists() else []
+    return datetime.fromtimestamp(max(tempos)) if tempos else datetime.min
+
+
 def _utc(d: datetime) -> datetime:
     # O pacote MetaTrader5 converte datetime sem fuso pelo fuso do PC; marcado
     # como UTC, o valor segue como está (ver mt5_source.buscar_barras).
@@ -149,6 +157,8 @@ class Servico:
         self.pregao = False
         self._mono_lacuna = None
         self._mono_conferencia = None
+        self.reexportar = False         # dia conferido sem pregões/Parquet refeitos
+        self._dias_conferidos: list = []
 
     # ------------------------------------------------------------- banco
     @contextlib.contextmanager
@@ -181,6 +191,15 @@ class Servico:
                     raise ErroDeConfiguracao(
                         "base vazia — rode corrigir_base.py ou cli.py ingest antes")
                 self.ultimo = ultimo
+                ultima_conf = con.execute(
+                    "SELECT max(ingested_at) FROM ingest_log WHERE symbol = ? "
+                    "AND source_file LIKE ?",
+                    [self.simbolo, C.PREFIXO_CONFERENCIA + "%"]).fetchone()[0]
+                # A marca de "reexportar" não sobrevive ao processo: se a
+                # captura caiu entre a conferência e o Parquet, o espelho
+                # mais velho que a última conferência denuncia.
+                self.reexportar = (ultima_conf is not None
+                                   and _espelho_em(self.simbolo) < ultima_conf)
             if self.fechamento is None or self.dia not in (None, hoje):
                 self.fechamento = C.fechamento_esperado(con, self.simbolo)
             self.gravados = con.execute(
@@ -277,10 +296,15 @@ class Servico:
             return
         self._gravou()
         self.ultimo = max(self.ultimo, prontos["ts"].max())
-        self.gravados += r["inseridos"]
+        # Voltando de dias desligado, o lote traz dias anteriores; o placar é
+        # de hoje e precisa bater com o que o reinício relê do banco. O
+        # `inseridos` é do lote inteiro: o min cobre o caso normal, em que
+        # tudo depois do último salvo é novo.
+        de_hoje = prontos.filter(pl.col("ts").dt.date() == agora.date())
+        self.gravados += min(r["inseridos"], de_hoje.height)
         self.revisados += r["revisados"]
         limite = (self.agora_srv or agora) - timedelta(minutes=2)
-        self.recuperados += prontos.filter(pl.col("ts") < limite).height
+        self.recuperados += de_hoje.filter(pl.col("ts") < limite).height
         self._marca_primeiro(prontos, agora)
 
     def _marca_primeiro(self, barras: pl.DataFrame, agora) -> None:
@@ -343,29 +367,41 @@ class Servico:
                 and m - self._mono_conferencia < A_CADA_CONFERENCIA):
             return
         try:
-            with self._banco(agora, escrita=True) as con:
-                self._mono_conferencia = m
-                self._conferir_com(con, agora)
+            with self._banco(agora, escrita=False) as con:
+                dias = C.dias_pendentes(con, self.simbolo, agora.date(),
+                                        self._fechou_hoje(agora))
         except _Ocupado:
             return      # a janela não conta: tenta de novo na volta seguinte
+        if not dias and not self.reexportar:
+            self._mono_conferencia = m
+            return
+        try:
+            # Os dias vêm do MT5 antes de pegar o escritor: a mineração e a
+            # tela não esperam o terminal responder.
+            barras = {dia: self._barras_do_dia(dia, agora) for dia in dias}
+            with self._banco(agora, escrita=True) as con:
+                self._mono_conferencia = m
+                self._conferir_com(con, agora, barras)
+        except _Ocupado:
+            return
         except ErroDeConfiguracao:
             raise
         except Exception as e:
             log.exception("conferência do dia falhou")
-            self.conferencia = {"status": "falhou", "em": agora, "erro": str(e)}
+            self.conferencia = {"status": "falhou", "em": agora,
+                                "dias": self._dias_conferidos, "erro": str(e)}
 
-    def _conferir_com(self, con, agora) -> None:
-        dias = C.dias_pendentes(con, self.simbolo, agora.date(), self._fechou_hoje(agora))
-        if not dias:
-            return
-        feitos, falhas = [], []
-        for dia in dias:
-            zero = datetime.combine(dia, datetime.min.time())
-            df = self._taxas(zero, zero + timedelta(hours=23, minutes=59))
-            # dia passado está todo fechado; o de hoje segue a hora do servidor
-            ref = self.agora_srv if dia == agora.date() else agora
-            df = (C.fechados(df, ref) if df is not None
-                  else pl.DataFrame(schema={"ts": pl.Datetime}))
+    def _barras_do_dia(self, dia, agora) -> pl.DataFrame:
+        zero = datetime.combine(dia, datetime.min.time())
+        df = self._taxas(zero, zero + timedelta(hours=23, minutes=59))
+        if df is None:
+            return pl.DataFrame(schema={"ts": pl.Datetime})
+        # dia passado está todo fechado; o de hoje segue a hora do servidor
+        return C.fechados(df, self.agora_srv if dia == agora.date() else agora)
+
+    def _conferir_com(self, con, agora, barras: dict) -> None:
+        falhas = []
+        for dia, df in barras.items():
             try:
                 r = C.conferir_dia(con, self.simbolo, dia, df, agora=agora,
                                    price_decimals=self.price_decimals)
@@ -377,12 +413,19 @@ class Servico:
                 continue
             log.info("conferência de %s: %d revisado(s), %d faltante(s)",
                      dia, r["revisados"], r["faltantes"])
-            feitos.append(dia)
-        if feitos:
+            self._dias_conferidos.append(dia)
+            # A linha conferencia://<dia> já foi gravada: o dia sai das
+            # pendências. Se a reconstrução ou o Parquet falharem daqui em
+            # diante, só esta marca faz a próxima janela refazê-los — sem ela
+            # a mineração ficaria lendo o espelho velho para sempre.
+            self.reexportar = True
+        if self.reexportar:
             cal.rebuild_trading_days(con, self.simbolo)
             roll.rebuild_rollovers(con, self.simbolo, self.inst.get("rollover_policy"))
             db.export_parquet(con, self.simbolo)
+            self.reexportar = False
             self._gravou()
+        feitos, self._dias_conferidos = self._dias_conferidos, []
         if falhas:
             self.conferencia = {"status": "falhou", "em": agora, "dias": feitos,
                                 "erro": "; ".join(falhas)}

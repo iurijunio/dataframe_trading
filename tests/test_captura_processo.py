@@ -232,6 +232,62 @@ def test_dia_que_o_mt5_nao_devolve_fica_pendente_e_os_outros_seguem(base):
         assert C.dias_pendentes(con, "WIN$N", agora.date(), False) == [d29.date()]
 
 
+def _export_falha_uma_vez(monkeypatch):
+    real = db.export_parquet
+    chamadas = []
+
+    def falso(con, simbolo):
+        chamadas.append(simbolo)
+        if len(chamadas) == 1:
+            raise PermissionError("pasta do Parquet em uso")
+        return real(con, simbolo)
+    monkeypatch.setattr(db, "export_parquet", falso)
+    return chamadas
+
+
+def test_parquet_que_falhou_e_refeito_na_janela_seguinte(base, monkeypatch):
+    # a linha conferencia:// já foi gravada quando o export falha: o dia sai
+    # das pendências, mas o Parquet ainda precisa ser refeito
+    _export_falha_uma_vez(monkeypatch)
+    agora = datetime(2026, 10, 1, 18, 40)
+    mono = Mono()
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 3),
+                          tick=datetime(2026, 10, 1, 18, 24)), agora, base / "ao_vivo", mono)
+    s.volta()
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["conferencia"]["status"] == "falhou"
+
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["conferencia"]["status"] == "concluida" and e["conferencia"]["dias"] == ["2026-10-01"]
+    assert len(db.read_bars_parquet("WIN$N")["ts"]) == 4
+
+
+def test_parquet_que_falhou_e_refeito_mesmo_depois_de_reabrir(base, monkeypatch):
+    _export_falha_uma_vez(monkeypatch)
+    agora = datetime(2026, 10, 1, 18, 40)
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 3), tick=datetime(2026, 10, 1, 18, 24))
+    _servico(mt5, agora, base / "ao_vivo").volta()             # export falhou e a captura caiu
+
+    _servico(mt5, agora + timedelta(minutes=1), base / "ao_vivo").volta()   # reabriu
+
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["conferencia"]["status"] == "concluida"
+    assert len(db.read_bars_parquet("WIN$N")["ts"]) == 4
+
+
+def test_volta_de_dias_desligado_so_conta_o_placar_de_hoje(base):
+    agora = datetime(2026, 10, 2, 9, 5, 20)
+    minutos = _minutos(datetime(2026, 10, 1, 9, 0), 3) + _minutos(datetime(2026, 10, 2, 9, 0), 6)
+    s = _servico(MT5Falso(minutos, tick=agora), agora, base / "ao_vivo")
+    s.volta()
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    # 09:00–09:04 de hoje; 09:00–09:03 começaram há mais de 2 min
+    assert e["gravados_hoje"] == 5 and e["recuperados_hoje"] == 4
+    _servico(MT5Falso(minutos, tick=agora), agora, base / "ao_vivo").volta()   # reabriu
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["gravados_hoje"] == 5
+
+
 def test_main_com_outra_instancia_devolve_4_sem_abrir_log(base, monkeypatch):
     monkeypatch.setattr(P, "PASTA", base / "ao_vivo")
     trava = P.travar(base / "ao_vivo" / "captura.lock")
