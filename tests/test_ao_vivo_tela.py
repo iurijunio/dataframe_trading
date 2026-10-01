@@ -43,7 +43,9 @@ def test_painel_tem_as_pecas():
     esperados = {"av-versao", "av-armado", "av-aberta", "av-aviso",
                  "av-portfolios", "av-variantes", "av-contas",
                  "av-arrumacao", "av-conta-nome", "av-conta-tipo",
-                 "av-conta-limite", "av-btn-conta-criar"}
+                 "av-conta-limite", "av-btn-conta-criar",
+                 "av-conta-login", "av-conta-servidor", "av-conta-terminal",
+                 "av-btn-mt5-puxar", "av-mt5-aviso"}
     assert esperados <= ids(p)
     assert "Estratégias" in textos(p)
 

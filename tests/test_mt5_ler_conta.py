@@ -86,3 +86,45 @@ def test_shutdown_mesmo_se_account_info_estoura(monkeypatch):
     with pytest.raises(ZeroDivisionError):
         M.ler_conta()
     assert c["shutdown"] == 1
+
+
+def test_lock_real_segurado_recusa(monkeypatch):
+    import threading
+    c = _falso(monkeypatch)
+    lock = threading.Lock()
+    lock.acquire()
+    monkeypatch.setattr(M, "_TERMINAL", lock)
+    orig = lock.acquire
+    # lock embutido é imutável: troca por um que espera pouco
+    class _L:
+        def acquire(self, timeout=None):
+            return orig(timeout=0.01)
+    monkeypatch.setattr(M, "_TERMINAL", _L())
+    with pytest.raises(M.MT5Error, match="ocupado sincronizando"):
+        M.ler_conta()
+    assert c["initialize"] == []
+
+
+def test_lock_liberado_depois_de_erro(monkeypatch):
+    _falso(monkeypatch, init=False)
+    with pytest.raises(M.MT5Error):
+        M.ler_conta()
+    assert M._TERMINAL.acquire(timeout=0.1)
+    M._TERMINAL.release()
+
+
+def test_initialize_que_levanta_ainda_chama_shutdown(monkeypatch):
+    c = _falso(monkeypatch)
+
+    def boom(**kw):
+        raise OSError("x")
+    sys.modules["MetaTrader5"].initialize = boom
+    with pytest.raises(OSError):
+        M.ler_conta()
+    assert c["shutdown"] == 1
+
+
+def test_pacote_ausente(monkeypatch):
+    monkeypatch.setitem(sys.modules, "MetaTrader5", None)
+    with pytest.raises(M.MT5Error, match="não está instalado"):
+        M.ler_conta()

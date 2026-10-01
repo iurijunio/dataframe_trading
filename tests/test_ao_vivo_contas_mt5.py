@@ -88,3 +88,8 @@ def test_editar_sem_mexer_no_resto_nao_gera_evento(banco):
         n = con.execute("SELECT count(*) FROM ao_vivo_eventos WHERE tipo = "
                         "'conta_editada'").fetchone()[0]
     assert n == 1
+
+
+def test_texto_so_aceita_str_ou_none(banco):
+    with pytest.raises(ValueError):
+        AV.criar_conta("X", "demo", servidor=123)

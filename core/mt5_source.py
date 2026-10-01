@@ -7,6 +7,7 @@ ficam para outro projeto (ver docs/superpowers/specs/2026-09-23-mt5-sync-design.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,6 +22,11 @@ from . import rollovers as roll
 FOLGA_DIAS = 5
 
 HEADER = "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"
+
+
+# O módulo MetaTrader5 guarda uma única conexão por processo: ler a conta
+# no meio de uma sincronização derrubaria a conexão de quem está lendo barras.
+_TERMINAL = threading.Lock()
 
 
 class MT5Error(RuntimeError):
@@ -170,11 +176,12 @@ def sincronizar(con, symbol: str, price_decimals: int) -> SincronizacaoResult:
     # diferente do fuso do corretor.
     ate = datetime.now() + timedelta(days=1)
 
-    conectar()
-    try:
-        barras = buscar_barras(symbol, desde, ate)
-    finally:
-        desconectar()
+    with _TERMINAL:
+        conectar()
+        try:
+            barras = buscar_barras(symbol, desde, ate)
+        finally:
+            desconectar()
 
     agora = datetime.now()
     destino = db.RAW_DIR / f"mt5_sync_{agora:%Y%m%d_%H%M%S}_{agora.microsecond:06d}.tsv"
@@ -208,10 +215,17 @@ def ler_conta(terminal: str | None = None) -> dict:
 
     A senha nunca passa por aqui: o MT5 já está logado, só lemos.
     """
-    import MetaTrader5 as mt5
-
-    ok = mt5.initialize(path=terminal) if terminal else mt5.initialize()
     try:
+        import MetaTrader5 as mt5
+    except ImportError as e:
+        raise MT5Error("o pacote MetaTrader5 não está instalado neste "
+                       "computador") from e
+
+    if not _TERMINAL.acquire(timeout=2):
+        raise MT5Error("o MT5 está ocupado sincronizando — tente de novo "
+                       "em instantes")
+    try:
+        ok = mt5.initialize(path=terminal) if terminal else mt5.initialize()
         if not ok:
             raise MT5Error(
                 f"não foi possível conectar ao MT5 ({mt5.last_error()}). "
@@ -225,4 +239,7 @@ def ler_conta(terminal: str | None = None) -> dict:
         return {"login": int(info.login), "servidor": info.server,
                 "tipo": tipo, "titular": info.name, "corretora": info.company}
     finally:
-        mt5.shutdown()
+        try:
+            mt5.shutdown()
+        finally:
+            _TERMINAL.release()

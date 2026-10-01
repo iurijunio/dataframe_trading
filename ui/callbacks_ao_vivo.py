@@ -82,7 +82,7 @@ def puxar(terminal, nome_atual):
     except mt5_source.MT5Error as e:
         return no_update, no_update, no_update, no_update, str(e)
     nome = (no_update if (nome_atual or "").strip()
-            else f"{d['corretora']} {d['tipo']} {d['login']}")
+            else f"{d['corretora'] or d['servidor']} {d['tipo']} {d['login']}")
     return (str(d["login"]), d["servidor"], d["tipo"], nome,
             f"lido do MT5: conta {d['login']} ({d['tipo']}, informado pela "
             "corretora) — confira e clique em Criar conta")

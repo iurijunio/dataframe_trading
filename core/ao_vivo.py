@@ -29,8 +29,9 @@ def _nome_livre(con, nome, ignorar_id=None):
 
 
 def _texto_ou_none(v):
-    v = (v or "").strip() if isinstance(v, str) or v is None else v
-    return v or None
+    if v is not None and not isinstance(v, str):
+        raise ValueError("texto inválido: esperava um texto")
+    return (v or "").strip() or None
 
 
 def _login_valido(v):

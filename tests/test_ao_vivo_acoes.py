@@ -216,3 +216,12 @@ def test_puxar_erro_do_mt5_vira_aviso_e_nao_banco_ocupado(monkeypatch):
     *campos, aviso = puxar(None, "")
     assert all(c is no_update for c in campos)
     assert aviso == "o MT5 está aberto mas não está logado"
+
+
+def test_puxar_sem_corretora_usa_servidor_no_nome(monkeypatch):
+    from core import mt5_source
+    from ui.callbacks_ao_vivo import puxar
+    monkeypatch.setattr(mt5_source, "ler_conta", lambda t=None: {
+        "login": 1, "servidor": "S-DEMO", "tipo": "demo", "titular": "F",
+        "corretora": ""})
+    assert puxar(None, "")[3] == "S-DEMO demo 1"
