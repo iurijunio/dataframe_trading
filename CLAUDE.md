@@ -181,5 +181,9 @@ Pendente, não iniciado:
 | `mutacao` | provar que os testes novos pegam implementação quebrada |
 | `documentador` | pôr CHANGELOG/README/METODOLOGIA em dia depois de uma entrega |
 | `auditor` | conferir se dados e cálculos batem com a realidade — refaz as contas por fora, só leitura no banco real |
+| `designer-ui` | toda tela nova ou mudança visual, e quando o usuário achar uma tela confusa — layout, textos e CSS, sem mudar comportamento |
+
+Depois de qualquer mudança de tela, avise em destaque: **feche e abra o
+`iniciar.bat`** — o app aberto não carrega código nem CSS novos.
 
 Só use agente onde ele poupa trabalho real; o resto faça direto.
