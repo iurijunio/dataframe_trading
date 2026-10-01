@@ -23,7 +23,7 @@ from dash.exceptions import PreventUpdate
 
 from dash import html
 
-from core import analytics, codigo, detalhes, metrics, robustez
+from core import analytics, candidata, codigo, detalhes, metrics, robustez
 from core import mineracao_stats as MS
 from core import wfa
 from core import wfa_store
@@ -1339,6 +1339,17 @@ def register(app):
             if not e["rodando"] and e["pronto"]:
                 e["entregue"] = True
 
+    def _regiao_de_hoje(run_id, espaco, passos):
+        """O bloco "Parâmetros de hoje: a região é larga?", com a conta da
+        Candidata sobre os trials que a própria mineração gravou — os mesmos
+        que a Candidata carrega (`optimizer.carregar_salva`)."""
+        deploy = next((p.params for p in passos if p.janela.deploy), None)
+        if not deploy:
+            return WP.regiao_larga(None, None, run_id)
+        perfil = candidata.perfil_plato(optimizer.carregar_salva(run_id),
+                                        espaco or {}, deploy)
+        return WP.regiao_larga(perfil, candidata.portoes_plato(perfil), run_id)
+
     def _wfa_montar(gatilho, _n, is_m, oos_m, inteligencia, holdout, travar,
                     run_id, ativo, store_atual, vazio):
         e = VARREDURA.estado
@@ -1447,7 +1458,8 @@ def register(app):
                 f"{ag.get('steps', 0)} janelas · IS {is_m}/OOS {oos_m} · {rotulo}"
                 + (" · holdout incluído" if estende else " · até o holdout")
                 + f" · {origem_crit} · {simbolo}",
-                WP.selo(ver),
+                html.Div([WP.selo(ver),
+                          _regiao_de_hoje(run_id, d["espaco"], passos)]),
                 WP.drift_figs(wfa.drift(passos, d["espaco"])),
                 WP.fita(passos),
                 WP.cards_mensais(mes),

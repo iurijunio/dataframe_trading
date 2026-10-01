@@ -16,7 +16,7 @@ import numpy as np
 import plotly.graph_objects as go
 from dash import dcc, html
 
-from core import metrics, wfa
+from core import candidata, metrics, wfa
 
 from .. import theme as T
 from .analytics_charts import BASE, EIXO, TITULO, _vazio
@@ -831,6 +831,91 @@ def _fmt_portao(p) -> str:
     return inteiro(int(v))
 
 
+def _linha_portao(p: dict) -> html.Div:
+    """Uma linha do selo: marca, pergunta com (?), valor, exigido e tipo.
+    Separada para o bloco da região larga usar a mesma gramática."""
+    if p["ok"] is None:
+        marca, classe = "…", "pendente"
+    elif p["ok"]:
+        marca, classe = "✓", "ok"
+    else:
+        marca, classe = ("✕", "falha") if p["critico"] else ("!", "alerta")
+    return html.Div([
+        html.Span(marca, className=f"portao-marca {classe}"),
+        html.Span([p["nome"], dica(p["dica"])], className="portao-nome"),
+        html.Span(_fmt_portao(p), className=f"portao-valor {classe}"),
+        html.Span(p["exigido"], className="portao-exigido"),
+        html.Span("crítico" if p["critico"] else "alerta",
+                  className=f"portao-tipo {'crit' if p['critico'] else ''}"),
+    ], className="portao")
+
+
+def _compacto(v: float) -> str:
+    """Lucro curto para caber numa linha de vizinhos: 7.541 vira "7,5 mil"."""
+    return f"{num(v / 1000, 1)} mil" if abs(v) >= 1000 else inteiro(int(round(v)))
+
+
+def regiao_larga(perfil: dict | None, portoes: list[dict] | None,
+                 run_id=None, alcance: int = 4) -> html.Section:
+    """"Parâmetros de hoje: a região é larga?" — a mesma régua da Candidata
+    (`candidata.perfil_plato` + `portoes_plato`), já no Walk-Forward.
+
+    Antes isto só aparecia na Candidata, depois de salvar o walk-forward e
+    rodar os testes: dava para descobrir lá no fim que os parâmetros de hoje
+    eram um pico. Aqui não há conta nova — a tela só desenha o que o core
+    mediu. A linha de vizinhos é a do parâmetro mais frágil, `alcance`
+    valores para cada lado do escolhido."""
+    titulo = html.Div([
+        html.H2(["Parâmetros de hoje: a região é larga?",
+                 dica("Os parâmetros que o walk-forward manda operar hoje (a "
+                      "linha DEPLOY) estão numa região boa da mineração ou "
+                      "num pico isolado? Para cada parâmetro minerado, anda "
+                      "um valor por vez para cada lado e conta quantos ainda "
+                      "dão pelo menos 60% do lucro do escolhido. Bom: 2 ou "
+                      "mais de cada lado. Ruim: um vizinho a menos de 2 "
+                      "passos cai abaixo de 60% — um pequeno erro de ajuste "
+                      "já derruba o resultado. É a mesma conta da tela "
+                      "Candidata.")],
+                className="panel-title"),
+        html.Span("a mesma régua da Candidata"
+                  + (f", sobre a mineração #{run_id}" if run_id else ""),
+                  className="panel-note"),
+    ], className="panel-head")
+    if perfil is None:
+        corpo = [html.P("a última janela ficou fora do mercado: não há "
+                        "parâmetro de hoje para medir", className="regiao-nota")]
+        return html.Section([titulo, *corpo], className="panel panel-regiao")
+
+    corpo = [html.Div([_linha_portao(p) for p in portoes or []],
+                      className="portoes")]
+    pontos = perfil.get("pontos") or []
+    i = next((k for k, x in enumerate(pontos) if x.get("atual")), None)
+    centro = perfil.get("centro_lucro")
+    if i is not None and centro is not None and centro > 0:
+        piso = centro * candidata.PLATO_PISO
+        fatia = pontos[max(0, i - alcance): i + alcance + 1]
+        chips = []
+        for x in fatia:
+            if x["lucro"] is None:
+                texto, classe = f"{_valor(x['valor'])} → não minerado", "regiao-ponto falta"
+            else:
+                texto = f"{_valor(x['valor'])} → {_compacto(x['lucro'])}"
+                classe = ("regiao-ponto atual" if x["atual"] else
+                          "regiao-ponto abaixo" if x["lucro"] < piso else
+                          "regiao-ponto")
+            chips.append(html.Span(texto, className=classe))
+        corpo.append(html.Div([
+            html.Span([f"{perfil.get('parametro')}",
+                       dica("Lucro na mineração de cada valor vizinho, com os "
+                            "outros parâmetros parados no de hoje. O "
+                            "escolhido está destacado; em vermelho, os que "
+                            f"ficam abaixo de 60% dele ({_compacto(piso)}).")],
+                      className="regiao-rot"),
+            *chips,
+        ], className="regiao-linha"))
+    return html.Section([titulo, *corpo], className="panel panel-regiao")
+
+
 def selo(ver: dict, titulo: str = "veredito do walk-forward") -> html.Div:
     """O carimbo do walk-forward, na gramática da Porteira da mineração.
 
@@ -853,22 +938,7 @@ def selo(ver: dict, titulo: str = "veredito do walk-forward") -> html.Div:
     else:
         motivo = "passou em todos os portões"
 
-    linhas = []
-    for p in ver["portoes"]:
-        if p["ok"] is None:
-            marca, classe = "…", "pendente"
-        elif p["ok"]:
-            marca, classe = "✓", "ok"
-        else:
-            marca, classe = ("✕", "falha") if p["critico"] else ("!", "alerta")
-        linhas.append(html.Div([
-            html.Span(marca, className=f"portao-marca {classe}"),
-            html.Span([p["nome"], dica(p["dica"])], className="portao-nome"),
-            html.Span(_fmt_portao(p), className=f"portao-valor {classe}"),
-            html.Span(p["exigido"], className="portao-exigido"),
-            html.Span("crítico" if p["critico"] else "alerta",
-                      className=f"portao-tipo {'crit' if p['critico'] else ''}"),
-        ], className="portao"))
+    linhas = [_linha_portao(p) for p in ver["portoes"]]
 
     return html.Div([
         html.Div([

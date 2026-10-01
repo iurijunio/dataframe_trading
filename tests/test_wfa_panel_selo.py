@@ -123,3 +123,64 @@ def test_selo_marca_portao_pendente_como_pendente():
     assert "portao-marca pendente" in texto
     assert "portao-valor pendente" in texto
     assert ver["estado"] == "aguardando testes completos"
+
+
+# ------------------- região larga no Walk-Forward (01/10/2026, mudança 4)
+def _textos(c) -> str:
+    if c is None:
+        return ""
+    if isinstance(c, (str, int, float)):
+        return str(c)
+    if isinstance(c, (list, tuple)):
+        return " ".join(_textos(x) for x in c)
+    return _textos(getattr(c, "children", None))
+
+
+def _classes(c) -> list:
+    out = []
+    if isinstance(c, (list, tuple)):
+        for x in c:
+            out += _classes(x)
+        return out
+    if getattr(c, "className", None):
+        out.append((c.className, _textos(getattr(c, "children", None))))
+    filhos = getattr(c, "children", None)
+    if filhos is not None and not isinstance(filhos, str):
+        out += _classes(filhos)
+    return out
+
+
+def _perfil_folga(lucros, centro=4):
+    valores = list(range(25, 25 + len(lucros)))
+    trials = [{"params": {"folga_ticks": v}, "lucro": float(l)}
+              for v, l in zip(valores, lucros)]
+    return candidata.perfil_plato(trials, {"folga_ticks": valores},
+                                  {"folga_ticks": float(valores[centro])})
+
+
+def test_regiao_larga_mostra_o_selo_e_os_vizinhos_do_mais_fragil():
+    perfil = _perfil_folga([7437, 7610, 7541, 7763, 8054, 8133, 9131, 8691,
+                            8877, 8132])
+    bloco = WP.regiao_larga(perfil, candidata.portoes_plato(perfil), run_id=56)
+    t = _textos(bloco)
+    assert "Parâmetros de hoje: a região é larga?" in t
+    assert "Os parâmetros estão numa região larga?" in t
+    assert "mineração #56" in t
+    assert "29 → 8,1 mil" in t and "27 → 7,5 mil" in t
+    atuais = [txt for cls, txt in _classes(bloco) if cls == "regiao-ponto atual"]
+    assert atuais == ["29 → 8,1 mil"]
+    # 4 para cada lado do escolhido, não a faixa inteira
+    assert "34 →" not in t and "33 →" in t
+
+
+def test_regiao_larga_pinta_o_vizinho_abaixo_de_60_pct():
+    perfil = _perfil_folga([7437, 7610, 7541, 4000, 8054, 8133])
+    bloco = WP.regiao_larga(perfil, candidata.portoes_plato(perfil))
+    abaixo = [txt for cls, txt in _classes(bloco) if cls == "regiao-ponto abaixo"]
+    assert abaixo == ["28 → 4,0 mil"]
+    assert "✕" in _textos(bloco)
+
+
+def test_regiao_larga_sem_parametro_de_hoje_diz_o_porque():
+    t = _textos(WP.regiao_larga(None, None, run_id=56))
+    assert "fora do mercado" in t

@@ -677,6 +677,26 @@ body{
   color:#3c4762;text-align:right;}
 .portao-tipo.crit{color:var(--muted);}
 
+/* "Parâmetros de hoje: a região é larga?" (Walk-Forward): o selo do platô
+   da Candidata e uma linha com o lucro de cada vizinho do mais frágil */
+.panel-regiao{margin-top:14px;}
+.panel-regiao .panel-title{display:flex;align-items:center;gap:6px;}
+.panel-regiao .portoes{border-radius:0;border-left:0;border-right:0;}
+/* o valor do platô é uma frase ("folga_ticks: 4 à esquerda · 11 à
+   direita…"): na coluna de 118px do selo ela quebrava em cinco linhas */
+.panel-regiao .portao{grid-template-columns:26px 1fr 340px 128px 64px;}
+.regiao-linha{display:flex;align-items:center;flex-wrap:wrap;gap:6px;
+  padding:12px 14px;font-family:var(--mono);font-size:12px;}
+.regiao-rot{display:inline-flex;align-items:center;color:var(--ink-2);
+  margin-right:4px;}
+.regiao-ponto{padding:3px 8px;border:1px solid var(--line);
+  border-radius:var(--r);color:var(--muted);background:var(--surface);}
+.regiao-ponto.atual{color:var(--ink);border-color:var(--accent);
+  font-weight:600;}
+.regiao-ponto.abaixo{color:var(--neg);border-color:rgba(255,77,109,.45);}
+.regiao-ponto.falta{font-style:italic;}
+.regiao-nota{font-family:var(--mono);font-size:12px;color:var(--muted);}
+
 /* o ativo saiu do codigo e virou seletor: fica onde antes ficava o badge */
 .dd-ativo{width:104px;flex:0 0 auto;}
 .dd-ativo .Select-control,.dd-ativo>div{
