@@ -123,6 +123,15 @@ def test_sem_nada(banco):
     assert "nada a arrumar" in textos(arruma)
 
 
+def test_resumo_do_topo(banco):
+    _cenario()
+    resumo, *_ = CA.montar(None, None, QUI, com_resumo=True)
+    t = " ".join(textos(resumo).split())
+    assert "0 de 1 portfólios ligados" in t
+    assert "0 de 1 variantes liberadas" in t
+    assert "1 plano para arrumar" in t
+
+
 def test_ficha_mostra_disjuntor_em_palavras(banco):
     v = variantes.criar("romp-canal-02", "rompimento_canal")
     mineracao(47, variante_id=v)
@@ -159,9 +168,9 @@ def test_plano_sem_risco_nem_capital_mostra_travessao(banco):
                  agora=datetime(2026, 9, 1, 10))
     lig = P.adicionar_variante(P.criar("pf"), v)
     _, vars_, _, _ = CA.montar(None, lig, QUI)
-    t = textos(vars_)
-    assert "capital —" in t and "risco por pregão —" in t
-    assert "capital R$ 0,00" not in t and "risco por pregão 0,00%" not in t
+    t = " ".join(textos(vars_).split())      # rótulo e valor: espaço único
+    assert "Capital —" in t and "Risco por pregão —" in t
+    assert "Capital R$ 0,00" not in t and "Risco por pregão 0,00%" not in t
 
 
 def test_dois_planos_orfaos_da_mesma_mineracao_uma_linha(banco):

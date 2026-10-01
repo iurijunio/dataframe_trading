@@ -4,6 +4,11 @@ Spec: docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md §5.
 Só desenha — quem lê o banco é `ui/callbacks_ao_vivo.py`. As outras
 sub-telas (Pregão, Conta, Histórico) só entram quando a parte delas
 existir: tela vazia confunde.
+
+Desenho: cada bloco mostra primeiro o nome e a situação (etiqueta
+colorida), depois os detalhes como rótulo → valor. Cores das etiquetas,
+iguais na tela inteira: verde = ligado/liberada, cinza = desligado/parada,
+âmbar = atenção, rosa = problema.
 """
 from __future__ import annotations
 
@@ -14,21 +19,61 @@ from dash import dcc, html
 from core import plano as _plano
 
 from . import ficha as FI
-from .cartao import brl
+from .cartao import brl, dica
 
 FASES = {"papel": "papel", "demo": "demo", "real_minimo": "real mínimo",
          "real": "real"}
 
 
+# ------------------------------------------------------------ peças comuns
 def _secao(titulo, nota, *filhos):
     return html.Section([
-        html.Div([html.H3(titulo, className="panel-title"),
-                  html.Span(nota, className="panel-note")],
-                 className="panel-head"),
-        *filhos,
+        html.Div([html.H3(titulo, className="panel-title av-sec-titulo"),
+                  html.P(nota, className="av-sec-nota")],
+                 className="av-sec-head"),
+        html.Div(list(filhos), className="av-corpo"),
     ], className="panel")
 
 
+def _etiqueta(texto, tom="cinza", explica=None):
+    """Pílula de situação. tom: verde, cinza, ambar, rosa, info."""
+    filhos = [texto] + ([dica(explica)] if explica else [])
+    return html.Span(filhos, className=f"av-tag av-tag-{tom}")
+
+
+def _kv(pares, linhas=False):
+    """Grade de rótulo → valor. `linhas=True`: um par por linha (rótulo à
+    esquerda, valor à direita), para os mini cartões da ficha."""
+    itens = []
+    for par in pares:
+        rotulo, valor = par[0], par[1]
+        explica = par[2] if len(par) > 2 else None
+        r = [rotulo] + ([dica(explica)] if explica else [])
+        itens.append(html.Div([html.Span(r, className="av-kv-r"),
+                               html.Span(valor, className="av-kv-v")],
+                              className="av-kv-item"))
+    return html.Div(itens, className="av-kv-linhas" if linhas else "av-kv")
+
+
+def _rotulado(rotulo, campo, explica=None, classe=""):
+    """Campo de formulário com rótulo visível (placeholder não é rótulo)."""
+    r = [rotulo] + ([dica(explica)] if explica else [])
+    return html.Div([html.Label(r, className="av-campo-rot"), campo],
+                    className=("av-campo " + classe).strip())
+
+
+def _plural(n, um, varios):
+    return f"{n} {um if n == 1 else varios}"
+
+
+def _passo(n, titulo, texto):
+    return html.Li([html.Span(str(n), className="av-passo-n"),
+                    html.Div([html.Strong(titulo), html.Span(texto)],
+                             className="av-passo-txt")],
+                   className="av-passo")
+
+
+# ------------------------------------------------------------------ painel
 def painel():
     return html.Div([
         # um número que sobe a cada ação: é ele que manda redesenhar
@@ -38,51 +83,99 @@ def painel():
         # a variante com a ficha aberta
         dcc.Store(id="av-aberta", data=None),
         html.Section([
-            html.Div([html.H2("Ao vivo", className="panel-title"),
+            html.Div([html.H2("Ao vivo", className="panel-title av-titulo"),
                       html.Span("Estratégias", className="chip av-subtela")],
                      className="panel-head"),
-            html.Div(id="av-aviso", className="av-aviso"),
+            html.Div([
+                html.P("Aqui você escolhe quais estratégias ficam liberadas "
+                       "para operar. Por enquanto tudo fica só no papel: o "
+                       "robô de papel ainda não existe e nenhuma ordem é "
+                       "enviada à corretora.", className="av-intro"),
+                html.Ol([
+                    _passo(1, "Cadastre a conta do MT5",
+                           "Seção Contas, lá embaixo. Ela só passa a ser "
+                           "usada na fase demo."),
+                    _passo(2, "Ligue o portfólio",
+                           "Seção Portfólios. As variantes dele ficam "
+                           "liberadas."),
+                    _passo(3, "Confira as variantes",
+                           "Verde = liberada para o papel. Em “Ver ficha” "
+                           "você vê de onde veio o plano."),
+                ], className="av-passos"),
+                html.Div(id="av-resumo", className="av-resumo"),
+                html.Div(id="av-aviso", className="av-aviso"),
+            ], className="av-corpo"),
         ], className="panel"),
-        _secao("Portfólios", "ligue o portfólio para liberar as variantes dele "
-               "(por enquanto só libera para o papel: o robô de papel ainda não "
-               "existe e nenhuma ordem é enviada)",
+        _secao("Portfólios", "Ligar um portfólio libera as variantes dele "
+               "para o papel.",
                html.Div(id="av-portfolios", className="av-lista")),
-        _secao("Variantes", "clique no nome para abrir a ficha: de onde veio o "
-               "plano, o que ele opera e o que já mudou",
+        _secao("Variantes", "Cada variante de cada portfólio. Verde pode "
+               "rodar; cinza está parada e diz por quê.",
                html.Div(id="av-variantes", className="av-lista-col")),
-        _secao("Contas", "contas do MT5 onde as ordens vão cair a partir da "
-               "fase demo — o limite de perda diária é da mesa",
+        _secao("Contas", "Contas do MT5 onde as ordens vão cair a partir da "
+               "fase demo.",
                html.Div([
-                   dcc.Input(id="av-conta-nome", type="text", className="inp",
-                             placeholder="nome da conta (ex.: Demo XP)"),
-                   dcc.Dropdown(id="av-conta-tipo", className="dd dd-sm",
-                                clearable=False, value="demo",
-                                options=[{"label": "demo", "value": "demo"},
-                                         {"label": "real", "value": "real"}]),
-                   dcc.Input(id="av-conta-limite", type="text",
-                             inputMode="numeric", className="inp",
-                             placeholder="limite de perda diária (R$, opcional)"),
-                   html.Button("Criar conta", id="av-btn-conta-criar",
-                               n_clicks=0, className="btn-ghost"),
-               ], className="acoes"),
+                   html.Div([
+                       _rotulado("Nome da conta", dcc.Input(
+                           id="av-conta-nome", type="text", className="inp",
+                           placeholder="ex.: Demo XP"), classe="av-campo-nome"),
+                       _rotulado("Tipo", dcc.Dropdown(
+                           id="av-conta-tipo", className="dd av-dd-tipo",
+                           clearable=False, value="demo", searchable=False,
+                           options=[{"label": "demo", "value": "demo"},
+                                    {"label": "real", "value": "real"}])),
+                       _rotulado("Limite de perda diária (R$)", dcc.Input(
+                           id="av-conta-limite", type="text",
+                           inputMode="numeric", className="inp",
+                           placeholder="opcional"),
+                           explica="O limite diário da mesa proprietária. "
+                                   "Deixe vazio se a conta não tiver.",
+                           classe="av-campo-limite"),
+                       html.Div(html.Button("Criar conta",
+                                            id="av-btn-conta-criar",
+                                            n_clicks=0,
+                                            className="btn-ghost av-btn-principal"),
+                                className="av-campo-botao"),
+                   ], className="av-form-linha"),
+               ], className="av-form"),
                html.Div(id="av-contas", className="av-lista-col")),
-        _secao("Arrumação", "planos ativos que não pertencem a nenhuma "
-               "variante — só entram em portfólio depois de vinculados",
+        _secao("Arrumação", "Planos gravados que ainda não pertencem a "
+               "nenhuma variante. Vincule para poder usá-los num portfólio.",
                html.Div(id="av-arrumacao", className="av-lista-col")),
     ], id="painel-aovivo", className="modo-bloco", style={"display": "none"})
+
+
+def resumo_topo(n_pf, n_pf_lig, n_var, n_var_lib, n_arrumar,
+                n_contas) -> list:
+    """A linha de números do topo: onde a pessoa está no passo a passo."""
+    def item(valor, rotulo, tom=""):
+        return html.Div([html.Span(valor, className="av-resumo-v"),
+                         html.Span(rotulo, className="av-resumo-r")],
+                        className=("av-resumo-item " + tom).strip())
+    return [
+        item(f"{n_pf_lig} de {n_pf}", "portfólios ligados",
+             "av-ok" if n_pf_lig else ""),
+        item(f"{n_var_lib} de {n_var}", "variantes liberadas",
+             "av-ok" if n_var_lib else ""),
+        item(str(n_contas), "conta cadastrada" if n_contas == 1
+             else "contas cadastradas"),
+        item(str(n_arrumar), "plano para arrumar" if n_arrumar == 1
+             else "planos para arrumar", "av-atencao" if n_arrumar else ""),
+    ]
 
 
 def _botao(rotulo, acao, alvo, armado, classe="btn-ghost btn-sm"):
     armado_aqui = armado == f"{acao}:{alvo}"
     return html.Button("Confirmar?" if armado_aqui else rotulo,
                        id={"type": "av-acao", "acao": acao, "id": alvo},
-                       n_clicks=0, className=classe)
+                       n_clicks=0,
+                       className=classe + (" av-armado" if armado_aqui else ""))
 
 
-def _campo_dd(campo, alvo, valor, opcoes, placeholder):
+def _campo_dd(campo, alvo, valor, opcoes, placeholder, classe="dd av-dd"):
     return dcc.Dropdown(id={"type": "av-campo", "campo": campo, "id": alvo},
                         value=valor, options=opcoes, placeholder=placeholder,
-                        className="dd dd-sm", clearable=True)
+                        className=classe, clearable=True)
 
 
 def _campo_txt(campo, alvo, valor, placeholder, numerico=False):
@@ -163,6 +256,11 @@ def _data(d, fmt="%d/%m/%Y"):
     return d.strftime(fmt) if d else "—"
 
 
+def _num(v):
+    return "—" if v is None else str(v)
+
+
+# -------------------------------------------------------------- portfólios
 def cartao_portfolio(p: dict, contas: list[dict], armado,
                      n_liberadas: int | None = None) -> html.Div:
     # conta arquivada ainda gravada no portfólio continua na lista, marcada:
@@ -175,100 +273,239 @@ def cartao_portfolio(p: dict, contas: list[dict], armado,
                      or c["conta_id"] in (p["conta_demo_id"], p["conta_real_id"]))]
     demo, real = opcoes("demo"), opcoes("real")
     pid = p["portfolio_id"]
-    estado = (html.Span("ligado", className="av-roda") if p["ligado"]
-              else html.Span("desligado", className="av-nota"))
-    interruptor = (_botao("Desligar", "pf-desligar", pid, armado) if p["ligado"]
-                   else _botao("Ligar", "pf-ligar", pid, armado))
-    aviso = ([html.P("nenhuma variante deste portfólio está rodando",
-                     className="av-motivo")]
-             if p["ligado"] and n_liberadas == 0 else [])
-    return html.Div([
-        html.Div([html.Span(p["nome"], className="av-nome"), estado,
-                  html.Span(f"{p['n_membros']} variante(s)", className="av-nota"),
-                  interruptor], className="av-linha"),
-        html.Div([_campo_dd("conta-demo", pid, p["conta_demo_id"], demo,
-                            "conta demo"),
-                  _campo_dd("conta-real", pid, p["conta_real_id"], real,
-                            "conta real"),
-                  _botao("Salvar contas", "pf-contas", pid, armado)],
-                 className="av-linha"),
-        *aviso,
-    ], className="av-cartao" + (" av-ligado" if p["ligado"] else ""))
+    n = p["n_membros"]
+    if p["ligado"]:
+        estado = _etiqueta("ligado", "verde")
+        interruptor = _botao("Desligar portfólio", "pf-desligar", pid, armado,
+                             "btn-ghost av-btn-sec")
+        explica = "Ligado: as variantes dele que estão ligadas podem rodar."
+    else:
+        estado = _etiqueta("desligado", "cinza")
+        interruptor = _botao("Ligar portfólio", "pf-ligar", pid, armado,
+                             "btn-ghost av-btn-principal")
+        explica = "Desligado: nenhuma variante dele roda. Ligue para liberar."
+    qtd = (_plural(n, "variante", "variantes") if n else "nenhuma variante")
+    corpo = [
+        html.Div([
+            html.Div([html.Span(p["nome"], className="av-nome-fixo"), estado],
+                     className="av-cab-esq"),
+            interruptor,
+        ], className="av-cab"),
+        html.P([html.Span(qtd, className="av-qtd"), " · ", explica],
+               className="av-texto"),
+    ]
+    if not n:
+        corpo.append(html.P("Este portfólio está vazio. Adicione variantes "
+                            "nele na tela Portfólio.", className="av-vazio"))
+    if p["ligado"] and n_liberadas == 0:
+        corpo.append(html.P("⚠ nenhuma variante deste portfólio está rodando "
+                            "— veja o motivo em Variantes",
+                            className="av-alerta"))
+    corpo.append(html.Div([
+        html.Div([html.Span("Contas deste portfólio", className="av-sub-titulo"),
+                  dica("Só importam a partir da fase demo: é nelas que as "
+                       "ordens vão cair. Na fase papel nada é enviado.")],
+                 className="av-sub-head"),
+        html.Div([
+            _rotulado("Conta demo", _campo_dd(
+                "conta-demo", pid, p["conta_demo_id"], demo,
+                "escolha…" if demo else "nenhuma conta demo")),
+            _rotulado("Conta real", _campo_dd(
+                "conta-real", pid, p["conta_real_id"], real,
+                "escolha…" if real else "nenhuma conta real")),
+            html.Div(_botao("Salvar contas", "pf-contas", pid, armado,
+                            "btn-ghost av-btn-sec"),
+                     className="av-campo-botao"),
+        ], className="av-form-linha"),
+    ], className="av-sub"))
+    return html.Div(corpo, className="av-cartao av-cartao-pf"
+                    + (" av-ligado" if p["ligado"] else ""))
+
+
+# --------------------------------------------------------------- variantes
+def _tom_motivo(motivo) -> str:
+    if motivo in ("portfólio desligado", "pausada por você"):
+        return "cinza"
+    if motivo == "sem plano em vigor":
+        return "ambar"
+    return "rosa"            # disjuntor, código mudou, código não encontrado
+
+
+def _aviso_tag(a: str):
+    if a.startswith("código não conferido"):
+        return _etiqueta("código não conferido", "cinza",
+                         "Plano gravado antes de 30/09/2026, quando o app "
+                         "ainda não guardava a impressão do código da "
+                         "estratégia. Não dá para saber se o código mudou "
+                         "depois — isso não impede de rodar.")
+    if " — " in a:
+        curto = a.split(" — ")[0]
+        return _etiqueta(curto, "ambar", a)
+    return _etiqueta(a, "ambar")
 
 
 def cartao_variante(l: dict, armado, ficha=None) -> html.Div:
     lig = l["ligacao_id"]
     plano = l["plano"]
-    situacao = (html.Span("liberada", className="av-roda") if l["roda"]
-                else html.Span(l["motivo"], className="av-motivo"))
-    interruptor = (_botao("Pausar", "membro-desligar", lig, armado) if l["ligada"]
-                   else _botao("Ligar", "membro-ligar", lig, armado))
-    partes = [l["estrategia"],
-              (plano or {}).get("symbol") or "—",
-              f"Fase: {FASES.get(l['fase'], l['fase'])} há {l['dias_na_fase']} dia(s)",
-              (f"plano #{plano['plano_id']} · {l['pregoes_com_plano']} pregão(ões) "
-               f"com este plano · reotimizar até {_data(plano['reotimizar_em'])}"
-               if plano else "sem plano em vigor")]
-    filhos = [html.Div([
-        html.Span(l["variante_nome"], className="av-nome",
-                  id={"type": "av-acao", "acao": "abrir", "id": lig}, n_clicks=0),
-        html.Span(" · ".join(partes), className="av-nota"),
-        situacao, interruptor], className="av-linha")]
+    aberta = ficha is not None
+    if l["roda"]:
+        situacao = [_etiqueta("liberada", "verde")]
+    else:
+        situacao = [_etiqueta("parada", _tom_motivo(l["motivo"])),
+                    html.Span(l["motivo"], className="av-motivo-peq")]
+    if l["ligada"]:
+        explica = (None if l.get("portfolio_ligado", True) else
+                   "O portfólio está desligado, então ela já está parada. "
+                   "Pausar aqui faz ela continuar parada quando você ligar o "
+                   "portfólio.")
+        interruptor = html.Span(
+            [_botao("Pausar variante", "membro-desligar", lig, armado,
+                    "btn-ghost btn-sm av-btn-sec")]
+            + ([dica(explica)] if explica else []), className="av-com-dica")
+    else:
+        interruptor = _botao("Ligar variante", "membro-ligar", lig, armado,
+                             "btn-ghost btn-sm av-btn-principal")
+    ver = html.Button("Fechar ficha ▴" if aberta else "Ver ficha ▾",
+                      id={"type": "av-acao", "acao": "abrir", "id": lig},
+                      n_clicks=0, className="btn-ghost btn-sm av-btn-ficha"
+                      + (" av-aberta" if aberta else ""))
+    dias = l["dias_na_fase"]
+    pares = [("Estratégia", l["estrategia"]),
+             ("Ativo", (plano or {}).get("symbol") or "—"),
+             ("Fase", f"{FASES.get(l['fase'], l['fase'])} há "
+                      f"{_plural(dias, 'dia', 'dias')}")]
+    if plano:
+        pares += [("Plano em vigor", f"#{plano['plano_id']}"),
+                  ("Pregões com este plano", str(l["pregoes_com_plano"])),
+                  ("Reotimizar até", _data(plano["reotimizar_em"]))]
+    else:
+        pares += [("Plano em vigor", "nenhum")]
+    filhos = [
+        html.Div([
+            html.Div([html.Span(l["variante_nome"], className="av-nome-fixo"),
+                      *situacao], className="av-cab-esq"),
+            html.Div([interruptor, ver], className="av-cab-dir"),
+        ], className="av-cab"),
+        _kv(pares),
+    ]
     if l["avisos"]:
-        filhos.append(html.Ul([html.Li(a) for a in l["avisos"]],
-                              className="av-avisos"))
-    if ficha is not None:
+        filhos.append(html.Div([html.Span("Avisos", className="av-avisos-rot"),
+                                *[_aviso_tag(a) for a in l["avisos"]]],
+                               className="av-avisos"))
+    if aberta:
         filhos.append(ficha)
-    return html.Div(filhos, className="av-cartao")
+    return html.Div(filhos, className="av-cartao av-cartao-var"
+                    + (" av-roda" if l["roda"] else "")
+                    + (" av-com-ficha" if aberta else ""))
+
+
+# -------------------------------------------------------------------- ficha
+def _etapa(n, titulo, ident, corpo, classe=""):
+    cab = [html.Div([html.Span(str(n), className="av-etapa-n"),
+                     html.H4(titulo, className="av-etapa-tit")],
+                    className="av-etapa-cab")]
+    if ident:
+        cab.append(html.P(ident, className="av-etapa-id"))
+    return html.Div(cab + list(corpo),
+                    className=("av-etapa " + classe).strip())
+
+
+def _sem(texto):
+    return html.P(texto, className="av-vazio")
 
 
 def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
     hoje = hoje or date.today()
     l, det, mina, w = r["ligacao"], r["plano"], r["mineracao"], r["wfa"]
     vid = l["variante_id"]
-    blocos = [html.Div([
-        _campo_txt("renomear", vid, l["variante_nome"], "novo nome da variante"),
-        _botao("Renomear", "renomear", vid, armado),
-        *([_botao("Aposentar plano", "plano-aposentar", det["plano_id"], armado)]
-          if det and det["estado"] == "ativo" else []),
-    ], className="av-linha")]
+
+    acoes = html.Div([
+        html.Span("Ações", className="av-sub-titulo"),
+        html.Div([
+            _rotulado("Novo nome da variante",
+                      _campo_txt("renomear", vid, l["variante_nome"],
+                                 "novo nome da variante"),
+                      classe="av-campo-nome"),
+            html.Div(_botao("Renomear", "renomear", vid, armado,
+                            "btn-ghost btn-sm av-btn-sec"),
+                     className="av-campo-botao"),
+            *([html.Div(html.Span([
+                _botao("Aposentar plano", "plano-aposentar", det["plano_id"],
+                       armado, "btn-ghost btn-sm av-btn-perigo"),
+                dica("Tira o plano de vigor. A variante fica sem plano até "
+                     "você gravar outro.")], className="av-com-dica"),
+                className="av-campo-botao")]
+              if det and det["estado"] == "ativo" else []),
+        ], className="av-form-linha"),
+    ], className="av-ficha-acoes")
+
+    cab = html.Div([
+        html.Div([html.H4("Ficha da variante", className="av-ficha-tit"),
+                  html.P("De onde veio o plano, o que ele opera e o que já "
+                         "mudou.", className="av-texto")]),
+        acoes,
+    ], className="av-ficha-cab")
+    blocos = [cab]
+
     alcance = {"plano": None,
                "walk-forward": "chegou até o walk-forward — ainda sem plano gravado",
                "mineração": "chegou até a mineração — ainda sem walk-forward",
                "nada": "ainda não foi minerada"}[r["alcance"]]
     if alcance:
-        blocos.append(html.P(alcance, className="av-motivo"))
+        blocos.append(html.P("⚠ " + alcance, className="av-alerta"))
+
+    etapas = []
     # 1. origem
-    blocos.append(html.Div([
-        html.H4("1. Origem — mineração"),
-        html.P(f"mineração #{mina['run_id']} · {mina['nome'] or 'sem nome'} · "
-               f"{_data(mina['created_at'])} · {mina['n_combinacoes']} "
-               f"combinações testadas · dados reservados a partir de "
-               f"{_data_iso(mina.get('holdout_de'))}")
-        if mina else html.P("mineração apagada ou anterior às variantes",
-                            className="av-nota"),
-    ]))
+    if mina:
+        etapas.append(_etapa(1, "Origem — mineração",
+                             f"mineração #{mina['run_id']} · "
+                             f"{mina['nome'] or 'sem nome'}",
+                             [_kv([("Data", _data(mina["created_at"])),
+                                   ("Combinações testadas",
+                                    _num(mina["n_combinacoes"])),
+                                   ("Dados reservados a partir de",
+                                    _data_iso(mina.get("holdout_de")),
+                                    "Período guardado fora da otimização, "
+                                    "para o teste final.")], linhas=True)]))
+    else:
+        etapas.append(_etapa(1, "Origem — mineração", None,
+                             [_sem("mineração apagada ou anterior às variantes")]))
     # 2. walk-forward
-    blocos.append(html.Div([
-        html.H4("2. Walk-Forward"),
-        html.P(f"walk-forward #{w['wfa_id']} · {w['nome'] or 'sem nome'} · "
-               f"{w['is_meses'] if w['is_meses'] is not None else '—'} meses de otimização / "
-               f"{w['oos_meses'] if w['oos_meses'] is not None else '—'} meses de teste · "
-               f"{_metodo(w['inteligencia'])} · lucro fora da amostra "
-               f"{_reais(w['oos_lucro'])} em {w['oos_trades'] if w['oos_trades'] is not None else '—'} trades · "
-               f"queda máx. {_reais(w['dd_oos'])} · veredito "
-               f"{w['veredito'] or '—'}")
-        if w else html.P("sem walk-forward", className="av-nota"),
-    ]))
+    if w:
+        etapas.append(_etapa(2, "Walk-Forward",
+                             f"walk-forward #{w['wfa_id']} · "
+                             f"{w['nome'] or 'sem nome'}",
+                             [_kv([("Meses de otimização", _num(w["is_meses"])),
+                                   ("Meses de teste", _num(w["oos_meses"])),
+                                   ("Método de escolha", _metodo(w["inteligencia"])),
+                                   ("Lucro fora da amostra", _reais(w["oos_lucro"])),
+                                   ("Trades fora da amostra", _num(w["oos_trades"])),
+                                   ("Queda máx.", _reais(w["dd_oos"])),
+                                   ("Veredito", w["veredito"] or "—")],
+                                  linhas=True)]))
+    else:
+        etapas.append(_etapa(2, "Walk-Forward", None, [_sem("sem walk-forward")]))
     # 3. candidata
     reg = r["candidata"] or {}
-    blocos.append(html.Div([
-        html.H4("3. Candidata"),
-        html.P(f"veredito no dia da gravação: {reg.get('veredito') or '—'}"),
-        html.Ul([html.Li([html.Span("✔ " if p.get("ok") else "✖ ",
-                                    className="av-ok" if p.get("ok") else "av-nok"),
-                          p.get("nome") or "—"])
-                 for p in reg.get("portoes") or []], className="av-avisos"),
+    portoes = reg.get("portoes") or []
+    n_ok = sum(1 for p in portoes if p.get("ok"))
+    lista = html.Div([
+        html.Div([html.Span("✔" if p.get("ok") else "✖",
+                            className="av-ok" if p.get("ok") else "av-nok"),
+                  html.Span(p.get("nome") or "—"),
+                  *([html.Span("crítico", className="av-critico")]
+                    if p.get("critico") else [])],
+                 className="av-portao")
+        for p in portoes], className="av-portoes") if portoes else _sem(
+            "nenhuma verificação registrada")
+    etapas.append(_etapa(3, "Candidata", None, [
+        _kv([("Veredito no dia da gravação", reg.get("veredito") or "—")],
+            linhas=True),
+        *([html.P(f"{n_ok} de {len(portoes)} verificações aprovadas",
+                  className="av-portoes-res "
+                  + ("av-ok" if n_ok == len(portoes) else "av-atencao"))]
+          if portoes else []),
+        lista,
     ]))
     # 4. plano em vigor
     if det:
@@ -276,43 +513,65 @@ def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
         conf = ("código confere" if cod["confere"] else
                 "⚠ código mudou desde o plano" if cod["confere"] is False else
                 "código não conferido (plano anterior a 30/09/2026)")
-        corpo = [html.P(
-            f"plano #{det['plano_id']} · capital {_reais(det['capital'])} · "
-            f"{det['contratos'] if det['contratos'] is not None else '—'} "
-            f"contrato(s) · risco por pregão "
-            f"{_pct(det['risco_efetivo_pct'])} · "
-            f"{_vale_legado(det, 'vale a partir de')} · reotimizar até "
-            f"{_data(det['reotimizar_em'])} · {conf}")]
-        corpo.append(html.P("freio: " + _disjuntor_texto(det.get("disjuntor"))))
+        vale = det["vale_a_partir"]
+        titulo = ("Plano" if not vale or vale <= hoje else
+                  f"Plano (ainda não vale — entra em {_data(vale, '%d/%m')})")
+        corpo = [
+            _kv([("Capital", _reais(det["capital"])),
+                 ("Contratos", _num(det["contratos"])),
+                 ("Risco por pregão", _pct(det["risco_efetivo_pct"])),
+                 ("Em vigor", _vale_legado(det, "a partir de")),
+                 ("Reotimizar até", _data(det["reotimizar_em"])),
+                 ("Código", conf)]),
+            html.Div([
+                html.Div([html.Span("Freio do plano", className="av-freio-tit"),
+                          dica("É o que reduz ou desliga a estratégia sozinho "
+                               "quando ela perde demais.")],
+                         className="av-sub-head"),
+                html.P(_disjuntor_texto(det.get("disjuntor")),
+                       className="av-freio-txt"),
+            ], className="av-freio"),
+        ]
         if estrategia_mod is not None:
             corpo.append(FI.ficha(estrategia=estrategia_mod,
                                   params=det["params"], perfil=det["profile"],
                                   espaco=(mina or {}).get("espaco") or {}))
         else:
             corpo.append(html.P("código da estratégia não encontrado",
-                                className="av-motivo"))
-        vale = det["vale_a_partir"]
-        titulo = ("4. Plano" if not vale or vale <= hoje else
-                  f"4. Plano (ainda não vale — entra em {_data(vale, '%d/%m')})")
-        blocos.append(html.Div([html.H4(titulo), *corpo]))
+                                className="av-alerta"))
+        etapas.append(_etapa(4, titulo, f"plano #{det['plano_id']}", corpo,
+                             "av-etapa-larga"))
     # 5. histórico
-    blocos.append(html.Div([
-        html.H4("5. Histórico"),
-        html.Ul([html.Li(
-            f"plano #{p['plano_id']} · {p['estado']} · gravado "
-            f"{_data(p['created_at'])} · {_vale_legado(p, 'vale de')}"
-            + (f" até {_data(p['aposentado_em'])}" if p['aposentado_em'] else ""))
-            for p in r["planos"]] or [html.Li("nenhum plano ainda")],
-            className="av-avisos"),
-        html.Ul([html.Li(f"{_data(e['quando'], '%d/%m/%Y %H:%M')} · "
-                         f"{_EVENTOS.get(e['tipo'], e['tipo'].replace('_', ' '))}"
-                         + (f" · {e['motivo']}" if e['motivo'] else ""))
-                 for e in r["eventos"][:30]]
-                or [html.Li("nenhum evento ainda")], className="av-avisos"),
-    ]))
+    def _tom_estado(e):
+        return {"ativo": "verde", "aposentado": "cinza"}.get(e, "ambar")
+    planos = [html.Div([
+        html.Span(f"plano #{p['plano_id']}", className="av-hist-id"),
+        _etiqueta(p["estado"], _tom_estado(p["estado"])),
+        html.Span(f"gravado {_data(p['created_at'])} · "
+                  f"{_vale_legado(p, 'vale de')}"
+                  + (f" até {_data(p['aposentado_em'])}"
+                     if p['aposentado_em'] else ""), className="av-texto"),
+    ], className="av-hist-linha") for p in r["planos"]] or [
+        _sem("nenhum plano ainda")]
+    eventos = [html.Div([
+        html.Span(_data(e["quando"], "%d/%m/%Y %H:%M"), className="av-hist-data"),
+        html.Span(_EVENTOS.get(e["tipo"], e["tipo"].replace("_", " "))
+                  + (f" · {e['motivo']}" if e["motivo"] else "")),
+    ], className="av-hist-linha") for e in r["eventos"][:30]] or [
+        _sem("nenhum evento ainda")]
+    etapas.append(_etapa(5, "Histórico", None, [
+        html.Div([
+            html.Div([html.Span("Planos", className="av-sub-titulo"), *planos],
+                     className="av-hist-col"),
+            html.Div([html.Span("O que aconteceu", className="av-sub-titulo"),
+                      *eventos], className="av-hist-col"),
+        ], className="av-hist"),
+    ], "av-etapa-larga"))
+    blocos.append(html.Div(etapas, className="av-etapas"))
     return html.Div(blocos, className="av-ficha")
 
 
+# ------------------------------------------------------------------- contas
 def limite_br(v) -> str:
     """Limite no formato que o campo aceita de volta, sem arredondar:
     1500.5 -> "1.500,50", 500.0 -> "500"."""
@@ -326,16 +585,24 @@ def limite_br(v) -> str:
 def linha_conta(c: dict, armado) -> html.Div:
     cid = c["conta_id"]
     return html.Div([
-        html.Span(c["tipo"], className="av-nota"),
-        _campo_txt("conta-nome", cid, c["nome"], "nome"),
-        _campo_txt("conta-limite", cid,
-                   limite_br(c["limite_perda_dia"]),
-                   "limite de perda diária (R$)", numerico=True),
-        _botao("Salvar", "conta-salvar", cid, armado),
-        _botao("Arquivar", "conta-arquivar", cid, armado),
-    ], className="av-linha")
+        html.Div(_etiqueta(c["tipo"], "ambar" if c["tipo"] == "real" else "info"),
+                 className="av-conta-tipo"),
+        _rotulado("Nome", _campo_txt("conta-nome", cid, c["nome"], "nome"),
+                  classe="av-campo-nome"),
+        _rotulado("Limite de perda diária (R$)",
+                  _campo_txt("conta-limite", cid,
+                             limite_br(c["limite_perda_dia"]),
+                             "sem limite", numerico=True),
+                  classe="av-campo-limite"),
+        html.Div([_botao("Salvar", "conta-salvar", cid, armado,
+                         "btn-ghost btn-sm av-btn-sec"),
+                  _botao("Arquivar", "conta-arquivar", cid, armado,
+                         "btn-ghost btn-sm av-btn-perigo")],
+                 className="av-campo-botao av-botoes"),
+    ], className="av-form-linha av-conta")
 
 
+# ---------------------------------------------------------------- arrumação
 def _planos_txt(o):
     ids = o.get("plano_ids") or [o["plano_id"]]
     return ("plano " if len(ids) == 1 else "planos ") + ", ".join(f"#{i}" for i in ids)
@@ -344,13 +611,32 @@ def _planos_txt(o):
 def linha_orfao(o: dict, opcoes_variante: list[dict],
                 opcoes_manter: list[dict], armado) -> html.Div:
     rid = o["run_id"]
+    txt = _planos_txt(o)
+    varios = len(o.get("plano_ids") or [o["plano_id"]]) > 1
     return html.Div([
-        html.Span(f"{_planos_txt(o)} · {o['strategy']} · "
-                  f"{o['nome'] or 'sem nome'} · mineração #{rid}",
-                  className="av-nome"),
-        _campo_dd("vincular-variante", rid, None, opcoes_variante,
-                  "vincular a qual variante?"),
-        _campo_dd("vincular-manter", rid, None, opcoes_manter,
-                  "se a variante já tiver plano ativo: qual fica"),
-        _botao("Vincular", "vincular", rid, armado),
-    ], className="av-linha")
+        html.Div([html.Div([html.Span(txt[0].upper() + txt[1:],
+                                      className="av-nome-fixo"),
+                            _etiqueta("sem variante", "ambar")],
+                           className="av-cab-esq")], className="av-cab"),
+        html.P(("Estes planos não pertencem" if varios else
+                "Este plano não pertence") + " a nenhuma variante.",
+               className="av-texto"),
+        _kv([("Estratégia", o["strategy"]),
+             ("Mineração", f"#{rid} · {o['nome'] or 'sem nome'}")]),
+        html.Div([
+            _rotulado("1. Escolha a variante",
+                      _campo_dd("vincular-variante", rid, None,
+                                opcoes_variante, "escolha a variante…"),
+                      classe="av-campo-largo"),
+            _rotulado("2. Se ela já tiver um plano ativo, qual fica?",
+                      _campo_dd("vincular-manter", rid, None, opcoes_manter,
+                                "deixe vazio se ela não tiver"),
+                      explica="Uma variante só pode ter um plano em vigor. "
+                              "Escolha qual continua; o outro sai de vigor "
+                              "no próximo pregão.",
+                      classe="av-campo-largo"),
+            html.Div(_botao("Vincular", "vincular", rid, armado,
+                            "btn-ghost av-btn-principal"),
+                     className="av-campo-botao"),
+        ], className="av-form-linha"),
+    ], className="av-cartao av-orfao")

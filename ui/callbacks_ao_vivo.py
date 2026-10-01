@@ -122,8 +122,9 @@ def acao(nome, alvo, campos, armado, aberta):
     return None, aberta, aviso
 
 
-def montar(armado, aberta, hoje=None):
-    """As quatro seções da tela, lidas do banco agora."""
+def montar(armado, aberta, hoje=None, com_resumo=False):
+    """As quatro seções da tela, lidas do banco agora. `com_resumo=True`
+    devolve antes delas a linha de números do topo."""
     contas = AV.listar_contas(incluir_arquivadas=True)
     ativas = [c for c in contas if not c.get("arquivada_em")]
     pfs = P.listar()
@@ -136,29 +137,36 @@ def montar(armado, aberta, hoje=None):
                                        liberadas.get(p["portfolio_id"], 0))
                    for p in pfs]
                   or [html.P("nenhum portfólio ainda — crie na tela Portfólio",
-                             className="av-nota")])
+                             className="av-vazio")])
 
     blocos = []
     for rep in AV.repetidas(linhas):
         blocos.append(html.P(
             f"⚠ {rep['variante_nome']} está em {len(rep['portfolios'])} "
             f"portfólios ligados ({', '.join(rep['portfolios'])}) — os "
-            "contratos somam na conta", className="av-motivo"))
+            "contratos somam na conta", className="av-alerta"))
     atual = None
     for l in linhas:
         if l["portfolio_nome"] != atual:
             atual = l["portfolio_nome"]
-            blocos.append(html.H4(atual, className="panel-title"))
+            blocos.append(html.Div(
+                [html.Span("Portfólio", className="av-grupo-rot"),
+                 html.Span(atual, className="av-grupo-nome"),
+                 html.Span("ligado" if l["portfolio_ligado"] else "desligado",
+                           className="av-tag av-tag-"
+                           + ("verde" if l["portfolio_ligado"] else "cinza"))],
+                className="av-grupo"))
         ficha = None
         if aberta == l["ligacao_id"]:
             r = AV.rastreio(l["ligacao_id"], hoje)
             ficha = AP.ficha_rastreio(r, _modulo(l["estrategia"]), armado, hoje)
         blocos.append(AP.cartao_variante(l, armado, ficha))
-    variantes = blocos or [html.P("nenhuma variante em portfólio ainda",
-                                  className="av-nota")]
+    variantes = blocos or [html.P("nenhuma variante em portfólio ainda — "
+                                  "adicione variantes na tela Portfólio",
+                                  className="av-vazio")]
 
     contas_div = ([AP.linha_conta(c, armado) for c in ativas]
-                  or [html.P("nenhuma conta cadastrada", className="av-nota")])
+                  or [html.P("nenhuma conta cadastrada", className="av-vazio")])
 
     orfaos = AV.planos_sem_variante()
     arruma = []
@@ -190,12 +198,19 @@ def montar(armado, aberta, hoje=None):
         op_manter = [{"label": rotulo(p), "value": p["plano_id"]}
                      for p in ativos]
         arruma.append(AP.linha_orfao(o, op_var, op_manter, armado))
-    arruma = arruma or [html.P("nada a arrumar", className="av-nota")]
-    return portfolios, variantes, contas_div, arruma
+    arruma = arruma or [html.P("nada a arrumar", className="av-vazio")]
+    if not com_resumo:
+        return portfolios, variantes, contas_div, arruma
+    resumo = AP.resumo_topo(
+        n_pf=len(pfs), n_pf_lig=sum(1 for p in pfs if p["ligado"]),
+        n_var=len(linhas), n_var_lib=sum(1 for l in linhas if l["roda"]),
+        n_arrumar=len(orfaos), n_contas=len(ativas))
+    return resumo, portfolios, variantes, contas_div, arruma
 
 
 def register(app):
     @app.callback(
+        Output("av-resumo", "children"),
         Output("av-portfolios", "children"), Output("av-variantes", "children"),
         Output("av-contas", "children"), Output("av-arrumacao", "children"),
         Input("modo", "value"), Input("av-versao", "data"),
@@ -205,15 +220,15 @@ def register(app):
         if modo != "aovivo":
             raise PreventUpdate
         try:
-            return montar(armado, aberta)
+            return montar(armado, aberta, com_resumo=True)
         except (RuntimeError, ValueError) as e:
             # banco ocupado ou dado que não lê: a tela avisa em vez de
             # ficar congelada sem explicação
             motivo = ("banco ocupado" if isinstance(e, RuntimeError)
                       else str(e))
-            return (no_update, [html.P(
+            return (no_update, no_update, [html.P(
                 f"não foi possível ler agora: {motivo} — tente de novo",
-                className="av-motivo")], no_update, no_update)
+                className="av-alerta")], no_update, no_update)
 
     @app.callback(
         Output("av-versao", "data"), Output("av-armado", "data"),
