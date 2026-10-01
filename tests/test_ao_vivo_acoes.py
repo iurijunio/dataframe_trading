@@ -150,3 +150,69 @@ def test_vincular_pede_confirmacao_antes_de_mexer(banco):
     assert plano.detalhes(pid)["variante_id"] is None
     armado, _, aviso = acao("vincular", 50, campos, armado, None)
     assert armado is None and plano.detalhes(pid)["variante_id"] == v
+
+
+def test_criar_conta_com_login_e_servidor(banco):
+    campos = {("conta-nome", 0): "Demo", ("conta-tipo", 0): "demo",
+              ("conta-login", 0): " 123456 ",
+              ("conta-servidor", 0): "Clear-DEMO",
+              ("conta-terminal", 0): "C:\\MT5\\terminal64.exe"}
+    _, _, aviso = acao("conta-criar", 0, campos, None, None)
+    [c] = AV.listar_contas()
+    assert "criada" in aviso
+    assert (c["login"], c["servidor"]) == (123456, "Clear-DEMO")
+    assert c["terminal"] == "C:\\MT5\\terminal64.exe"
+
+
+def test_login_com_letra_vira_aviso(banco):
+    campos = {("conta-nome", 0): "X", ("conta-tipo", 0): "demo",
+              ("conta-login", 0): "12a45"}
+    _, _, aviso = acao("conta-criar", 0, campos, None, None)
+    assert aviso == "número da conta deve ter só números"
+    assert AV.listar_contas() == []
+
+
+def test_salvar_conta_edita_login(banco):
+    cid = AV.criar_conta("Demo", "demo", login=1, servidor="S")
+    campos = {("conta-nome", cid): "Demo", ("conta-limite", cid): "",
+              ("conta-login", cid): "2", ("conta-servidor", cid): "S",
+              ("conta-terminal", cid): ""}
+    _, _, aviso = acao("conta-salvar", cid, campos, None, None)
+    assert "salva" in aviso and AV.listar_contas()[0]["login"] == 2
+
+
+def test_puxar_preenche_e_sugere_nome(monkeypatch):
+    from core import mt5_source
+    from ui.callbacks_ao_vivo import puxar
+    visto = []
+    monkeypatch.setattr(mt5_source, "ler_conta", lambda t=None: (
+        visto.append(t) or {"login": 77, "servidor": "S-REAL", "tipo": "real",
+                            "titular": "F", "corretora": "Clear"}))
+    login, serv, tipo, nome, aviso = puxar(" C:\\x.exe ", "")
+    assert (login, serv, tipo, nome) == ("77", "S-REAL", "real", "Clear real 77")
+    assert visto == ["C:\\x.exe"]
+    assert aviso == ("lido do MT5: conta 77 (real, informado pela corretora) "
+                     "— confira e clique em Criar conta")
+
+
+def test_puxar_nao_sobrescreve_nome_digitado(monkeypatch):
+    from dash import no_update
+    from core import mt5_source
+    from ui.callbacks_ao_vivo import puxar
+    monkeypatch.setattr(mt5_source, "ler_conta", lambda t=None: {
+        "login": 1, "servidor": "S", "tipo": "demo", "titular": "F",
+        "corretora": "C"})
+    assert puxar(None, "Meu nome")[3] is no_update
+
+
+def test_puxar_erro_do_mt5_vira_aviso_e_nao_banco_ocupado(monkeypatch):
+    from dash import no_update
+    from core import mt5_source
+    from ui.callbacks_ao_vivo import puxar
+
+    def estoura(t=None):
+        raise mt5_source.MT5Error("o MT5 está aberto mas não está logado")
+    monkeypatch.setattr(mt5_source, "ler_conta", estoura)
+    *campos, aviso = puxar(None, "")
+    assert all(c is no_update for c in campos)
+    assert aviso == "o MT5 está aberto mas não está logado"

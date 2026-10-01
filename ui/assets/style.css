@@ -1232,3 +1232,4 @@ body{
   flex:0 0 118px;}
 .av-ok{color:var(--pos);}
 .av-nok{color:var(--neg);}
+.av-aviso-mt5{font-size:12px;color:var(--ink-2);align-self:center;}

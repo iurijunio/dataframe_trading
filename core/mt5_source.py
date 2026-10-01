@@ -200,3 +200,29 @@ def sincronizar(con, symbol: str, price_decimals: int) -> SincronizacaoResult:
         ) from erro
 
     return SincronizacaoResult(ingest=resultado, trading_days=n_days, rollovers=n_roll)
+
+
+def ler_conta(terminal: str | None = None) -> dict:
+    """O que o terminal MT5 aberto diz da conta logada nele: número,
+    servidor, se é demo ou real (informado pela corretora) e o titular.
+
+    A senha nunca passa por aqui: o MT5 já está logado, só lemos.
+    """
+    import MetaTrader5 as mt5
+
+    ok = mt5.initialize(path=terminal) if terminal else mt5.initialize()
+    try:
+        if not ok:
+            raise MT5Error(
+                f"não foi possível conectar ao MT5 ({mt5.last_error()}). "
+                "Abra o MetaTrader 5 e faça login na conta.")
+        info = mt5.account_info()
+        if info is None:
+            raise MT5Error("o MT5 está aberto mas não está logado em "
+                           "nenhuma conta")
+        # trade_mode: 0 demo, 1 concurso (também sem dinheiro de verdade), 2 real
+        tipo = "real" if info.trade_mode == 2 else "demo"
+        return {"login": int(info.login), "servidor": info.server,
+                "tipo": tipo, "titular": info.name, "corretora": info.company}
+    finally:
+        mt5.shutdown()

@@ -10,6 +10,7 @@ from dash import ALL, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
 from core import ao_vivo as AV
+from core import mt5_source
 from core import plano as PL
 from core import portfolio as P
 from core import variantes as V
@@ -59,6 +60,34 @@ def _numero(texto):
     return valor
 
 
+_ERRO_LOGIN = "número da conta deve ter só números"
+
+
+def _login(texto):
+    """Número da conta digitado: só dígitos. Vazio vira None."""
+    if texto is None or not str(texto).strip():
+        return None
+    t = str(texto).strip()
+    if not t.isascii() or not t.isdigit():
+        raise ValueError(_ERRO_LOGIN)
+    return int(t)
+
+
+def puxar(terminal, nome_atual):
+    """Lê a conta do MT5 aberto. Devolve (login, servidor, tipo, nome, aviso);
+    em falha, no_update nos campos e a mensagem no aviso. MT5Error é
+    RuntimeError, mas não é 'banco ocupado': por isso é tratado aqui."""
+    try:
+        d = mt5_source.ler_conta((terminal or "").strip() or None)
+    except mt5_source.MT5Error as e:
+        return no_update, no_update, no_update, no_update, str(e)
+    nome = (no_update if (nome_atual or "").strip()
+            else f"{d['corretora']} {d['tipo']} {d['login']}")
+    return (str(d["login"]), d["servidor"], d["tipo"], nome,
+            f"lido do MT5: conta {d['login']} ({d['tipo']}, informado pela "
+            "corretora) — confira e clique em Criar conta")
+
+
 def _executar(nome, alvo, campos) -> str:
     c = lambda campo: campos.get((campo, alvo))
     if nome == "pf-ligar":
@@ -78,11 +107,17 @@ def _executar(nome, alvo, campos) -> str:
         AV.desligar_membro(alvo)
         return "variante pausada"
     if nome == "conta-criar":
-        AV.criar_conta(c("conta-nome"), c("conta-tipo"), _numero(c("conta-limite")))
+        AV.criar_conta(c("conta-nome"), c("conta-tipo"),
+                       _numero(c("conta-limite")), login=_login(c("conta-login")),
+                       servidor=c("conta-servidor"),
+                       terminal=c("conta-terminal"))
         return "conta criada"
     if nome == "conta-salvar":
         AV.editar_conta(alvo, nome=c("conta-nome"),
-                        limite_perda_dia=_numero(c("conta-limite")))
+                        limite_perda_dia=_numero(c("conta-limite")),
+                        login=_login(c("conta-login")),
+                        servidor=c("conta-servidor"),
+                        terminal=c("conta-terminal"))
         return "conta salva"
     if nome == "conta-arquivar":
         AV.arquivar_conta(alvo)
@@ -237,13 +272,15 @@ def register(app):
         Input("av-btn-conta-criar", "n_clicks"),
         State({"type": "av-campo", "campo": ALL, "id": ALL}, "value"),
         State("av-conta-nome", "value"), State("av-conta-tipo", "value"),
-        State("av-conta-limite", "value"),
+        State("av-conta-limite", "value"), State("av-conta-login", "value"),
+        State("av-conta-servidor", "value"),
+        State("av-conta-terminal", "value"),
         State("av-versao", "data"), State("av-armado", "data"),
         State("av-aberta", "data"),
         prevent_initial_call=True,
     )
-    def agir(_cliques, _criar, _campos, nome, tipo, limite, versao, armado,
-             aberta):
+    def agir(_cliques, _criar, _campos, nome, tipo, limite, login, servidor,
+             terminal, versao, armado, aberta):
         # botão recém-desenhado aparece com n_clicks=0 e dispara o Input de
         # padrão sem ninguém ter clicado: só vale clique de verdade
         gat = ctx.triggered_id
@@ -254,9 +291,25 @@ def register(app):
                   for s in ctx.states_list[0]}
         if gat == "av-btn-conta-criar":
             campos.update({("conta-nome", 0): nome, ("conta-tipo", 0): tipo,
-                           ("conta-limite", 0): limite})
+                           ("conta-limite", 0): limite,
+                           ("conta-login", 0): login,
+                           ("conta-servidor", 0): servidor,
+                           ("conta-terminal", 0): terminal})
             nome_acao, alvo = "conta-criar", 0
         else:
             nome_acao, alvo = gat["acao"], gat["id"]
         armado, aberta, aviso = acao(nome_acao, alvo, campos, armado, aberta)
         return (versao or 0) + 1, armado, aberta, aviso
+
+    @app.callback(
+        Output("av-conta-login", "value"), Output("av-conta-servidor", "value"),
+        Output("av-conta-tipo", "value"), Output("av-conta-nome", "value"),
+        Output("av-mt5-aviso", "children"),
+        Input("av-btn-mt5-puxar", "n_clicks"),
+        State("av-conta-terminal", "value"), State("av-conta-nome", "value"),
+        prevent_initial_call=True,
+    )
+    def puxar_mt5(cliques, terminal, nome):
+        if not cliques:
+            raise PreventUpdate
+        return puxar(terminal, nome)

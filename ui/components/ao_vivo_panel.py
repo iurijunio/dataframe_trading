@@ -131,12 +131,39 @@ def painel():
                            explica="O limite diário da mesa proprietária. "
                                    "Deixe vazio se a conta não tiver.",
                            classe="av-campo-limite"),
-                       html.Div(html.Button("Criar conta",
-                                            id="av-btn-conta-criar",
-                                            n_clicks=0,
-                                            className="btn-ghost av-btn-principal"),
-                                className="av-campo-botao"),
                    ], className="av-form-linha"),
+                   html.Div([
+                       _rotulado("Número da conta", dcc.Input(
+                           id="av-conta-login", type="text",
+                           inputMode="numeric", className="inp",
+                           placeholder="ex.: 1234567"),
+                           explica="O número que aparece no MT5, no topo da "
+                                   "janela. A senha não é guardada: você faz "
+                                   "login no próprio MT5.",
+                           classe="av-campo-limite"),
+                       _rotulado("Servidor", dcc.Input(
+                           id="av-conta-servidor", type="text",
+                           className="inp",
+                           placeholder="ex.: ClearInvestimentos-DEMO"),
+                           classe="av-campo-nome"),
+                       _rotulado("Pasta do MT5", dcc.Input(
+                           id="av-conta-terminal", type="text",
+                           className="inp", placeholder="opcional"),
+                           explica="Só se você tiver mais de um MT5 "
+                                   "instalado: aponte o terminal64.exe desta "
+                                   "conta.",
+                           classe="av-campo-largo"),
+                       html.Div(html.Button("Puxar do MT5",
+                                            id="av-btn-mt5-puxar",
+                                            n_clicks=0,
+                                            className="btn-ghost btn-sm av-btn-sec"),
+                                className="av-campo-botao"),
+                       html.Div(id="av-mt5-aviso", className="av-aviso-mt5"),
+                   ], className="av-form-linha"),
+                   html.Div(html.Button("Criar conta",
+                                        id="av-btn-conta-criar", n_clicks=0,
+                                        className="btn-ghost av-btn-principal"),
+                            className="av-campo-botao"),
                ], className="av-form"),
                html.Div(id="av-contas", className="av-lista-col")),
         _secao("Arrumação", "Planos gravados que ainda não pertencem a "
@@ -584,8 +611,13 @@ def limite_br(v) -> str:
 
 def linha_conta(c: dict, armado) -> html.Div:
     cid = c["conta_id"]
+    # sem número e servidor o robô não consegue conferir em qual conta o MT5
+    # está logado, então não pode mandar ordem
+    faltam = not c.get("login") or not c.get("servidor")
     return html.Div([
-        html.Div(_etiqueta(c["tipo"], "ambar" if c["tipo"] == "real" else "info"),
+        html.Div([_etiqueta(c["tipo"], "ambar" if c["tipo"] == "real" else "info")]
+                 + ([_etiqueta("faltam os dados do MT5 — não poderá receber "
+                               "ordens", "ambar")] if faltam else []),
                  className="av-conta-tipo"),
         _rotulado("Nome", _campo_txt("conta-nome", cid, c["nome"], "nome"),
                   classe="av-campo-nome"),
@@ -594,6 +626,19 @@ def linha_conta(c: dict, armado) -> html.Div:
                              limite_br(c["limite_perda_dia"]),
                              "sem limite", numerico=True),
                   classe="av-campo-limite"),
+        _rotulado("Número da conta",
+                  _campo_txt("conta-login", cid,
+                             "" if c.get("login") is None else str(c["login"]),
+                             "número no MT5", numerico=True),
+                  classe="av-campo-limite"),
+        _rotulado("Servidor",
+                  _campo_txt("conta-servidor", cid, c.get("servidor") or "",
+                             "servidor"),
+                  classe="av-campo-nome"),
+        _rotulado("Pasta do MT5",
+                  _campo_txt("conta-terminal", cid, c.get("terminal") or "",
+                             "opcional"),
+                  classe="av-campo-largo"),
         html.Div([_botao("Salvar", "conta-salvar", cid, armado,
                          "btn-ghost btn-sm av-btn-sec"),
                   _botao("Arquivar", "conta-arquivar", cid, armado,

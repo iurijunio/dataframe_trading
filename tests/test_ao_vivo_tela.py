@@ -245,3 +245,13 @@ def test_ficha_sem_codigos_crus_e_datas_legiveis(banco):
     assert AP._data_iso("2026-03-27") == "27/03/2026"
     assert AP._data_iso("lixo") == "lixo" and AP._data_iso(None) == "—"
     assert AP._metodo("algo_novo") == "algo novo"
+
+
+def test_conta_sem_login_mostra_etiqueta_ambar():
+    base = {"conta_id": 1, "nome": "Demo", "tipo": "demo",
+            "limite_perda_dia": None, "terminal": None}
+    falta = textos(AP.linha_conta({**base, "login": None, "servidor": None}, None))
+    assert "faltam os dados do MT5" in falta
+    ok = textos(AP.linha_conta({**base, "login": 123, "servidor": "S"}, None))
+    assert "faltam os dados do MT5" not in ok
+    assert "123" in ok and "S" in ok
