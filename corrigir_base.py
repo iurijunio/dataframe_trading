@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import socket
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -111,23 +112,38 @@ def simular() -> int:
 
 
 # ----------------------------------------------------------------- execução
+def app_aberto() -> bool:
+    """O app não segura conexão permanente com o banco; só a porta dele
+    denuncia que está aberto (e pode abrir o banco no meio da correção)."""
+    try:
+        with socket.create_connection(("127.0.0.1", 8050), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 def _backup(hoje: date) -> Path:
     destino = db.ROOT.parent / "backups" / f"{hoje:%Y-%m-%d}-antes-correcao-hora"
     if destino.exists():
-        raise SystemExit(f"o backup {destino} já existe; se a base já foi apagada, use --retomar")
+        raise SystemExit(f"o backup {destino} já existe; confira antes de repetir")
+    if app_aberto():
+        raise SystemExit("o app está aberto: feche o app (iniciar.bat) e a captura")
     try:
         con = db.connect_write(tentativas=1)
     except Exception as erro:
-        raise SystemExit(f"o banco está em uso (app ou captura abertos): {erro}")
+        raise SystemExit(f"o banco está em uso: feche o app (iniciar.bat) e a captura ({erro})")
     con.execute("CHECKPOINT")  # leva o .wal para o arquivo antes de copiar
     con.close()
-    destino.mkdir(parents=True)
-    shutil.copy2(db.DB_PATH, destino / db.DB_PATH.name)
-    wal = db.DB_PATH.with_name(db.DB_PATH.name + ".wal")
-    if wal.exists():
-        shutil.copy2(wal, destino / wal.name)
-    shutil.copytree(db.PARQUET_DIR, destino / "parquet")
-    shutil.copytree(db.RAW_DIR, destino / "raw")
+
+    def copiar(pasta: Path) -> None:
+        shutil.copy2(db.DB_PATH, pasta / db.DB_PATH.name)
+        wal = db.DB_PATH.with_name(db.DB_PATH.name + ".wal")
+        if wal.exists():
+            shutil.copy2(wal, pasta / wal.name)
+        shutil.copytree(db.PARQUET_DIR, pasta / "parquet")
+        shutil.copytree(db.RAW_DIR, pasta / "raw")
+
+    R.backup_atomico(destino, copiar)
     return destino
 
 
@@ -141,7 +157,8 @@ def _apagar(lotes) -> None:
             diario.registrar(
                 con, "base_corrigida", "sistema",
                 motivo="hora do MT5 deslocada em 3 h (16/03→23/09/2026); cadeia apagada; "
-                       "ingest_log 3 e 4 ficam como histórico, arquivos renomeados .hora-errada")
+                       f"ingest_log {' e '.join(map(str, ids))} ficam como histórico, "
+                       "arquivos renomeados .hora-errada")
     finally:
         con.close()
     for _, arq in lotes:
@@ -154,26 +171,35 @@ def _apagar(lotes) -> None:
         shutil.rmtree(sem_yaml)
 
 
-def _refazer(csv: Path, backup: Path | None) -> None:
+def _refazer(csv: Path) -> None:
     con = db.connect_write()
     try:
+        ing.ingest_csv(con, csv, SYMBOL, price_decimals=0)  # passo 5, fora de transação
+        src.sincronizar(con, SYMBOL, price_decimals=0)      # passo 6
+        _relatorio(con)                                     # passo 7
+    finally:
+        con.close()
+
+
+def _tratar_falha(erro: Exception, backup: Path | None) -> None:
+    """Primeiro o que o usuário precisa saber; só depois a tentativa de
+    deixar a base coerente — se ela falhar, o aviso já foi dado."""
+    print(f"\nFALHOU: {erro}")
+    print(f"Backup: {backup or '(o de uma rodada anterior)'}")
+    print("Corrija e rode `corrigir_base.py --retomar`.")
+    try:
+        # sem isto ficaria Parquet com a hora errada e calendário velho
+        con = db.connect_write()
         try:
-            ing.ingest_csv(con, csv, SYMBOL, price_decimals=0)  # passo 5, fora de transação
-            src.sincronizar(con, SYMBOL, price_decimals=0)      # passo 6
-            _relatorio(con)                                     # passo 7
-        except BaseException as erro:
-            # sem isto ficaria Parquet com a hora errada e calendário velho
             cal.rebuild_trading_days(con, SYMBOL)
             policy = db.load_instrument_yaml(SYMBOL).get("rollover_policy")
             if policy:
                 roll.rebuild_rollovers(con, SYMBOL, policy)
             db.export_parquet(con, SYMBOL)
-            print(f"\nFALHOU: {erro}")
-            print(f"Backup: {backup or '(o de uma rodada anterior)'}")
-            print("Corrija e rode `corrigir_base.py --retomar`.")
-            raise SystemExit(1)
-    finally:
-        con.close()
+        finally:
+            con.close()
+    except Exception as erro2:
+        print(f"E a reconstrução do calendário/Parquet também falhou: {erro2}")
 
 
 def _relatorio(con) -> None:
@@ -192,25 +218,39 @@ def _relatorio(con) -> None:
 
 
 def executar(args) -> int:
+    con = db.connect(read_only=True)
+    try:
+        feita = R.ja_corrigida(con)
+        lotes = lotes_errados(con)
+    finally:
+        con.close()
+    if args.retomar and not feita:
+        print("a correção ainda não foi feita — use --executar")
+        return 1
+    if args.executar and feita:
+        print("a correção já foi feita (evento base_corrigida no diário); "
+              "repeti-la apagaria o que foi criado depois. Para só refazer a "
+              "importação, use --retomar")
+        return 1
+
     backup = None
-    if not args.retomar:
-        if not mt5_tem_historico():
-            print(MSG_SEM_HISTORICO)
-            return 1
-        con = db.connect(read_only=True)
-        try:
-            lotes = lotes_errados(con)
-        finally:
-            con.close()
-        ids = {i for i, _ in lotes}
-        if ids != LOTES_ESPERADOS and (args.lotes is None or ids != set(args.lotes)):
-            print(f"lotes errados achados: {sorted(ids)}; esperado {{3, 4}}. "
-                  "Se estiver certo, passe --lotes com esses ids.")
-            return 1
-        backup = _backup(date.today())
-        print(f"Backup em {backup}")
-        _apagar(lotes)
-    _refazer(args.csv, backup)
+    try:
+        if args.executar:
+            if not mt5_tem_historico():
+                print(MSG_SEM_HISTORICO)
+                return 1
+            ids = {i for i, _ in lotes}
+            if ids != LOTES_ESPERADOS and (args.lotes is None or ids != set(args.lotes)):
+                print(f"lotes errados achados: {sorted(ids)}; esperado {{3, 4}}. "
+                      "Se estiver certo, passe --lotes com esses ids.")
+                return 1
+            backup = _backup(date.today())
+            print(f"Backup em {backup}")
+            _apagar(lotes)  # passos 3 e 4
+        _refazer(args.csv)
+    except Exception as erro:
+        _tratar_falha(erro, backup)
+        return 1
     return 0
 
 

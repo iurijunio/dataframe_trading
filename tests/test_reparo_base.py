@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -78,3 +78,26 @@ def test_sessoes_suspeitas_acusa_pregao_das_06h_e_poupa_o_normal(con, tmp_path):
 
 def test_diario_aceita_base_corrigida():
     assert "base_corrigida" in diario.TIPOS
+
+
+def test_ja_corrigida_so_depois_do_evento(con):
+    assert R.ja_corrigida(con) is False
+    diario.registrar(con, "base_corrigida", "sistema", motivo="x")
+    assert R.ja_corrigida(con) is True
+
+
+def test_backup_atomico_so_aparece_completo(tmp_path):
+    destino = tmp_path / "bk" / "2026-10-01-antes"
+
+    def quebra(pasta):
+        (pasta / "meio.txt").write_text("x")
+        raise OSError("disco cheio")
+
+    with pytest.raises(OSError):
+        R.backup_atomico(destino, quebra)
+    assert not destino.exists()  # pasta final nunca fica pela metade
+
+    # sobra do .parcial anterior é limpa; sucesso renomeia
+    R.backup_atomico(destino, lambda pasta: (pasta / "ok.txt").write_text("y"))
+    assert (destino / "ok.txt").exists() and not (destino / "meio.txt").exists()
+    assert not destino.with_name(destino.name + ".parcial").exists()

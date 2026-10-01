@@ -55,3 +55,26 @@ def sessoes_suspeitas(con, symbol: str, desde: date) -> list[dict]:
             fora.append({"dia": dia, "abre": f"{primeiro:%H:%M}",
                          "fecha": f"{ultimo:%H:%M}", "candles": n})
     return fora
+
+
+def ja_corrigida(con) -> bool:
+    """A correção roda uma vez só: os lotes errados ficam no ingest_log para
+    sempre, então repeti-la semanas depois apagaria minerações e planos
+    feitos já sobre a base certa. O evento no diário é a trava."""
+    return con.execute("SELECT count(*) FROM ao_vivo_eventos "
+                       "WHERE tipo = 'base_corrigida'").fetchone()[0] > 0
+
+
+def backup_atomico(destino, copiar) -> None:
+    """Copia para `<destino>.parcial` e só no fim renomeia. Pasta final
+    incompleta faria a próxima rodada recusar e sugerir --retomar, que não
+    apaga os lotes errados: a base ficaria errada achando que foi corrigida."""
+    from pathlib import Path
+    import shutil
+    destino = Path(destino)
+    parcial = destino.with_name(destino.name + ".parcial")
+    if parcial.exists():
+        shutil.rmtree(parcial)
+    parcial.mkdir(parents=True)
+    copiar(parcial)
+    parcial.rename(destino)
