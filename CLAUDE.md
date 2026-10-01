@@ -77,6 +77,9 @@ campo numérico altera dado real — anote o valor antes e restaure depois.
   disjuntor). Uma variante tem **um plano ativo por vez**.
 - **Fase** — onde a variante está no caminho até o dinheiro real, por
   portfólio: papel → demo → real mínimo → real. (Nunca "degrau".)
+- **Serviço de captura** — o processo à parte (aberto pelo `iniciar.bat`) que
+  grava os candles ao vivo; na parte 4 passa a ser a automação que opera.
+  Nunca "robô". Vocabulário profissional, de mesa de operações.
 - Ao introduzir qualquer termo novo, explique com um exemplo dos dados dele.
 
 ## Arquitetura em uma tela
@@ -132,6 +135,10 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 - **O `.duckdb` deixou de ser só cache:** `contas`, `portfolio_membros`,
   `ao_vivo_eventos` e `planos` não se recriam — backup antes de qualquer
   migração; nunca apagar o banco.
+- **Hora do MT5:** o `time` das barras que o MT5 devolve **já é hora de
+  Brasília** — não somar offset. A sincronização de 23/09/2026 subtraiu 3 h
+  e corrompeu 16/03→23/09 (correção: spec `2026-10-01-ao-vivo-captura-design.md` §0).
+  Nunca gravar o candle em formação (o último minuto devolvido).
 - **Campo numérico:** `<input type=number>` focado muda de valor com a rolagem do
   mouse (bug do Chrome). Use `type="text"` + `inputMode="numeric"` + parse manual;
   `ui/assets/num_input.js` protege o resto do app.
