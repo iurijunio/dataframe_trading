@@ -245,6 +245,15 @@ sorteio empatou ou superou o resultado real.
 
 **A regra:** essa fração não pode passar de **5%**.
 
+**Quando o sorteio não imita a real numa janela:** em cada janela o sorteio
+é ajustado para fazer o mesmo número de trades da real (com 5% de folga).
+Janela em que isso não dá certo sai da conta dos dois lados — o sorteio dela
+e o lucro real dela. Com pelo menos metade das janelas aproveitadas, o
+teste mede normalmente e a tela diz "medido em 9 de 10 janelas". Com menos
+da metade, vira alerta ("o sorteio só conseguiu imitar o número de trades
+em 3 de 10 janelas") e não trava o veredito. (Até 01/10/2026 uma janela só
+deixava o teste pendente para sempre.)
+
 **Por que existe:** se entradas jogadas ao acaso ganham quase tanto quanto o
 sinal de verdade, quem está ganhando é a gestão de saída, não o sinal.
 

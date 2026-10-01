@@ -271,6 +271,8 @@ class TestesCompletos:
                     "p_tentativas": (resultado_spa or {}).get("p"),
                     "percentil_fixas": percentil,
                     "calibracao_ok": (resultado_aleatorio or {}).get("calibracao_ok"),
+                    "janelas_calibradas": (resultado_aleatorio or {}).get("n_calibradas"),
+                    "janelas_sorteio": (resultado_aleatorio or {}).get("n_janelas"),
                 },
             }
             with self._lock:
@@ -384,13 +386,19 @@ class TestesCompletos:
             return despachante[janela](janela, n_sinais, semente_)
 
         alvos = [len(trades_por_step.get(j.step, [])) for j in janelas]
+        # o lucro real de cada janela, para a janela que o sorteio não
+        # consegue calibrar sair da conta dos dois lados (ver
+        # `aleatorio.teste_janelas`)
+        lucros_reais = [float(sum(t["liquido"] for t in trades_por_step.get(j.step, [])))
+                        for j in janelas]
 
         def progresso(rep, n):
             self.estado["pct"] = 60 + int(40 * rep / n)
 
         return aleatorio.teste_janelas(
             rodar_janela, janelas, alvos, lucro_real, n=n_sorteio,
-            semente=semente, progresso=progresso, parar=parou)
+            semente=semente, progresso=progresso, parar=parou,
+            lucros_reais=lucros_reais)
 
 
 TESTES = TestesCompletos()

@@ -236,6 +236,34 @@ def test_roda_os_tres_testes_e_publica_o_resultado():
     assert t.resultado_de(7) == r
 
 
+def test_janela_que_nao_calibra_sai_dos_dois_lados_da_conta():
+    """O sorteio do step 2 nunca imita o número de trades da real (devolve
+    zero trades): a conta fica só com o step 1 — o lucro real dele (3 ×
+    100 = 300) contra o sorteio dele. Com 1 de 2 janelas (metade) o portão
+    ainda mede, e diz em quantas mediu."""
+    def montar(bars, mod, perfil, inst, trades_reais):
+        alvo = len(trades_reais)
+        teimosa = trades_reais and trades_reais[0]["step"] == 2
+
+        def rodar_janela(janela, n_sinais, semente):
+            return (0 if teimosa else alvo), float(semente % 50)
+        return rodar_janela
+
+    v = FakeVarredura(cache=_cache(), run_id=99, pronto=True)
+    t = CR.TestesCompletos(varredura=v, montar_rodador=montar,
+                           spa_teste=_spa_fake, calcular_percentil=_percentil_fake)
+    assert t.iniciar(7)
+    _esperar(t)
+
+    r = t.estado["resultado"]
+    assert r["leituras"]["janelas_calibradas"] == 1
+    assert r["leituras"]["janelas_sorteio"] == 2
+    portao = next(p for p in r["portoes"]
+                  if p["nome"] == "Ganha de entradas sorteadas ao acaso?")
+    assert portao["critico"] is True and portao["ok"] is True
+    assert "1 de 2 janelas" in portao["exigido"]
+
+
 def test_resultado_de_nao_confunde_um_wfa_com_outro():
     """I2: sem teste de chaveamento, um defeito que devolvesse o resultado
     de QUALQUER walk-forward (em vez do pedido) passaria batido — a tela

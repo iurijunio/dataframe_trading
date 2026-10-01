@@ -342,6 +342,71 @@ def test_calibracao_ok_com_piso_de_1_trade_em_janela_pequena():
     assert r["calibracao_ok"] is True
 
 
+# ------------------------- calibração parcial (01/10/2026, walk-forward #25)
+def _rodar_com_janela_teimosa(teimosas, lucro_sorteio=None):
+    """Janelas em `teimosas` nunca chegam ao alvo (o motor satura em 50
+    trades); as outras calibram de cara. `lucro_sorteio[janela]` é o lucro
+    fixo que o sorteio dá ali (padrão: 1 por trade)."""
+    def rodar(janela, n_sinais, semente):
+        n_trades = min(n_sinais, 50) if janela in teimosas else n_sinais
+        if lucro_sorteio is not None:
+            return n_trades, lucro_sorteio[janela]
+        return n_trades, float(n_trades)
+    return rodar
+
+
+def test_calibracao_parcial_conta_as_janelas_que_calibraram():
+    rodar = _rodar_com_janela_teimosa({"w3"})
+    r = aleatorio.teste_janelas(rodar, ["w1", "w2", "w3"], [100, 100, 700],
+                                lucro_real=0.0, lucros_reais=[0.0, 0.0, 0.0],
+                                n=5, semente=7)
+    assert r["n_janelas"] == 3 and r["n_calibradas"] == 2
+    assert r["calibracao_ok"] is False
+    assert r["calibradas"] == [True, True, False]
+
+
+def test_calibracao_parcial_mede_o_p_so_nas_janelas_que_calibraram():
+    """A janela que não calibrou sai dos DOIS lados da conta: o sorteio
+    dela não entra na soma, e o lucro real dela também não. Aqui o real de
+    w1+w2 (150) bate o sorteio de w1+w2 (110) sempre — p mínimo. Somando o
+    real de w3 (-1.000) ou o sorteio de w3 (+5.000), o p iria ao teto."""
+    lucro_sorteio = {"w1": 10.0, "w2": 100.0, "w3": 5000.0}
+    rodar = _rodar_com_janela_teimosa({"w3"}, lucro_sorteio)
+    r = aleatorio.teste_janelas(rodar, ["w1", "w2", "w3"], [100, 100, 700],
+                                lucro_real=-850.0,
+                                lucros_reais=[50.0, 100.0, -1000.0],
+                                n=20, semente=7)
+    assert r["lucro_real"] == pytest.approx(150.0)
+    assert r["sorteados"][0] == pytest.approx(110.0)
+    assert r["p"] == pytest.approx(1 / 21)
+
+
+def test_nenhuma_janela_calibrada_nao_da_p():
+    rodar = _rodar_com_janela_teimosa({"w1", "w2"})
+    r = aleatorio.teste_janelas(rodar, ["w1", "w2"], [700, 700],
+                                lucro_real=10.0, lucros_reais=[5.0, 5.0],
+                                n=5, semente=7)
+    assert r["n_calibradas"] == 0 and r["p"] is None
+
+
+def test_calibracao_parcial_sem_lucro_por_janela_nao_inventa_p():
+    """Sem o lucro real de cada janela não há como tirar a janela que não
+    calibrou do lado real — comparar o total real com o sorteio de só uma
+    parte das janelas favoreceria a real à toa."""
+    rodar = _rodar_com_janela_teimosa({"w2"})
+    r = aleatorio.teste_janelas(rodar, ["w1", "w2"], [100, 700],
+                                lucro_real=10.0, n=5, semente=7)
+    assert r["n_calibradas"] == 1 and r["p"] is None
+
+
+def test_todas_calibradas_continua_como_antes():
+    r = aleatorio.teste_janelas(_rodar_barato(taxa=0.7), ["w1", "w2"],
+                                [700, 700], lucro_real=10.0, n=5, semente=7)
+    assert r["calibracao_ok"] is True
+    assert r["n_janelas"] == 2 and r["n_calibradas"] == 2
+    assert r["p"] == pytest.approx(1.0)
+
+
 def test_janelas_e_alvos_de_tamanhos_diferentes_e_erro():
     with pytest.raises(ValueError):
         aleatorio.teste_janelas(_rodar_barato(), ["w1", "w2"], [700],
@@ -558,13 +623,58 @@ def test_portao_aleatorio_com_erro_mostra_o_motivo():
     assert r["ok"] is None and r["valor"] == "motor indisponível"
 
 
-def test_portao_aleatorio_calibracao_ruim_fica_pendente_mesmo_com_p():
-    """Mesmo com um `p` calculado, calibração fora dos 5% em alguma janela
-    faz o sorteio não ser confiável — o portão não pode aprovar nem
-    reprovar por um número que não bate o alvo de trades."""
+def test_portao_aleatorio_calibracao_em_menos_da_metade_vira_alerta():
+    """O sorteio só imitou o número de trades em 4 de 10 janelas: a medida
+    vale pouco, mas ficar pendente para sempre travava a gravação do plano
+    sem nada que o operador pudesse fazer. Vira alerta — não trava o
+    veredito, e o motivo diz quantas janelas mediu."""
+    r = candidata.portao_aleatorio({"p": 0.01, "calibracao_ok": False,
+                                    "n_janelas": 10, "n_calibradas": 4})
+    assert r["ok"] is False and r["critico"] is False
+    assert "4 de 10 janelas" in r["valor"]
+
+
+def test_portao_aleatorio_calibracao_em_metade_ou_mais_mede():
+    r = candidata.portao_aleatorio({"p": 0.01, "calibracao_ok": False,
+                                    "n_janelas": 10, "n_calibradas": 5})
+    assert r["ok"] is True and r["critico"] is True and r["valor"] == 0.01
+    assert "5 de 10 janelas" in r["exigido"]
+    assert "5 de 10 janelas" in r["dica"]
+    ruim = candidata.portao_aleatorio({"p": 0.30, "calibracao_ok": False,
+                                       "n_janelas": 10, "n_calibradas": 9})
+    assert ruim["ok"] is False and ruim["critico"] is True
+    assert "9 de 10 janelas" in ruim["exigido"]
+
+
+def test_portao_aleatorio_limiar_da_metade_com_janelas_impares():
+    """3 de 7 é menos da metade (alerta); 4 de 7 é mais (mede)."""
+    tres = candidata.portao_aleatorio({"p": 0.01, "n_janelas": 7,
+                                       "n_calibradas": 3})
+    quatro = candidata.portao_aleatorio({"p": 0.01, "n_janelas": 7,
+                                         "n_calibradas": 4})
+    assert tres["critico"] is False and tres["ok"] is False
+    assert quatro["critico"] is True and quatro["ok"] is True
+
+
+def test_portao_aleatorio_nenhuma_calibrada_vira_alerta():
+    r = candidata.portao_aleatorio({"p": None, "calibracao_ok": False,
+                                    "n_janelas": 1, "n_calibradas": 0})
+    assert r["ok"] is False and r["critico"] is False
+    assert "0 de 1 janela" in r["valor"]
+
+
+def test_portao_aleatorio_sem_contagem_e_calibracao_ruim_vira_alerta():
+    """Resultado sem `n_janelas` (formato antigo) e calibração ruim: alerta,
+    não pendente eterno — e sem inventar uma contagem que não veio."""
     r = candidata.portao_aleatorio({"p": 0.01, "calibracao_ok": False})
-    assert r["ok"] is None and r["critico"]
-    assert "calibração" in r["valor"] or "sorteio" in r["valor"]
+    assert r["ok"] is False and r["critico"] is False
+    assert "alguma janela" in r["valor"]
+
+
+def test_portao_aleatorio_todas_calibradas_nao_fala_em_janelas():
+    r = candidata.portao_aleatorio({"p": 0.02, "calibracao_ok": True,
+                                    "n_janelas": 10, "n_calibradas": 10})
+    assert r["ok"] is True and "janelas" not in r["exigido"]
 
 
 def test_portao_aleatorio_exigido_sem_numero_cru():

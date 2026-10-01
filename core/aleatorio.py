@@ -188,7 +188,7 @@ def p_valor(real: float, sorteados: np.ndarray) -> float:
 
 def teste_janelas(rodar_janela, janelas, alvos, lucro_real: float,
                   n: int = 1000, semente: int = 7, progresso=None,
-                  parar=None) -> dict:
+                  parar=None, lucros_reais=None) -> dict:
     """Portão 3, janela a janela: a curva OOS real bate o sorteio?
 
     `rodar_janela(janela, n_sinais, semente) -> (n_trades, lucro)` é
@@ -206,6 +206,18 @@ def teste_janelas(rodar_janela, janelas, alvos, lucro_real: float,
     janelas, não uma janela isolada. Repetições usam sementes
     `semente + 1, semente + 2, ...`, nunca a `semente` da calibração, para
     não confundir uma chamada de calibração com uma chamada de repetição.
+
+    CALIBRAÇÃO PARCIAL (01/10/2026). Janela em que o sorteio não consegue
+    imitar o número de trades da real (o motor satura, a relação sinal ->
+    trade pula o alvo) fica de fora da conta — dos DOIS lados: o sorteio
+    dela não entra na soma, e o lucro real dela (`lucros_reais`, um por
+    janela) também não. Antes, uma janela teimosa em dez deixava o portão
+    pendente para sempre, e a gravação do plano travada sem conserto. Quem
+    decide se o que sobrou basta é `candidata.portao_aleatorio`, pela
+    contagem `n_calibradas` de `n_janelas`. Sem `lucros_reais`, `lucro_real`
+    é o total de todas as janelas e não dá para recortá-lo: com alguma
+    janela de fora, `p` volta `None` em vez de comparar o total real com
+    o sorteio de só uma parte (o que favoreceria a real à toa).
     """
     if len(janelas) != len(alvos):
         raise ValueError(
@@ -241,9 +253,32 @@ def teste_janelas(rodar_janela, janelas, alvos, lucro_real: float,
     # trades, 27+ davam 21, nunca 19). Sem o piso, toda janela com poucos
     # trades travava pendente para sempre, mesmo com `calibrar` já tendo
     # achado o menor erro possível.
-    calibracao_ok = all(
-        abs(t - a) <= max(a * tolerancia, 1) for t, a in zip(trades_obtidos, alvos)
-    )
+    calibradas = [abs(t - a) <= max(a * tolerancia, 1)
+                  for t, a in zip(trades_obtidos, alvos)]
+    calibracao_ok = all(calibradas)
+    usadas = [(j, s) for j, s, ok in zip(janelas, sinais_por_janela, calibradas)
+              if ok]
+    if calibracao_ok:
+        real = lucro_real
+    elif lucros_reais is not None:
+        real = float(sum(l for l, ok in zip(lucros_reais, calibradas) if ok))
+    else:
+        real = None
+
+    base = {
+        "lucro_real": real,
+        "sinais_por_janela": sinais_por_janela,
+        "trades_obtidos": trades_obtidos,
+        "alvos": list(alvos),
+        "calibracao_ok": calibracao_ok,
+        "calibradas": calibradas,
+        "n_janelas": len(janelas),
+        "n_calibradas": len(usadas),
+    }
+    if not usadas or real is None:
+        # nada para sortear contra: as repetições custariam o motor inteiro
+        # para devolver um número que ninguém pode usar
+        return {**base, "p": None, "sorteados": np.empty(0, dtype=float)}
 
     sorteados = np.empty(n, dtype=float)
     for rep in range(n):
@@ -251,22 +286,14 @@ def teste_janelas(rodar_janela, janelas, alvos, lucro_real: float,
             return {}
         semente_rep = semente + 1 + rep
         soma = 0.0
-        for janela, n_sig in zip(janelas, sinais_por_janela):
+        for janela, n_sig in usadas:
             _, lucro = rodar_janela(janela, n_sig, semente_rep)
             soma += lucro
         sorteados[rep] = soma
         if progresso is not None:
             progresso(rep + 1, n)
 
-    return {
-        "p": p_valor(lucro_real, sorteados),
-        "sorteados": sorteados,
-        "lucro_real": lucro_real,
-        "sinais_por_janela": sinais_por_janela,
-        "trades_obtidos": trades_obtidos,
-        "alvos": list(alvos),
-        "calibracao_ok": calibracao_ok,
-    }
+    return {**base, "p": p_valor(real, sorteados), "sorteados": sorteados}
 
 
 def _histograma_horario_execucao(trades: list[dict]) -> dict[int, int] | None:

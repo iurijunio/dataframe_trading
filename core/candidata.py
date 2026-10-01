@@ -688,10 +688,15 @@ def portao_aleatorio(resultado: dict, maximo: float = 0.05) -> dict:
     reprovação.
 
     A calibração (quantos sinais sortear até o número de trades bater o da
-    real, dentro de 5%) precisa ter dado certo em TODAS as janelas. Se
-    alguma não bateu, o sorteio operou mais ou menos que a real por um
-    motivo que não é o sinal, e o p-valor não serve para nada — o portão
-    fica pendente mesmo que `p` exista.
+    real, dentro de 5%) pode falhar em algumas janelas — ali o sorteio
+    operaria mais ou menos que a real por um motivo que não é o sinal, e
+    `teste_janelas` já as tira da conta. Com pelo menos METADE das janelas
+    calibradas o p-valor mede de verdade (crítico, e a tela diz em quantas
+    mediu). Com menos, a amostra que sobrou é pequena demais para reprovar
+    ou aprovar a estratégia: vira ALERTA, não pendente — antes ficava
+    pendente para sempre, e um pendente crítico trava a gravação do plano
+    sem nada que o operador possa fazer (rodar de novo dá a mesma
+    calibração). Mesma régua do holdout com histórico curto.
     """
     nome = "Ganha de entradas sorteadas ao acaso?"
     exigido = f"até {maximo:.0%} de chance de o sorteio ter ganhado à toa"
@@ -704,12 +709,32 @@ def portao_aleatorio(resultado: dict, maximo: float = 0.05) -> dict:
     if not resultado or "erro" in resultado:
         motivo = resultado.get("erro") if resultado else "não foi possível medir"
         return portao(nome, None, True, motivo, exigido, dica)
-    if not resultado.get("calibracao_ok", False):
+    n_jan = resultado.get("n_janelas")
+    n_cal = resultado.get("n_calibradas")
+    p = resultado.get("p")
+    if n_jan is None:
+        # resultado sem a contagem (formato de antes da calibração parcial):
+        # só sabe dizer "todas calibraram" ou "alguma não"
+        if resultado.get("calibracao_ok") and p is not None:
+            return portao(nome, p <= maximo, True, p, exigido, dica,
+                          formato=FRACAO_PCT)
+        return portao(nome, False, False,
+                      "o sorteio não conseguiu imitar o número de trades em "
+                      "alguma janela", exigido, dica)
+    if p is None or n_cal < 1 or n_cal * 2 < n_jan:
+        plural = "janela" if n_jan == 1 else "janelas"
         return portao(
-            nome, None, True,
-            "o sorteio não conseguiu imitar o número de trades em alguma janela",
-            exigido, dica)
-    p = resultado["p"]
+            nome, False, False,
+            f"o sorteio só conseguiu imitar o número de trades em {n_cal} de "
+            f"{n_jan} {plural}", exigido,
+            dica + " Medir com menos da metade das janelas não diz nada, por "
+            "isso aqui fica só o alerta.")
+    if n_cal < n_jan:
+        parcial = f"medido em {n_cal} de {n_jan} janelas"
+        exigido = f"{exigido} · {parcial}"
+        dica = (f"{dica} Nesta estratégia: {parcial} — nas outras o sorteio "
+                "não conseguiu imitar o número de trades da real, e elas "
+                "ficaram de fora da conta dos dois lados.")
     return portao(nome, p <= maximo, True, p, exigido, dica,
                   formato=FRACAO_PCT)
 
