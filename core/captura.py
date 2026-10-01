@@ -84,14 +84,30 @@ def gravar(con, symbol: str, barras: pl.DataFrame, origem: str,
     if barras.height == 0:
         return zero
     barras = ing.validar(barras, origem, price_decimals)
+    # Traz junto o source_max_ts do lote dono de cada candle: é com ele que o
+    # ingest decide quem vence, e um candle que vai perder não pode chegar lá
+    # (cada tentativa perdedora deixaria um lote vazio no ingest_log, a cada
+    # volta de 1 s).
     linhas = con.execute(
-        f"SELECT {', '.join(_COLUNAS)} FROM bars_m1 "
-        "WHERE symbol = ? AND ts BETWEEN ? AND ?",
+        f"SELECT {', '.join('b.' + c for c in _COLUNAS)}, l.source_max_ts "
+        "FROM bars_m1 b JOIN ingest_log l ON l.ingest_id = b.src_ingest_id "
+        "WHERE b.symbol = ? AND b.ts BETWEEN ? AND ?",
         [symbol, barras["ts"].min(), barras["ts"].max()]).fetchall()
     if linhas:
-        banco = pl.DataFrame(linhas, schema=list(_COLUNAS), orient="row").with_columns(
+        banco = pl.DataFrame(linhas, schema=[*_COLUNAS, "_dono"], orient="row").with_columns(
             [pl.col(c).cast(barras.schema[c]) for c in _COLUNAS])
-        barras = barras.join(banco, on=list(_COLUNAS), how="anti")
+        barras = barras.join(banco.select(_COLUNAS), on=list(_COLUNAS), how="anti")
+        donos = banco.select("ts", "_dono")
+        # O lote novo carrega como source_max_ts o maior ts que sobrar; tirar
+        # um perdedor pode baixar esse máximo e transformar outro em perdedor.
+        # Só descarto com `>` estrito: o empate depende do sha do lote final
+        # e, na dúvida, deixo o ingest decidir em vez de descartar um vencedor.
+        while barras.height:
+            mx = barras["ts"].max()
+            perde = barras.join(donos, on="ts", how="left").filter(pl.col("_dono") > mx)
+            if perde.height == 0:
+                break
+            barras = barras.join(perde.select("ts"), on="ts", how="anti")
     if barras.height == 0:
         return zero
     r = ing.ingest_df(con, barras, symbol, origem, ing.sha256_df(barras),

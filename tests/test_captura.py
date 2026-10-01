@@ -100,10 +100,6 @@ def con(tmp_path):
     c.close()
 
 
-def _contar(con):
-    return con.execute("SELECT count(*) FROM bars_m1").fetchone()[0]
-
-
 # ---------------------------------------------------------------- gravar
 def test_gravar_insere_e_registra_a_origem(con):
     r = C.gravar(con, "WIN$N", barras("10:00", "10:01"), "captura://1@srv")
@@ -122,6 +118,32 @@ def test_gravar_candle_diferente_vira_revisao(con):
     C.gravar(con, "WIN$N", barras("10:00"), "captura://1@srv")
     r = C.gravar(con, "WIN$N", barras("10:00", "10:01", base=100020), "captura://1@srv")
     assert r == {"inseridos": 1, "revisados": 1}
+
+
+def test_gravar_reenvio_perdedor_nao_cria_lote(con):
+    C.gravar(con, "WIN$N", barras("10:00"), "captura://1@srv")
+    C.conferir_dia(con, "WIN$N", date(2026, 10, 1), barras("10:00", base=100020),
+                   agora=datetime(2026, 10, 1, 18, 30))
+    lotes = con.execute("SELECT count(*) FROM ingest_log").fetchone()[0]
+    for _ in range(3):
+        assert C.gravar(con, "WIN$N", barras("10:00"), "captura://1@srv") == {
+            "inseridos": 0, "revisados": 0}
+    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == lotes
+    assert con.execute("SELECT open FROM bars_m1").fetchone()[0] == 100020
+
+
+def test_gravar_com_os_tipos_reais_do_mt5_nao_repete_lote(con):
+    b = pl.DataFrame({
+        "ts": pl.Series([datetime(2026, 10, 1, 10, 0), datetime(2026, 10, 1, 10, 1)],
+                        dtype=pl.Datetime("ns")),
+        "open": [100000.0, 100010.0], "high": [100050.0] * 2,
+        "low": [99950.0] * 2, "close": [100010.0] * 2,
+        "tick_volume": pl.Series([100, 200], dtype=pl.UInt64),
+        "volume": pl.Series([500, 600], dtype=pl.UInt64),
+        "spread": pl.Series([5, 5], dtype=pl.Int32)})
+    assert C.gravar(con, "WIN$N", b, "captura://1@srv") == {"inseridos": 2, "revisados": 0}
+    assert C.gravar(con, "WIN$N", b, "captura://1@srv") == {"inseridos": 0, "revisados": 0}
+    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == 1
 
 
 # --------------------------------------------------------------- lacunas
