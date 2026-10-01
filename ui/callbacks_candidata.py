@@ -235,13 +235,31 @@ def veredito_para_tela(wfa_id: int, ver: dict) -> dict:
             "portoes": portoes}
 
 
+def so_o_veredito_trava(ver: dict, dim: dict, params) -> bool:
+    """O "Gravar mesmo assim" só aparece quando o VEREDITO é a única trava:
+    com o plano sem parâmetro ou sem contrato, nem ele grava, e mostrar o
+    botão seria prometer o que o servidor recusa."""
+    return (plano.pode_gravar(ver, dim, params=params) is not None
+            and plano.pode_gravar(ver, dim, params=params, forcar=True) is None)
+
+
+def texto_confirmar_forcar(ver: dict) -> str:
+    """O primeiro clique arma; o texto diz exatamente o que se está
+    ignorando, para o segundo clique ser uma decisão e não um reflexo."""
+    detalhe = plano.texto_pendencias(plano.pendencias(ver))
+    detalhe = detalhe.removeprefix("gravado mesmo assim").lstrip(" —")
+    return ("Clique de novo para confirmar: " + (detalhe or "o veredito não "
+            "aprovou") + ". O plano fica marcado como gravado mesmo assim.")
+
+
 def gravar_plano(ver: dict, risco, margem, uso_margem,
-                 wfa_aberto=None) -> str:
+                 wfa_aberto=None, forcar: bool = False) -> str:
     """Grava o plano do walk-forward do veredito e devolve o aviso da tela.
 
     Confere as travas de novo aqui, no servidor: o botão desligado no
     navegador não é garantia de nada. Fora do callback para poder ser
-    testada com banco temporário.
+    testada com banco temporário. `forcar` é o "Gravar mesmo assim" — ver
+    `plano.pode_gravar`.
     """
     wid = int(ver["wfa_id"])
     if wfa_aberto is not None and int(wfa_aberto) != wid:
@@ -258,7 +276,7 @@ def gravar_plano(ver: dict, risco, margem, uso_margem,
                                   guardado["de"], guardado["ate"],
                                   risco, margem, uso_margem)
     params = (d.get("deploy") or {}).get("params")
-    motivo = plano.pode_gravar(ver, dim, params=params)
+    motivo = plano.pode_gravar(ver, dim, params=params, forcar=forcar)
     if motivo:
         return f"não gravado: {motivo}"
     # a faixa esperada sai do MESMO sorteio que o disjuntor usou (mesmo
@@ -271,7 +289,7 @@ def gravar_plano(ver: dict, risco, margem, uso_margem,
     pnl = _pnl_do_wfa(guardado["trades"], guardado["de"], guardado["ate"])
     fator = dim["n"] / max(int((d.get("profile") or {}).get("contratos") or 1), 1)
     expect = plano.expectativa(pnl, d.get("capital"), fator, boot=boot)
-    campos = plano.montar(wid, d, ref, dim, disj, ver, expect)
+    campos = plano.montar(wid, d, ref, dim, disj, ver, expect, forcar=forcar)
     try:
         pid = plano.salvar(**campos)
     except RuntimeError:
@@ -283,7 +301,12 @@ def gravar_plano(ver: dict, risco, margem, uso_margem,
         tipo="plano_aposentado", motivo=f"substituído pelo plano #{pid}")]
     atual = codigo.hash_estrategia(campos.get("strategy") or "")
     mudou = bool(campos.get("codigo_hash")) and atual != campos["codigo_hash"]
-    return (f"plano #{pid} gravado · vale a partir de {vale:%d/%m/%Y} · "
+    # "plano #5 gravado mesmo assim — não medido: …": a frase do diário,
+    # sem repetir o "gravado"
+    forcado = (" " + plano.texto_pendencias(campos["pendencias"])
+               .removeprefix("gravado ")
+               if campos.get("gravado_mesmo_assim") else "")
+    return (f"plano #{pid} gravado{forcado} · vale a partir de {vale:%d/%m/%Y} · "
             f"{dim['n']} contrato(s) · reotimizar até "
             f"{quando.strftime('%d/%m/%Y') if quando else '—'}"
             + (" · aposentou " + ", ".join(f"#{p}" for p in trocados)
@@ -425,33 +448,67 @@ def register(app):
         Output("btn-cand-gravar", "disabled"),
         Output("btn-cand-gravar", "children"),
         Output("cand-gravar-motivo", "children"),
+        Output("cand-forcar-bloco", "style"),
         Input("cand-veredito", "data"),
         Input("cand-risco", "value"),
         Input("cand-margem", "value"),
         Input("cand-uso-margem", "value"),
         # depois de gravar, o rótulo vira "gravar outro plano"
         Input("cand-gravar-aviso", "children"),
+        Input("cand-forcar-aviso", "children"),
     )
-    def cand_pode_gravar(ver, risco, margem, uso_margem, _aviso):
-        """Liga o botão só quando dá para gravar — e diz por que não dá."""
+    def cand_pode_gravar(ver, risco, margem, uso_margem, _aviso, _aviso_forcar):
+        """Liga o botão só quando dá para gravar — e diz por que não dá.
+        Quando só o veredito segura, mostra o "Gravar mesmo assim"."""
+        escondido = {"display": "none"}
         if not ver:
-            return True, "Gravar plano de operação", ""
+            return True, "Gravar plano de operação", "", escondido
         wid = int(ver["wfa_id"])
         d = wfa_store.detalhes(wid) or {}
         guardado = leitura_do_wfa(wid, d)
         if guardado["leitura"].get("erro"):
-            return True, "Gravar plano de operação", guardado["leitura"]["erro"]
+            return (True, "Gravar plano de operação", guardado["leitura"]["erro"],
+                    escondido)
         _, dim, _ = _dimensionar(guardado["trades"], d, guardado["leitura"],
                                  guardado["de"], guardado["ate"],
                                  risco, margem, uso_margem)
-        motivo = plano.pode_gravar(
-            ver, dim, params=(d.get("deploy") or {}).get("params"))
+        params = (d.get("deploy") or {}).get("params")
+        motivo = plano.pode_gravar(ver, dim, params=params)
         rotulo = ("Gravar outro plano" if plano.listar(wfa_id=wid)
                   else "Gravar plano de operação")
+        forcar = {} if so_o_veredito_trava(ver, dim, params) else escondido
         # o aviso da ressalva aparece ANTES do clique, não depois: é com ele
         # que se decide se vale gravar
         return (motivo is not None, rotulo,
-                motivo or plano.aviso_ao_gravar(ver) or "")
+                motivo or plano.aviso_ao_gravar(ver) or "", forcar)
+
+    @app.callback(
+        Output("cand-forcar-armado", "data"),
+        Output("btn-cand-forcar", "children"),
+        Output("cand-forcar-aviso", "children"),
+        Input("btn-cand-forcar", "n_clicks"),
+        Input("cand-veredito", "data"),
+        Input("cand-risco", "value"),
+        Input("cand-margem", "value"),
+        Input("cand-uso-margem", "value"),
+        State("cand-forcar-armado", "data"),
+        State("cand-wfa", "value"),
+        prevent_initial_call=True,
+    )
+    def cand_forcar(_n, ver, risco, margem, uso_margem, armado, wfa_aberto):
+        """"Gravar mesmo assim" em dois cliques — o mesmo padrão de
+        confirmação da exclusão e da Ao vivo: o primeiro arma e diz o que
+        está sendo ignorado, o segundo grava. Qualquer mudança na tela
+        (veredito novo, outro risco) desarma: a confirmação valia para o
+        que estava na tela no primeiro clique."""
+        rotulo = "Gravar mesmo assim"
+        if ctx.triggered_id != "btn-cand-forcar" or not ver:
+            return None, rotulo, ""
+        wid = int(ver["wfa_id"])
+        if armado != wid:
+            return wid, "Confirmar gravação", texto_confirmar_forcar(ver)
+        return None, rotulo, gravar_plano(ver, risco, margem, uso_margem,
+                                          wfa_aberto, forcar=True)
 
     @app.callback(
         Output("cand-gravar-aviso", "children"),

@@ -543,9 +543,19 @@ def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None) -> html.Div:
                  className="av-portao")
         for p in portoes], className="av-portoes") if portoes else _sem(
             "nenhuma verificação registrada")
+    forcado = []
+    if det and det.get("gravado_mesmo_assim"):
+        pend = det.get("pendencias") or []
+        forcado = [html.Div(_etiqueta(
+            "gravado mesmo assim", "ambar",
+            "Este plano foi gravado passando por cima do veredito da "
+            "Candidata. Pendências no dia: "
+            + ("; ".join(f"{p.get('nome')} ({p.get('motivo')})" for p in pend)
+               or "nenhuma registrada") + "."))]
     etapas.append(_etapa(3, "Candidata", None, [
         _kv([("Veredito no dia da gravação", reg.get("veredito") or "—")],
             linhas=True),
+        *forcado,
         *([html.P(f"{n_ok} de {len(portoes)} verificações aprovadas",
                   className="av-portoes-res "
                   + ("av-ok" if n_ok == len(portoes) else "av-atencao"))]

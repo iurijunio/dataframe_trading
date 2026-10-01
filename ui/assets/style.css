@@ -972,6 +972,11 @@ body{
   padding-right:22px;}
 .cand-gravar-motivo{color:var(--warn);font-family:var(--mono);font-size:12px;}
 .cand-gravar-aviso{color:var(--pos);font-family:var(--mono);font-size:12px;}
+/* secundário de propósito: âmbar e sem preenchimento, para não competir com
+   o botão principal — passar por cima do veredito não é o caminho normal */
+.cand-forcar-bloco{display:inline-flex;align-items:center;gap:6px;}
+.cand-gravar .cand-forcar{width:auto;flex:0 0 auto;padding:5px 12px;
+  font-size:12px;color:var(--warn);border-color:rgba(255,201,60,.45);}
 
 .mt5-sync-wrap{display:flex;align-items:center;gap:10px;margin-left:auto;}
 .mt5-sync-status{font-size:.85em;color:var(--muted);}

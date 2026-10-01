@@ -421,6 +421,44 @@ def test_gravar_plano_reprovado_nao_grava_nada(tmp_path, monkeypatch):
     CC._LEITURAS.clear()
 
 
+def test_gravar_mesmo_assim_grava_reprovada_e_registra(tmp_path, monkeypatch):
+    """O segundo clique de "Gravar mesmo assim" grava a reprovada, e o
+    plano guarda o que estava reprovado ou sem medir."""
+    from core import plano as P
+
+    wid = _wfa_gravavel(tmp_path, monkeypatch)
+    ver = {"wfa_id": wid, "estado": "reprovada",
+           "reprovados": ["Aguenta custo maior?"],
+           "pendentes": ["Ganha de entradas sorteadas ao acaso?"],
+           "portoes": []}
+    aviso = CC.gravar_plano(ver, 5.0, None, 50.0, forcar=True)
+    assert aviso.startswith("plano #") and "mesmo assim" in aviso
+    salvo = P.listar(wfa_id=wid)
+    assert len(salvo) == 1 and salvo[0]["gravado_mesmo_assim"] is True
+    assert [p["motivo"] for p in salvo[0]["pendencias"]] == ["reprovado",
+                                                             "não medido"]
+    CC._LEITURAS.clear()
+
+
+def test_so_o_veredito_trava_diz_quando_cabe_gravar_mesmo_assim():
+    reprovada = {"estado": "reprovada", "reprovados": ["X"], "pendentes": []}
+    dim_ok = {"n": 1}
+    assert CC.so_o_veredito_trava(reprovada, dim_ok, {"a": 1}) is True
+    # aprovada não precisa do botão; fora do mercado e sem contrato, nem ele grava
+    assert CC.so_o_veredito_trava({"estado": "aprovada"}, dim_ok, {"a": 1}) is False
+    assert CC.so_o_veredito_trava(reprovada, dim_ok, {}) is False
+    assert CC.so_o_veredito_trava(reprovada, {"n": 0, "motivo": "x"}, {"a": 1}) is False
+
+
+def test_confirmacao_de_gravar_mesmo_assim_lista_o_que_falhou():
+    ver = {"estado": "reprovada", "reprovados": ["Aguenta custo maior?"],
+           "pendentes": ["Ganha de entradas sorteadas ao acaso?"]}
+    t = CC.texto_confirmar_forcar(ver)
+    assert t.startswith("Clique de novo para confirmar")
+    assert "reprovado em: Aguenta custo maior?" in t
+    assert "não medido: Ganha de entradas sorteadas ao acaso?" in t
+
+
 def test_gravar_duas_vezes_guarda_dois_planos(tmp_path, monkeypatch):
     """Plano não se edita: clicar de novo com outro risco é outra decisão —
     e só o último fica valendo."""

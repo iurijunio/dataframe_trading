@@ -489,3 +489,92 @@ def test_vencendo_ordenado_pelo_mais_vencido_primeiro(banco):
 
     v = plano.vencendo(dias_aviso=7, hoje=hoje)
     assert [p["dias_restantes"] for p in v] == [-10, -1]
+
+
+# ------------------------------------- gravar mesmo assim (01/10/2026)
+def test_forcar_ignora_so_a_trava_do_veredito():
+    """"Gravar mesmo assim" passa por cima do veredito — a decisão é do
+    operador —, mas nunca grava um plano que não diz o que operar."""
+    reprovada = _ver("reprovada", reprovados=["Os parâmetros estão numa região larga?"])
+    aguardando = _ver("aguardando testes completos",
+                      pendentes=["Ganha de entradas sorteadas ao acaso?"])
+    assert plano.pode_gravar(reprovada, _dim()) is not None
+    assert plano.pode_gravar(reprovada, _dim(), forcar=True) is None
+    assert plano.pode_gravar(aguardando, _dim(), forcar=True) is None
+    fora = plano.pode_gravar(reprovada, _dim(), params={}, forcar=True)
+    assert fora and "fora do mercado" in fora
+    sem_contrato = plano.pode_gravar(reprovada, _dim(n=0), forcar=True)
+    assert sem_contrato and "arrisca mais" in sem_contrato
+
+
+def test_pendencias_lista_o_que_falhou_e_o_que_nao_mediu():
+    ver = _ver("reprovada", reprovados=["Aguenta custo maior?"],
+               pendentes=["Ganha de entradas sorteadas ao acaso?"])
+    assert plano.pendencias(ver) == [
+        {"nome": "Aguenta custo maior?", "motivo": "reprovado"},
+        {"nome": "Ganha de entradas sorteadas ao acaso?", "motivo": "não medido"}]
+    # o veredito do core traz os portões inteiros, não só os nomes
+    core = {"reprovados": [{"nome": "A", "ok": False}],
+            "pendentes": [{"nome": "B", "ok": None}]}
+    assert [p["nome"] for p in plano.pendencias(core)] == ["A", "B"]
+    assert plano.pendencias(_ver("aprovada")) == []
+
+
+def test_salvar_grava_a_decisao_de_gravar_mesmo_assim(banco):
+    _wfa_no_banco()
+    pend = [{"nome": "Aguenta custo maior?", "motivo": "reprovado"}]
+    pid = plano.salvar(**_campos(gravado_mesmo_assim=True, pendencias=pend))
+    d = plano.detalhes(pid)
+    assert d["gravado_mesmo_assim"] is True
+    assert d["pendencias"] == pend
+    normal = plano.detalhes(plano.salvar(**_campos()))
+    assert normal["gravado_mesmo_assim"] is False and normal["pendencias"] == []
+
+
+def test_diario_registra_o_que_ficou_pendente(banco):
+    from core import diario
+    _wfa_no_banco()
+    pend = [{"nome": "Aguenta custo maior?", "motivo": "reprovado"},
+            {"nome": "Ganha de entradas sorteadas ao acaso?", "motivo": "não medido"}]
+    pid = plano.salvar(**_campos(gravado_mesmo_assim=True, pendencias=pend))
+    ev = [e for e in diario.eventos(tipo="plano_gravado") if e["plano_id"] == pid]
+    assert len(ev) == 1
+    m = ev[0]["motivo"]
+    assert "gravado mesmo assim" in m
+    assert "reprovado em: Aguenta custo maior?" in m
+    assert "não medido: Ganha de entradas sorteadas ao acaso?" in m
+    normal = plano.salvar(**_campos())
+    ev = [e for e in diario.eventos(tipo="plano_gravado") if e["plano_id"] == normal]
+    assert "mesmo assim" not in ev[0]["motivo"]
+
+
+def test_colunas_novas_entram_em_banco_antigo_e_rodar_duas_vezes_nao_quebra(banco):
+    """Banco de antes desta entrega (sem as duas colunas): subir o app
+    acrescenta, e subir de novo não faz nada — o .duckdb não se recria."""
+    with db.connect() as con:
+        con.execute("ALTER TABLE planos_operacao DROP COLUMN gravado_mesmo_assim")
+        con.execute("ALTER TABLE planos_operacao DROP COLUMN pendencias")
+        db.init_schema(con)
+        db.init_schema(con)
+        cols = {r[0] for r in con.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'planos_operacao'").fetchall()}
+    assert {"gravado_mesmo_assim", "pendencias"} <= cols
+
+
+def test_montar_com_forcar_leva_as_pendencias(banco):
+    ver = _ver("reprovada", reprovados=["Aguenta custo maior?"])
+    campos = plano.montar(8, _detalhes(), {"valor": 400.0, "de_onde": "x"},
+                          _dim(), {}, ver, {}, forcar=True)
+    assert campos["gravado_mesmo_assim"] is True
+    assert campos["pendencias"] == [{"nome": "Aguenta custo maior?",
+                                     "motivo": "reprovado"}]
+    normal = plano.montar(8, _detalhes(), {"valor": 400.0, "de_onde": "x"},
+                          _dim(), {}, _ver(), {})
+    assert normal["gravado_mesmo_assim"] is False and normal["pendencias"] == []
+    # sem forcar, o plano não se marca nem com o veredito contra — só o
+    # segundo clique de "Gravar mesmo assim" registra a decisão
+    sem_forcar = plano.montar(8, _detalhes(), {"valor": 400.0, "de_onde": "x"},
+                              _dim(), {}, ver, {})
+    assert sem_forcar["gravado_mesmo_assim"] is False
+    assert sem_forcar["pendencias"] == []

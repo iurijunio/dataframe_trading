@@ -595,7 +595,21 @@ def bloco_gravar() -> html.Div:
              "que a incubação vai ler. Para mudar alguma coisa, grava-se "
              "outro: plano antigo não é editado, é aposentado."),
         html.Span(id="cand-gravar-motivo", className="cand-gravar-motivo"),
+        # só aparece quando o veredito é a única trava (`cand_pode_gravar`)
+        html.Span([
+            html.Button("Gravar mesmo assim", id="btn-cand-forcar", n_clicks=0,
+                        className="btn-ghost btn-sm cand-forcar"),
+            dica("Grava o plano mesmo com o veredito contra — reprovado ou "
+                 "com teste sem medir. A decisão fica registrada no plano e "
+                 "no diário, com a lista do que falhou, e a ficha da variante "
+                 "mostra a etiqueta \"gravado mesmo assim\". Use quando você "
+                 "conhece o motivo da reprovação e quer ver a estratégia "
+                 "operar no papel antes de decidir."),
+        ], id="cand-forcar-bloco", className="cand-forcar-bloco",
+            style={"display": "none"}),
+        html.Span(id="cand-forcar-aviso", className="cand-gravar-motivo"),
         html.Span(id="cand-gravar-aviso", className="cand-gravar-aviso"),
+        dcc.Store(id="cand-forcar-armado"),
         # o veredito que o selo acabou de calcular, para o botão não refazer
         # os 2.000 caminhos do holdout a cada mexida no dial
         dcc.Store(id="cand-veredito"),

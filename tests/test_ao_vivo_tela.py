@@ -274,3 +274,25 @@ def test_conta_sem_login_mostra_etiqueta_ambar():
     ok = textos(AP.linha_conta({**base, "login": 123, "servidor": "S"}, None))
     assert "faltam os dados do MT5" not in ok
     assert "123" in ok and "S" in ok
+
+
+def test_ficha_marca_plano_gravado_mesmo_assim(banco):
+    v = variantes.criar("romp-canal-02", "rompimento_canal")
+    mineracao(47, variante_id=v)
+    wfa(13, 47)
+    plano.salvar(**campos_plano(
+        wfa_id=13, run_id=47, gravado_mesmo_assim=True,
+        pendencias=[{"nome": "Aguenta custo maior?", "motivo": "reprovado"}]),
+        agora=datetime(2026, 9, 1, 10))
+    lig = P.adicionar_variante(P.criar("pf"), v)
+    _, vars_, _, _ = CA.montar(None, lig, QUI)
+    t = textos(vars_)
+    assert "gravado mesmo assim" in t
+    # a lista vai no (?) da etiqueta, que viaja no atributo data-dica
+    assert "Aguenta custo maior? (reprovado)" in repr(vars_)
+
+
+def test_ficha_sem_gravar_mesmo_assim_nao_mostra_a_etiqueta(banco):
+    v, pid, pf, lig, orfao = _cenario()
+    _, vars_, _, _ = CA.montar(None, lig, QUI)
+    assert "gravado mesmo assim" not in textos(vars_)

@@ -50,7 +50,8 @@ _COLUNAS = ("plano_id", "wfa_id", "run_id", "symbol", "strategy", "nome",
             "disjuntor", "expectativa", "reotimizacao", "definicoes",
             "regua", "estado", "motor_versao", "base_ate", "base_barras",
             "capital_livre", "reotimizar_em", "variante_id", "vale_a_partir",
-            "aposentado_em", "codigo_hash")
+            "aposentado_em", "codigo_hash", "gravado_mesmo_assim",
+            "pendencias")
 
 
 def proximo_dia_util(d: date) -> date:
@@ -68,13 +69,19 @@ def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
            camada4_travada, disjuntor, expectativa, reotimizacao,
            definicoes, regua, motor_versao=None, base_ate=None,
            base_barras=None, capital_livre=None, reotimizar_em=None,
-           codigo_hash=None, agora: datetime | None = None) -> int:
+           codigo_hash=None, gravado_mesmo_assim=False, pendencias=None,
+           agora: datetime | None = None) -> int:
     """Grava um plano e devolve o id.
 
     Nunca substitui: dois planos do mesmo walk-forward com risco diferente
     são duas decisões, e as duas ficam. O novo só vale a partir do próximo
     pregão — nunca se troca de parâmetro no meio do dia — e o anterior
     continua valendo até lá.
+
+    `gravado_mesmo_assim`/`pendencias`: o operador passou por cima do
+    veredito (ver `pode_gravar(forcar=True)`). A decisão fica no plano e no
+    diário, com o que estava reprovado ou sem medir — quem olhar o plano
+    daqui a três meses precisa saber que ele nasceu assim.
     """
     agora = agora or datetime.now()
     vale = proximo_dia_util(agora.date())
@@ -114,10 +121,14 @@ def salvar(*, wfa_id, run_id, symbol, strategy, nome, params, profile,
              _js(reotimizacao), _js(definicoes),
              _js(regua), "ativo", motor_versao, base_ate,
              base_barras, capital_livre, reotimizar_em,
-             variante_id, vale, None, codigo_hash])
+             variante_id, vale, None, codigo_hash,
+             bool(gravado_mesmo_assim),
+             json.dumps(list(pendencias or []), default=_padrao)])
+        motivo = f"vale a partir de {vale:%d/%m/%Y}"
+        if gravado_mesmo_assim:
+            motivo += " · " + texto_pendencias(pendencias)
         diario.registrar(con, "plano_gravado", "usuario", plano_id=pid,
-                         variante_id=variante_id,
-                         motivo=f"vale a partir de {vale:%d/%m/%Y}")
+                         variante_id=variante_id, motivo=motivo)
         for antigo, estado_antes in saem_linhas:
             # o estado REAL de antes: um plano já aposentado mas ainda em
             # vigor não estava "ativo", e o diário é permanente
@@ -150,6 +161,9 @@ def _linha(r) -> dict:
         d[c] = json.loads(d[c]) if d[c] else {}
     if d["camada4_travada"] is not None:
         d["camada4_travada"] = bool(d["camada4_travada"])
+    # plano de antes da coluna vem NULL: não foi gravado mesmo assim
+    d["gravado_mesmo_assim"] = bool(d["gravado_mesmo_assim"])
+    d["pendencias"] = json.loads(d["pendencias"]) if d["pendencias"] else []
     return d
 
 
@@ -304,13 +318,59 @@ def aviso_ao_gravar(veredito: dict) -> str | None:
     return None
 
 
-def pode_gravar(veredito: dict, dim: dict, params: dict | None = None) -> str | None:
+def _nome(p) -> str:
+    return p if isinstance(p, str) else (p or {}).get("nome")
+
+
+def pendencias(veredito: dict) -> list[dict]:
+    """O que o plano gravado mesmo assim leva de pendência: cada portão
+    crítico reprovado e cada um que não foi medido, nessa ordem.
+
+    Aceita o veredito da tela (só os nomes, `veredito_para_tela`) e o do
+    core (os portões inteiros, `candidata.veredito`)."""
+    v = veredito or {}
+    return ([{"nome": _nome(p), "motivo": "reprovado"}
+             for p in v.get("reprovados") or []]
+            + [{"nome": _nome(p), "motivo": "não medido"}
+               for p in v.get("pendentes") or []])
+
+
+def texto_pendencias(pend: list[dict] | None) -> str:
+    """"gravado mesmo assim — reprovado em: A, B; não medido: C", a frase
+    que vai ao diário e à confirmação da tela."""
+    pend = pend or []
+    partes = []
+    for motivo, rotulo in (("reprovado", "reprovado em"),
+                           ("não medido", "não medido")):
+        nomes = [p["nome"] for p in pend if p.get("motivo") == motivo]
+        if nomes:
+            partes.append(f"{rotulo}: " + ", ".join(nomes))
+    return "gravado mesmo assim" + (" — " + "; ".join(partes) if partes else "")
+
+
+def pode_gravar(veredito: dict, dim: dict, params: dict | None = None,
+                forcar: bool = False) -> str | None:
     """`None` quando o plano pode ser gravado; senão, o porquê, em palavras.
 
     O botão não pode só aparecer apagado: quem está na tela precisa saber
     qual das três travas está segurando, porque o remédio de cada uma é
     diferente — rodar os testes, mudar a estratégia ou mudar o capital.
+
+    `forcar=True` é o "Gravar mesmo assim" (decisão do usuário, 01/10/2026):
+    passa por cima do VEREDITO — reprovada ou aguardando testes —, porque
+    a régua pode errar e quem decide arriscar é o operador, que vai ver o
+    plano operar no papel antes do dinheiro. As travas que impedem o plano
+    de EXISTIR continuam: sem parâmetro (fora do mercado) não há o que
+    operar, e sem contrato não há tamanho.
     """
+    if not forcar:
+        motivo = _trava_do_veredito(veredito)
+        if motivo:
+            return motivo
+    return _trava_do_plano(dim, params)
+
+
+def _trava_do_veredito(veredito: dict) -> str | None:
     estado = (veredito or {}).get("estado")
     if estado == "reprovada":
         nomes = " · ".join(veredito.get("reprovados") or [])
@@ -320,6 +380,10 @@ def pode_gravar(veredito: dict, dim: dict, params: dict | None = None) -> str | 
     if estado != "aprovada" and estado != "aprovada com ressalva":
         return ("rode os testes completos antes de gravar: teste que não "
                 "rodou não aprova nada")
+    return None
+
+
+def _trava_do_plano(dim: dict, params: dict | None) -> str | None:
     if params is not None and not params:
         # o DEPLOY pode sair "fora do mercado" (ninguém aprovado na janela, ou
         # a camada 4 travada sem candidata que case): gravar isso daria um
@@ -399,10 +463,14 @@ def _portao_para_json(p: dict) -> dict:
 
 
 def montar(wfa_id: int, d: dict, ref: dict, dim: dict, disj: dict,
-           veredito: dict, expect: dict) -> dict:
+           veredito: dict, expect: dict, forcar: bool = False) -> dict:
     """Todos os campos de `salvar`, a partir do que a tela Candidata já
     calculou. Não recalcula nada: o plano grava o que o operador viu.
+
+    Com `forcar`, leva as pendências do veredito; forçar uma aprovada não
+    tem pendência nenhuma e não marca o plano.
     """
+    pend = pendencias(veredito) if forcar else []
     deploy = d.get("deploy") or {}
     n = int(dim.get("n") or 0)
     margem = dim.get("margem")
@@ -448,6 +516,7 @@ def montar(wfa_id: int, d: dict, ref: dict, dim: dict, disj: dict,
                               for p in (veredito or {}).get("portoes") or []]},
         # reprodutibilidade
         "codigo_hash": d.get("codigo_hash"),
+        "gravado_mesmo_assim": bool(pend), "pendencias": pend,
         **retrato_da_base(d.get("symbol")),
     }
 

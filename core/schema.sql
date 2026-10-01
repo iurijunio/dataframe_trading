@@ -395,6 +395,11 @@ ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS vale_a_partir DATE;
 ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS aposentado_em DATE;
 -- impressão digital do código que gerou os números (ver core/codigo.py)
 ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS codigo_hash VARCHAR;
+-- "Gravar mesmo assim" (01/10/2026): o operador gravou passando por cima do
+-- veredito, e o plano guarda o que estava reprovado ou sem medir naquele dia
+-- (lista de {nome, motivo: "reprovado" | "não medido"})
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS gravado_mesmo_assim BOOLEAN;
+ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS pendencias JSON;
 ALTER TABLE wfa_runs        ADD COLUMN IF NOT EXISTS codigo_hash VARCHAR;
 
 -- migração (roda a cada subida, idempotente): cada portfolio_variantes
