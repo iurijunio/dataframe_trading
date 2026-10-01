@@ -11,6 +11,7 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -151,20 +152,22 @@ def test_ordem_de_importacao_nao_importa(tmp_path):
     assert rodar([velha, nova], "x.duckdb") == rodar([nova, velha], "y.duckdb")
 
 
-def test_falha_no_meio_nao_deixa_rastro(con, tmp_path):
-    p = write_export(tmp_path / "a.csv", serie(datetime(2026, 1, 2, 9, 0), 10))
-    ing.ingest_csv(con, p, SYMBOL)
-    n_log = con.execute("SELECT count(*) FROM ingest_log").fetchone()[0]
+def test_falha_no_meio_nao_deixa_rastro(con, monkeypatch):
+    ts = datetime(2026, 3, 9, 9, 0)
+    ing.ingest_df(con, _df([(ts, 100, 110, 90, 100)]), SYMBOL, "a", "sa")
+    lotes, barras = (con.execute("SELECT count(*) FROM ingest_log").fetchone()[0],
+                     _barras(con))
 
-    # Forca uma falha depois do registro em ingest_log ter sido escrito.
-    import polars as pl
+    def boom(*a, **k):
+        raise RuntimeError("falha proposital depois do INSERT no ingest_log")
 
-    quebrado = pl.DataFrame({"ts": [1], "nao_existe": [1]})
-    with pytest.raises(Exception):
-        ing._merge(con, p, SYMBOL, quebrado)
+    monkeypatch.setattr(ing.json, "dumps", boom)  # roda só quando há divergência
+    with pytest.raises(RuntimeError, match="proposital"):
+        ing.ingest_df(con, _df([(ts, 100, 120, 90, 105)]), SYMBOL, "b", "sb",
+                      source_max_ts=datetime(2026, 3, 10))
 
-    con.execute("ROLLBACK") if False else None
-    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == n_log
+    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == lotes
+    assert _barras(con) == barras
 
 
 # -------------------------------------------------------------- derivadas
@@ -221,3 +224,55 @@ def test_banco_e_descartavel(con, tmp_path, monkeypatch):
     ).fetchone()
 
     assert antes == depois
+
+
+# ------------------------------------------------------------- ingest_df
+def _df(linhas):
+    return pl.DataFrame(
+        [(ts, o, h, lo, c, 100, 500, 5) for ts, o, h, lo, c in linhas],
+        schema=["ts", "open", "high", "low", "close", "tick_volume", "volume", "spread"],
+        orient="row")
+
+
+def _barras(con):
+    return con.execute("SELECT ts, open, high, low, close, tick_volume, volume, "
+                       "spread FROM bars_m1 ORDER BY ts").fetchall()
+
+
+def test_ingest_df_da_o_mesmo_que_ingest_csv(tmp_path):
+    linhas = serie(datetime(2026, 3, 9, 9, 0), 5, passo=10)
+    a = db.connect(tmp_path / "a.duckdb"); db.init_schema(a)
+    b = db.connect(tmp_path / "b.duckdb"); db.init_schema(b)
+    ing.ingest_csv(a, write_export(tmp_path / "x.tsv", linhas), "WIN$N")
+    ing.ingest_df(b, _df(linhas), "WIN$N", "captura://1@srv", "sha-x")
+    assert _barras(a) == _barras(b)
+    a.close(); b.close()
+
+
+def test_ingest_df_aceita_preco_float_inteiro_do_mt5(con):
+    df = _df(serie(datetime(2026, 3, 9, 9, 0), 2)).with_columns(
+        [pl.col(c).cast(pl.Float64) for c in ("open", "high", "low", "close")])
+    r = ing.ingest_df(con, df, "WIN$N", "captura://1@srv", "sha")
+    assert r.rows_inserted == 2
+
+
+def test_ingest_df_recusa_ohlc_incoerente_e_duplicata(con):
+    ts = datetime(2026, 3, 9, 9, 0)
+    with pytest.raises(ValueError, match="incoerente"):
+        ing.ingest_df(con, _df([(ts, 100, 90, 95, 100)]), "WIN$N", "o", "s")
+    with pytest.raises(ValueError, match="duplicados"):
+        ing.ingest_df(con, _df([(ts, 100, 110, 90, 100)] * 2), "WIN$N", "o", "s")
+    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == 0
+
+
+def test_source_max_ts_informado_vence_versao_do_mesmo_minuto(con):
+    """A conferência do dia relê o mesmo minuto que a captura gravou: o
+    `source_max_ts` dela (hora em que rodou) é o que a faz vencer."""
+    ts = datetime(2026, 3, 9, 9, 0)
+    ing.ingest_df(con, _df([(ts, 100, 110, 90, 100)]), "WIN$N", "captura://", "b")
+    r = ing.ingest_df(con, _df([(ts, 100, 120, 90, 105)]), "WIN$N",
+                      "conferencia://2026-03-09", "a",
+                      source_max_ts=datetime(2026, 3, 9, 18, 30))
+    assert r.rows_updated == 1
+    assert con.execute("SELECT high, close FROM bars_m1").fetchone() == (120, 105)
+    assert con.execute("SELECT max(source_max_ts) FROM ingest_log").fetchone()[0] == datetime(2026, 3, 9, 18, 30)

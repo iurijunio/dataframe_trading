@@ -17,6 +17,9 @@ Isso poe duas exigencias neste modulo:
    a exportacao mais recente vence, e toda divergencia e contada e
    registrada em ingest_log.
 
+Candles que nao vem de arquivo (o servico de captura ao vivo) entram por
+ingest_df, com a mesma regra.
+
 "Mais recente" e a exportacao com a barra mais nova (source_max_ts), com
 desempate pelo sha256 - nao e a ultima a ser importada. Por isso importar
 A e depois B da exatamente a mesma tabela que importar B e depois A.
@@ -118,12 +121,28 @@ def read_mt5_export(path: Path, price_decimals: int = 0) -> pl.DataFrame:
         .alias("ts")
     ).drop("date_str", "time_str")
 
+    return validar(df, path.name, price_decimals)
+
+
+def validar(df: pl.DataFrame, nome: str, price_decimals: int = 0) -> pl.DataFrame:
+    """Recusa o que nao e confiavel e devolve as colunas na ordem da base.
+
+    `nome` so entra nas mensagens (arquivo ou origem do lote). O `select`
+    inicial faz coluna faltando virar ValueError em vez de erro obscuro
+    no meio do merge.
+    """
+    try:
+        df = df.select("ts", "open", "high", "low", "close",
+                       "tick_volume", "volume", "spread")
+    except pl.exceptions.ColumnNotFoundError as e:
+        raise ValueError(f"{nome}: colunas ausentes ({e}).") from e
+
     if df.height == 0:
-        raise ValueError(f"{path.name}: arquivo sem linhas de dados.")
+        raise ValueError(f"{nome}: arquivo sem linhas de dados.")
 
     dups = df.height - df.select("ts").n_unique()
     if dups:
-        raise ValueError(f"{path.name}: {dups} timestamps duplicados dentro do arquivo.")
+        raise ValueError(f"{nome}: {dups} timestamps duplicados dentro do arquivo.")
 
     if price_decimals == 0:
         for col in PRICE_COLS:
@@ -132,7 +151,7 @@ def read_mt5_export(path: Path, price_decimals: int = 0) -> pl.DataFrame:
             ).height
             if nao_inteiros:
                 raise ValueError(
-                    f"{path.name}: coluna {col} tem {nao_inteiros} valores nao "
+                    f"{nome}: coluna {col} tem {nao_inteiros} valores nao "
                     "inteiros, mas o instrumento declara price_decimals: 0."
                 )
         df = df.with_columns([pl.col(c).cast(pl.Int64) for c in PRICE_COLS])
@@ -145,28 +164,47 @@ def read_mt5_export(path: Path, price_decimals: int = 0) -> pl.DataFrame:
         | (pl.col("close") < pl.col("low"))
     ).height
     if invalidas:
-        raise ValueError(f"{path.name}: {invalidas} barras com OHLC incoerente.")
+        raise ValueError(f"{nome}: {invalidas} barras com OHLC incoerente.")
 
-    return df.select(
-        "ts", "open", "high", "low", "close", "tick_volume", "volume", "spread"
-    ).sort("ts")
+    return df.sort("ts")
+
+
+def sha256_df(df: pl.DataFrame) -> str:
+    """Impressao digital do lote: o desempate do merge precisa dela estavel."""
+    return hashlib.sha256(df.sort("ts").write_csv().encode()).hexdigest()
 
 
 def ingest_csv(con, path: Path | str, symbol: str, price_decimals: int = 0) -> IngestResult:
-    """Importa uma exportacao. Tudo ou nada.
+    """Importa uma exportacao. Tudo ou nada (ver ingest_df)."""
+    path = Path(path)
+    df = read_mt5_export(path, price_decimals=price_decimals)
+    return ingest_df(con, df, symbol, str(path), sha256_of(path),
+                     price_decimals=price_decimals)
+
+
+def ingest_df(con, df: pl.DataFrame, symbol: str, origem: str, sha: str,
+              source_max_ts: datetime | None = None,
+              price_decimals: int = 0) -> IngestResult:
+    """Mescla um lote de candles na base. Tudo ou nada.
+
+    Faz o proprio BEGIN/COMMIT - nunca chame dentro de uma transacao aberta
+    (o DuckDB recusa BEGIN aninhado).
 
     A carga roda dentro de uma transacao porque o registro em ingest_log e
     escrito ANTES do merge (o merge precisa do ingest_id para marcar a
     proveniencia das barras). Sem transacao, uma falha no meio deixaria um
     registro de carga que nunca aconteceu - e, pior, barras apontando para
     uma proveniencia parcial.
+
+    `source_max_ts` existe porque a conferencia do dia relê minutos que a
+    captura ja gravou: sem informar a hora em que rodou, a barra mais nova
+    do lote empataria com a versao antiga e nunca venceria.
     """
-    path = Path(path)
-    df = read_mt5_export(path, price_decimals=price_decimals)  # noqa: F841  (lido pelo DuckDB)
+    df = validar(df, origem, price_decimals)  # noqa: F841  (lido pelo DuckDB)
 
     con.execute("BEGIN TRANSACTION")
     try:
-        result = _merge(con, path, symbol, df)
+        result = _merge(con, origem, sha, symbol, df, source_max_ts)
     except Exception:
         con.execute("ROLLBACK")
         con.execute("DROP TABLE IF EXISTS _stage")
@@ -175,10 +213,10 @@ def ingest_csv(con, path: Path | str, symbol: str, price_decimals: int = 0) -> I
     return result
 
 
-def _merge(con, path: Path, symbol: str, df) -> IngestResult:
+def _merge(con, source_file: str, sha: str, symbol: str, df,
+           source_max_ts: datetime | None = None) -> IngestResult:
     src_min = df["ts"].min()
-    src_max = df["ts"].max()
-    sha = sha256_of(path)
+    src_max = source_max_ts or df["ts"].max()
 
     ingest_id = con.execute("SELECT nextval('seq_ingest_id')").fetchone()[0]
     con.execute(
@@ -190,7 +228,7 @@ def _merge(con, path: Path, symbol: str, df) -> IngestResult:
              conflict_sample, ingested_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, NULL, ?)
         """,
-        [ingest_id, symbol, str(path), sha, src_min, src_max, df.height, datetime.now()],
+        [ingest_id, symbol, source_file, sha, src_min, src_max, df.height, datetime.now()],
     )
 
     con.execute("DROP TABLE IF EXISTS _stage")
@@ -312,7 +350,7 @@ def _merge(con, path: Path, symbol: str, df) -> IngestResult:
     return IngestResult(
         ingest_id=ingest_id,
         symbol=symbol,
-        source_file=str(path),
+        source_file=source_file,
         rows_in_file=df.height,
         rows_inserted=rows_inserted,
         rows_updated=conflicts_won,
