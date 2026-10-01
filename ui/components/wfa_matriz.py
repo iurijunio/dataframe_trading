@@ -337,8 +337,7 @@ def aberta(is_m, oos_m, inteligencia) -> list:
     rotulo = next((r for r, q in wfa.INTELIGENCIAS if q == inteligencia),
                   inteligencia or "—")
     return [html.Span("aberta ", className="mz-muted"),
-            html.Strong(f"IS {is_m} / OOS {oos_m} · {rotulo}"),
-            html.Span(" · clique numa linha para trocar", className="mz-muted")]
+            html.Strong(f"IS {is_m} / OOS {oos_m} · {rotulo}")]
 
 
 # -------------------------------------------------------------- layout

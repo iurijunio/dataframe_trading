@@ -28,7 +28,7 @@ params_schema = {
     "barras_abertura": {"label": "Barras da abertura", "default": 6,
                         "min": 1, "max": 60, "step": 1, "tipo": "int"},
     "folga_ticks": {"label": "Folga do rompimento (ticks)", "default": 1,
-                    "min": 0, "max": 40, "step": 1, "tipo": "int"},
+                    "min": 0, "max": 500, "step": 1, "tipo": "int"},
     "filtro_amplitude": {"label": "Amplitude mínima da abertura (pontos)",
                          "default": 0, "min": 0, "max": 2000, "step": 50,
                          "tipo": "int"},
