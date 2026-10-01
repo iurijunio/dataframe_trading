@@ -17,7 +17,7 @@ Candidata — não trabalhe nela.
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~840 testes, <1 min de coleta)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~1105 testes, <1 min de coleta)
 ```
 
 - Para ver o app, use `preview_start` com o nome `dataframe` (`.claude/launch.json`).
@@ -103,7 +103,7 @@ Os sete modos do topo (`ui/app.py`) e onde vivem:
 | Candidata | `candidata.py`, `candidata_runner.py`, `aleatorio.py`, `spa.py`, `tamanho.py`, `plano.py` | `callbacks_candidata.py`, `components/candidata_panel.py` |
 | Estratégias | `variantes.py` | `callbacks_estrategias.py`, `components/estrategias_panel.py` |
 | Portfólio | `portfolio.py` | `callbacks_portfolio.py`, `components/portfolio_panel.py` |
-| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py` |
+| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`) | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py` |
 
 Outros: `core/mt5_source.py` + `ui/callbacks_mt5.py` (botão "Sincronizar com
 MT5"); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
@@ -137,8 +137,18 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   migração; nunca apagar o banco.
 - **Hora do MT5:** o `time` das barras que o MT5 devolve **já é hora de
   Brasília** — não somar offset. A sincronização de 23/09/2026 subtraiu 3 h
-  e corrompeu 16/03→23/09 (correção: spec `2026-10-01-ao-vivo-captura-design.md` §0).
+  e corrompeu 16/03→23/09 (corrigida em 01/10/2026; backup do banco antigo em
+  `C:\Users\mrRobot\Documents\Neturna\backups\2026-10-01-antes-correcao-hora`).
   Nunca gravar o candle em formação (o último minuto devolvido).
+- **Captura:** o `captura.bat` (serviço de captura) abre pelo `iniciar.bat`.
+  Com a captura ativa o botão Sincronizar fica desativado. As barras de HOJE
+  só existem no banco até a conferência do dia — o Parquet e o `data/raw` não
+  as têm — então a mineração só vê o dia de hoje depois dela. Por isso
+  `cli.py verify` (que reconstrói do Parquet) com a captura rodando apagaria o
+  dia: ele recusa se o `data/ao_vivo/estado.json` foi atualizado há menos de
+  60 s ("feche a captura antes"). O relógio do PC pode atrasar ~1 min em
+  relação à corretora; a captura usa o relógio do servidor (a tela avisa acima
+  de 30 s). O Clear não publica o contrato vigente (`contrato_vigente` = None).
 - **Campo numérico:** `<input type=number>` focado muda de valor com a rolagem do
   mouse (bug do Chrome). Use `type="text"` + `inputMode="numeric"` + parse manual;
   `ui/assets/num_input.js` protege o resto do app.
@@ -167,9 +177,11 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
 **Em andamento: tela "Ao vivo"** (projeto C + E), dividida em partes:
 1. **Seção 1** (1a blindagem do banco + 1b sub-tela Ao vivo › Estratégias com a
    ficha de rastreio) ✅. Spec: `docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md`.
-2. Candles ao vivo (robô separado grava cada M1; completa buracos; reconfere o dia).
-   **Próximo passo:** spec própria, começar pelo brainstorming.
+2. Candles ao vivo (serviço de captura grava cada M1; completa lacunas;
+   conferência do dia; sub-tela Pregão; selo da captura no topo) ✅. Spec:
+   `docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md`.
 3. Incubação em papel — **o papel roda sempre**, em qualquer fase.
+   **Próximo passo:** spec própria, começar pelo brainstorming.
 4. Ordens pelo próprio Dataframe (demo primeiro) + comparativo backtest ×
    papel × demo/real (sinal no mesmo minuto, preço, derrapagem).
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.

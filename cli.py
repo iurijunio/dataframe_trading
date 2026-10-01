@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from core.captura import ler_estado  # noqa: E402
 from core import calendar as cal  # noqa: E402
 from core import db_manager as db  # noqa: E402
 from core import ingest as ing  # noqa: E402
@@ -74,7 +76,24 @@ def cmd_ingest(args) -> None:
         print(f"    {out}")
 
 
+ESTADO_CAPTURA = db.DATA / "ao_vivo" / "estado.json"
+
+
+def _captura_ativa() -> bool:
+    """O serviço de captura grava o estado a cada ciclo; estado com menos de
+    60 s é sinal de que ele ainda está rodando."""
+    estado = ler_estado(ESTADO_CAPTURA)
+    try:
+        feito = datetime.fromisoformat(str(estado["atualizado_em"]))
+    except (TypeError, KeyError, ValueError):
+        return False
+    return (datetime.now() - feito).total_seconds() < 60
+
+
 def cmd_derive(args) -> None:
+    """Recalcula pregoes e rolagens e reexporta o Parquet. Com a captura
+    rodando, o Parquet passa a incluir as barras de hoje ainda nao conferidas;
+    a conferencia do dia o refaz depois."""
     with db.connect() as con:
         inst = db.load_instrument_yaml(args.symbol)
         n_days = cal.rebuild_trading_days(con, args.symbol)
@@ -144,7 +163,14 @@ def cmd_verify(args) -> None:
     So as barras sao descartaveis. As tabelas do Ao vivo (contas,
     portfolio_membros, ao_vivo_eventos, planos_operacao) NAO se reconstroem
     de arquivo nenhum: nao apague o .duckdb, faca copia dele.
+
+    As barras de HOJE, gravadas pela captura, so existem no banco ate a
+    conferencia do dia: o Parquet e o data/raw nao as tem. Reconstruir com a
+    captura rodando apagaria o dia, por isso o comando recusa.
     """
+    if _captura_ativa():
+        sys.exit("feche a captura antes: ela esta gravando as barras de hoje, "
+                 "que o Parquet ainda nao tem.")
     sym = args.symbol
     with db.connect() as con:
         antes = con.execute(

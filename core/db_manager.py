@@ -6,6 +6,10 @@ as barras tem que dar exatamente a mesma coisa - e existe teste que cobra
 isso. Mas o banco tambem guarda o que NAO se reconstroi: contas,
 portfolio_membros, ao_vivo_eventos (o diario) e planos_operacao. Nao o apague;
 faca copia do arquivo com o app fechado.
+
+Excecao ao "barras sao cache": as barras de HOJE, gravadas pelo servico de
+captura, so existem no banco ate a conferencia do dia (que refaz o Parquet).
+Reconstruir do Parquet antes disso (cli.py verify) as apagaria.
 """
 
 from __future__ import annotations

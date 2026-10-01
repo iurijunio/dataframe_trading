@@ -8,6 +8,38 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Ao vivo, parte 2: serviço de captura e sub-tela Pregão** (`core/captura.py`,
+  `captura.py`, `captura.bat`, `ui/callbacks_pregao.py`,
+  `ui/components/pregao_panel.py`; desenho em
+  [docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md](docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md)).
+  Suíte: cerca de 1.105 testes.
+  - **Serviço de captura.** Uma janela própria, aberta pelo `iniciar.bat`,
+    grava no banco cada candle de 1 minuto assim que ele fecha. O candle em
+    formação nunca é gravado. Se o MT5 for fechado ou o PC dormir, ao voltar
+    ele completa as lacunas sozinho. Depois do fechamento faz a conferência do
+    dia contra o MT5 e refaz o Parquet.
+  - **Sub-tela Ao vivo › Pregão.** Gráfico do pregão de hoje com o candle em
+    formação se mexendo sem perder o zoom, placar de candles e lacunas, e aviso
+    quando o relógio do PC está mais de 30 s fora do da corretora.
+  - **Selo da captura no topo** (rodando, parada, MT5 fechado).
+  - **Sincronizar com MT5 desativado** enquanto a captura está ativa, para
+    as duas não gravarem ao mesmo tempo.
+  - **Correção da base (01/10/2026).** A sincronização de 23/09 subtraiu 3 h
+    da hora das barras (a hora do MT5 já é a de Brasília), o que deslocou tudo
+    de 16/03 a 23/09. Foram apagados os 77.202 candles errados e o que foi
+    construído em cima deles: 7 minerações, 5 walk-forwards, 4 planos,
+    9 variantes e 2 portfólios. A conta e o diário de eventos foram mantidos.
+    Os dias 09 a 13/03 voltaram do CSV original e 16/03 a 01/10 foram baixados
+    de novo do MT5 com a hora certa. A base ficou com 765.884 candles. Backup
+    do estado anterior em `Neturna\backups\2026-10-01-antes-correcao-hora`.
+    Esquisitices conhecidas, de origem: 12/03 termina às 18:31 (CSV original)
+    e 31/07 começa às 12:34 (o próprio MT5 só tem 351 candles nesse dia).
+  - **Proteção do `cli.py verify`.** Ele reconstrói as barras do Parquet, que
+    não tem o dia de hoje; com a captura rodando apagaria o dia. Agora recusa
+    ("feche a captura antes") se a captura atualizou o estado há menos de 60 s.
+  - **Achados da primeira rodada real:** o relógio do PC ficou cerca de 1 min
+    atrás da corretora (a captura usa o relógio do servidor), e o Clear não
+    publica o contrato vigente.
 - **Tela Ao vivo, entrega 1b: sub-tela Estratégias** (`core/ao_vivo.py`,
   `core/diario.py`, `core/codigo.py`, `ui/callbacks_ao_vivo.py`,
   `ui/components/ao_vivo_panel.py`, commits `b6b7be0` a `5f26ce2`; desenho em
