@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 
+from core import captura as CAP
 from core import db_manager as db
 from core.engine.execution import prepare_bars
 
@@ -30,10 +31,45 @@ _meta_cache: dict[str, dict] = {}
 
 
 def bars(symbol: str) -> dict:
-    if symbol not in _bars_cache:
+    # O Flask atende em várias threads e `estado_captura` pode limpar o cache
+    # entre guardar e devolver: devolve o que carregou, não o que está lá.
+    b = _bars_cache.get(symbol)
+    if b is None:
         with db.connect(read_only=True) as con:
-            _bars_cache[symbol] = prepare_bars(con, symbol)
-    return _bars_cache[symbol]
+            b = prepare_bars(con, symbol)
+        _bars_cache[symbol] = b
+    return b
+
+
+ESTADO_CAPTURA = db.DATA / "ao_vivo" / "estado.json"
+_estado_ultimo: dict | None = None
+_conferencia_vista: str | None = None
+
+
+def estado_captura() -> dict | None:
+    """O `estado.json` do serviço de captura, ou None se ele nunca rodou.
+
+    Arquivo ilegível (pego no meio de uma troca no Windows) devolve a última
+    leitura boa: piscar "captura nunca rodou" por um instante assustaria.
+    """
+    global _estado_ultimo, _conferencia_vista
+    if not ESTADO_CAPTURA.exists():
+        _estado_ultimo = None
+        return None
+    e = CAP.ler_estado(ESTADO_CAPTURA)
+    if not isinstance(e, dict):
+        return _estado_ultimo
+    _estado_ultimo = e
+    em = (e.get("conferencia") or {}).get("em")
+    # sem "em" (serviço reaberto, conferência pendente) não esquece a última
+    # vista: senão a conferência seguinte pareceria a primeira e não limparia
+    if em is not None and em != _conferencia_vista:
+        # a conferência do dia reescreveu candles no banco: sem limpar, o
+        # backtest e a mineração seguiriam com as barras de antes dela
+        if _conferencia_vista is not None:
+            _bars_cache.clear()
+        _conferencia_vista = em
+    return e
 
 
 def instrumentos() -> list[dict]:

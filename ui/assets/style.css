@@ -1233,3 +1233,16 @@ body{
 .av-ok{color:var(--pos);}
 .av-nok{color:var(--neg);}
 .av-aviso-mt5{font-size:12px;color:var(--ink-2);align-self:center;}
+
+/* ---- Captura: selo no topo ---- */
+.captura-selo{display:inline-flex;align-items:center;gap:6px;max-width:340px;
+  border-radius:999px;padding:4px 10px;font-family:var(--mono);font-weight:600;
+  font-size:.8em;white-space:nowrap;cursor:default;}
+.captura-selo-texto{overflow:hidden;text-overflow:ellipsis;}
+.captura-selo-ponto{font-size:.9em;line-height:1;}
+.captura-selo-verde{background:rgba(0,245,160,.12);color:var(--pos);}
+.captura-selo-ambar{background:rgba(255,201,60,.18);color:var(--warn);}
+.captura-selo-rosa{background:rgba(255,77,125,.18);color:var(--neg);}
+.captura-selo-cinza{background:var(--surface-2);color:var(--muted);}
+.captura-selo-verde .captura-selo-ponto{text-shadow:0 0 8px rgba(0,245,160,.6);}
+#btn-mt5-sync:disabled{opacity:.4;cursor:not-allowed;}

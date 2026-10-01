@@ -84,6 +84,10 @@ def topbar(simbolo):
             ),
             html.Div(
                 [
+                    # o selo e o botão juntos: com a captura ativa o botão
+                    # desliga, e o selo ao lado diz por quê
+                    html.Span(id="captura-selo", className="captura-selo",
+                              style={"display": "none"}),
                     html.Button("Sincronizar com MT5", id="btn-mt5-sync",
                                 n_clicks=0, className="btn-ghost"),
                     html.Span(id="mt5-sync-status", className="mt5-sync-status"),
@@ -287,6 +291,10 @@ def build() -> Dash:
             dcc.Store(id="store-portfolio-aberto"),
             # so pulsa enquanto a mineracao corre; ver callbacks.pulso
             dcc.Interval(id="tick", interval=800, disabled=True),
+            # selo da captura no topo: 30 s bastam para "parada há N min"
+            dcc.Interval(id="captura-intervalo", interval=30_000),
+            # a última conferência do dia que o calendário já viu
+            dcc.Store(id="captura-conferencia-vista"),
             topbar(simbolo),
             html.Div([sidebar(inicio, fim), painel(inicio, fim)], className="body"),
             modal(),

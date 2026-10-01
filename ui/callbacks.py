@@ -1953,3 +1953,6 @@ def register(app):
 
     from ui import callbacks_ao_vivo
     callbacks_ao_vivo.register(app)
+
+    from ui import callbacks_pregao
+    callbacks_pregao.register(app)
