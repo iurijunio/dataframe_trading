@@ -15,11 +15,18 @@ from pathlib import Path
 import polars as pl
 
 from . import calendar as cal
+from . import captura
 from . import db_manager as db
 from . import ingest as ing
 from . import rollovers as roll
 
 FOLGA_DIAS = 5
+
+# O botão é manual e não tem o relógio do servidor. Ele só grava o último
+# minuto devolvido se o PC disser que ele começou há mais de 10 min, o que
+# cobre um relógio errado em até 9 min. O minuto que ficar de fora entra na
+# próxima sincronização ou pela captura.
+MARGEM_SINCRONIZAR = timedelta(minutes=10)
 
 HEADER = "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>"
 
@@ -59,62 +66,23 @@ def exportar_tsv(barras: pl.DataFrame, destino: Path) -> None:
             )
 
 
-def offset_servidor(symbol: str) -> timedelta:
-    """Calibra o fuso do broker contra UTC.
-
-    O MT5 guarda tudo em UTC puro, mas o servidor do corretor pode estar
-    em outro fuso — sem calibrar, o range pedido ao MT5 erra por horas.
-    """
-    import MetaTrader5 as mt5
-
-    tick = mt5.symbol_info_tick(symbol)
-    if tick is None:
-        raise MT5Error(f"símbolo {symbol} não encontrado no MT5.")
-
-    hora_servidor = datetime.fromtimestamp(tick.time, tz=timezone.utc)
-    agora = datetime.now(timezone.utc)
-    bruto = hora_servidor - agora
-
-    horas = round(bruto.total_seconds() / 3600)
-    offset = timedelta(hours=horas)
-    # O último tick negociado raramente é EXATAMENTE "agora" -- alguns
-    # minutos de atraso são normais (mercado mais parado, perto do
-    # fechamento). 120s era curto demais: um atraso comum de tick, em cima
-    # de um fuso de hora exata, já estourava e recusava sincronização
-    # válida. 15 min cobre atraso de tick real sem deixar passar um tick
-    # parado de verdade (esse caso vira "implausível" logo abaixo, ou —
-    # parado por só algumas horas — segue sem detecção seletiva alguma;
-    # aceitável, porque nunca gravamos hora errada: só a janela pedida ao
-    # MT5 fica levemente deslocada, e a folga de FOLGA_DIAS absorve isso).
-    if abs((bruto - offset).total_seconds()) > 900:
-        raise MT5Error(
-            f"fuso do servidor não é múltiplo de hora inteira ({bruto}); "
-            "sincronização parada para não gravar hora errada."
-        )
-    if abs(horas) > 14:
-        raise MT5Error(
-            f"offset implausível ({horas}h) — nenhum corretor real fica a "
-            "mais de 14h de UTC. O tick pode estar parado (mercado fechado "
-            "há dias, terminal sem cotação nova)."
-        )
-    return offset
-
-
 def buscar_barras(symbol: str, desde: datetime, ate: datetime) -> pl.DataFrame:
-    """`desde`/`ate` são hora de corretor (a mesma convenção já salva no
-    banco, vinda das exportações manuais). A API do MT5 devolve `time` em
-    UTC de verdade — por isso o pedido sai em UTC (`- offset`) e o
-    resultado volta para hora de corretor (`+ offset`) antes de devolver,
-    para casar com o que já está gravado.
+    """`desde`/`ate` e o `time` devolvido são hora de Brasília, sem
+    conversão. Achado real (01/10/2026): o MT5 já entrega o `time` das
+    barras no relógio do servidor da corretora; somar ou subtrair fuso
+    gravou seis meses de pregão deslocado em 3 h.
+
+    O pacote converte datetime sem fuso pelo fuso do PC, o que deslocaria a
+    janela pedida; marcar como UTC faz o valor seguir como está.
     """
     import MetaTrader5 as mt5
 
     if not mt5.symbol_select(symbol, True):
         raise MT5Error(f"não foi possível selecionar o símbolo {symbol} no MT5.")
 
-    offset = offset_servidor(symbol)
     taxas = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1,
-                                  desde - offset, ate - offset)
+                                  desde.replace(tzinfo=timezone.utc),
+                                  ate.replace(tzinfo=timezone.utc))
     if taxas is None or len(taxas) == 0:
         raise MT5Error(
             f"o MT5 não devolveu nenhuma barra para {symbol} entre "
@@ -124,7 +92,7 @@ def buscar_barras(symbol: str, desde: datetime, ate: datetime) -> pl.DataFrame:
 
     df = pl.DataFrame(taxas)
     return df.select(
-        (pl.from_epoch("time", time_unit="s") + offset).alias("ts"),
+        pl.from_epoch("time", time_unit="s").alias("ts"),
         pl.col("open"), pl.col("high"), pl.col("low"), pl.col("close"),
         pl.col("tick_volume"), pl.col("real_volume").alias("volume"),
         pl.col("spread"),
@@ -166,14 +134,8 @@ def sincronizar(con, symbol: str, price_decimals: int) -> SincronizacaoResult:
         )
 
     desde = ultimo - timedelta(days=FOLGA_DIAS)
-    # `datetime.now()` é a hora da MÁQUINA local, não a hora de corretor
-    # que `buscar_barras` espera (mesma convenção do `ultimo` salvo). Em
-    # vez de calcular a hora de corretor certa aqui — o que exigiria
-    # offset_servidor, que esta função deliberadamente não chama —, pede-se
-    # uma margem folgada além de agora: o MT5 nunca devolve barra do
-    # futuro, então isso nunca traz dado inventado, só evita perder as
-    # últimas barras por causa do fuso da máquina que roda o botão ser
-    # diferente do fuso do corretor.
+    # O MT5 nunca devolve barra do futuro; a folga de um dia só garante que
+    # o pedido alcance o último minuto, qualquer que seja o relógio do PC.
     ate = datetime.now() + timedelta(days=1)
 
     with _TERMINAL:
@@ -182,6 +144,12 @@ def sincronizar(con, symbol: str, price_decimals: int) -> SincronizacaoResult:
             barras = buscar_barras(symbol, desde, ate)
         finally:
             desconectar()
+
+    barras = captura.fechados(
+        barras, datetime.now() - MARGEM_SINCRONIZAR + captura.FECHA_APOS)
+    if barras.height == 0:
+        raise MT5Error("nenhum candle fechado novo no MT5 — tente de novo "
+                       "em alguns minutos")
 
     agora = datetime.now()
     destino = db.RAW_DIR / f"mt5_sync_{agora:%Y%m%d_%H%M%S}_{agora.microsecond:06d}.tsv"

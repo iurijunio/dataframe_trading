@@ -81,95 +81,7 @@ def test_exportar_tsv_recusa_valor_nulo(tmp_path):
         src.exportar_tsv(barras, tmp_path / "com_nulo.tsv")
 
 
-# ---------------------------------------------------------- offset_servidor
-
-class _FakeTick:
-    def __init__(self, epoch):
-        self.time = epoch
-
-
-class _FakeMT5Offset:
-    """Substitui o módulo MetaTrader5 nos testes de offset_servidor."""
-
-    def __init__(self, epoch_servidor):
-        self._epoch = epoch_servidor
-
-    def symbol_info_tick(self, symbol):
-        if symbol != "WIN$N":
-            return None
-        return _FakeTick(self._epoch)
-
-
-def _instalar_fake_mt5(monkeypatch, epoch_servidor):
-    fake = _FakeMT5Offset(epoch_servidor)
-    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
-    return fake
-
-
-def test_offset_servidor_calibra_fuso_de_horas_inteiras(monkeypatch):
-    """Servidor 3 horas à frente do UTC (ex: fuso do corretor)."""
-    agora = datetime.now(timezone.utc)
-    epoch_servidor = int((agora + timedelta(hours=3)).timestamp())
-    _instalar_fake_mt5(monkeypatch, epoch_servidor)
-
-    offset = src.offset_servidor("WIN$N")
-
-    assert offset == timedelta(hours=3)
-
-
-def test_offset_servidor_recusa_simbolo_desconhecido(monkeypatch):
-    _instalar_fake_mt5(monkeypatch, 0)
-    with pytest.raises(src.MT5Error, match="não encontrado"):
-        src.offset_servidor("XXX$N")
-
-
-def test_offset_servidor_aceita_tick_com_poucos_minutos_de_atraso(monkeypatch):
-    """O último tick negociado raramente é EXATAMENTE agora — alguns
-    minutos de atraso são normais (mercado mais parado, perto do
-    fechamento). Bug real encontrado em produção: 2min37s de atraso sobre
-    um fuso de -3h (Brasil) estourava a margem antiga de 120s e recusava
-    uma sincronização válida."""
-    agora = datetime.now(timezone.utc)
-    epoch_servidor = int((agora - timedelta(hours=3) - timedelta(minutes=5)).timestamp())
-    _instalar_fake_mt5(monkeypatch, epoch_servidor)
-
-    offset = src.offset_servidor("WIN$N")
-
-    assert offset == timedelta(hours=-3)
-
-
-def test_offset_servidor_recusa_fuso_que_nao_e_hora_inteira(monkeypatch):
-    """Se o offset não bate com nenhuma hora inteira, algo está errado na
-    calibração: melhor parar do que gravar hora torta silenciosamente."""
-    agora = datetime.now(timezone.utc)
-    epoch_servidor = int((agora + timedelta(hours=3, minutes=17)).timestamp())
-    _instalar_fake_mt5(monkeypatch, epoch_servidor)
-
-    with pytest.raises(src.MT5Error, match="múltiplo de hora"):
-        src.offset_servidor("WIN$N")
-
-
-def test_offset_servidor_recusa_tick_parado_ha_dias(monkeypatch):
-    """Um tick de 3 dias atrás (mercado fechado, terminal sem cotação nova)
-    também bate 'múltiplo de hora inteira' — 72h é múltiplo de hora — e
-    passaria disfarçado de fuso válido sem um limite de plausibilidade.
-    Nenhum corretor real fica a mais de 14h de UTC."""
-    agora = datetime.now(timezone.utc)
-    epoch_servidor = int((agora - timedelta(days=3)).timestamp())
-    _instalar_fake_mt5(monkeypatch, epoch_servidor)
-
-    with pytest.raises(src.MT5Error, match="implausível"):
-        src.offset_servidor("WIN$N")
-
-
 # ------------------------------------------------------------ buscar_barras
-
-class _FakeTickFresco(_FakeTick):
-    """Tick sempre 'agora', para nao acionar a recusa de offset implausivel
-    quando o teste nao quer testar isso."""
-    def __init__(self):
-        super().__init__(int(datetime.now(timezone.utc).timestamp()))
-
 
 class _FakeMT5Rates:
     TIMEFRAME_M1 = 1
@@ -177,9 +89,6 @@ class _FakeMT5Rates:
     def __init__(self, taxas=None, symbol_ok=True):
         self._taxas = taxas
         self._symbol_ok = symbol_ok
-
-    def symbol_info_tick(self, symbol):
-        return _FakeTickFresco()
 
     def symbol_select(self, symbol, enable):
         return self._symbol_ok
@@ -236,44 +145,52 @@ def test_buscar_barras_recusa_resultado_vazio(monkeypatch):
         src.buscar_barras("WIN$N", datetime(2026, 9, 21), datetime(2026, 9, 22))
 
 
-class _FakeMT5RatesComOffset(_FakeMT5Rates):
-    """Servidor 3h a frente de UTC (offset != 0), pra provar a direcao da
-    conta: pedido em UTC (- offset), resultado de volta em hora de
-    corretor (+ offset) -- com offset zero (_FakeMT5Rates comum) as duas
-    contas dao no mesmo, e um sinal trocado passaria despercebido."""
+def test_buscar_barras_nao_desloca_a_hora(monkeypatch):
+    """Achado real (01/10/2026): o MT5 devolve `time` já em hora de
+    Brasília. Somar o fuso gravou seis meses de pregão de 06:00 a 15:24."""
+    import numpy as np
+    nove = int(datetime(2026, 9, 22, 9, 0, tzinfo=timezone.utc).timestamp())
+    taxas = np.array([(nove, 1.0, 2.0, 0.5, 1.5, 10, 1, 0)], dtype=[
+        ("time", "i8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
+        ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"),
+        ("real_volume", "i8")])
+    pedido = {}
 
-    def __init__(self, taxas):
-        super().__init__(taxas=taxas)
-        self.pedido = {}
+    class Fake(_FakeMT5Rates):
+        def copy_rates_range(self, symbol, tf, desde, ate):
+            pedido.update(desde=desde, ate=ate)
+            return taxas
 
-    def symbol_info_tick(self, symbol):
-        epoch = int(datetime.now(timezone.utc).timestamp()) + 3 * 3600
-        return _FakeTick(epoch)
-
-    def copy_rates_range(self, symbol, timeframe, desde, ate):
-        self.pedido["desde"] = desde
-        self.pedido["ate"] = ate
-        return self._taxas
+    monkeypatch.setitem(sys.modules, "MetaTrader5", Fake())
+    df = src.buscar_barras("WIN$N", datetime(2026, 9, 22, 9, 0),
+                           datetime(2026, 9, 22, 18, 30))
+    assert df["ts"][0] == datetime(2026, 9, 22, 9, 0)
+    assert pedido["desde"] == datetime(2026, 9, 22, 9, 0, tzinfo=timezone.utc)
 
 
-def test_buscar_barras_pede_em_utc_e_devolve_em_hora_de_corretor(monkeypatch):
-    fake = _FakeMT5RatesComOffset(taxas=_taxas_numpy())
-    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+def test_mt5_source_nao_tem_mais_offset():
+    assert not hasattr(src, "offset_servidor")
 
-    desde_pedido = datetime(2026, 9, 21, 9, 0)
-    ate_pedido = datetime(2026, 9, 22, 9, 0)
-    df = src.buscar_barras("WIN$N", desde_pedido, ate_pedido)
 
-    # a API pediu 3h ANTES do que a tela pediu (desde/ate estao em hora de
-    # corretor; a API quer UTC, e o corretor esta 3h a frente de UTC)
-    assert fake.pedido["desde"] == desde_pedido - timedelta(hours=3)
-    assert fake.pedido["ate"] == ate_pedido - timedelta(hours=3)
+def test_sincronizar_descarta_o_ultimo_minuto_recente(con, tmp_path, monkeypatch):
+    seed = tmp_path / "seed.tsv"
+    from tests.test_ingest import write_export
+    write_export(seed, [(datetime(2026, 9, 1, 9, 0), 100000, 100050, 99950, 100010)])
+    ing.ingest_csv(con, seed, "WIN$N", price_decimals=0)
+    monkeypatch.setattr(db, "RAW_DIR", tmp_path / "raw")
+    agora = datetime.now().replace(second=0, microsecond=0)
+    monkeypatch.setattr(src, "buscar_barras", lambda s, d, a: pl.DataFrame({
+        "ts": [agora - timedelta(minutes=1), agora],
+        "open": [100010, 100020], "high": [100060, 100070],
+        "low": [99960, 99970], "close": [100020, 100030],
+        "tick_volume": [80, 5], "volume": [0, 0], "spread": [5, 5]}))
+    monkeypatch.setattr(src, "conectar", lambda: None)
+    monkeypatch.setattr(src, "desconectar", lambda: None)
 
-    # o epoch devolvido pela API (UTC de verdade) volta 3h A FRENTE, para
-    # casar com a hora de corretor que ja esta gravada no banco
-    esperado = (datetime.fromtimestamp(1758441600, tz=timezone.utc)
-                .replace(tzinfo=None) + timedelta(hours=3))
-    assert df["ts"][0] == esperado
+    r = src.sincronizar(con, "WIN$N", price_decimals=0)
+
+    assert r.ingest.rows_inserted == 1
+    assert con.execute("SELECT max(ts) FROM bars_m1").fetchone()[0] == agora - timedelta(minutes=1)
 
 
 # -------------------------------------------------------------- sincronizar
@@ -333,8 +250,8 @@ def test_sincronizar_pede_ate_alem_de_agora_por_margem(con, tmp_path, monkeypatc
     """`ate` não pode ser exatamente `datetime.now()`: essa é a hora da
     MÁQUINA local, não a hora de corretor que buscar_barras espera (mesma
     convenção do `ultimo` salvo). Em vez de calcular a hora de corretor
-    certa aqui (o que exigiria offset_servidor, que sincronizar
-    deliberadamente não chama), pede-se uma margem folgada além de agora —
+    certa aqui (o que exigiria um relógio do servidor, que sincronizar
+    deliberadamente não tem), pede-se uma margem folgada além de agora —
     o MT5 nunca devolve barra do futuro, então isso nunca traz dado
     inventado, só evita perder as últimas barras por causa do fuso da
     máquina que roda o botão ser diferente do fuso do corretor."""
