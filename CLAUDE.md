@@ -90,7 +90,7 @@ As quatro camadas (pergunta: *de quem é essa informação?*):
 | 3 Parâmetros | `configs/strategies/*.json` / `params_schema` | default, min, max, passo |
 | 4 Execução | tabela `execution_profiles` | horário, stop/alvo, custos, tamanho — aplicada pelo motor, nunca pela estratégia |
 
-Os seis modos do topo (`ui/app.py`) e onde vivem:
+Os sete modos do topo (`ui/app.py`) e onde vivem:
 
 | Modo | Contas (`core/`) | Tela (`ui/`) |
 |---|---|---|
@@ -100,6 +100,7 @@ Os seis modos do topo (`ui/app.py`) e onde vivem:
 | Candidata | `candidata.py`, `candidata_runner.py`, `aleatorio.py`, `spa.py`, `tamanho.py`, `plano.py` | `callbacks_candidata.py`, `components/candidata_panel.py` |
 | Estratégias | `variantes.py` | `callbacks_estrategias.py`, `components/estrategias_panel.py` |
 | Portfólio | `portfolio.py` | `callbacks_portfolio.py`, `components/portfolio_panel.py` |
+| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py` |
 
 Outros: `core/mt5_source.py` + `ui/callbacks_mt5.py` (botão "Sincronizar com
 MT5"); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
@@ -157,11 +158,10 @@ comparativa, Kelly, risco de ruína, simulador de crescimento), parte 3 gatilho:
 fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execução ao vivo ❌.
 
 **Em andamento: tela "Ao vivo"** (projeto C + E), dividida em partes:
-1. **Seção 1** — blindagem do banco (1a) ✅ + sub-tela Ao vivo › Estratégias com a
-   ficha de rastreio (1b). Spec aprovada: `docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md`.
-   Próximo passo: plano 1b (sub-tela Ao vivo › Estratégias com a ficha de
-   rastreio; em_operacao/repetidas/rastreio).
+1. **Seção 1** (1a blindagem do banco + 1b sub-tela Ao vivo › Estratégias com a
+   ficha de rastreio) ✅. Spec: `docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md`.
 2. Candles ao vivo (robô separado grava cada M1; completa buracos; reconfere o dia).
+   **Próximo passo:** spec própria, começar pelo brainstorming.
 3. Incubação em papel — **o papel roda sempre**, em qualquer fase.
 4. Ordens pelo próprio Dataframe (demo primeiro) + comparativo backtest ×
    papel × demo/real (sinal no mesmo minuto, preço, derrapagem).

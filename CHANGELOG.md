@@ -8,6 +8,28 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Tela Ao vivo, entrega 1b: sub-tela Estratégias** (`core/ao_vivo.py`,
+  `core/diario.py`, `core/codigo.py`, `ui/callbacks_ao_vivo.py`,
+  `ui/components/ao_vivo_panel.py`, commits `b6b7be0` a `5f26ce2`; desenho em
+  [docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md](docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md)).
+  O 7º modo do topo, em cima da blindagem da 1a. Suíte: 966 testes coletados.
+  - **Portfólios com interruptor e contas.** Cada portfólio mostra se está
+    ligado e em que conta opera; liga e pausa com um clique.
+  - **Variantes com fase e o motivo.** Cada variante aparece com a fase
+    (papel, demo, real mínimo, real) e, quando não está liberada, o motivo em
+    palavras simples (sem plano, plano futuro, disjuntor, conta arquivada,
+    código mudado).
+  - **Ficha de rastreio.** Para cada variante, o caminho inteiro: mineração →
+    walk-forward → Candidata → plano com freio → histórico de eventos.
+  - **Cadastro de contas** na própria tela.
+  - **Arrumação.** Vincular um plano que ficou sem variante, renomear variante
+    e aposentar o que não roda mais.
+  - **Achados que viraram correção:**
+    - O limite de perda diária só aceita formatos sem ambiguidade: "1.500"
+      era lido como 1,50. O valor aparece sem arredondar, e plano inexistente
+      vira aviso em vez de erro.
+    - Vincular pede confirmação, e o plano que assume só conta a partir do
+      pregão em que entra (a data acertada vem da mineração vinculada).
 - **Tela Ao vivo, entrega 1a: blindagem do banco** (`core/`, commits
   `a7e4fda` a `6005f58`; desenho em
   [docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md](docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md)).
