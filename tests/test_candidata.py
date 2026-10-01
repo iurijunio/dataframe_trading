@@ -239,15 +239,14 @@ def test_limite_no_p95_deixa_cerca_de_cinco_por_cento_de_falso_desligamento():
 
 
 def _trials(valores, lucros, dd=500.0):
-    # a chave real de mining_trials é "dd" (via optimizer.carregar_salva),
-    # não "max_dd" — usar o nome errado faz o fator de recuperação sair
-    # sempre None e o portão se abster em silêncio
+    # "dd" é a chave real de mining_trials (via optimizer.carregar_salva); a
+    # régua do platô não a usa mais, mas o trial de verdade sempre a traz
     return [{"params": {"periodo_canal": v}, "lucro": l, "dd": dd}
             for v, l in zip(valores, lucros)]
 
 
 def test_perfil_plato_mede_a_largura_em_torno_do_deploy():
-    """Platô largo: os vizinhos seguram o fator de recuperação. É isto que
+    """Platô largo: os vizinhos seguram o lucro do centro. É isto que
     distingue região fértil de pico de sorte.
 
     Há um segundo pico isolado depois do buraco de cada lado (30 e 90): a
@@ -270,7 +269,7 @@ def test_perfil_plato_acha_o_deploy_mesmo_vindo_em_float():
     trials = _trials([76, 78, 80], [500.0, 600.0, 550.0])
     p = candidata.perfil_plato(trials, {"periodo_canal": [76, 78, 80]},
                                {"periodo_canal": 78.0})
-    assert p["centro_fr"] == pytest.approx(600.0 / 500.0)
+    assert p["centro_lucro"] == pytest.approx(600.0)
 
 
 def test_perfil_plato_casa_deploy_com_ruido_de_ponto_flutuante():
@@ -281,7 +280,7 @@ def test_perfil_plato_casa_deploy_com_ruido_de_ponto_flutuante():
     trials = _trials([76, 78, 80], [500.0, 600.0, 550.0])
     p = candidata.perfil_plato(trials, {"periodo_canal": [76, 78, 80]},
                                {"periodo_canal": 78.0 + 1e-9})
-    assert p["centro_fr"] == pytest.approx(600.0 / 500.0)
+    assert p["centro_lucro"] == pytest.approx(600.0)
 
 
 def test_perfil_plato_abstem_quando_falta_um_terco_da_grade():
@@ -297,7 +296,7 @@ def test_perfil_plato_sem_o_deploy_na_grade_nao_quebra():
     p = candidata.perfil_plato(_trials([40, 50], [1.0, 2.0]),
                                {"periodo_canal": [40, 50]},
                                {"periodo_canal": 99})
-    assert p["centro_fr"] is None and p["abstem"]
+    assert p["centro_lucro"] is None and p["abstem"]
 
 
 # ------------------------------------------- rodada de correção 1: bordas
@@ -332,34 +331,44 @@ def test_perfil_plato_borda_falsa_quando_ha_queda_real_antes_da_borda():
 # --------------------------------- rodada de correção 1: motivo diferente
 
 
-def test_perfil_plato_motivo_diferencia_deploy_ausente_de_fr_indefinido():
-    """`centro_fr is None` acontece por dois motivos bem diferentes: o
-    DEPLOY não está na grade, ou está na grade mas o trial gravado não tem
-    drawdown (dd <= 0) para calcular o fator de recuperação. Confundir os
-    dois faz o motivo mentir — "o DEPLOY não está na grade" quando ele
-    está."""
+def test_perfil_plato_mede_mesmo_sem_a_maior_queda_gravada():
+    """A régua é o lucro: trial sem maior queda (dd 0 ou ausente) não
+    impede mais a medição — antes ele abstinha com "a mineração não gravou
+    a maior queda", e a tela ficava sem resposta por um dado que a régua
+    nova nem usa."""
+    sem_dd = [{"params": {"periodo_canal": 40}, "lucro": 100.0, "dd": 500.0},
+              {"params": {"periodo_canal": 50}, "lucro": 200.0, "dd": 0.0},
+              {"params": {"periodo_canal": 60}, "lucro": 190.0}]
+    p = candidata.perfil_plato(sem_dd, {"periodo_canal": [40, 50, 60]},
+                               {"periodo_canal": 50})
+    assert p["abstem"] is False
+    assert p["centro_lucro"] == pytest.approx(200.0)
+    assert p["largura_esq"] == 0 and p["parada_esq"] == "queda"
+    assert p["largura_dir"] == 1 and p["parada_dir"] == "borda"
+
+
+def test_perfil_plato_centro_sem_lucro_gravado_diz_o_motivo_certo():
+    """Valor escolhido na grade mas sem lucro gravado (trial incompleto) não
+    pode dizer "não está na faixa minerada" — ele está."""
     fora = candidata.perfil_plato(_trials([40, 50], [1.0, 2.0]),
                                   {"periodo_canal": [40, 50]},
                                   {"periodo_canal": 99})
-    sem_dd = [{"params": {"periodo_canal": 40}, "lucro": 100.0, "dd": 500.0},
-              {"params": {"periodo_canal": 50}, "lucro": 200.0, "dd": 0.0}]
-    presente = candidata.perfil_plato(sem_dd, {"periodo_canal": [40, 50]},
+    sem_lucro = [{"params": {"periodo_canal": 40}, "lucro": 100.0},
+                 {"params": {"periodo_canal": 50}, "lucro": None}]
+    presente = candidata.perfil_plato(sem_lucro, {"periodo_canal": [40, 50]},
                                       {"periodo_canal": 50})
-    assert fora["centro_fr"] is None and fora["abstem"]
-    assert presente["centro_fr"] is None and presente["abstem"]
+    assert fora["abstem"] and presente["abstem"]
     assert "não está na faixa minerada" in fora["motivo"]
     assert "não está na faixa minerada" not in presente["motivo"]
-    assert "maior queda" in presente["motivo"]
-    assert fora["motivo"] != presente["motivo"]
 
 
 # --------------------------------- rodada de correção 1: FR negativo
 
 
 def test_perfil_plato_abstem_quando_o_centro_da_prejuizo():
-    """FR negativo inverte a régua: `piso = centro_fr * 0.6` fica ACIMA do
-    centro (ex.: centro -0.4, piso -0.24), e vizinhos com FR melhor que o
-    centro passam a contar como "abaixo do piso" — a função devolveria
+    """Lucro negativo inverte a régua: `piso = centro_lucro * 0.6` fica
+    ACIMA do centro (ex.: centro -200, piso -120), e vizinhos melhores que
+    o centro passam a contar como "abaixo do piso" — a função devolveria
     larguras com cara de válidas para uma região que é, na verdade, uma
     perda. Medir platô em torno de prejuízo não faz sentido: o portão tem
     que se abster, não inventar uma largura."""
@@ -367,14 +376,26 @@ def test_perfil_plato_abstem_quando_o_centro_da_prejuizo():
     espaco = {"periodo_canal": [40, 50, 60]}
     p = candidata.perfil_plato(trials, espaco, {"periodo_canal": 50})
     assert p["abstem"] is True
-    assert p["centro_fr"] == pytest.approx(-0.4)
-    assert "prejuízo" in p["motivo"]
+    assert p["centro_lucro"] == pytest.approx(-200.0)
+    assert "não deu lucro" in p["motivo"]
+
+
+def test_perfil_plato_abstem_quando_o_centro_empata_no_zero():
+    """Lucro zero no centro dá piso zero: qualquer vizinho sem prejuízo
+    "seguraria 60% de nada" e a região pareceria larga à toa."""
+    trials = _trials([40, 50, 60], [100.0, 0.0, 150.0])
+    p = candidata.perfil_plato(trials, {"periodo_canal": [40, 50, 60]},
+                               {"periodo_canal": 50})
+    assert p["abstem"] is True and "não deu lucro" in p["motivo"]
+    critico, _ = candidata.portoes_plato(p)
+    # abstenção é alerta, não reprovação
+    assert critico["critico"] is False and critico["ok"] is False
 
 
 # --------------------------------- rodada de correção 1: contrato de retorno
 
 
-CHAVES_PERFIL = {"pontos", "centro_fr", "ausentes", "largura_esq",
+CHAVES_PERFIL = {"pontos", "centro_lucro", "ausentes", "largura_esq",
                  "eixos",
                  "largura_dir", "borda_esq", "borda_dir", "parada_esq",
                  "parada_dir", "abstem", "motivo", "parametro"}
@@ -394,9 +415,9 @@ def test_perfil_plato_devolve_sempre_o_mesmo_conjunto_de_chaves():
         candidata.perfil_plato(_trials([40, 50], [1.0, 2.0]),
                                {"periodo_canal": [40, 50]},
                                {"periodo_canal": 99}),
-        # DEPLOY na grade, fr indefinido (dd <= 0)
+        # DEPLOY na grade, sem lucro gravado nele
         candidata.perfil_plato(
-            [{"params": {"periodo_canal": 50}, "lucro": 200.0, "dd": 0.0}],
+            [{"params": {"periodo_canal": 50}, "lucro": None, "dd": 0.0}],
             {"periodo_canal": [40, 50]}, {"periodo_canal": 50}),
         # centro com prejuízo
         candidata.perfil_plato(_trials([40, 50, 60], [100.0, -200.0, 150.0]),
@@ -510,6 +531,59 @@ def test_plato_sem_parametro_varrido_vira_alerta_nao_verde():
     assert critico["critico"] is False and critico["ok"] is False
     assert "não varreu nenhum parâmetro" in critico["valor"]
     assert cobertura["ok"] is False
+
+
+# --------------------- régua do lucro (01/10/2026, walk-forward #25 real)
+
+# folga_ticks da mineração 56 com periodo_canal=27: (valor, lucro, maior queda)
+FOLGA_REAL = [(25, 7437, 1387), (26, 7610, 1531), (27, 7541, 1531),
+              (28, 7763, 1169), (29, 8054, 838), (30, 8133, 800),
+              (31, 9131, 712), (32, 8691, 678), (33, 8877, 674),
+              (34, 8132, 605), (35, 7522, 899), (36, 6555, 973),
+              (37, 6461, 973), (38, 6522, 899), (39, 6432, 899),
+              (40, 6563, 899)]
+
+
+def _folga(tabela):
+    trials = [{"params": {"folga_ticks": v}, "lucro": float(l), "dd": float(q)}
+              for v, l, q in tabela]
+    return candidata.perfil_plato(trials,
+                                  {"folga_ticks": [v for v, _, _ in tabela]},
+                                  {"folga_ticks": 29.0})
+
+
+def test_plato_real_do_wfa_25_passa_com_a_regua_do_lucro():
+    """O caso que motivou a troca: de 25 a 40 todo valor dá entre 6,4 e 9,1
+    mil. Pela régua antiga (lucro ÷ maior queda) o vizinho 27 caía para
+    4,93 contra 9,61 do centro — só porque teve UM dia ruim de 1.531 — e a
+    região larga era reprovada. Medindo o lucro, ela passa inteira."""
+    p = _folga(FOLGA_REAL)
+    assert p["abstem"] is False
+    assert p["centro_lucro"] == pytest.approx(8054.0)
+    assert (p["largura_esq"], p["parada_esq"]) == (4, "borda")
+    assert (p["largura_dir"], p["parada_dir"]) == (11, "borda")
+    critico, _ = candidata.portoes_plato(p)
+    assert critico["ok"] is True and critico["critico"] is True
+
+
+def test_plato_reprova_quando_o_lucro_do_vizinho_cai_abaixo_de_60_pct():
+    """A régua nova continua reprovando pico: o vizinho 28 com 4.800
+    (59,6% dos 8.054 do centro) para a caminhada a um passo — queda."""
+    tabela = [(v, 4800 if v == 28 else l, q) for v, l, q in FOLGA_REAL]
+    p = _folga(tabela)
+    assert (p["largura_esq"], p["parada_esq"]) == (0, "queda")
+    critico, _ = candidata.portoes_plato(p)
+    assert critico["ok"] is False and critico["critico"] is True
+    # 4.840 é 60,1%: segura, e a caminhada segue
+    tabela = [(v, 4840 if v == 28 else l, q) for v, l, q in FOLGA_REAL]
+    assert _folga(tabela)["largura_esq"] == 4
+
+
+def test_dica_do_plato_explica_a_regua_do_lucro():
+    critico, _ = candidata.portoes_plato(_folga(FOLGA_REAL))
+    assert "60% do lucro" in critico["dica"]
+    assert "maior queda" in critico["dica"]      # o porquê de não usá-la
+    assert "dividido pela maior queda" not in critico["dica"]
 
 
 def test_alerta_vizinho_sem_ponto_para_examinar_nao_mede():

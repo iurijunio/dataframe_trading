@@ -200,10 +200,10 @@ def risco_de_desligar(boot: dict, limite: float) -> float | None:
     return float((np.asarray(quedas) >= limite).mean() * 100)
 
 
-PLATO_PISO = 0.6            # o vizinho segura 60% do FR do centro
+PLATO_PISO = 0.6            # o vizinho segura 60% do lucro do centro
 
 
-def _perfil(pontos=None, centro_fr=None, ausentes=0, largura_esq=0,
+def _perfil(pontos=None, centro_lucro=None, ausentes=0, largura_esq=0,
            largura_dir=0, borda_esq=False, borda_dir=False,
            parada_esq=None, parada_dir=None, abstem=False,
            motivo=None, parametro=None, eixos=None) -> dict:
@@ -213,7 +213,7 @@ def _perfil(pontos=None, centro_fr=None, ausentes=0, largura_esq=0,
     subconjunto de chaves empurra o `KeyError` para quem consome — e quem
     consome só devia precisar checar `abstem` antes de olhar o resto.
     """
-    return {"pontos": pontos or [], "centro_fr": centro_fr,
+    return {"pontos": pontos or [], "centro_lucro": centro_lucro,
             "ausentes": ausentes, "largura_esq": largura_esq,
             "largura_dir": largura_dir, "borda_esq": borda_esq,
             "borda_dir": borda_dir, "parada_esq": parada_esq,
@@ -239,43 +239,42 @@ def _eixo_do_plato(trials: list[dict], grade: list, deploy: dict,
         if any(_valor(par.get(k, float("nan"))) != v for k, v in fixos.items()):
             continue
         v = _valor(par[nome])
-        dd = float(t.get("dd") or 0.0)
-        lucro = float(t.get("lucro") or 0.0)
-        achados[v] = {"valor": v, "lucro": lucro,
-                      "fr": (lucro / dd) if dd > 0 else None}
+        lucro = t.get("lucro")
+        achados[v] = {"valor": v,
+                      "lucro": float(lucro) if lucro is not None else None}
 
     alvo = _valor(deploy.get(nome, float("nan")))
-    pontos = [dict(achados.get(v, {"valor": v, "lucro": None, "fr": None}),
+    pontos = [dict(achados.get(v, {"valor": v, "lucro": None}),
                    atual=(v == alvo)) for v in grade]
-    ausentes = sum(1 for p in pontos if p["fr"] is None)
+    ausentes = sum(1 for p in pontos if p["lucro"] is None)
 
     centro = next((p for p in pontos if p["atual"]), None)
     if centro is None:
         return _perfil(pontos=pontos, ausentes=ausentes, abstem=True,
                        motivo="o valor escolhido não está na faixa minerada",
                        parametro=nome)
-    centro_fr = centro["fr"]
-    if centro_fr is None:
+    centro_lucro = centro["lucro"]
+    if centro_lucro is None:
         return _perfil(pontos=pontos, ausentes=ausentes, abstem=True,
                        motivo=("o valor escolhido está na faixa, mas a "
-                               "mineração não gravou a maior queda dele "
-                               "para calcular o fator de recuperação"),
+                               "mineração não gravou o lucro dele"),
                        parametro=nome)
-    if centro_fr <= 0:
-        return _perfil(pontos=pontos, centro_fr=centro_fr, ausentes=ausentes,
-                       abstem=True,
-                       motivo=("o valor escolhido dá prejuízo na mineração; "
-                               "não faz sentido medir região em volta de "
-                               "uma perda"),
+    if centro_lucro <= 0:
+        # com lucro <= 0 o piso de 60% fica em zero ou ACIMA do centro: a
+        # régua inverte e mede "região" em volta de uma perda
+        return _perfil(pontos=pontos, centro_lucro=centro_lucro,
+                       ausentes=ausentes, abstem=True,
+                       motivo=("o valor escolhido não deu lucro na "
+                               "mineração — não há região para medir"),
                        parametro=nome)
 
-    piso = centro_fr * PLATO_PISO
+    piso = centro_lucro * PLATO_PISO
     i = pontos.index(centro)
 
     def anda(passo):
         n, k = 0, i + passo
-        while 0 <= k < len(pontos) and pontos[k]["fr"] is not None \
-                and pontos[k]["fr"] >= piso:
+        while 0 <= k < len(pontos) and pontos[k]["lucro"] is not None \
+                and pontos[k]["lucro"] >= piso:
             n += 1
             k += passo
         # por que a caminhada parou: a faixa acabou ("borda"), o próximo
@@ -283,7 +282,7 @@ def _eixo_do_plato(trials: list[dict], grade: list, deploy: dict,
         # piso ("queda") — só esta última é reprovação de verdade
         if not (0 <= k < len(pontos)):
             motivo = "borda"
-        elif pontos[k]["fr"] is None:
+        elif pontos[k]["lucro"] is None:
             motivo = "buraco"
         else:
             motivo = "queda"
@@ -293,7 +292,7 @@ def _eixo_do_plato(trials: list[dict], grade: list, deploy: dict,
     largura_dir, parada_dir = anda(1)
     furada = ausentes * 3 > len(pontos)
     return _perfil(
-        pontos=pontos, centro_fr=centro_fr, ausentes=ausentes,
+        pontos=pontos, centro_lucro=centro_lucro, ausentes=ausentes,
         largura_esq=largura_esq, largura_dir=largura_dir,
         borda_esq=parada_esq == "borda", borda_dir=parada_dir == "borda",
         parada_esq=parada_esq, parada_dir=parada_dir, abstem=furada,
@@ -332,10 +331,15 @@ def perfil_plato(trials: list[dict], espaco: dict, deploy: dict,
     Para cada parâmetro que a mineração varreu, a plataforma caminha pela
     faixa dele — um passo de cada vez, para os dois lados — com os outros
     parâmetros presos nos valores escolhidos, e conta quantos passos
-    continuam dando pelo menos 60% do resultado do centro. O resultado de
-    cada valor é medido por fator de recuperação (lucro dividido pela maior
-    queda), não por lucro: lucro perto de zero faz a razão explodir, e o que
-    interessa é lucro por unidade de mergulho.
+    continuam dando pelo menos 60% do LUCRO do centro.
+
+    Lucro, e não lucro dividido pela maior queda (como foi até 01/10/2026):
+    a maior queda é UM dado só — o pior trecho da amostra — e oscila muito
+    entre vizinhos. No walk-forward #25 (folga_ticks 26 a 40, todos entre
+    6,4 e 9,1 mil de lucro) o vizinho 27 teve um trecho ruim de 1.531 contra
+    838 do escolhido, a razão caiu para metade e uma região larga de verdade
+    era reprovada por causa de um único dia. O lucro soma a amostra inteira;
+    a queda continua medida, mas nos portões do bloco 1, onde é a pergunta.
 
     O retorno é o **pior** eixo, no mesmo formato de sempre, com a lista de
     todos em `eixos`. Um parâmetro frágil basta para a combinação ser
@@ -407,11 +411,14 @@ def portoes_plato(perfil: dict, passos_min: int = 2) -> list[dict]:
     dica = (f"Para cada parâmetro minerado ({quantos} nesta mineração), "
             "a plataforma anda pela faixa dele, um valor por vez para cada "
             "lado, com os outros parâmetros parados no valor escolhido, e "
-            "conta quantos passos continuam dando pelo menos 60% do "
-            "resultado do centro (lucro dividido pela maior queda). Precisa "
-            f"de pelo menos {passos_min} de cada lado. Um parâmetro que só "
-            "funciona num valor exato é sorte, não estratégia — por isso "
-            "vale o pior parâmetro, não a média.")
+            "conta quantos passos continuam dando pelo menos 60% do lucro "
+            "do valor escolhido na mineração. Precisa de pelo menos "
+            f"{passos_min} de cada lado. Um parâmetro que só funciona num "
+            "valor exato é sorte, não estratégia — por isso vale o pior "
+            "parâmetro, não a média. Mede o lucro, e não a maior queda: a "
+            "maior queda é um único trecho ruim e muda muito de um valor "
+            "para o vizinho, então reprovaria região boa por causa de um "
+            "dia.")
     if perfil.get("abstem"):
         # falta de MEDIÇÃO não é reprovação nem aprovação: alerta, para o
         # selo não mostrar visto verde sobre o que ninguém mediu

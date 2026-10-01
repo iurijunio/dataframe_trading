@@ -55,9 +55,14 @@ um pouco do lugar, a estratégia continuaria funcionando?
 
 **O que o teste faz:** pega o parâmetro que a mineração varreu
 (`periodo_canal`, no #8) e anda, passo a passo da grade testada, para os dois
-lados do valor escolhido. Para no primeiro passo em que o resultado (lucro
-dividido pela maior queda, o **fator de recuperação**) cai abaixo de 60% do
-valor no centro.
+lados do valor escolhido. Para no primeiro passo em que o **lucro** na
+mineração cai abaixo de 60% do lucro do valor escolhido. (Até 01/10/2026 a
+régua era o fator de recuperação — lucro dividido pela maior queda —, mas a
+maior queda é um único trecho ruim e oscila muito entre vizinhos: no #25 o
+vizinho `folga_ticks=27` tinha lucro 7.541 contra 8.054 do escolhido, mas
+uma queda de 1.531 contra 838, e a região larga era reprovada por um dia.)
+Valor escolhido sem lucro na mineração (zero ou prejuízo) não é medido: vira
+alerta.
 
 **A regra:** precisa segurar pelo menos 2 passos de cada lado. Um alerta
 separado avisa quando a caminhada parou porque a faixa **testada** acabou (ou
