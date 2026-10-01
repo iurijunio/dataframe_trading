@@ -332,3 +332,262 @@ def test_calendario_primeira_vista_so_abre_o_limite(monkeypatch):
     assert CP.calendario(None, None, "WIN$N") == (no_update,) * 4
     assert CP.calendario({"conferencia": {"status": "pendente"}}, None,
                          "WIN$N") == (no_update,) * 4
+
+
+# ---- sub-tela Pregão ----
+
+def _textos(c) -> str:
+    if c is None:
+        return ""
+    if isinstance(c, (str, int, float)):
+        return str(c)
+    if isinstance(c, (list, tuple)):
+        return " ".join(_textos(x) for x in c)
+    return _textos(getattr(c, "children", None))
+
+
+def test_idade_tom_quatro_faixas():
+    assert PP.idade_tom(10, False) == "cinza"
+    assert PP.idade_tom(500, False) == "cinza"
+    assert PP.idade_tom(90, True) == "verde"
+    assert PP.idade_tom(91, True) == "ambar"
+    assert PP.idade_tom(180, True) == "ambar"
+    assert PP.idade_tom(181, True) == "rosa"
+
+
+def test_tick_formacao_sem_candle_em_formacao_e_none():
+    assert PP.tick_formacao(_estado(), "M1", []) is None
+    assert PP.tick_formacao(None, "M1", []) is None
+
+
+def test_tick_formacao_m1_e_o_proprio_candle():
+    from ui import data as D
+    e = _estado(em_formacao={"ts": "2026-10-01T09:59:00", "open": 10.0,
+                             "high": 12.0, "low": 9.0, "close": 11.0})
+    t = PP.tick_formacao(e, "M1", [])
+    assert t == {"id": "preco", "bar": {
+        "time": D.to_epoch(datetime(2026, 10, 1, 9, 59)),
+        "open": 10.0, "high": 12.0, "low": 9.0, "close": 11.0}}
+
+
+def test_tick_formacao_m5_soma_o_balde_e_o_minuto_em_formacao():
+    from ui import data as D
+    e = _estado(em_formacao={"ts": "2026-10-01T09:57:00", "open": 103.0,
+                             "high": 104.0, "low": 102.0, "close": 103.5})
+    balde = [
+        {"ts": datetime(2026, 10, 1, 9, 55), "open": 100.0, "high": 106.0,
+         "low": 99.0, "close": 101.0},
+        {"ts": datetime(2026, 10, 1, 9, 56), "open": 101.0, "high": 102.0,
+         "low": 97.0, "close": 103.0},
+    ]
+    t = PP.tick_formacao(e, "M5", balde)
+    assert t == {"id": "preco", "bar": {
+        "time": D.to_epoch(datetime(2026, 10, 1, 9, 55)),
+        "open": 100.0, "high": 106.0, "low": 97.0, "close": 103.5}}
+
+
+def test_tick_formacao_m15_balde_vazio_abre_no_minuto_em_formacao():
+    from ui import data as D
+    e = _estado(em_formacao={"ts": "2026-10-01T10:00:00", "open": 50.0,
+                             "high": 51.0, "low": 49.0, "close": 50.5})
+    t = PP.tick_formacao(e, "M15", [])
+    assert t["bar"] == {"time": D.to_epoch(datetime(2026, 10, 1, 10, 0)),
+                        "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.5}
+
+
+def test_inicio_do_balde():
+    assert PP.inicio_balde(datetime(2026, 10, 1, 10, 14), "M15") == datetime(2026, 10, 1, 10, 0)
+    assert PP.inicio_balde(datetime(2026, 10, 1, 10, 14), "M5") == datetime(2026, 10, 1, 10, 10)
+    assert PP.inicio_balde(datetime(2026, 10, 1, 10, 14), "M1") == datetime(2026, 10, 1, 10, 14)
+
+
+def test_faixa_no_pregao_mostra_os_quatro_cartoes_e_as_lacunas():
+    e = _estado(lacunas_hoje=["2026-10-01T09:30:00", "2026-10-01T09:31:00"])
+    t = _textos(PP.faixa(e, AGORA))
+    for rotulo in ("Captura", "MT5", "Último candle", "Lacunas hoje"):
+        assert rotulo in t
+    assert "em operação" in t
+    assert "conectado" in t
+    assert "09:58" in t
+    assert "2 minutos faltando" in t
+    assert "Mercado fechado" not in t
+
+
+def test_faixa_fora_do_pregao_diz_mercado_fechado():
+    noite = datetime(2026, 10, 1, 21, 0)
+    e = _estado(atualizado_em=noite.isoformat(), em_pregao=False,
+                ultimo_salvo="2026-10-01T18:23:00")
+    t = _textos(PP.faixa(e, noite))
+    assert "Mercado fechado" in t
+
+
+def test_faixa_com_problema_mostra_a_frase_e_o_que_fazer():
+    e = _estado(mt5="fechado")
+    t = _textos(PP.faixa(e, AGORA))
+    assert "MT5 fechado" in t and "faça login" in t
+    assert "nunca rodou" in _textos(PP.faixa(None, AGORA))
+
+
+def test_ultimo_candle_de_ontem_e_cinza_aguardando_a_abertura():
+    cedo = datetime(2026, 10, 1, 9, 2)
+    e = _estado(atualizado_em=cedo.isoformat(), primeiro_candle_hoje=None,
+                ultimo_salvo="2026-09-30T18:23:00")
+    c = PP.cartao_ultimo(e, cedo)
+    assert c["tom"] == "cinza"
+    assert "aguardando a abertura" in c["nota"]
+    assert "30/09" in c["valor"]
+
+
+def test_ultimo_candle_idade_conta_do_fechamento_do_minuto():
+    # o candle das 09:58 fecha às 09:59; às 10:00 tem 60 s
+    c = PP.cartao_ultimo(_estado(), AGORA)
+    assert c["tom"] == "verde"
+    assert c["valor"] == "09:58"
+    assert "60 s" in c["nota"]
+    c = PP.cartao_ultimo(_estado(ultimo_salvo="2026-10-01T09:55:00"), AGORA)
+    assert c["tom"] == "rosa"
+
+
+def test_placar_conferencia():
+    t = _textos(PP.placar(_estado(gravados_hoje=60, recuperados_hoje=3,
+                                  revisados_hoje=2)))
+    for rotulo in ("Gravados hoje", "Recuperados", "Correções da corretora",
+                   "Conferência do dia", "pendente"):
+        assert rotulo in t
+    t = _textos(PP.placar(_estado(conferencia={
+        "status": "concluida", "em": "2026-10-01T18:40:12",
+        "dias": ["2026-10-01"]})))
+    assert "concluída às 18:40" in t
+    t = _textos(PP.placar(_estado(conferencia={
+        "status": "falhou", "em": "2026-10-01T18:40:12", "erro": "x"})))
+    assert "falhou — tenta de novo em 5 min" in t
+    assert "—" in _textos(PP.placar(None))
+
+
+def test_dia_do_pregao():
+    from datetime import date
+    from ui import data as D
+    assert D.dia_do_pregao(_estado()) == date(2026, 10, 1)
+    assert D.dia_do_pregao({"ultimo_salvo": None}) == date.today()
+    assert D.dia_do_pregao(None) == date.today()
+
+
+def test_dia_do_pregao_sem_estado_usa_o_ultimo_dia_do_banco():
+    from datetime import date
+    from core import db_manager as db
+    from ui import data as D
+    with db.connect_write() as con:
+        db.init_schema(con)
+        con.execute("INSERT INTO bars_m1 (symbol, ts, open, high, low, close, "
+                    "src_ingest_id) VALUES ('WIN$N', TIMESTAMP '2026-09-29 "
+                    "18:23:00', 1, 1, 1, 1, 1)")
+    assert D.dia_do_pregao(None) == date(2026, 9, 29)
+    # estado velho (captura parada há dias) não esconde o que o banco já tem
+    assert D.dia_do_pregao({"ultimo_salvo": "2026-09-25T18:23:00"}) == date(2026, 9, 29)
+
+
+@pytest.fixture
+def _banco_com_barras(_banco_isolado):
+    # o layout lê barras na montagem (mesma semente de test_callbacks_sem_ciclo)
+    from core import db_manager as db
+    with db.connect_write() as con:
+        db.init_schema(con)
+        con.execute("INSERT INTO instruments (symbol, description) "
+                    "VALUES ('WIN$N', 'teste')")
+        for i in range(10):
+            con.execute(
+                "INSERT INTO bars_m1 (symbol, ts, open, high, low, close, "
+                "src_ingest_id) VALUES ('WIN$N', TIMESTAMP '2026-01-05 09:00:00'"
+                f" + INTERVAL {i} MINUTE, 100, 101, 99, 100, 1)")
+
+
+def test_nenhum_callback_escreve_series_e_tick_juntos(_banco_com_barras):
+    # escrever `series` refaz o gráfico e joga fora o zoom do usuário; o
+    # pulso de 2 s só pode mexer no `tick`
+    from ui.app import build
+    app = build()
+    saidas = [chave for chave in app.callback_map]
+    com_tick = [c for c in saidas if "av-pg-grafico.tick" in c]
+    assert com_tick, "o pulso tem de escrever o tick do gráfico"
+    assert any("av-pg-grafico.series" in c for c in saidas)
+    for c in saidas:
+        assert not ("av-pg-grafico.series" in c and "av-pg-grafico.tick" in c), c
+
+
+def test_juntar_poe_o_candle_em_formacao_no_fim_da_serie():
+    from ui import callbacks_pregao as CP
+    velhos = [{"time": 60, "close": 1}, {"time": 120, "close": 2}]
+    assert CP.juntar(velhos, None) == velhos
+    assert CP.juntar(velhos, {"time": 120, "close": 9})[-1] == {"time": 120, "close": 9}
+    assert len(CP.juntar(velhos, {"time": 120, "close": 9})) == 2
+    assert CP.juntar(velhos, {"time": 180, "close": 3})[-1]["time"] == 180
+    assert CP.juntar(velhos, {"time": 60, "close": 5}) == velhos
+    assert CP.juntar([], {"time": 60, "close": 5}) == [{"time": 60, "close": 5}]
+
+
+def test_tick_agora_com_a_captura_parada_nao_desenha_retrato_velho():
+    from ui import callbacks_pregao as CP
+    f = {"ts": "2026-10-01T09:59:00", "open": 1.0, "high": 2.0, "low": 0.5,
+         "close": 1.5}
+    viva = _estado(em_formacao=f)
+    assert CP.tick_agora(viva, "M1", AGORA)["bar"]["close"] == 1.5
+    parada = _estado(em_formacao=f,
+                     atualizado_em=(AGORA - timedelta(minutes=5)).isoformat())
+    assert CP.tick_agora(parada, "M1", AGORA) is None
+
+
+def test_tick_agora_m5_le_do_banco_so_o_balde_atual(monkeypatch):
+    from ui import callbacks_pregao as CP
+    pedidos = []
+
+    def m1(simbolo, inicio, fim):
+        pedidos.append((simbolo, inicio, fim))
+        return [{"ts": datetime(2026, 10, 1, 9, 55), "open": 7.0, "high": 9.0,
+                 "low": 6.0, "close": 8.0}]
+
+    monkeypatch.setattr(CP.D, "m1_fechados", m1)
+    e = _estado(em_formacao={"ts": "2026-10-01T09:57:00", "open": 8.0,
+                             "high": 8.5, "low": 7.5, "close": 8.2})
+    t = CP.tick_agora(e, "M5", AGORA)
+    assert pedidos == [("WIN$N", datetime(2026, 10, 1, 9, 55),
+                        datetime(2026, 10, 1, 9, 57))]
+    assert (t["bar"]["open"], t["bar"]["high"], t["bar"]["low"]) == (7.0, 9.0, 6.0)
+
+
+def test_tick_formacao_ignora_candles_fora_do_balde():
+    # a leitura do banco e o estado.json não são do mesmo instante: um M1 do
+    # balde anterior (ou o próprio minuto, já gravado) não entra na conta
+    e = _estado(em_formacao={"ts": "2026-10-01T09:57:00", "open": 103.0,
+                             "high": 104.0, "low": 102.0, "close": 103.5})
+    balde = [
+        {"ts": datetime(2026, 10, 1, 9, 54), "open": 1.0, "high": 999.0,
+         "low": 0.0, "close": 1.0},
+        {"ts": datetime(2026, 10, 1, 9, 55), "open": 100.0, "high": 104.0,
+         "low": 101.0, "close": 101.0},
+        {"ts": datetime(2026, 10, 1, 9, 57), "open": 5.0, "high": 500.0,
+         "low": 5.0, "close": 5.0},
+    ]
+    b = PP.tick_formacao(e, "M5", balde)["bar"]
+    assert (b["open"], b["high"], b["low"]) == (100.0, 104.0, 101.0)
+    assert PP.tick_formacao(e, "M1", balde)["bar"]["high"] == 104.0
+
+
+def test_voltar_para_agora_muda_a_cada_pedido():
+    # o gráfico ignora um comando igual ao anterior: sem o nonce, o segundo
+    # clique em "Voltar para agora" não faria nada
+    from ui import callbacks_pregao as CP
+    a = CP.voltar_para_agora()
+    b = CP.voltar_para_agora()
+    assert a["action"] == "scrollToPosition" and a["animated"] is False
+    assert a["position"] == 6
+    assert a["nonce"] != b["nonce"]
+
+
+def test_janela_inicial_termina_no_candle_mais_novo():
+    from ui import callbacks_pregao as CP
+    # 1 min, dia cheio: as últimas 120 barras, com a folga de 6 à direita
+    assert CP.janela_inicial(560) == {"from": 440, "to": 565}
+    # 5 min: o dia inteiro cabe
+    assert CP.janela_inicial(112) == {"from": 0, "to": 117}
+    # 15 min no começo do dia: largura mínima, sem candle gigante
+    assert CP.janela_inicial(13) == {"from": -22, "to": 18}

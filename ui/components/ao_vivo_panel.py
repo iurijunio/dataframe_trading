@@ -1,9 +1,13 @@
-"""Tela Ao vivo › Estratégias: o que está (ou vai estar) rodando.
+"""Tela Ao vivo: seletor no topo entre duas sub-telas.
 
-Spec: docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md §5.
-Só desenha — quem lê o banco é `ui/callbacks_ao_vivo.py`. As outras
-sub-telas (Pregão, Conta, Histórico) só entram quando a parte delas
-existir: tela vazia confunde.
+- Estratégias — o que está (ou vai estar) rodando. Spec:
+  docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md §5.
+- Pregão — o serviço de captura e o gráfico do dia ao vivo; desenhada em
+  `pregao_panel.py`. Spec: docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md §6.
+
+Só desenha — quem lê o banco é `ui/callbacks_ao_vivo.py` (Estratégias) e
+`ui/callbacks_pregao.py` (Pregão). As outras sub-telas (Conta, Histórico)
+só entram quando a parte delas existir: tela vazia confunde.
 
 Desenho: cada bloco mostra primeiro o nome e a situação (etiqueta
 colorida), depois os detalhes como rótulo → valor. Cores das etiquetas,
@@ -19,6 +23,7 @@ from dash import dcc, html
 from core import plano as _plano
 
 from . import ficha as FI
+from . import pregao_panel as PG
 from .cartao import brl, dica
 
 FASES = {"papel": "papel", "demo": "demo", "real_minimo": "real mínimo",
@@ -84,13 +89,26 @@ def painel():
         dcc.Store(id="av-aberta", data=None),
         html.Section([
             html.Div([html.H2("Ao vivo", className="panel-title av-titulo"),
-                      html.Span("Estratégias", className="chip av-subtela")],
+                      dcc.RadioItems(
+                          id="av-subtela", value="estrategias",
+                          persistence=True, persistence_type="local",
+                          className="av-subtelas",
+                          options=[{"label": "Estratégias",
+                                    "value": "estrategias"},
+                                   {"label": "Pregão", "value": "pregao"}])],
                      className="panel-head"),
+        ], className="panel av-topo"),
+        html.Div(_estrategias(), id="av-bloco-estrategias",
+                 className="av-bloco"),
+        PG.bloco(),
+    ], id="painel-aovivo", className="modo-bloco", style={"display": "none"})
+
+
+def _estrategias() -> list:
+    """Sub-tela Estratégias: portfólios, variantes, contas e arrumação."""
+    return [
+        html.Section([
             html.Div([
-                html.P("Aqui você escolhe quais estratégias ficam liberadas "
-                       "para operar. Por enquanto tudo fica só no papel: o "
-                       "robô de papel ainda não existe e nenhuma ordem é "
-                       "enviada à corretora.", className="av-intro"),
                 html.Ol([
                     _passo(1, "Cadastre a conta do MT5",
                            "Seção Contas, lá embaixo. Ela só passa a ser "
@@ -169,7 +187,7 @@ def painel():
         _secao("Arrumação", "Planos gravados que ainda não pertencem a "
                "nenhuma variante. Vincule para poder usá-los num portfólio.",
                html.Div(id="av-arrumacao", className="av-lista-col")),
-    ], id="painel-aovivo", className="modo-bloco", style={"display": "none"})
+    ]
 
 
 def resumo_topo(n_pf, n_pf_lig, n_var, n_var_lib, n_arrumar,
@@ -611,7 +629,7 @@ def limite_br(v) -> str:
 
 def linha_conta(c: dict, armado) -> html.Div:
     cid = c["conta_id"]
-    # sem número e servidor o robô não consegue conferir em qual conta o MT5
+    # sem número e servidor a automação não consegue conferir em qual conta o MT5
     # está logado, então não pode mandar ordem
     faltam = not c.get("login") or not c.get("servidor")
     return html.Div([

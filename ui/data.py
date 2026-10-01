@@ -12,8 +12,9 @@ Duas regras aqui:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
+import duckdb
 import numpy as np
 
 from core import captura as CAP
@@ -164,3 +165,45 @@ def candles(symbol: str, inicio: datetime, fim: datetime, tf: str = "auto") -> d
 def default_window(symbol: str, dias: int = 5) -> tuple[datetime, datetime]:
     _, fim = span(symbol)
     return fim - timedelta(days=dias), fim
+
+
+def dia_do_pregao(estado: dict | None) -> date:
+    """O dia que a sub-tela Pregão desenha: o do último candle gravado.
+
+    Vale o mais novo entre o `ultimo_salvo` da captura e o banco: com a
+    captura parada há dias, o "Sincronizar com MT5" pode ter trazido
+    pregões depois do que o estado.json lembra."""
+    dias = []
+    salvo = (estado or {}).get("ultimo_salvo")
+    if salvo:
+        try:
+            dias.append(datetime.fromisoformat(str(salvo)).date())
+        except ValueError:
+            pass
+    try:
+        with db.connect(read_only=True, tentativas=4) as con:
+            ultimo = con.execute("SELECT max(ts) FROM bars_m1 WHERE symbol = ?",
+                                 [(estado or {}).get("simbolo") or "WIN$N"]
+                                 ).fetchone()[0]
+    except (duckdb.Error, RuntimeError):
+        # banco sem a tabela ainda, ou ocupado: o estado basta
+        ultimo = None
+    if ultimo is not None:
+        dias.append(ultimo.date())
+    return max(dias) if dias else date.today()
+
+
+def m1_fechados(symbol: str, inicio: datetime, fim: datetime) -> list[dict]:
+    """Os candles M1 já gravados em [inicio, fim) — o que já fechou do balde
+    de 5 ou 15 min que está em formação.
+
+    Espera pouco pelo banco: isto roda no pulso de 2 s da tela; travar 15 s
+    esperando uma mineração terminar de gravar empilharia pulsos. Ocupado,
+    levanta RuntimeError e o pulso pula a vez."""
+    with db.connect(read_only=True, tentativas=4) as con:
+        linhas = con.execute(
+            "SELECT ts, open, high, low, close FROM bars_m1 "
+            "WHERE symbol = ? AND ts >= ? AND ts < ? ORDER BY ts",
+            [symbol, inicio, fim]).fetchall()
+    return [{"ts": ts, "open": o, "high": h, "low": l, "close": c}
+            for ts, o, h, l, c in linhas]

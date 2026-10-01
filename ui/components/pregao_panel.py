@@ -4,16 +4,22 @@ Spec: docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md §6–7.
 
 Só desenha: quem lê o `estado.json` é `ui/data.py`. Por isso `situacao`
 recebe o estado e a hora — dá para testar cada frase com um dicionário
-montado à mão. Nesta parte há só o selo do topo; a sub-tela Pregão
-reaproveita a mesma `situacao`.
+montado à mão. O selo do topo e a sub-tela Ao vivo › Pregão (cartões de
+estado, gráfico do dia, placar) partem da mesma `situacao`: as duas nunca
+discordam sobre se a captura está de pé.
 """
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 
-from dash import html
+import dash_tvlwc
+from dash import dcc, html
 
 from core import captura as CAP
+
+from .. import theme as T
+from ..data import to_epoch
+from .cartao import dica as _dica
 
 # O serviço publica a cada volta (segundos no pregão, ~30 s fora dele).
 # Um minuto sem publicar é processo morto ou travado, não volta lenta.
@@ -147,3 +153,283 @@ def dica(sit: dict) -> str:
     """Texto ao passar o mouse: a frase inteira (o selo corta as longas) e
     o que fazer."""
     return sit["texto"] + (f" — {sit['acao']}" if sit["acao"] else "")
+
+
+# ================================================================ Pregão
+# Último candle: o M1 fecha 60 s depois do horário dele e a captura publica
+# em ~1 s. Até 90 s é o normal (a corretora às vezes atrasa o fechamento);
+# 3 min sem candle novo no pregão é captura parada ou MT5 sem dados.
+IDADE_VERDE_S = 90
+IDADE_AMBAR_S = 180
+MINUTOS_TF = {"M1": 1, "M5": 5, "M15": 15}
+
+
+def idade_tom(segundos: float, pregao: bool) -> str:
+    """Cor do "Último candle". Fora do pregão a idade só cresce e não quer
+    dizer nada — cinza, nunca alarme."""
+    if not pregao:
+        return "cinza"
+    if segundos <= IDADE_VERDE_S:
+        return "verde"
+    if segundos <= IDADE_AMBAR_S:
+        return "ambar"
+    return "rosa"
+
+
+def _quanto(segundos: float) -> str:
+    s = max(0, int(segundos))
+    if s < 120:
+        return f"há {s} s"
+    if s < 2 * 3600:
+        return f"há {s // 60} min"
+    return f"há {s // 3600} h"
+
+
+def _cartao(rotulo, valor, nota="", tom="cinza", explica=None):
+    r = [rotulo] + ([_dica(explica)] if explica else [])
+    return html.Div([
+        html.Span(r, className="pg-cartao-r"),
+        html.Span(valor, className="pg-cartao-v"),
+        html.Span(nota or "", className="pg-cartao-n"),
+    ], className=f"pg-cartao pg-tom-{tom}")
+
+
+def cartao_captura(estado: dict | None, agora: datetime, sit: dict) -> dict:
+    if estado is None:
+        return {"valor": "nunca rodou", "nota": "abra pelo iniciar.bat",
+                "tom": "ambar"}
+    if sit["ativa"]:
+        return {"valor": "em operação", "tom": "verde",
+                "nota": "mercado aberto" if sit["pregao"] else "mercado fechado"}
+    feito = _data(estado.get("atualizado_em"))
+    if feito is None:
+        nota = ""
+    elif feito.date() == agora.date():
+        nota = "sem sinal " + _quanto((agora - feito).total_seconds())
+    else:
+        nota = f"sem sinal desde {feito:%d/%m %H:%M}"
+    return {"valor": "parada", "nota": nota,
+            "tom": "rosa" if sit["pregao"] or estado.get("erro") else "cinza"}
+
+
+def cartao_mt5(estado: dict | None, sit: dict) -> dict:
+    if not sit["ativa"]:
+        # o "mt5" gravado é de quando a captura parou: mostrá-lo seria chute
+        return {"valor": "—", "nota": "só se sabe com a captura rodando",
+                "tom": "cinza"}
+    mt5 = estado.get("mt5")
+    if mt5 == "conectado":
+        conta = (estado.get("conta") or {}).get("login")
+        return {"valor": "conectado", "tom": "verde",
+                "nota": f"conta {conta}" if conta else ""}
+    if mt5 == "sem_conexao":
+        desde = _data(estado.get("mt5_desde"))
+        return {"valor": "sem conexão", "tom": "ambar",
+                "nota": f"desde {desde:%H:%M}" if desde else ""}
+    if mt5 == "fechado":
+        return {"valor": "fechado", "nota": "abra e faça login", "tom": "rosa"}
+    return {"valor": "—", "nota": "", "tom": "cinza"}
+
+
+def cartao_ultimo(estado: dict | None, agora: datetime) -> dict:
+    """O candle de hoje mede a idade; o de ontem nunca é alarme — é só o
+    pregão que ainda não abriu (mesma regra 8 de `situacao`)."""
+    sit = situacao(estado, agora)
+    ultimo = _data((estado or {}).get("ultimo_salvo"))
+    if ultimo is None:
+        return {"valor": "—", "nota": "nenhum candle gravado", "tom": "cinza"}
+    if ultimo.date() != agora.date():
+        if not sit["pregao"]:
+            nota = "mercado fechado"
+        elif agora.time() < SEM_PREGAO_DEPOIS:
+            nota = "aguardando a abertura"
+        else:
+            nota = "sem pregão hoje (feriado?)"
+        return {"valor": f"{ultimo:%d/%m %H:%M}", "nota": nota, "tom": "cinza"}
+    # o candle das 09:58 só existe depois que fechou, às 09:59
+    idade = (agora - ultimo - timedelta(minutes=1)).total_seconds()
+    tom = idade_tom(idade, sit["pregao"])
+    return {"valor": f"{ultimo:%H:%M}", "tom": tom,
+            "nota": _quanto(idade) if sit["pregao"] else "mercado fechado"}
+
+
+def cartao_lacunas(estado: dict | None, sit: dict) -> dict:
+    if estado is None:
+        return {"valor": "—", "nota": "", "tom": "cinza"}
+    lac = estado.get("lacunas_hoje") or []
+    n = lac if isinstance(lac, int) else len(lac)
+    if n == 0:
+        return {"valor": "0", "nota": "nenhum minuto faltando",
+                "tom": "verde" if sit["ativa"] and sit["pregao"] else "cinza"}
+    unidade = "minuto" if n == 1 else "minutos"
+    return {"valor": str(n), "tom": "ambar",
+            "nota": f"{n} {unidade} faltando — a captura recupera sozinha"}
+
+
+def _banda(tom, texto, acao):
+    filhos = [html.Strong(texto, className="pg-alerta-t")]
+    if acao:
+        filhos.append(html.Span(acao, className="pg-alerta-a"))
+    return html.Div(filhos, className=f"pg-alerta pg-alerta-{tom}")
+
+
+def faixa(estado: dict | None, agora: datetime) -> list:
+    """Os 4 cartões de estado e, acima deles, uma frase quando há algo a
+    dizer: o problema e o que fazer, ou que o mercado está fechado."""
+    sit = situacao(estado, agora)
+    c = cartao_captura(estado, agora, sit)
+    m = cartao_mt5(estado, sit)
+    u = cartao_ultimo(estado, agora)
+    lac = cartao_lacunas(estado, sit)
+    cartoes = html.Div([
+        _cartao("Captura", c["valor"], c["nota"], c["tom"]),
+        _cartao("MT5", m["valor"], m["nota"], m["tom"]),
+        _cartao("Último candle", u["valor"], u["nota"], u["tom"],
+                "O último minuto fechado que entrou no banco. No pregão: "
+                "verde até 90 s depois de fechar, âmbar até 3 min, rosa "
+                "depois disso (a captura não está gravando)."),
+        _cartao("Lacunas hoje", lac["valor"], lac["nota"], lac["tom"],
+                "Minutos que o MT5 tem e o banco não. Bom: 0. Uma lacuna "
+                "aparece quando a internet ou o MT5 caem; a captura busca "
+                "sozinha os minutos que faltam."),
+    ], className="pg-cartoes")
+    if sit["tom"] in ("rosa", "ambar"):
+        banda = _banda(sit["tom"], sit["texto"], sit["acao"])
+    elif not sit["pregao"]:
+        banda = _banda("cinza", "Mercado fechado",
+                       "o gráfico mostra o último pregão gravado")
+    elif sit["tom"] == "cinza":
+        banda = _banda("cinza", sit["texto"],
+                       "o gráfico mostra o último pregão gravado")
+    else:
+        banda = None
+    return ([banda] if banda else []) + [cartoes]
+
+
+def _conferencia(conf: dict) -> tuple[str, str, str]:
+    """(valor, nota, tom) do cartão da conferência do dia."""
+    status = conf.get("status")
+    em = _data(conf.get("em"))
+    dias = ", ".join(f"{d[8:10]}/{d[5:7]}" for d in conf.get("dias") or []
+                     if isinstance(d, str) and len(d) >= 10)
+    if status == "concluida":
+        return ((f"concluída às {em:%H:%M}" if em else "concluída"),
+                f"conferiu {dias}" if dias else "", "verde")
+    if status == "falhou":
+        return "falhou — tenta de novo em 5 min", conf.get("erro") or "", "ambar"
+    return "pendente", "roda depois do fechamento", "cinza"
+
+
+def placar(estado: dict | None) -> list:
+    """O que a captura fez hoje. Recuperados e correções recomeçam do zero
+    quando a captura reabre — é placar da tela, não auditoria."""
+    e = estado or {}
+
+    def n(chave):
+        v = e.get(chave)
+        return "—" if v is None else f"{int(v):,}".replace(",", ".")
+    conf = (("—", "", "cinza") if estado is None
+            else _conferencia(e.get("conferencia") or {}))
+    return [
+        _cartao("Gravados hoje", n("gravados_hoje"),
+                "candles de 1 min salvos no banco", "info"),
+        _cartao("Recuperados", n("recuperados_hoje"), "lacunas preenchidas",
+                "info"),
+        _cartao("Correções da corretora", n("revisados_hoje"),
+                "candles que mudaram depois", "info",
+                "A corretora às vezes corrige um candle já fechado (um "
+                "negócio que chegou atrasado); a captura regrava o candle "
+                "com o valor novo. Alguns por dia é normal; dezenas pedem "
+                "atenção."),
+        _cartao("Conferência do dia", conf[0], conf[1], conf[2],
+                "Depois do fechamento a captura compara o dia inteiro com o "
+                "MT5 e corrige o que estiver diferente. Até ela terminar, o "
+                "dia de hoje fica fora do Backtest e da Mineração."),
+    ]
+
+
+def inicio_balde(ts: datetime, tf: str) -> datetime:
+    """Começo do candle de 5/15 min que contém `ts` — o mesmo corte que o
+    `time_bucket` do banco faz (múltiplos a partir da meia-noite)."""
+    passo = MINUTOS_TF[tf]
+    ts = ts.replace(second=0, microsecond=0)
+    return ts - timedelta(minutes=ts.minute % passo)
+
+
+def tick_formacao(estado: dict | None, tf: str,
+                  balde: list[dict]) -> dict | None:
+    """O candle em formação no tempo gráfico da tela, no formato do `tick`.
+
+    Em 5/15 min o candle da tela é o balde inteiro: os M1 já fechados dele
+    (`balde`, vindos do banco) mais o minuto em formação. Mandar só o
+    minuto em formação apagaria a máxima e a mínima dos minutos anteriores.
+    """
+    f = (estado or {}).get("em_formacao")
+    ts = _data((f or {}).get("ts"))
+    if ts is None:
+        return None
+    inicio = inicio_balde(ts, tf)
+    fechados = [b for b in balde if inicio <= b["ts"] < ts] if tf != "M1" else []
+    todas = fechados + [f]
+    return {"id": "preco", "bar": {
+        "time": to_epoch(inicio),
+        "open": todas[0]["open"],
+        "high": max(b["high"] for b in todas),
+        "low": min(b["low"] for b in todas),
+        "close": f["close"],
+    }}
+
+
+def bloco():
+    """A sub-tela inteira; começa escondida (Estratégias é a padrão)."""
+    return html.Div([
+        # o pulso só liga com a sub-tela aberta: ninguém lê o estado.json a
+        # cada 2 s com o Backtest na frente
+        dcc.Interval(id="av-pg-intervalo", interval=2000, disabled=True),
+        # o último candle gravado já desenhado: só um candle NOVO refaz a
+        # série — o resto entra pelo `tick` e o zoom fica onde está
+        dcc.Store(id="av-pg-ultimo"),
+        html.Section([
+            html.Div([html.H3("Situação da captura",
+                              className="panel-title av-sec-titulo"),
+                      html.P("O serviço de captura grava cada minuto do "
+                             "WIN$N no banco durante o pregão. Esta tela se "
+                             "atualiza a cada 2 s.", className="av-sec-nota")],
+                     className="av-sec-head"),
+            html.Div(id="av-pg-faixa", className="av-corpo"),
+        ], className="panel"),
+        html.Section([
+            html.Div([
+                html.Div([html.H3("WIN$N ao vivo",
+                                  className="panel-title av-sec-titulo"),
+                          html.P("O último candle é o que está se formando "
+                                 "agora. Role o mouse para dar zoom; arraste "
+                                 "para voltar no dia.",
+                                 className="av-sec-nota")]),
+                html.Div([
+                    dcc.RadioItems(
+                        id="av-pg-tf", value="M1", className="pg-tf",
+                        options=[{"label": "1 min", "value": "M1"},
+                                 {"label": "5 min", "value": "M5"},
+                                 {"label": "15 min", "value": "M15"}]),
+                    html.Button("Voltar para agora", id="av-pg-agora",
+                                n_clicks=0, className="btn-ghost btn-sm"),
+                    html.Button("Tela cheia", id="av-pg-cheia", n_clicks=0,
+                                className="btn-ghost btn-sm"),
+                ], className="pg-barra"),
+            ], className="av-sec-head pg-grafico-head"),
+            html.Div(dash_tvlwc.Tvlwc(id="av-pg-grafico", series=[],
+                                      chartOptions=T.CHART_OPTIONS,
+                                      height="100%"),
+                     id="av-pg-grafico-caixa", className="pg-grafico"),
+        ], className="panel"),
+        html.Section([
+            html.Div([html.H3("Placar do dia",
+                              className="panel-title av-sec-titulo"),
+                      html.P("O que a captura gravou e corrigiu hoje.",
+                             className="av-sec-nota")],
+                     className="av-sec-head"),
+            html.Div(html.Div(id="av-pg-placar", className="pg-cartoes"),
+                     className="av-corpo"),
+        ], className="panel"),
+    ], id="av-bloco-pregao", className="pg-bloco", style={"display": "none"})

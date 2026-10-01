@@ -47,7 +47,24 @@ def test_painel_tem_as_pecas():
                  "av-conta-login", "av-conta-servidor", "av-conta-terminal",
                  "av-btn-mt5-puxar", "av-mt5-aviso"}
     assert esperados <= ids(p)
-    assert "Estratégias" in textos(p)
+    assert {"av-subtela", "av-bloco-estrategias", "av-bloco-pregao"} <= ids(p)
+    # `textos` não lê as `options` de um RadioItems: procura o seletor
+    seletor = _achar(p, "av-subtela")
+    assert [o["label"] for o in seletor.options] == ["Estratégias", "Pregão"]
+    assert seletor.value == "estrategias"
+
+
+def _achar(c, alvo):
+    if isinstance(c, (list, tuple)):
+        for x in c:
+            achado = _achar(x, alvo)
+            if achado is not None:
+                return achado
+        return None
+    if getattr(c, "id", None) == alvo:
+        return c
+    filhos = getattr(c, "children", None)
+    return None if filhos is None else _achar(filhos, alvo)
 
 
 from datetime import date, datetime  # noqa: E402
