@@ -39,7 +39,7 @@ dash_tvlwc (prop `tick`), MetaTrader5 5.0.
 | Arquivo | Papel |
 |---|---|
 | `core/captura.py` (novo) | `fechados`, `gravar`, `lacunas`, `fechamento_esperado`, `em_pregao`, `dias_pendentes`, `conferir_dia`, `escrever_estado`/`ler_estado` |
-| `core/mt5_source.py` | `buscar_barras` sem offset; `ultimo_tick`; `sincronizar` descarta o candle em formação; some `offset_servidor` |
+| `core/mt5_source.py` | `buscar_barras` sem offset; `sincronizar` só grava o último minuto com 10 min de folga; some `offset_servidor` |
 | `core/ingest.py` | `validar` + `ingest_df` extraídos; `ingest_csv` passa a chamá-los; `sha256_df` |
 | `core/reparo_base.py` (novo) | contas da correção §0: apagar derivados, apagar lotes, sessões suspeitas |
 | `corrigir_base.py` (novo, raiz) | roteiro da §0 (simulação por padrão; `--executar` faz) |
@@ -62,9 +62,15 @@ dash_tvlwc (prop `tick`), MetaTrader5 5.0.
 - Test: `tests/test_captura.py` (novo), `tests/test_mt5_source.py`
 
 **Interfaces:**
-- Produces: `captura.fechados(barras: pl.DataFrame, agora: datetime, ultimo_tick: datetime | None = None) -> pl.DataFrame`; `mt5_source.ultimo_tick(symbol: str) -> datetime | None`; `mt5_source.buscar_barras(symbol, desde, ate)` agora sem offset.
+- Produces:
+  - `captura.fechados(barras: pl.DataFrame, agora_servidor: datetime) -> pl.DataFrame`
+  - `captura.RelogioServidor` com `observar(tick: datetime | None, mono: float) -> None`, `agora(mono: float) -> datetime | None` e `desvio_s(agora_pc: datetime, mono: float) -> float | None`
+  - `mt5_source.buscar_barras(symbol, desde, ate)`, agora sem offset
+  - `mt5_source.MARGEM_SINCRONIZAR = timedelta(minutes=10)`
 
-- [ ] **Step 1: testes de `fechados` (falhando)** — `tests/test_captura.py`:
+**Por que um relógio do servidor:** "fechado" não pode depender do relógio do PC. Com o PC adiantado 3 min, qualquer regra baseada nele grava o candle em formação. A hora do servidor estimada é o último tick **mais o tempo decorrido (monotonic) desde que esse valor de tick foi visto pela primeira vez**. Ela é sempre ≤ a hora real, então erra para o lado seguro: atrasa a gravação em alguns segundos, nunca grava aberto. Sem tick nenhum (`None`), não há referência e nada do último minuto é gravado.
+
+- [ ] **Step 1: testes (falhando)** — `tests/test_captura.py`:
 
 ```python
 """Serviço de captura: as contas (core/captura.py), com MT5 e relógio falsos."""
@@ -95,8 +101,7 @@ def barras(*horas, base=100000):
 
 def test_fechados_nunca_devolve_o_candle_em_formacao():
     b = barras("10:00", "10:01", "10:02")
-    agora = datetime(2026, 10, 1, 10, 2, 30)
-    assert C.fechados(b, agora)["ts"].to_list() == b["ts"].to_list()[:2]
+    assert C.fechados(b, datetime(2026, 10, 1, 10, 2, 30))["ts"].to_list() == b["ts"].to_list()[:2]
 
 
 def test_fechados_ultimo_vira_fechado_65s_depois_do_inicio():
@@ -105,32 +110,54 @@ def test_fechados_ultimo_vira_fechado_65s_depois_do_inicio():
     assert C.fechados(b, datetime(2026, 10, 1, 10, 2, 5)).height == 2
 
 
-def test_pc_adiantado_70s_nao_deixa_passar_o_em_formacao():
-    # relógio real 10:01:30; o PC marca 10:02:40; o tick (hora do MT5) é real
-    b = barras("10:00", "10:01")
-    agora_pc = datetime(2026, 10, 1, 10, 2, 40)
-    tick = datetime(2026, 10, 1, 10, 1, 30)
-    assert C.fechados(b, agora_pc, tick)["ts"].to_list() == b["ts"].to_list()[:1]
-
-
-def test_tick_parado_ha_mais_de_2_min_nao_segura_o_ultimo_candle():
-    # mercado parado: o último negócio foi 10:01:10 e o relógio já passou
-    b = barras("10:00", "10:01")
-    agora = datetime(2026, 10, 1, 10, 3, 20)
-    tick = datetime(2026, 10, 1, 10, 1, 10)
-    assert C.fechados(b, agora, tick).height == 2
+def test_fechados_sem_hora_do_servidor_nunca_grava_o_ultimo():
+    assert C.fechados(barras("10:00", "10:01"), None).height == 1
 
 
 def test_apos_queda_de_3h_devolve_tudo_menos_o_em_formacao():
     horas = [f"{h:02d}:{m:02d}" for h in range(10, 13) for m in range(60)]
     b = barras(*horas, "13:00")
-    agora = datetime(2026, 10, 1, 13, 0, 20)
-    assert C.fechados(b, agora).height == 180
+    assert C.fechados(b, datetime(2026, 10, 1, 13, 0, 20)).height == 180
 
 
 def test_fechados_sem_barras_devolve_vazio():
-    vazio = barras("10:00").head(0)
-    assert C.fechados(vazio, datetime(2026, 10, 1, 10, 5)).height == 0
+    assert C.fechados(barras("10:00").head(0), datetime(2026, 10, 1, 10, 5)).height == 0
+
+
+# ------------------------------------------------------- relógio do servidor
+T = datetime(2026, 10, 1, 10, 1, 29)
+
+
+def test_relogio_soma_o_tempo_decorrido_desde_que_o_tick_mudou():
+    r = C.RelogioServidor()
+    r.observar(T, mono=100.0)
+    r.observar(T, mono=130.0)            # mesmo tick: não reinicia a contagem
+    assert r.agora(mono=140.0) == T + timedelta(seconds=40)
+    r.observar(T + timedelta(seconds=45), mono=145.0)
+    assert r.agora(mono=146.0) == T + timedelta(seconds=46)
+
+
+def test_pc_adiantado_3_min_nao_deixa_passar_o_em_formacao():
+    # o PC marca 10:04:29; a hora real (e o tick) é 10:01:29
+    r = C.RelogioServidor()
+    r.observar(T, mono=0.0)
+    b = barras("10:00", "10:01")
+    assert C.fechados(b, r.agora(mono=1.0))["ts"].to_list() == b["ts"].to_list()[:1]
+    assert r.desvio_s(datetime(2026, 10, 1, 10, 4, 29), mono=1.0) == pytest.approx(179, abs=1)
+
+
+def test_mercado_parado_fecha_o_ultimo_pelo_tempo_decorrido():
+    r = C.RelogioServidor()
+    r.observar(datetime(2026, 10, 1, 10, 1, 10), mono=0.0)   # último negócio
+    b = barras("10:00", "10:01")
+    assert C.fechados(b, r.agora(mono=50.0)).height == 1     # 10:02:00
+    assert C.fechados(b, r.agora(mono=56.0)).height == 2     # 10:02:06
+
+
+def test_relogio_sem_tick_nao_sabe_a_hora():
+    r = C.RelogioServidor()
+    r.observar(None, mono=0.0)
+    assert r.agora(mono=5.0) is None and r.desvio_s(T, mono=5.0) is None
 ```
 
 - [ ] **Step 2: rodar** `.venv/Scripts/python.exe -m pytest tests/test_captura.py -q` → FAIL (`core.captura` não existe).
@@ -154,64 +181,69 @@ from datetime import datetime, timedelta
 import polars as pl
 
 # O minuto só fecha quando o seguinte começa; 5 s de folga cobrem o atraso
-# entre o relógio do PC e o servidor da corretora.
+# entre o último negócio e a barra seguinte aparecer no MT5.
 FECHA_APOS = timedelta(seconds=65)
-# Tick mais novo que isto é a melhor referência de "agora" (não depende do
-# relógio do PC); mais velho, o mercado está parado e vale o relógio.
-TICK_FRESCO = timedelta(minutes=2)
 
 
-def fechados(barras: pl.DataFrame, agora: datetime,
-             ultimo_tick: datetime | None = None) -> pl.DataFrame:
+def fechados(barras: pl.DataFrame, agora_servidor: datetime | None) -> pl.DataFrame:
     """Só os candles fechados. Todos menos o último já fecharam (existe
-    barra depois deles); o último só fecha 65 s depois do início do minuto
-    — medido pelo tick do MT5 quando ele é recente, para um PC adiantado
-    não gravar o candle em formação."""
+    barra depois deles); o último só fecha 65 s depois do início do minuto,
+    pela hora do SERVIDOR — o relógio do PC pode estar adiantado."""
     if barras.height == 0:
         return barras
     barras = barras.sort("ts")
-    referencia = agora
-    if ultimo_tick is not None and abs(agora - ultimo_tick) < TICK_FRESCO:
-        referencia = ultimo_tick
-    if referencia >= barras["ts"][-1] + FECHA_APOS:
+    if agora_servidor is not None and agora_servidor >= barras["ts"][-1] + FECHA_APOS:
         return barras
     return barras.head(barras.height - 1)
+
+
+class RelogioServidor:
+    """Hora da corretora estimada sem confiar no relógio do PC: o último
+    tick mais o tempo decorrido (monotonic) desde que esse valor apareceu.
+    Fica sempre um pouco atrás da hora real — erra para o lado seguro."""
+
+    def __init__(self):
+        self._tick = None
+        self._visto = None
+
+    def observar(self, tick: datetime | None, mono: float) -> None:
+        if tick is None:
+            self._tick = self._visto = None
+        elif tick != self._tick:
+            self._tick, self._visto = tick, mono
+
+    def agora(self, mono: float) -> datetime | None:
+        if self._tick is None:
+            return None
+        return self._tick + timedelta(seconds=mono - self._visto)
+
+    def desvio_s(self, agora_pc: datetime, mono: float) -> float | None:
+        """PC menos servidor, em segundos. Só vale com tick recente (< 10 s):
+        com o mercado parado a estimativa fica para trás e o desvio mentiria."""
+        if self._tick is None or mono - self._visto > 10:
+            return None
+        return (agora_pc - self.agora(mono)).total_seconds()
 ```
 
 - [ ] **Step 4: rodar** → PASS.
 
 - [ ] **Step 5: corrigir `core/mt5_source.py`.**
   - Apagar `offset_servidor` inteira.
-  - `buscar_barras`: docstring nova (o `time` do MT5 já é hora de Brasília; o pedido também vai em hora de Brasília); pedir com `desde.replace(tzinfo=timezone.utc)` e `ate.replace(tzinfo=timezone.utc)` (o pacote converte datetime sem fuso pelo fuso do PC, o que deslocaria a janela pedida em 3 h; com `utc` o número enviado é o horário de parede, que é como o MT5 conta); devolver `pl.from_epoch("time", time_unit="s").alias("ts")` **sem** `+ offset`.
-  - Nova função:
-
-```python
-def ultimo_tick(symbol: str) -> datetime | None:
-    """Hora do último negócio, no relógio da corretora (Brasília). None se
-    o terminal não responder — quem chama decide pelo relógio do PC."""
-    try:
-        import MetaTrader5 as mt5
-        tick = mt5.symbol_info_tick(symbol)
-    except Exception:  # noqa: BLE001 - sem tick, decide-se pelo relógio
-        return None
-    if tick is None:
-        return None
-    return datetime.fromtimestamp(tick.time, tz=timezone.utc).replace(tzinfo=None)
-```
-
-  - `sincronizar`: dentro do `with _TERMINAL:` (antes de `desconectar`), ler `tick = ultimo_tick(symbol)`; depois do bloco, `barras = captura.fechados(barras, datetime.now(), tick)` (import `from . import captura`); se `barras.height == 0`, `raise MT5Error("nenhum candle fechado novo no MT5 — tente de novo em um minuto")`. Reescrever o comentário do `ate = datetime.now() + timedelta(days=1)`: o MT5 nunca devolve barra do futuro, a folga só garante pegar até o último minuto.
+  - `buscar_barras`: novo docstring (o `time` do MT5 já é hora de Brasília, e o pedido também vai em hora de Brasília). Pedir com `desde.replace(tzinfo=timezone.utc)` e `ate.replace(tzinfo=timezone.utc)`, porque o pacote converte datetime sem fuso pelo fuso do PC e deslocaria a janela pedida em 3 h. Devolver `pl.from_epoch("time", time_unit="s").alias("ts")` **sem** `+ offset`.
+  - `MARGEM_SINCRONIZAR = timedelta(minutes=10)`, com este comentário: o botão é manual e não tem o relógio do servidor. Ele só grava o último minuto devolvido se o PC disser que ele começou há mais de 10 min, o que cobre um relógio errado em até 9 min. O minuto que ficar de fora entra na próxima sincronização ou pela captura.
+  - Em `sincronizar`, logo depois do bloco `with _TERMINAL:`, `barras = captura.fechados(barras, datetime.now() - MARGEM_SINCRONIZAR + captura.FECHA_APOS)`, com o import `from . import captura`. O resultado é: o último minuto entra se `now >= ts + 10 min`. Se `barras.height == 0`, `raise MT5Error("nenhum candle fechado novo no MT5 — tente de novo em alguns minutos")`.
+  - Reescrever o comentário de `ate = datetime.now() + timedelta(days=1)`: o MT5 nunca devolve barra do futuro, e a folga só garante que o pedido alcance o último minuto.
 
 - [ ] **Step 6: atualizar `tests/test_mt5_source.py`.**
-  - Apagar os 5 testes de `offset_servidor`, `_FakeMT5Offset`, `_instalar_fake_mt5`, `_FakeMT5RatesComOffset` e `test_buscar_barras_pede_em_utc_e_devolve_em_hora_de_corretor`.
-  - Fixture autouse no arquivo: `monkeypatch.setattr(src, "ultimo_tick", lambda s: None)`.
+  - Apagar estes testes e auxiliares: os 5 testes de `offset_servidor`, `_FakeMT5Offset`, `_instalar_fake_mt5`, `_FakeMT5RatesComOffset` e `test_buscar_barras_pede_em_utc_e_devolve_em_hora_de_corretor`.
   - Novos testes:
 
 ```python
 def test_buscar_barras_nao_desloca_a_hora(monkeypatch):
     """Achado real (01/10/2026): o MT5 devolve `time` já em hora de
     Brasília. Somar o fuso gravou seis meses de pregão de 06:00 a 15:24."""
-    nove = int(datetime(2026, 9, 22, 9, 0, tzinfo=timezone.utc).timestamp())
     import numpy as np
+    nove = int(datetime(2026, 9, 22, 9, 0, tzinfo=timezone.utc).timestamp())
     taxas = np.array([(nove, 1.0, 2.0, 0.5, 1.5, 10, 1, 0)], dtype=[
         ("time", "i8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
         ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"),
@@ -234,7 +266,7 @@ def test_mt5_source_nao_tem_mais_offset():
     assert not hasattr(src, "offset_servidor")
 
 
-def test_sincronizar_descarta_o_candle_em_formacao(con, tmp_path, monkeypatch):
+def test_sincronizar_descarta_o_ultimo_minuto_recente(con, tmp_path, monkeypatch):
     seed = tmp_path / "seed.tsv"
     from tests.test_ingest import write_export
     write_export(seed, [(datetime(2026, 9, 1, 9, 0), 100000, 100050, 99950, 100010)])
@@ -246,7 +278,6 @@ def test_sincronizar_descarta_o_candle_em_formacao(con, tmp_path, monkeypatch):
         "open": [100010, 100020], "high": [100060, 100070],
         "low": [99960, 99970], "close": [100020, 100030],
         "tick_volume": [80, 5], "volume": [0, 0], "spread": [5, 5]}))
-    monkeypatch.setattr(src, "ultimo_tick", lambda s: agora + timedelta(seconds=3))
     monkeypatch.setattr(src, "conectar", lambda: None)
     monkeypatch.setattr(src, "desconectar", lambda: None)
 
@@ -256,11 +287,15 @@ def test_sincronizar_descarta_o_candle_em_formacao(con, tmp_path, monkeypatch):
     assert con.execute("SELECT max(ts) FROM bars_m1").fetchone()[0] == agora - timedelta(minutes=1)
 ```
 
-  - `test_buscar_barras_converte_epoch_e_renomeia_colunas`: o esperado passa a ser `datetime.fromtimestamp(1758441600, tz=timezone.utc).replace(tzinfo=None)` (já é — confira que continua passando sem offset).
+  - Os testes antigos de `sincronizar` usam barra de 2026-09-02, que já tem mais de 10 min, e continuam passando. Confira.
 
-- [ ] **Step 7: rodar** `tests/test_captura.py tests/test_mt5_source.py tests/test_mt5_ler_conta.py` → PASS; depois a suíte inteira.
+- [ ] **Step 7: rodar** `tests/test_captura.py`, `tests/test_mt5_source.py` e `tests/test_mt5_ler_conta.py` → PASS. Depois, a suíte inteira.
 
-- [ ] **Step 8: mutação** — (a) volte o `+ offset` em `buscar_barras` usando um offset fixo de −3 h → `test_buscar_barras_nao_desloca_a_hora` falha; (b) troque `FECHA_APOS` por 0 → testes de `fechados` falham; (c) ignore `ultimo_tick` em `fechados` → teste do PC adiantado falha. Desfaça cada uma.
+- [ ] **Step 8: mutação.** Faça cada quebra abaixo, confirme que o teste indicado falha e desfaça:
+  - (a) voltar a somar −3 h em `buscar_barras` → `test_buscar_barras_nao_desloca_a_hora` falha;
+  - (b) `FECHA_APOS = 0` → os testes de `fechados` falham;
+  - (c) `RelogioServidor.observar` reiniciando `_visto` a cada chamada → o teste do tempo decorrido falha;
+  - (d) tirar a `MARGEM_SINCRONIZAR` → o teste do último minuto recente falha.
 
 - [ ] **Step 9: commit** — `core/captura.py core/mt5_source.py tests/test_captura.py tests/test_mt5_source.py`, mensagem `fix(mt5): hora do MT5 ja e Brasilia; Sincronizar nao grava o candle em formacao`.
 
@@ -347,13 +382,15 @@ def test_apagar_lotes_so_apaga_as_barras_daqueles_lotes(con, tmp_path):
 def test_sessoes_suspeitas_acusa_pregao_das_06h_e_poupa_o_normal(con, tmp_path):
     bom = serie(datetime(2026, 3, 9, 9, 0), 2) + serie(datetime(2026, 3, 9, 18, 23), 2)
     torto = serie(datetime(2026, 3, 16, 6, 0), 2) + serie(datetime(2026, 3, 16, 15, 23), 2)
-    ing.ingest_csv(con, write_export(tmp_path / "a.tsv", bom + torto), "WIN$N")
+    # o formato real de 09–13/03 hoje: manhã do lote errado, tarde do CSV
+    misto = serie(datetime(2026, 3, 10, 6, 0), 2) + serie(datetime(2026, 3, 10, 18, 23), 2)
+    ing.ingest_csv(con, write_export(tmp_path / "a.tsv", bom + torto + misto), "WIN$N")
     cal.rebuild_trading_days(con, "WIN$N")
 
     suspeitas = R.sessoes_suspeitas(con, "WIN$N", date(2026, 3, 1))
 
-    assert [s["dia"] for s in suspeitas] == [date(2026, 3, 16)]
-    assert suspeitas[0]["abre"] == "06:00" and suspeitas[0]["fecha"] == "15:24"
+    assert [s["dia"] for s in suspeitas] == [date(2026, 3, 10), date(2026, 3, 16)]
+    assert suspeitas[1]["abre"] == "06:00" and suspeitas[1]["fecha"] == "15:24"
 
 
 def test_diario_aceita_base_corrigida():
@@ -435,24 +472,51 @@ def sessoes_suspeitas(con, symbol: str, desde: date) -> list[dict]:
 ```python
 """Correção da base com hora deslocada — roda UMA vez (spec captura §0).
 
-    .venv/Scripts/python.exe corrigir_base.py            # simulação: só mostra
-    .venv/Scripts/python.exe corrigir_base.py --executar # faz
+    .venv/Scripts/python.exe corrigir_base.py             # simulação: só mostra
+    .venv/Scripts/python.exe corrigir_base.py --executar  # faz
+    .venv/Scripts/python.exe corrigir_base.py --retomar   # só refaz os passos 5-7
 
 Antes: feche o app (iniciar.bat) e a captura; abra o MT5 logado.
 """
 ```
 
-  Passos de `main()` com `--executar` (sem ele: imprime o que apagaria — contagens de `TABELAS_DERIVADAS`, barras dos lotes, arquivos a renomear — e sai com 0):
-  1. Lotes errados = `ingest_id` do `ingest_log` cujo `source_file` contém `mt5_sync_2026092` (hoje: 3 e 4) — imprimir e recusar se não forem exatamente `{3, 4}`, a menos que `--lotes 3,4` seja passado.
-  2. Backup: copiar `db.DB_PATH` e a pasta `db.PARQUET_DIR` para `ROOT.parent / "backups" / f"{hoje:%Y-%m-%d}-antes-correcao-hora"`; recusar continuar se a pasta já existir.
-  3. `with db.connect_write() as con:` + `db.transacao(con)`: `apagar_derivados`, `apagar_lotes(con, "WIN$N", lotes)`, `diario.registrar(con, "base_corrigida", "sistema", motivo="hora do MT5 deslocada em 3 h (16/03→23/09/2026); cadeia apagada")`.
-  4. Renomear cada `source_file` desses lotes que exista para `<nome>.hora-errada`.
-  5. `ing.ingest_csv(con, CSV, "WIN$N", price_decimals=0)` com `CSV = db.RAW_DIR / "m1-hist-16-03-2026.csv"` (argumento `--csv` para trocar).
-  6. `src.sincronizar(con, "WIN$N", price_decimals=0)` (baixa de `ultimo − 5 dias` até agora, reconstrói `trading_days`/`rollovers` e o Parquet).
-  7. Relatório: total de candles, último candle, `sessoes_suspeitas(con, "WIN$N", date(2026, 3, 9))` uma por linha, e uma tabela dia → primeiro/último/candles de 09/03 até hoje.
-  Cada passo imprime o que fez; qualquer erro para o roteiro com a mensagem e o lembrete de que o backup está em `<pasta>`.
+  Sem `--executar`/`--retomar`: faz o passo 0 (só leitura no MT5), imprime o que apagaria (contagens de `TABELAS_DERIVADAS`, barras dos lotes, arquivos a renomear) e sai com 0. Passos com `--executar`:
+  0. **Conferir o MT5 antes de apagar qualquer coisa:** `src.conectar()`; `b = src.buscar_barras("WIN$N", datetime(2026, 3, 9), datetime(2026, 3, 17))`; `src.desconectar()`. Exigir barra em 09/03 e em 16/03, ambas com hora entre 09:00 e 09:15. Senão, abortar com a mensagem: "o MT5 não tem o histórico desde 09/03 (confira 'Máx. barras no gráfico' em Ferramentas › Opções › Gráficos) — nada foi apagado".
+  1. Lotes errados = `ingest_id` do `ingest_log` cujo `source_file` contém `mt5_sync_2026092` (hoje: 3 e 4). Imprimir; se não forem exatamente `{3, 4}`, recusar, a menos que `--lotes 3,4` seja passado.
+  2. **Backup consistente:**
+     - `con = db.connect_write(tentativas=1)`; se falhar, o app ou a captura estão abertos: recusar.
+     - `con.execute("CHECKPOINT")`; `con.close()`.
+     - Copiar `database.duckdb` (e o `.wal`, se existir), `data/parquet` e `data/raw` para `ROOT.parent / "backups" / f"{hoje:%Y-%m-%d}-antes-correcao-hora"`.
+     - Se essa pasta já existir, recusar (use `--retomar`).
+  3. `with db.connect_write() as con:` + `with db.transacao(con):`
+     - `apagar_derivados(con)`;
+     - `apagar_lotes(con, "WIN$N", lotes)`;
+     - `diario.registrar(con, "base_corrigida", "sistema", motivo="hora do MT5 deslocada em 3 h (16/03→23/09/2026); cadeia apagada; ingest_log 3 e 4 ficam como histórico, arquivos renomeados .hora-errada")`.
 
-- [ ] **Step 6: simulação** — com o app aberto ou não, rodar `.venv/Scripts/python.exe corrigir_base.py` (sem `--executar`) e conferir que só lê: espera-se ver lotes {3, 4}, 77.202 barras deles e as contagens atuais das 9 tabelas. **Não rodar com `--executar` nesta tarefa.**
+     **Não** reinicie sequências: o diário aponta para ids antigos.
+  4. Renomear cada `source_file` desses lotes que exista para `<nome>.hora-errada`.
+  5. **Fora de qualquer transação aberta** (`ingest_csv` faz o próprio BEGIN): `ing.ingest_csv(con, CSV, "WIN$N", price_decimals=0)`, com `CSV = db.RAW_DIR / "m1-hist-16-03-2026.csv"` (o argumento `--csv` troca o arquivo).
+  6. `src.sincronizar(con, "WIN$N", price_decimals=0)`: baixa de `ultimo − 5 dias` até agora (≈80 mil candles), reconstrói `trading_days`/`rollovers` e o Parquet.
+  7. Relatório:
+     - total de candles e último candle;
+     - `sessoes_suspeitas(con, "WIN$N", date(2026, 3, 9))`, uma por linha;
+     - uma tabela dia → primeiro/último/candles de 09/03 até hoje;
+     - a contagem de candles por dia abaixo de 500 em destaque, porque pode ser buraco.
+
+  **Se qualquer passo de 5 a 7 falhar:**
+  - rodar mesmo assim `cal.rebuild_trading_days`, `roll.rebuild_rollovers` e `db.export_parquet`, para não deixar Parquet com a hora errada nem calendário velho;
+  - imprimir o erro, o caminho do backup e a instrução "corrija e rode `corrigir_base.py --retomar`".
+
+  `--retomar` pula os passos 0–4 e roda 5–7. O passo 5 é idempotente: barras idênticas não mudam.
+
+  A pasta `data/parquet/SEM_YAML`, resto de um teste antigo, é apagada no passo 3 com um aviso.
+
+- [ ] **Step 6: simulação** — rodar `.venv/Scripts/python.exe corrigir_base.py` (sem `--executar`) e conferir que só lê. Espera-se ver:
+  - o passo 0 OK, se o MT5 estiver aberto; se não estiver, a mensagem de aborto;
+  - os lotes {3, 4} e as 77.202 barras deles;
+  - as contagens atuais das 9 tabelas.
+
+  **Não rodar com `--executar` nesta tarefa.**
 
 - [ ] **Step 7: suíte inteira + mutação** (troque `ABRE` para aceitar 06:00 → o teste de sessões suspeitas falha; tire `portfolios` de `TABELAS_DERIVADAS` → o teste de apagar falha). Commit — `core/reparo_base.py core/diario.py corrigir_base.py tests/test_reparo_base.py`, mensagem `feat(base): roteiro da correcao da hora deslocada (spec captura §0)`.
 
@@ -463,7 +527,12 @@ Antes: feche o app (iniciar.bat) e a captura; abra o MT5 logado.
 **Destrutivo — o controlador para e pede o "pode rodar" do usuário antes**, e confirma: app fechado, MT5 aberto e logado.
 
 - [ ] **Step 1:** `.venv/Scripts/python.exe corrigir_base.py --executar`; guardar a saída no ledger.
-- [ ] **Step 2: conferir dia a dia** — a lista de sessões suspeitas deve trazer só dias de horário especial legítimo (ex.: fechamento antecipado); nenhum dia com abertura 06:xx. Último candle = último minuto fechado do MT5 (nunca o em formação).
+- [ ] **Step 2: conferir dia a dia.** Na lista de sessões suspeitas:
+  - só podem aparecer dias de horário especial legítimo. Já se sabe que **12/03 aparece**: o CSV original tem candle às 18:31, o que é legítimo;
+  - nenhum dia pode abrir às 06:xx;
+  - nenhum dia útil de 16/03 até hoje pode faltar.
+
+  O último candle tem de ser um minuto que já fechou há mais de 10 min.
 - [ ] **Step 3:** subir o app (`preview_start` com `dataframe`), abrir o Backtest em 1D/5D e tirar screenshot mostrando o eixo das 09:00 às 18:2x. Mostrar ao usuário.
 - [ ] **Step 4:** registrar no ledger o caminho do backup e os números. Sem commit (só dado).
 
@@ -544,8 +613,33 @@ def test_source_max_ts_informado_vence_versao_do_mesmo_minuto(con):
   - `_merge(con, source_file: str, sha: str, symbol, df, source_max_ts=None)`: `src_max = source_max_ts or df["ts"].max()`; grava `source_file` como texto; o resto igual.
   - `ingest_csv`: `df = read_mt5_export(path, price_decimals)` e `return ingest_df(con, df, symbol, str(path), sha256_of(path), price_decimals=price_decimals)`. Atualizar o docstring do módulo (uma frase: candles da captura entram por `ingest_df`, mesma regra).
 
-- [ ] **Step 4: rodar** `tests/test_ingest.py tests/test_mt5_source.py` → PASS (os testes antigos de `ingest_csv` não mudam). Suíte inteira.
-- [ ] **Step 5: mutação** — ignore `source_max_ts` em `_merge` → o último teste falha; tire a checagem de OHLC de `validar` → o teste de incoerente falha.
+  - Docstring de `ingest_df`: "faz o próprio BEGIN/COMMIT — nunca chame dentro de uma transação aberta (o DuckDB recusa BEGIN aninhado)".
+
+- [ ] **Step 3b: reescrever `test_falha_no_meio_nao_deixa_rastro`** em `tests/test_ingest.py`. Hoje ele chama `ing._merge(con, p, SYMBOL, quebrado)` com a assinatura antiga e passaria por TypeError, sem testar nada. A versão nova quebra **depois** do INSERT no `ingest_log`:
+
+```python
+def test_falha_no_meio_nao_deixa_rastro(con, monkeypatch):
+    ts = datetime(2026, 3, 9, 9, 0)
+    ing.ingest_df(con, _df([(ts, 100, 110, 90, 100)]), SYMBOL, "a", "sa")
+    lotes, barras = (con.execute("SELECT count(*) FROM ingest_log").fetchone()[0],
+                     _barras(con))
+
+    def boom(*a, **k):
+        raise RuntimeError("falha proposital depois do INSERT no ingest_log")
+
+    monkeypatch.setattr(ing.json, "dumps", boom)  # roda só quando há divergência
+    with pytest.raises(RuntimeError, match="proposital"):
+        ing.ingest_df(con, _df([(ts, 100, 120, 90, 105)]), SYMBOL, "b", "sb",
+                      source_max_ts=datetime(2026, 3, 10))
+
+    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == lotes
+    assert _barras(con) == barras
+```
+
+  (`SYMBOL` é o que o arquivo já usa; se o nome for outro, use o do arquivo.)
+
+- [ ] **Step 4: rodar** `tests/test_ingest.py tests/test_mt5_source.py` → PASS (os outros testes antigos de `ingest_csv` não mudam). Suíte inteira.
+- [ ] **Step 5: mutação** — ignore `source_max_ts` em `_merge` → o teste do `source_max_ts` falha; tire a checagem de OHLC de `validar` → o teste de incoerente falha; tire o `ROLLBACK` de `ingest_df` → `test_falha_no_meio_nao_deixa_rastro` falha.
 - [ ] **Step 6: commit** — `core/ingest.py tests/test_ingest.py`, `refactor(ingest): ingest_df para candles que nao vem de arquivo`.
 
 ---
@@ -811,7 +905,9 @@ def conferir_dia(con, symbol: str, dia: date, barras_mt5: pl.DataFrame,
                  agora: datetime, price_decimals: int = 0) -> dict:
     """Relê o dia inteiro do MT5 depois do fechamento. `source_max_ts` =
     hora em que rodou: vence a captura do mesmo dia sem depender do
-    desempate por sha256; uma exportação manual posterior continua vencendo."""
+    desempate por sha256. Uma exportação manual vence a conferência só se
+    tiver candle mais novo que a hora em que a conferência rodou (feita na
+    mesma noite, perde: o "mais novo" é medido pela barra mais nova)."""
     do_dia = barras_mt5.filter(pl.col("ts").dt.date() == dia)
     if do_dia.height == 0:
         raise ValueError(f"o MT5 não devolveu candles de {dia:%d/%m/%Y}")
@@ -862,22 +958,28 @@ def ler_estado(caminho: Path) -> dict | None:
 ### Task 6: Parquet trocado de uma vez
 
 **Files:**
-- Modify: `core/db_manager.py` (`export_parquet`)
+- Modify: `core/db_manager.py` (`export_parquet`, `read_bars_parquet`)
 - Test: `tests/test_db_parquet_atomico.py` (novo)
 
 **Interfaces:**
-- Produces: `db.export_parquet(con, symbol) -> Path` com a mesma assinatura, agora atômico.
+- Produces: `db.export_parquet(con, symbol) -> Path` com a mesma assinatura, agora atômico; `read_bars_parquet` tolera a troca em andamento.
+
+**Dois defeitos do código atual que isto resolve:**
+- `COPY … OVERWRITE_OR_IGNORE` por cima da pasta em uso deixa um ano pela metade para quem estiver lendo.
+- Um ano que deixou de ter barras fica órfão no espelho.
 
 - [ ] **Step 1: testes (falhando)**:
 
 ```python
-"""O espelho Parquet nunca fica pela metade: a mineração lê dele enquanto
-a captura reexporta depois da conferência do dia."""
+"""O espelho Parquet nunca fica pela metade nem com ano órfão: a mineração
+lê dele enquanto a captura reexporta depois da conferência do dia."""
 from __future__ import annotations
 
 import sys
 from datetime import datetime
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -886,21 +988,48 @@ from core import ingest as ing  # noqa: E402
 from tests.test_ingest import serie, write_export  # noqa: E402
 
 
-def test_export_troca_a_pasta_inteira_e_nao_deixa_sobra(tmp_path, monkeypatch):
+@pytest.fixture
+def base(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "PARQUET_DIR", tmp_path / "parquet")
     con = db.connect(tmp_path / "t.duckdb"); db.init_schema(con)
-    ing.ingest_csv(con, write_export(tmp_path / "a.tsv", serie(datetime(2025, 12, 31, 9, 0), 2)), "WIN$N")
+    ing.ingest_csv(con, write_export(tmp_path / "a.tsv",
+                   serie(datetime(2025, 12, 31, 9, 0), 2) + serie(datetime(2026, 1, 2, 9, 0), 3)), "WIN$N")
+    yield con, tmp_path
+    con.close()
+
+
+def test_export_nao_deixa_ano_orfao_nem_pasta_de_sobra(base):
+    con, tmp = base
     db.export_parquet(con, "WIN$N")
-    ing.ingest_csv(con, write_export(tmp_path / "b.tsv", serie(datetime(2026, 1, 2, 9, 0), 3)), "WIN$N")
+    con.execute("DELETE FROM bars_m1 WHERE year(ts) = 2025")
 
     out = db.export_parquet(con, "WIN$N")
 
-    assert len(db.read_bars_parquet("WIN$N")["ts"]) == 5
-    assert sorted(p.name for p in (tmp_path / "parquet").iterdir()) == [out.name]
-    con.close()
+    assert len(db.read_bars_parquet("WIN$N")["ts"]) == 3
+    assert sorted(p.name for p in (tmp / "parquet").iterdir()) == [out.name]
+
+
+def test_falha_na_troca_devolve_a_copia_antiga(base, monkeypatch):
+    con, tmp = base
+    db.export_parquet(con, "WIN$N")
+    con.execute("DELETE FROM bars_m1 WHERE year(ts) = 2025")
+    real = Path.rename
+
+    def rename_que_falha(self, alvo):
+        if self.name.endswith(".novo"):
+            raise PermissionError("pasta em uso")
+        return real(self, alvo)
+
+    monkeypatch.setattr(Path, "rename", rename_que_falha)
+    with pytest.raises(PermissionError):
+        db.export_parquet(con, "WIN$N")
+    monkeypatch.setattr(Path, "rename", real)
+
+    assert len(db.read_bars_parquet("WIN$N")["ts"]) == 5   # a cópia antiga voltou
 ```
 
-- [ ] **Step 2: rodar** → FAIL? (Pode passar se o export atual já cobrir; se passar, acrescente a asserção de que o `COPY` grava numa pasta `<simbolo>.novo` — por monkeypatch de `con.execute` não vale; em vez disso confira o código e siga.) O teste fica como regressão.
+- [ ] **Step 2: rodar** → FAIL. O primeiro teste falha porque `year=2025` fica órfão.
+
 - [ ] **Step 3: implementar**:
 
 ```python
@@ -909,7 +1038,8 @@ def export_parquet(con, symbol: str) -> Path:
 
     Grava numa pasta nova e troca de uma vez: a mineração e o walk-forward
     leem este espelho enquanto a captura reexporta depois da conferência do
-    dia, e um COPY por cima da pasta em uso deixava um ano pela metade."""
+    dia. Um COPY por cima da pasta em uso deixava um ano pela metade, e um
+    ano que deixou de ter barras ficava órfão."""
     import shutil
     import time as _t
 
@@ -917,6 +1047,10 @@ def export_parquet(con, symbol: str) -> Path:
     novo = out.with_name(out.name + ".novo")
     velho = out.with_name(out.name + ".velho")
     shutil.rmtree(novo, ignore_errors=True)
+    if velho.exists() and out.exists():
+        shutil.rmtree(velho)          # sobra de troca anterior já concluída
+    elif velho.exists():
+        velho.rename(out)             # troca anterior interrompida: a cópia boa é a velha
     novo.mkdir(parents=True)
     con.execute(f"""COPY (SELECT *, year(ts) AS year FROM bars_m1 WHERE symbol = ?
                     ORDER BY ts) TO {_sql_str(novo)}
@@ -925,24 +1059,31 @@ def export_parquet(con, symbol: str) -> Path:
     if not list(novo.rglob("*.parquet")):
         raise RuntimeError(f"COPY nao gravou nenhum arquivo em {novo}")
     # No Windows uma pasta com arquivo aberto (leitor no meio) não se
-    # renomeia: espera o leitor soltar.
-    for i in range(40):
-        try:
-            shutil.rmtree(velho, ignore_errors=True)
-            if out.exists():
+    # renomeia: espera o leitor soltar. Só este passo se repete.
+    if out.exists():
+        for i in range(40):
+            try:
                 out.rename(velho)
-            novo.rename(out)
-            break
-        except PermissionError:
-            if i == 39:
-                raise
-            _t.sleep(0.25)
+                break
+            except PermissionError:
+                if i == 39:
+                    raise
+                _t.sleep(0.25)
+    try:
+        novo.rename(out)
+    except OSError:
+        if velho.exists():
+            velho.rename(out)         # desfaz: o espelho antigo volta inteiro
+        raise
     shutil.rmtree(velho, ignore_errors=True)
     return out
 ```
 
-- [ ] **Step 4: rodar** o teste novo, `tests/test_mt5_source.py`, e a suíte inteira → PASS.
-- [ ] **Step 5: commit** — `core/db_manager.py tests/test_db_parquet_atomico.py`, `fix(db): espelho Parquet trocado de uma vez`.
+  Em `read_bars_parquet`: se a pasta `src` não existir mas existir `<src>.novo` ou `<src>.velho`, a troca está em andamento. Nesse caso, tentar de novo a cada 0,1 s por até 2 s antes de levantar `FileNotFoundError`. O comentário deve explicar: a captura troca o espelho entre dois renames.
+
+- [ ] **Step 4: rodar** os testes novos, `tests/test_mt5_source.py` e a suíte inteira → PASS.
+- [ ] **Step 5: mutação** — tire o `velho.rename(out)` do `except` → `test_falha_na_troca…` falha.
+- [ ] **Step 6: commit** — `core/db_manager.py tests/test_db_parquet_atomico.py`, mensagem `fix(db): espelho Parquet trocado de uma vez, sem ano orfao`.
 
 ---
 
@@ -956,8 +1097,8 @@ def export_parquet(con, symbol: str) -> Path:
 **Interfaces:**
 - Consumes: tudo de `core/captura.py` (Tasks 1, 5); `db.connect_write`, `db.connect`, `db.export_parquet` (Task 6); `cal.rebuild_trading_days`, `roll.rebuild_rollovers`.
 - Produces: o arquivo `data/ao_vivo/estado.json` com as chaves (lidas pelas Tasks 8–9):
-  `pid, atualizado_em, mt5 ("conectado"|"sem_conexao"|"fechado"), mt5_desde, conta {login, servidor}, contrato_vigente, simbolo, fechamento_esperado ("HH:MM"), em_pregao, ultimo_salvo, em_formacao ({ts, open, high, low, close} | null), lacunas_hoje [iso], gravados_hoje, recuperados_hoje, revisados_hoje, conferencia {status: "pendente"|"concluida"|"falhou", em, dias}, banco_ocupado_desde, relogio_atrasado_s, erro`.
-  Códigos de saída: `0` normal (Ctrl+C), `3` não reabrir, outros = reabrir.
+  `pid, atualizado_em, mt5 ("conectado"|"sem_conexao"|"fechado"), mt5_desde, conta {login, servidor}, contrato_vigente, simbolo, fechamento_esperado ("HH:MM"), em_pregao, ultimo_salvo, em_formacao ({ts, open, high, low, close} | null), lacunas_hoje [iso], gravados_hoje, recuperados_hoje, revisados_hoje, conferencia {status: "pendente"|"concluida"|"falhou", em, dias, erro}, banco_ocupado_desde, relogio_desvio_s, primeiro_candle_hoje, erro`.
+  Códigos de saída: `0` normal (Ctrl+C), `3` configuração (não reabrir, mostra aviso), `4` outra instância (o .bat sai calado), outros = reabrir.
 
 **Desenho do `captura.py`** (classe com tudo injetável, para testar sem MT5 real):
 
@@ -971,7 +1112,8 @@ Processo à parte da tela de propósito: a tela reinicia a cada mudança e
 trava em mineração; um laço contínuo dentro dela perderia candle (e, na
 parte 4, ordem). Toda decisão mora em core/captura.py; aqui só o laço.
 """
-SAIR_SEM_REABRIR = 3
+SAIR_SEM_REABRIR = 3      # configuração: reabrir não resolve
+OUTRA_INSTANCIA = 4       # já há uma captura rodando: o .bat sai calado
 PASTA = db.DATA / "ao_vivo"
 
 
@@ -981,7 +1123,8 @@ class ErroDeConfiguracao(RuntimeError):
 
 def travar(caminho: Path):
     """Trava de instância pelo Windows (msvcrt.locking): se o processo
-    morrer, o sistema solta sozinho — um arquivo .pid ficaria órfão."""
+    morrer, o sistema solta sozinho — um arquivo .pid ficaria órfão.
+    Quem chama guarda o objeto devolvido pela vida inteira do processo."""
     import msvcrt
     caminho.parent.mkdir(parents=True, exist_ok=True)
     f = open(caminho, "a+")
@@ -996,26 +1139,98 @@ def travar(caminho: Path):
 
 class Servico:
     def __init__(self, mt5, simbolo="WIN$N", terminal=None, agora=datetime.now,
-                 pasta=PASTA, terminal_aberto=None, price_decimals=0): ...
+                 mono=time.monotonic, pasta=PASTA, terminal_aberto=None,
+                 price_decimals=0): ...
     def volta(self) -> float:   # uma volta; devolve quantos segundos esperar
-    def rodar(self) -> None:    # laço: volta(); sleep(espera); erro inesperado → log + estado["erro"]
+    def rodar(self) -> None:    # laço: volta(); sleep(espera)
 ```
 
-`volta()`, nesta ordem:
-1. `agora = self.agora()`; `self.fechamento` (lido do banco na primeira volta e a cada troca de dia, via `fechamento_esperado` numa conexão `db.connect(read_only=True)` curta); `pregao = em_pregao(agora, fechamento)`.
-2. **MT5:** se ainda não conectado → só chama `mt5.initialize(path=terminal)` (ou `initialize()` sem caminho) **se `terminal_aberto()` for verdadeiro** (padrão: `tasklist /FI "IMAGENAME eq terminal64.exe"` contém `terminal64.exe`) — chamar sem o MT5 aberto abriria um terminal sozinho. Falhou ou fechado → `mt5="fechado"`, grava estado, devolve 30. `terminal_info()` `None` → marca desconectado (próxima volta reinicializa), `mt5="fechado"`. `connected False` → `mt5="sem_conexao"` (guarda `mt5_desde` na primeira vez), devolve 5. Na primeira conexão: `symbol_select(simbolo, True)` falso → `ErroDeConfiguracao(f"o MT5 não tem {simbolo}")`; `account_info()` → `conta`; `symbol_info(simbolo).basis` (se existir) → `contrato_vigente`.
-3. **Último salvo:** na primeira volta, `SELECT max(ts)` (conexão de leitura curta); sem barra nenhuma → `ErroDeConfiguracao("base vazia — rode corrigir_base.py / cli.py ingest antes")`.
-4. **Busca:** `copy_rates_range(simbolo, M1, (ultimo + 1 min) com tzinfo=utc, (agora + 1 dia) com tzinfo=utc)` → DataFrame igual ao de `mt5_source.buscar_barras` (sem offset; `None`/vazio = nada novo). `tick = symbol_info_tick` convertido como em `mt5_source.ultimo_tick`. `prontos = fechados(df, agora, tick)`; `em_formacao` = última linha de `df` se não estiver em `prontos`, senão `None`. `relogio_atrasado_s = (tick − agora).total_seconds()` se `> 30`, senão `None`.
-5. **Grava** (se `prontos`): `con = db.connect_write(tentativas=4, espera=0.25)` (≈1 s); `RuntimeError` (banco ocupado) → `banco_ocupado_desde = banco_ocupado_desde or agora`, **não** avança `ultimo`, devolve 1. Senão `gravar(con, simbolo, prontos, origem_captura(login, servidor))`, fecha, avança `ultimo = prontos.ts.max()`, `banco_ocupado_desde=None`; soma `gravados_hoje += inseridos`, `revisados_hoje += revisados`, `recuperados_hoje += (#prontos com ts < agora − 2 min)`. Contadores zeram na troca de dia.
-6. **Lacunas** (a cada 60 s, no pregão): candles de hoje do MT5 (`copy_rates_range` do dia, `fechados`) × `SELECT ts FROM bars_m1` de hoje → `lacunas_hoje`. Lacuna achada → regrava pelo mesmo `gravar` (é a recuperação sozinha).
-7. **Conferência** (a cada 5 min, e sempre na primeira volta conectada): `fechou = agora.time() > fechamento + 6 min`; `dias = dias_pendentes(con, simbolo, agora.date(), fechou)`. Para cada dia: candles do dia no MT5 (`copy_rates_range` 00:00→23:59 do dia, `fechados`), `conferir_dia(..., agora=agora)`. Se algum dia foi conferido: `cal.rebuild_trading_days`, `roll.rebuild_rollovers(con, simbolo, inst.get("rollover_policy"))`, `db.export_parquet`; `conferencia = {"status": "concluida", "em": agora, "dias": [...]}`. Erro → `{"status": "falhou", ...}` + log, tenta de novo na próxima janela de 5 min. Sem nada pendente e já fechou hoje → `status` fica o que estava; antes do fechamento → `"pendente"`.
-8. **Hibernação:** no pregão `ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)`; fora, `SetThreadExecutionState(0x80000000)`. (Ignorar se `ctypes.windll` não existir.)
-9. **Estado:** `escrever_estado(pasta / "estado.json", {...})` com todas as chaves acima, `atualizado_em = agora`, `pid = os.getpid()`.
-10. Devolve `1` no pregão, `30` fora.
+**Regras gerais do `Servico`:**
+- **Nenhum passo retorna antes do passo 9.** Os passos marcam o que aconteceu e pulam o resto, mas o estado é sempre escrito.
+- **Toda conexão ao banco usa no máximo ~1 s:** `db.connect_write(tentativas=4, espera=0.25)` e `db.connect(read_only=True, tentativas=4)`.
+  - `RuntimeError` de banco ocupado em **qualquer** passo → `banco_ocupado_desde = banco_ocupado_desde or agora` e o passo é pulado, sem ser tratado como erro.
+  - `banco_ocupado_desde` volta a `None` quando uma gravação dá certo.
+- `self.inst = db.load_instrument_yaml(simbolo)`, carregado no `__init__`. Se o YAML não existir → `ErroDeConfiguracao`.
+- `self.relogio = captura.RelogioServidor()` (Task 1).
 
-`rodar()`: `ErroDeConfiguracao` **sobe** (o `main` transforma em código 3); qualquer outra exceção na volta → log com traceback, `estado["erro"] = str(e)`, espera 5 s e segue. Falha de banco ocupado na conferência ou nas lacunas não é erro: tenta na janela seguinte.
+**Na primeira volta** (conexão de leitura curta; banco ocupado → tenta de novo na volta seguinte):
+- `ultimo = SELECT max(ts)`. Base vazia → `ErroDeConfiguracao("base vazia — rode corrigir_base.py ou cli.py ingest antes")`.
+- `fechamento = fechamento_esperado(...)`. Relido a cada troca de dia.
+- Contadores de hoje, para um reinício não zerá-los:
+  - `gravados_hoje` = candles de hoje cuja origem começa com `captura://`;
+  - `conferencia` = `{"status": "concluida", "em": ingested_at}` se existir `conferencia://<hoje>` no `ingest_log`, senão `{"status": "pendente"}`.
+- `recuperados_hoje` e `revisados_hoje` começam em 0. Isso é aceitável e está documentado no estado.
 
-`main(argv=None) -> int`: argparse (`--simbolo` padrão `WIN$N`, `--terminal`); log em `PASTA / "captura.log"` (`RotatingFileHandler`, 5 MB, 3 cópias, e também no console); `trava = travar(PASTA / "captura.lock")` → `None` → log "outra janela da captura já está aberta" e `return 3`; `import MetaTrader5` falhou → estado com `erro` e `return 3`; sem `--terminal`, usa o `terminal` da conta não arquivada mais recente que tiver um (`SELECT terminal FROM contas WHERE arquivada_em IS NULL AND terminal IS NOT NULL ORDER BY conta_id DESC LIMIT 1`); `Servico(...).rodar()`; `KeyboardInterrupt` → `mt5.shutdown()`, `return 0`; `ErroDeConfiguracao` → estado com `erro`, log, `return 3`. Fim do arquivo: `if __name__ == "__main__": sys.exit(main())`.
+**`volta()`, nesta ordem:**
+1. `agora = self.agora()`; `m = self.mono()`.
+2. **MT5:**
+   - **Ainda não conectado:** só chama `mt5.initialize(path=terminal)` (ou `initialize()`, sem caminho) **se `terminal_aberto()` for verdadeiro**. O padrão é: a saída de `tasklist /FI "IMAGENAME eq terminal64.exe"` contém `terminal64.exe`. Chamar sem o MT5 aberto abriria um terminal sozinho. Limitação conhecida: com dois MT5 instalados, o `tasklist` não confere qual deles está aberto.
+   - **Falhou ou está fechado:** `mt5 = "fechado"` e pula para o passo 8.
+   - **`terminal_info()` devolveu `None`:** marca desconectado (a volta seguinte reinicializa), `mt5 = "fechado"` e pula.
+   - **`connected` é `False`:** `mt5 = "sem_conexao"`; guarda `mt5_desde = agora` só na primeira vez; pula.
+   - **Conectado:** `mt5_desde = None`.
+   - **Na primeira conexão:**
+     - `symbol_select(simbolo, True)` falso → `ErroDeConfiguracao(f"o MT5 não tem {simbolo}")`;
+     - `account_info()` → `conta`;
+     - `getattr(symbol_info(simbolo), "basis", None)` → `contrato_vigente`.
+3. **Relógio:** `tick = symbol_info_tick` convertido como em `mt5_source` (epoch → `datetime` sem fuso); `relogio.observar(tick, m)`; `agora_srv = relogio.agora(m)`; `relogio_desvio_s = relogio.desvio_s(agora, m)` (vai ao estado só se `abs > 30`).
+4. **Busca:**
+   - `copy_rates_range(simbolo, M1, (ultimo + 1 min).replace(tzinfo=utc), (agora + 1 dia).replace(tzinfo=utc))` → DataFrame igual ao de `buscar_barras`. `None` ou vazio significa nada novo.
+   - `prontos = fechados(df, agora_srv)`.
+   - `em_formacao` = a última linha de `df` se ela não estiver em `prontos`; senão `None`.
+   - Se veio candle com `ts` maior que o maior já visto, guarda `self.candle_mais_novo = esse ts`.
+5. **Grava** (se houver `prontos`):
+   - `gravar(con, simbolo, prontos, origem_captura(login, servidor), price_decimals)` e fecha a conexão.
+   - Avança `ultimo = prontos.ts.max()`.
+   - Soma:
+     - `gravados_hoje += inseridos`;
+     - `revisados_hoje += revisados`;
+     - `recuperados_hoje +=` quantos `prontos` têm `ts < agora_srv − 2 min`.
+   - Com o banco ocupado, **não** avança `ultimo`: a volta seguinte pede de novo ao MT5.
+   - Os contadores zeram na troca de dia.
+6. **Lacunas** (a cada 60 s de `mono`, só no pregão):
+   - candles fechados de hoje no MT5 (`copy_rates_range` de 00:00 até agora e `fechados`) × `SELECT ts FROM bars_m1` de hoje → `lacunas_hoje`;
+   - se houver lacuna, regrava pelo mesmo `gravar`: é a recuperação sozinha.
+7. **Conferência** (a cada 5 min de `mono`, e na primeira volta conectada):
+   - `fechou` = `agora > combine(hoje, fechamento) + 6 min` **e** `candle_mais_novo` (de hoje) é `None` ou `<= (agora_srv or agora) − 10 min`.
+
+     O segundo critério cobre a troca de horário dos EUA: por uns 5 pregões a moda ainda diz 17:54 com o mercado indo até 18:24, e conferir às 18:00 deixaria 18:00–18:24 sem conferência.
+   - `dias = dias_pendentes(con, simbolo, agora.date(), fechou)`.
+   - Para cada dia: candles do dia no MT5 (`copy_rates_range` 00:00→23:59 do dia, depois `fechados(…, agora_srv)`) e `conferir_dia(..., agora=agora)`.
+   - Se algum dia foi conferido:
+     - `cal.rebuild_trading_days`;
+     - `roll.rebuild_rollovers(con, simbolo, self.inst.get("rollover_policy"))`;
+     - `db.export_parquet`;
+     - `conferencia = {"status": "concluida", "em": agora, "dias": [...]}`.
+   - Erro que não seja banco ocupado → `{"status": "falhou", "em": agora, "erro": str(e)}` + log; tenta de novo na janela seguinte.
+8. **Pregão e hibernação:**
+   - `pregao = em_pregao(agora, fechamento) or (candle_mais_novo de hoje e agora_srv − candle_mais_novo < 10 min)`.
+   - No pregão: `ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)`. Fora: `SetThreadExecutionState(0x80000000)`. Se `ctypes.windll` não existir, ignorar.
+9. **Estado:** `escrever_estado(pasta / "estado.json", {...})` com todas as chaves, mais:
+   - `atualizado_em = agora`, `pid = os.getpid()`;
+   - `em_pregao = pregao`;
+   - `fechamento_esperado = "HH:MM"`;
+   - `primeiro_candle_hoje` (ts do primeiro candle de hoje no banco, ou `None`);
+   - `erro = None` quando a volta não teve exceção.
+
+   Falha ao escrever o estado → só vai para o log; o laço segue.
+10. Devolve `1` no pregão e `30` fora dele. Se o MT5 estiver fechado ou sem conexão: `5`.
+
+**`rodar()`:**
+- `ErroDeConfiguracao` **sobe**, e o `main` a transforma no código 3.
+- Qualquer outra exceção na volta → log com traceback; escreve o estado com `erro = str(e)` (em try/except próprio); espera 5 s e segue.
+
+**`main(argv=None) -> int`:**
+1. `argparse`: `--simbolo` (padrão `WIN$N`) e `--terminal`.
+2. **Primeiro a trava**, antes de abrir o log: `trava = travar(PASTA / "captura.lock")`. Se vier `None`, imprime só no console "outra janela da captura já está aberta" e `return OUTRA_INSTANCIA`.
+3. Abre o log em `PASTA / "captura.log"` (`RotatingFileHandler`, 5 MB, 3 cópias), espelhado no console.
+4. Se `import MetaTrader5` falhar → estado com `erro` e `return 3`.
+5. Sem `--terminal`, usa o `terminal` da conta não arquivada mais recente que tiver um: `SELECT terminal FROM contas WHERE arquivada_em IS NULL AND terminal IS NOT NULL ORDER BY conta_id DESC LIMIT 1`.
+6. `Servico(...).rodar()`, tratando a saída assim:
+   - `KeyboardInterrupt` → `mt5.shutdown()`, `return 0`;
+   - `ErroDeConfiguracao` → estado com `erro`, log, `return 3`.
+
+`trava` é referenciada até o fim do `main`. Fim do arquivo: `if __name__ == "__main__": sys.exit(main())`.
 
 - [ ] **Step 1: testes (falhando)** — `tests/test_captura_processo.py` com um MT5 falso:
 
@@ -1025,7 +1240,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1097,8 +1312,17 @@ def base(tmp_path, monkeypatch):
     return tmp_path
 
 
-def _servico(mt5, agora, pasta):
-    return P.Servico(mt5=mt5, agora=lambda: agora, pasta=pasta,
+class Mono:
+    """monotonic controlado pelo teste"""
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+def _servico(mt5, agora, pasta, mono=None):
+    return P.Servico(mt5=mt5, agora=lambda: agora, mono=mono or Mono(), pasta=pasta,
                      terminal_aberto=lambda: True)
 
 
@@ -1139,7 +1363,7 @@ def test_banco_ocupado_nao_avanca_e_a_volta_seguinte_grava_sem_duplicar(base, mo
 def test_mt5_fechado_nao_inicializa_e_avisa(base):
     agora = datetime(2026, 10, 1, 10, 0)
     mt5 = MT5Falso([], tick=agora, aberto=False)
-    s = P.Servico(mt5=mt5, agora=lambda: agora, pasta=base / "ao_vivo",
+    s = P.Servico(mt5=mt5, agora=lambda: agora, mono=Mono(), pasta=base / "ao_vivo",
                   terminal_aberto=lambda: False)
     s.volta()
     assert mt5.inits == 0
@@ -1157,7 +1381,7 @@ def test_sem_conexao_com_a_corretora(base):
 def test_simbolo_ausente_e_erro_de_configuracao(base):
     agora = datetime(2026, 10, 1, 10, 0)
     s = P.Servico(mt5=MT5Falso([], tick=agora), simbolo="XXX$N", agora=lambda: agora,
-                  pasta=base / "ao_vivo", terminal_aberto=lambda: True)
+                  mono=Mono(), pasta=base / "ao_vivo", terminal_aberto=lambda: True)
     with pytest.raises(P.ErroDeConfiguracao):
         s.volta()
 
@@ -1172,7 +1396,46 @@ def test_depois_do_fechamento_confere_o_dia_e_exporta_o_parquet(base):
     assert len(db.read_bars_parquet("WIN$N")["ts"]) == 4
 
 
-def test_segunda_instancia_sai_com_3(base):
+def test_reinicio_nao_zera_o_placar_do_dia(base):
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora)
+    _servico(mt5, agora, base / "ao_vivo").volta()
+    _servico(mt5, agora + timedelta(seconds=5), base / "ao_vivo").volta()   # reabriu
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["gravados_hoje"] == 5
+
+
+def test_erro_passageiro_some_na_volta_seguinte(base, monkeypatch):
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora)
+    s = _servico(mt5, agora, base / "ao_vivo")
+    original = mt5.copy_rates_range
+    mt5.copy_rates_range = lambda *a: (_ for _ in ()).throw(RuntimeError("falha do terminal"))
+    s.passo_seguro()                       # o que o rodar() faz a cada volta
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["erro"] == "falha do terminal"
+    mt5.copy_rates_range = original
+    s.passo_seguro()
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["erro"] is None
+
+
+def test_mercado_ainda_aberto_apos_o_fechamento_esperado_nao_confere(base):
+    # troca de horário dos EUA: a moda diz 17:54, mas o mercado vai até 18:24
+    agora = datetime(2026, 10, 1, 18, 5)
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 17, 50), 15), tick=agora)
+    s = _servico(mt5, agora, base / "ao_vivo")
+    s.fechamento = time(17, 54)           # como se o histórico dissesse 17:54
+    s.volta()
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["conferencia"]["status"] != "concluida"
+
+
+def test_main_com_outra_instancia_devolve_4_sem_abrir_log(base, monkeypatch):
+    monkeypatch.setattr(P, "PASTA", base / "ao_vivo")
+    trava = P.travar(base / "ao_vivo" / "captura.lock")
+    assert P.main([]) == P.OUTRA_INSTANCIA
+    assert not (base / "ao_vivo" / "captura.log").exists()
+    trava.close()
+
+
+def test_segunda_instancia_nao_pega_a_trava(base):
     trava = P.travar(base / "ao_vivo" / "captura.lock")
     assert trava is not None
     assert P.travar(base / "ao_vivo" / "captura.lock") is None
@@ -1192,7 +1455,11 @@ def test_trava_solta_quando_o_processo_morre_a_forca(tmp_path):
     assert P.travar(lock) is not None
 ```
 
-  (Se `copy_rates_range` do falso receber datetimes com `tzinfo`, a comparação já remove o fuso. Ajuste o `MT5Falso` só se o `Servico` precisar de outro método do pacote; nunca afrouxe as asserções.)
+  Notas para o implementador:
+  - `copy_rates_range` do falso remove o fuso dos datetimes que recebe.
+  - Ajuste o `MT5Falso` só se o `Servico` precisar de outro método do pacote. Nunca afrouxe as asserções.
+  - `passo_seguro()` é a volta com o tratamento de exceção que o `rodar()` usa. Separe-a do `sleep` para poder testá-la.
+  - O teste do fechamento atrasado atribui `s.fechamento` antes da primeira volta. A leitura do banco na primeira volta só preenche `fechamento` se ele ainda for `None`.
 
 - [ ] **Step 2: rodar** → FAIL.
 - [ ] **Step 3: implementar** `captura.py` conforme o desenho acima.
@@ -1210,10 +1477,12 @@ set ESPERA=10
 .venv\Scripts\python.exe captura.py
 set CODIGO=%ERRORLEVEL%
 if "%CODIGO%"=="0" exit /b 0
+REM 4 = ja ha uma captura aberta (iniciar.bat reaberto): sai sem incomodar
+if "%CODIGO%"=="4" exit /b 0
 if "%CODIGO%"=="3" (
     echo.
-    echo  A captura parou e nao vai reabrir sozinha: outra janela da captura
-    echo  ja esta aberta, ou falta configuracao. Detalhes em data\ao_vivo\captura.log
+    echo  A captura parou e nao vai reabrir sozinha: falta configuracao.
+    echo  Detalhes em data\ao_vivo\captura.log
     echo.
     pause
     exit /b 3
@@ -1228,8 +1497,8 @@ goto laco
   `start "Dataframe - Captura" /min cmd /c captura.bat` com um `REM` explicando
   (janela própria: fechar a tela não para a captura; a captura só para fechando a janela dela).
 
-- [ ] **Step 6: conferência real (mercado fechado ou aberto, tanto faz)** — rodar `.venv/Scripts/python.exe captura.py` por ~1 min com o MT5 aberto; conferir em `data/ao_vivo/estado.json` `mt5 = conectado`, `ultimo_salvo` = último minuto fechado, sem erro; Ctrl+C sai com 0. Rodar duas vezes ao mesmo tempo → a segunda sai com 3.
-- [ ] **Step 7: mutação** — tire o `if terminal_aberto()` → `test_mt5_fechado...` falha; avance `ultimo` mesmo com banco ocupado → o teste do banco ocupado falha.
+- [ ] **Step 6: conferência real (mercado fechado ou aberto, tanto faz)** — rodar `.venv/Scripts/python.exe captura.py` por ~1 min com o MT5 aberto; conferir em `data/ao_vivo/estado.json` `mt5 = conectado`, `ultimo_salvo` = último minuto fechado, sem erro; Ctrl+C sai com 0 (o Windows ainda pergunta "Terminate batch job?" na janela do .bat — normal). Rodar duas vezes ao mesmo tempo → a segunda sai com 4, calada.
+- [ ] **Step 7: mutação** — tire o `if terminal_aberto()` → `test_mt5_fechado...` falha; avance `ultimo` mesmo com banco ocupado → o teste do banco ocupado falha; tire o segundo critério do `fechou` → o teste do mercado aberto após o fechamento esperado falha; não limpe `erro` → o teste do erro passageiro falha.
 - [ ] **Step 8: commit** — `captura.py captura.bat iniciar.bat tests/test_captura_processo.py`, `feat(captura): processo do servico de captura e janela propria`.
 
 ---
@@ -1250,22 +1519,30 @@ goto laco
 
 **Regras de `situacao`** (primeira que casar):
 1. `estado is None` → âmbar, "Captura nunca rodou neste computador", ação "abra pelo iniciar.bat".
-2. `pregao` = `em_pregao(agora, fechamento)` (fechamento do estado, padrão 18:24). Estado velho (> 60 s): no pregão → rosa "Captura parada há N min" + ação "confira a janela “Dataframe - Captura”"; fora → cinza "Captura parada (fora do pregão)", `ativa False`.
+2. `pregao` = `estado["em_pregao"]` se o estado está fresco; senão `em_pregao(agora, fechamento do estado ou 18:24)` (o serviço morto não sabe dizer). Estado velho (> 60 s): no pregão → rosa "Captura parada há N min" + ação "confira a janela “Dataframe - Captura”"; fora → cinza "Captura parada (fora do pregão)", `ativa False`.
 3. `erro` → rosa, o texto do erro.
 4. `mt5 == "fechado"` → rosa "MT5 fechado", ação "abra e faça login; a captura recupera o período sozinha".
 5. `mt5 == "sem_conexao"` → âmbar "Sem conexão com a corretora desde HH:MM".
 6. `banco_ocupado_desde` há mais de 2 min → âmbar "Banco ocupado há N s" (ação: "uma mineração está gravando; nada se perde").
-7. `relogio_atrasado_s` → âmbar "Relógio do PC atrasado N s".
-8. Senão → verde "Captura ativa" (fora do pregão: verde "Captura ativa — mercado fechado").
+7. `relogio_desvio_s` → âmbar "Relógio do PC adiantado N s" (positivo) ou "atrasado N s" (negativo).
+8. Dia útil, captura em dia, mas nenhum candle de hoje ainda (`primeiro_candle_hoje` nulo): antes das 10:00 → cinza "Aguardando a abertura"; depois das 10:00 → cinza "Sem pregão hoje (feriado?)". Sem alarme — a B3 tem feriados que o código não conhece (12/10, 02/11, 20/11…).
+9. Senão → verde "Captura ativa" (fora do pregão: verde "Captura ativa — mercado fechado").
 
 - [ ] **Step 1: testes (falhando)** — `tests/test_pregao_tela.py`: um teste por regra acima (montando dicionários de estado à mão, `agora = datetime(2026, 10, 1, 10, 0)` numa quinta), mais:
 
 ```python
+@pytest.fixture(autouse=True)
+def _estado_limpo(monkeypatch):
+    # globais de módulo: sem isto um teste vaza estado para o seguinte
+    from ui import data as D
+    monkeypatch.setattr(D, "_estado_ultimo", None)
+    monkeypatch.setattr(D, "_conferencia_vista", None)
+
+
 def test_estado_captura_guarda_a_ultima_leitura_valida(tmp_path, monkeypatch):
     from ui import data as D
     p = tmp_path / "estado.json"
     monkeypatch.setattr(D, "ESTADO_CAPTURA", p)
-    monkeypatch.setattr(D, "_estado_ultimo", None)
     assert D.estado_captura() is None
     p.write_text('{"mt5": "conectado"}', encoding="utf-8")
     assert D.estado_captura() == {"mt5": "conectado"}
@@ -1277,7 +1554,6 @@ def test_conferencia_nova_limpa_o_cache_de_barras(tmp_path, monkeypatch):
     from ui import data as D
     p = tmp_path / "estado.json"
     monkeypatch.setattr(D, "ESTADO_CAPTURA", p)
-    monkeypatch.setattr(D, "_conferencia_vista", None)
     p.write_text('{"conferencia": {"em": "2026-10-01T18:30:00"}}', encoding="utf-8")
     D.estado_captura()
     D._bars_cache["WIN$N"] = {"x": 1}
@@ -1297,11 +1573,13 @@ def test_sincronizar_recusa_com_a_captura_ativa(monkeypatch):
 
 - [ ] **Step 2: rodar** → FAIL.
 - [ ] **Step 3: implementar.**
+  - `ui/data.py` — `bars()` passa a ser à prova de corrida com o `clear()` (o Flask atende em várias threads): `b = _bars_cache.get(symbol)`; se `None`, carrega, guarda e devolve `b` (nunca `return _bars_cache[symbol]` depois de guardar).
   - `ui/data.py`: `from core import captura as CAP`; `ESTADO_CAPTURA = db.DATA / "ao_vivo" / "estado.json"`; `_estado_ultimo = None`, `_conferencia_vista = None`; `estado_captura()`: arquivo ausente → `None` (e zera `_estado_ultimo`); ilegível → `_estado_ultimo`; válido → guarda; se `(e.get("conferencia") or {}).get("em")` difere de `_conferencia_vista` e esta não é `None` → `_bars_cache.clear()`; atualiza `_conferencia_vista`. Comentário: a mineração/backtest passam a ver o dia conferido.
   - `ui/components/pregao_panel.py` (cabeçalho: spec §6; só desenha, sem ler arquivo): `situacao`, `captura_ativa`, `selo(sit) -> (children, className, style)` — esconde (`display: none`) quando `sit["tom"] == "cinza"`; senão `html.Span([● , texto])` com classe `captura-selo captura-selo-<tom>` e `title` = ação.
   - `ui/app.py` topbar: antes do `mt5-sync-wrap`, `html.Span(id="captura-selo", className="captura-selo", style={"display": "none"})`; no layout, `dcc.Interval(id="captura-intervalo", interval=30_000)`.
   - `ui/callbacks_mt5.py`: `motivo_bloqueio()` → `"a captura ao vivo já mantém a base em dia"` se `PP.captura_ativa(D.estado_captura(), datetime.now())`, senão `None`; no início de `sincronizar_mt5`, se houver motivo → devolve `(motivo, "mt5-sync-status", no_update×3)`.
-  - `ui/callbacks_pregao.py` com `register(app)`; nesta tarefa um callback: `Input("captura-intervalo", "n_intervals")` → `Output("captura-selo", "children")`, `("captura-selo", "className")`, `("captura-selo", "style")`, `("captura-selo", "title")`, `("btn-mt5-sync", "disabled")`, `("btn-mt5-sync", "title")`. Registrar em `ui/callbacks.py:register` como os outros (`from ui import callbacks_pregao; callbacks_pregao.register(app)`).
+  - **Calendário do Backtest:** `d-ate.date`, `d-ate.max_date_allowed` e `d-de.max_date_allowed` são calculados no `build()`; o `sincronizar_mt5` já os reescreve. Um segundo callback em `ui/callbacks_pregao.py`, `Input("captura-intervalo", "n_intervals")`, escreve as três props com `allow_duplicate=True` e `prevent_initial_call=True` **só quando `conferencia.em` mudou** desde a última vez (guardar em `dcc.Store(id="captura-conferencia-vista")`; senão `no_update`), usando `D.span(simbolo)` depois da invalidação. Teste: com `conferencia.em` novo, o callback devolve a data nova; repetido, `no_update`.
+  - `ui/callbacks_pregao.py` com `register(app)`; o callback do selo: `Input("captura-intervalo", "n_intervals")` → `Output("captura-selo", "children")`, `("captura-selo", "className")`, `("captura-selo", "style")`, `("captura-selo", "title")`, `("btn-mt5-sync", "disabled")`, `("btn-mt5-sync", "title")`. Registrar em `ui/callbacks.py:register` como os outros (`from ui import callbacks_pregao; callbacks_pregao.register(app)`).
   - CSS no fim de `ui/assets/style.css`, bloco `/* ---- Captura: selo no topo ---- */`, com as variáveis existentes (`--pos`, `--warn`, `--neg`, `--muted`).
 - [ ] **Step 4: rodar** `tests/test_pregao_tela.py tests/test_callbacks_sem_ciclo.py` → PASS; suíte inteira.
 - [ ] **Step 5: commit** — `ui/data.py ui/app.py ui/callbacks.py ui/callbacks_mt5.py ui/callbacks_pregao.py ui/components/pregao_panel.py ui/assets/style.css tests/test_pregao_tela.py`, `feat(ao-vivo): selo da captura no topo e Sincronizar travado com a captura ativa`.
@@ -1314,7 +1592,7 @@ Siga também `.claude/agents/designer-ui.md` (sistema visual, rótulo + valor, p
 
 **Files:**
 - Modify: `ui/components/ao_vivo_panel.py`, `ui/components/pregao_panel.py`, `ui/callbacks_pregao.py`, `ui/data.py`, `ui/assets/style.css`
-- Test: `tests/test_pregao_tela.py`, `tests/test_ao_vivo_tela.py` (se conferir o chip "Estratégias")
+- Test: `tests/test_pregao_tela.py`, `tests/test_ao_vivo_tela.py` (**obrigatório**: o `assert "Estratégias" in textos(p)` da linha ~50 quebra, porque `textos` não lê `options` de RadioItems — troque por achar o `RadioItems` de id `av-subtela` e conferir `[o["label"] for o in options] == ["Estratégias", "Pregão"]`)
 
 **Interfaces:**
 - Consumes: `D.estado_captura`, `situacao` (Task 8); `D.candles(symbol, inicio, fim, tf)` existente; `charts.price_series`.
@@ -1323,14 +1601,14 @@ Siga também `.claude/agents/designer-ui.md` (sistema visual, rótulo + valor, p
 **Desenho:**
 - `ao_vivo_panel.painel()`: troca o `html.Span("Estratégias", className="chip av-subtela")` por `dcc.RadioItems(id="av-subtela", value="estrategias", persistence=True, persistence_type="local", className="av-subtelas", options=[Estratégias, Pregão])`; tudo o que hoje vem depois do cabeçalho vai para `html.Div(id="av-bloco-estrategias")`; acrescenta `pregao_panel.bloco()` (`id="av-bloco-pregao"`, `display: none`). **Preserve a remoção do parágrafo "robô de papel" feita pelo usuário.** Atualize o docstring do módulo (a sub-tela Pregão existe agora).
 - `pregao_panel.bloco()`: `dcc.Interval(id="av-pg-intervalo", interval=2000, disabled=True)`, `dcc.Store(id="av-pg-ultimo")`; linha de 4 cartões `av-pg-faixa` (Captura · MT5 · Último candle · Lacunas hoje) + faixa de alerta quando `situacao` não é verde; painel do gráfico com barra: `dcc.RadioItems(id="av-pg-tf", value="M1", options 1 min/5 min/15 min)`, botões "Voltar para agora" (`av-pg-agora`) e "Tela cheia" (`av-pg-cheia`), e `html.Div(Tvlwc(id="av-pg-grafico", series=[], chartOptions=T.CHART_OPTIONS, height="100%"), id="av-pg-grafico-caixa", className="pg-grafico")` (zoom e arrastar já vêm do componente; logo da TradingView fica); 4 cartões `av-pg-placar` (Gravados hoje · Recuperados · Correções da corretora · Conferência do dia: "pendente"/"concluída às HH:MM"/"falhou — tenta de novo em 5 min").
-- `idade_tom`: fora do pregão → `"cinza"`; ≤ 90 s verde; ≤ 180 s âmbar; depois rosa.
+- `idade_tom`: fora do pregão → `"cinza"`; ≤ 90 s verde; ≤ 180 s âmbar; depois rosa. A idade é medida contra `primeiro_candle_hoje`/`ultimo_salvo` de **hoje**: sem candle de hoje, o cartão "Último candle" mostra o de ontem em cinza com "aguardando a abertura" (mesma regra 8 da `situacao`), nunca rosa.
 - `tick_formacao(estado, tf, balde)`: sem `em_formacao` → `None`. M1 → `{"id": "preco", "bar": {time: to_epoch(ts), open, high, low, close}}`. M5/M15 → início do balde = minuto de `em_formacao` arredondado para baixo no múltiplo; `balde` = candles M1 fechados (`{"ts", "open", "high", "low", "close"}`) desde o início do balde; abre = open do primeiro (ou do em formação, se o balde vier vazio), máxima/mínima de todos, fecha = close do em formação; `time` = início do balde.
 - `D.dia_do_pregao(estado)`: data de `ultimo_salvo` (ou hoje, sem estado). Fora do pregão o gráfico mostra esse último dia e a faixa diz "Mercado fechado".
 - Callbacks (`ui/callbacks_pregao.py`):
   1. `subtela`: `Input("av-subtela", "value")`, `Input("modo", "value")` → `Output("av-bloco-estrategias", "style")`, `Output("av-bloco-pregao", "style")`, `Output("av-pg-intervalo", "disabled")` (ligado só com modo `aovivo` e sub-tela `pregao`).
   2. `pulso`: `Input("av-pg-intervalo", "n_intervals")`, `State("av-pg-ultimo", "data")`, `State("av-pg-tf", "value")` → `Output("av-pg-faixa", "children")`, `Output("av-pg-placar", "children")`, `Output("av-pg-ultimo", "data")` (`no_update` se `ultimo_salvo` não mudou), `Output("av-pg-grafico", "tick")`. **Nunca escreve `series`** — é isso que preserva o zoom. Para M5/M15 lê do banco só os M1 do balde atual (conexão de leitura curta).
   3. `serie`: `Input("av-pg-ultimo", "data")`, `Input("av-pg-tf", "value")`, `Input("av-subtela", "value")` → `Output("av-pg-grafico", "series")` = `charts.price_series(D.candles("WIN$N", dia 00:00, dia 23:59, tf))`.
-  4. `agora`: `Input("av-pg-agora", "n_clicks")` → `Output("av-pg-grafico", "timeScaleAction")` = `{"action": "scrollToRealTime", "nonce": n}`.
+  4. `agora`: `Input("av-pg-agora", "n_clicks")` **e** `Input("av-pg-tf", "value")` → `Output("av-pg-grafico", "timeScaleAction")` = `{"action": "scrollToRealTime", "nonce": <contador ou time.time()>}`, `prevent_initial_call=True`. Trocar o tempo gráfico também volta para agora: o componente preserva o intervalo LÓGICO (índices de barra) ao trocar `series`, e em 5 min o mesmo índice cai num horário diferente.
   5. Tela cheia: `app.clientside_callback` com `Input("av-pg-cheia", "n_clicks")`, `Output("av-pg-grafico-caixa", "title")`, JS: se `n`, `document.getElementById('av-pg-grafico-caixa').requestFullscreen()`; devolve `window.dash_clientside.no_update`.
 - CSS: bloco `/* ---- Ao vivo › Pregão ---- */` no fim de `style.css` — cartões de estado em grade de 4, faixa de alerta, `.pg-grafico { height: 460px }`, `.pg-grafico:fullscreen { background: var(--bg); padding: 12px; height: 100vh }`, seletor `.av-subtelas` no estilo dos chips. Cores só das variáveis existentes.
 
@@ -1346,8 +1624,9 @@ Siga também `.claude/agents/designer-ui.md` (sistema visual, rótulo + valor, p
 **Files:** `CLAUDE.md`, `CHANGELOG.md`
 
 - [ ] **Step 1:** `CLAUDE.md` — tabela de modos (linha Ao vivo: `captura.py` + `core/captura.py`, `callbacks_pregao.py` + `components/pregao_panel.py`); "Rodar": `captura.bat` abre pelo `iniciar.bat`; "Onde estamos": parte 2 ✅, próximo passo = parte 3 (incubação em papel, spec própria, começar pelo brainstorming); armadilha da hora: trocar "correção: spec §0" por "corrigida em <data da Task 3>; backup em `<caminho>`"; acrescentar: "Captura ativa → o botão Sincronizar fica desativado; a mineração só vê o dia de hoje depois da conferência do dia (Parquet)".
+- [ ] **Step 1b:** docstring de `core/db_manager.py` e do `cli.py verify`/`derive`: as barras de HOJE gravadas pela captura só existem no banco até a conferência do dia (o Parquet e o `data/raw` não as têm). `cli.py verify` com a captura rodando apaga o dia. Acrescentar ao `cmd_verify` uma recusa se `data/ao_vivo/estado.json` tiver `atualizado_em` < 60 s ("feche a captura antes"), e a mesma frase na armadilha do CLAUDE.md.
 - [ ] **Step 2:** `CHANGELOG.md` — entrada "Ao vivo, parte 2: serviço de captura e sub-tela Pregão", com a correção da base (o que foi apagado e por quê) em linguagem de usuário.
-- [ ] **Step 3: commit** — `CLAUDE.md CHANGELOG.md`, `docs: servico de captura e correcao da base`.
+- [ ] **Step 3: commit** — `CLAUDE.md CHANGELOG.md core/db_manager.py cli.py`, `docs: servico de captura e correcao da base`.
 
 ---
 
