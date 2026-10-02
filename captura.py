@@ -651,8 +651,12 @@ class Servico:
         feitos = []
         for dia, df in barras.items():
             try:
-                r = C.reconferir_dia(con, self.simbolo, dia, df,
-                                     agora=max(agora, self.agora_srv or agora),
+                # A marca sai da mesma hora que o papel grava no
+                # `calculado_em` (`agora`): é por ela que `papel.reabriveis`
+                # separa o papel conferido antes da reconferência (reabre) do
+                # conferido depois (congelado, decisão 6). Vence a conferência
+                # da véspera sem folga nenhuma: só roda a partir das 08:55.
+                r = C.reconferir_dia(con, self.simbolo, dia, df, agora=agora,
                                      price_decimals=self.price_decimals)
             except Exception as e:
                 # nada foi apagado (rollback); a próxima janela tenta de novo,

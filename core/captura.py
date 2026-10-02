@@ -237,10 +237,14 @@ def _dia_inteiro(con, symbol: str, dia: date, mt5: pl.DataFrame, ini: datetime) 
         "AND ts < ?", [symbol, ini, ini + timedelta(days=1)]).fetchone()
     if n == 0:
         return
-    sairiam = n - con.execute(
-        "SELECT count(*) FROM bars_m1 WHERE symbol = ? AND ts >= ? AND ts < ? "
-        "AND ts IN (SELECT ts FROM mt5)",
-        [symbol, ini, ini + timedelta(days=1)]).fetchone()[0]
+    con.register("_mt5_inteiro", mt5.select("ts"))
+    try:
+        sairiam = n - con.execute(
+            "SELECT count(*) FROM bars_m1 WHERE symbol = ? AND ts >= ? AND ts < ? "
+            "AND ts IN (SELECT ts FROM _mt5_inteiro)",
+            [symbol, ini, ini + timedelta(days=1)]).fetchone()[0]
+    finally:
+        con.unregister("_mt5_inteiro")
     if mt5.height < n - REMOVER_NO_MAXIMO:
         raise ValueError(f"o MT5 devolveu {mt5.height} candles de {dia:%d/%m/%Y} "
                          f"e o banco tem {n}: dia incompleto, nada apagado")

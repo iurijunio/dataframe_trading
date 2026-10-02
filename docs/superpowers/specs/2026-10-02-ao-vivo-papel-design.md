@@ -142,7 +142,11 @@ não mudam (mesmos trades).
   com os candles finais; os `op_id` ficam (upsert por `entry_ts`). Quem
   reabrir é decidido pela divergência em dia com a marca `reconferencia://`
   (`papel.reabriveis`), não por "acabou de reconferir": a captura que cai
-  entre o COMMIT dos candles e o papel o reabre na janela seguinte. Escolhido
+  entre o COMMIT dos candles e o papel o reabre na janela seguinte. Só
+  reabre papel conferido ANTES da marca (`calculado_em` < `source_max_ts`
+  da reconferência, os dois na hora da captura): o conferido de novo depois
+  dela fica congelado, e um candle mudado mais tarde por outra fonte
+  (Sincronizar, reimportação) volta a ser só divergência (decisão 6). Escolhido
   em vez de adiar o congelamento para a manhã: a tela mostra o pregão
   conferido na mesma noite e um dia que nunca é reconferido (PC desligado)
   não fica "rodando". Não reabre — fica congelado e a divergência acusa —

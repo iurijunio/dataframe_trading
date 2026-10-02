@@ -1069,3 +1069,28 @@ def test_parquet_que_falha_na_reconferencia_nao_marca_a_conferencia_de_hoje(
     s.volta()
     no_parquet = [str(t)[:16] for t in db.read_bars_parquet("WIN$N")["ts"]]
     assert "2026-10-01T18:31" not in no_parquet
+
+
+def test_correcao_posterior_a_reconferencia_nao_reabre_o_papel(base, ligacao, monkeypatch):
+    # decisão 6 continua valendo: depois da reconferência, um candle mudado
+    # por outra fonte (Sincronizar, reimportação) só acusa divergência
+    from core import papel
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    ontem = datetime(2026, 10, 1).date()
+    _ontem_consolidado(s, mt5, mono, datetime(2026, 10, 2, 8, 56))
+    assert _pregao_papel(ligacao, ontem)[0] == "conferido"
+    with db.connect_write() as con:
+        from core.mt5_source import barras_de_taxas
+        b = barras_de_taxas(mt5.copy_rates_range("WIN$N", 1, datetime(2026, 10, 1, 9),
+                                                 datetime(2026, 10, 1, 9)))
+        ing.ingest_df(con, b.with_columns(close=b["close"] + 5), "WIN$N", "manual.csv", "x",
+                      source_max_ts=datetime(2026, 10, 2, 10, 0))
+    chamadas = _contar(monkeypatch, "conferir")
+    s.agora = lambda: datetime(2026, 10, 2, 10, 30)
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert chamadas == []
+    assert _pregao_papel(ligacao, ontem)[0] == "conferido"
+    with db.connect(read_only=True) as con:
+        assert [d["dia"] for d in papel.divergencias(con)] == [ontem]

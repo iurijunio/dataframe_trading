@@ -444,3 +444,20 @@ def test_dia_mais_velho_que_5_pregoes_sai_da_reconferencia(con):
     # hoje = 05/10: os 5 pregões anteriores são 28/09..02/10
     assert C.dias_a_reconferir(con, "WIN$N", date(2026, 10, 5)) == dias[2:]
     assert C.dias_abandonados(con, "WIN$N", date(2026, 10, 5)) == dias[:2]
+
+
+@pytest.mark.parametrize("caso", ["remove_tres", "comeca_5_min_depois"])
+def test_reconferencia_no_limite_ainda_aceita(con, caso):
+    nove = datetime(2026, 10, 1, 9, 0)
+    if caso == "remove_tres":
+        banco, mt5, removidos = _min(nove, 20), _min(nove, 24, pular=(5, 6, 7)), 3
+    else:
+        banco, mt5, removidos = [nove] + _min(nove + timedelta(minutes=10), 21), \
+            _min(nove + timedelta(minutes=5), 26), 1
+    b = _barras_ts(banco)
+    C.gravar(con, "WIN$N", b, "captura://1@srv")
+    C.conferir_dia(con, "WIN$N", date(2026, 10, 1), b, agora=datetime(2026, 10, 1, 18, 40))
+    r = C.reconferir_dia(con, "WIN$N", date(2026, 10, 1), _barras_ts(mt5),
+                         agora=datetime(2026, 10, 2, 9, 0))
+    assert r["removidos"] == removidos
+    assert [t for (t,) in con.execute("SELECT ts FROM bars_m1 ORDER BY ts").fetchall()] == mt5

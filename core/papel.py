@@ -43,6 +43,7 @@ from datetime import date, datetime, time, timedelta
 import numpy as np
 
 from . import codigo
+from .captura import PREFIXO_RECONFERENCIA
 from . import db_manager as db
 from . import engine
 from . import metrics
@@ -691,8 +692,16 @@ def conferir(con, dia: date, agora: datetime, cache_codigo: dict, *,
 
 def reabriveis(con, dia: date, *, symbol: str = SIMBOLO) -> list[int]:
     """As ligações cujo papel conferido do dia `reabrir_reconferido`
-    reabriria (sem mexer em nada): checksum diferente dos candles de agora
-    e o `conferir` refaria igual, menos os candles.
+    reabriria (sem mexer em nada): checksum diferente dos candles de agora,
+    conferido ANTES da reconferência do dia e o `conferir` refaria igual,
+    menos os candles.
+
+    "Antes da reconferência" é o que mantém a decisão 6: o papel conferido
+    de novo depois dela fica congelado, e um candle mudado por outra fonte
+    (Sincronizar, reimportação) só acusa divergência. Compara o
+    `calculado_em` (hora da captura) com o `source_max_ts` da marca
+    reconferencia://<dia>, que a captura grava com a mesma hora — o
+    `ingested_at` é do relógio do PC e poderia discordar.
 
     Fica de fora — congelado, com a divergência acusando — o pregão que o
     `conferir` refaria diferente por outro motivo: variante tirada do
@@ -710,7 +719,11 @@ def reabriveis(con, dia: date, *, symbol: str = SIMBOLO) -> list[int]:
         "JOIN portfolio_membros pm ON pm.ligacao_id = pp.ligacao_id "
         "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
         "WHERE pp.dia = ? AND pp.status = 'conferido' AND p.symbol = ? "
-        "AND pp.checksum IS DISTINCT FROM ?", [dia, symbol, soma]).fetchall()
+        "AND pp.checksum IS DISTINCT FROM ? "
+        "AND pp.calculado_em < (SELECT max(l.source_max_ts) FROM ingest_log l "
+        "  WHERE l.symbol = ? AND l.source_file = ?)",
+        [dia, symbol, soma, symbol,
+         f"{PREFIXO_RECONFERENCIA}{dia:%Y-%m-%d}"]).fetchall()
     return [lig for lig, hash_dia, motor, estrategia, removido in linhas
             if (removido is None or removido >= fim)
             and motor == engine.VERSAO
