@@ -179,8 +179,11 @@ class Servico:
         self.cache_codigo: dict = {}
         self.papel_pendente = False     # banco ocupado: refazer sem esperar candle
         self.papel_em = None
-        self.papel_erro = None
+        # por origem: o cálculo de um minuto dar certo não apaga a falha da
+        # conferência de ontem, e vice-versa
+        self.papel_erros = {"calculo": None, "conferencia": None}
         self.papel_ligacoes: dict = {}
+        self._papel_ok = True           # nenhuma falha do papel nesta janela
         self.papel_divergencias = 0
 
     # ------------------------------------------------------------- banco
@@ -413,9 +416,10 @@ class Servico:
             # sem "pendente": a mesma falha a cada segundo só encheria o log;
             # o candle seguinte tenta de novo
             log.exception("papel do dia %s falhou", dia)
-            self.papel_erro = str(e)
+            self.papel_erros["calculo"] = str(e)
             return
-        self.papel_em, self.papel_erro = agora, None
+        self.papel_em = agora
+        self.papel_erros["calculo"] = None
         self._anotar_papel(res)
 
     def _anotar_papel(self, resultados) -> None:
@@ -443,10 +447,15 @@ class Servico:
             with self._banco(agora, escrita=False) as con:
                 dias = C.dias_pendentes(con, self.simbolo, agora.date(),
                                         self._fechou_hoje(agora))
+                papel_dias = [d for d in self._papel_a_conferir(con)
+                              if d not in dias]
                 self._divergencias(con)
         except _Ocupado:
             return      # a janela não conta: tenta de novo na volta seguinte
-        if not dias and not self.reexportar:
+        if not dias and not papel_dias:
+            # nada do papel por conferir: uma falha antiga já não vale
+            self.papel_erros["conferencia"] = None
+        if not dias and not self.reexportar and not papel_dias:
             self._mono_conferencia = m
             return
         try:
@@ -455,7 +464,14 @@ class Servico:
             barras = {dia: self._barras_do_dia(dia, agora) for dia in dias}
             with self._banco(agora, escrita=True) as con:
                 self._mono_conferencia = m
+                self._papel_ok = True
+                # antes dos candles: uma falha na conferência deles não pode
+                # adiar de novo o papel de um dia que já foi conferido
+                for dia in papel_dias:
+                    self._conferir_papel(con, dia, agora)
                 self._conferir_com(con, agora, barras)
+                if self._papel_ok:
+                    self.papel_erros["conferencia"] = None
         except _Ocupado:
             return
         except ErroDeConfiguracao:
@@ -479,12 +495,49 @@ class Servico:
                                  symbol=self.simbolo)
         except Exception as e:
             # os candles do dia estão conferidos e isso não se desfaz por
-            # causa do papel; o pregão segue "rodando", com o dia no estado
+            # causa do papel; o pregão segue "rodando" e `_papel_a_conferir`
+            # o traz de volta na próxima janela
             log.exception("papel da conferência de %s falhou", dia)
-            self.papel_erro = str(e)
+            self.papel_erros["conferencia"] = f"{dia:%d/%m/%Y}: {e}"
+            self._papel_ok = False
             return
         self.papel_em = agora
         self._anotar_papel(res)
+
+    def _papel_a_conferir(self, con) -> list:
+        """Dias com os candles já conferidos e o papel não: a marca
+        conferencia://<dia> é gravada ANTES do papel, então o dia sai das
+        pendências dos candles mesmo se o papel falhar, ou se o processo
+        fechar entre um e outro. Sem isto o pregão ficaria "rodando" para
+        sempre — operação aberta aberta, divergência cega.
+
+        Pregão "rodando" ou ligação sem linha no dia. Só a partir do primeiro
+        pregão de papel gravado: os dias anteriores ao papel existir não são
+        "pendências", e conferi-los agora inventaria um histórico de papel
+        que nunca rodou ao vivo.
+        """
+        prefixo = C.PREFIXO_CONFERENCIA
+        candidatos = [r[0] for r in con.execute(
+            "WITH conf AS (SELECT DISTINCT CAST(substr(source_file, ?) AS DATE) AS d "
+            "  FROM ingest_log WHERE symbol = ? AND source_file LIKE ?) "
+            "SELECT DISTINCT c.d FROM conf c "
+            "JOIN portfolio_membros pm ON pm.removido_em IS NULL "
+            "  AND pm.adicionado_em < c.d + INTERVAL 1 DAY "
+            "LEFT JOIN papel_pregoes pp ON pp.ligacao_id = pm.ligacao_id AND pp.dia = c.d "
+            "WHERE c.d >= (SELECT min(dia) FROM papel_pregoes) "
+            "  AND (pp.status IS NULL OR pp.status = 'rodando') ORDER BY c.d",
+            [len(prefixo) + 1, self.simbolo, prefixo + "%"]).fetchall()]
+        out = []
+        for dia in candidatos:
+            # a regra fina de quem entra no papel do dia (plano do símbolo,
+            # adicionada até o fim do dia) é a do próprio papel
+            gravados = dict(con.execute(
+                "SELECT ligacao_id, status FROM papel_pregoes WHERE dia = ?",
+                [dia]).fetchall())
+            if any(gravados.get(l["ligacao_id"], "rodando") == "rodando"
+                   for l in papel.ligacoes_do_papel(con, self.simbolo, dia)):
+                out.append(dia)
+        return out
 
     def _divergencias(self, con) -> None:
         # Uma soma por dia conferido: barato, mas a cada candle seria
@@ -604,13 +657,16 @@ class Servico:
                                  if self.desvio is not None and abs(self.desvio) > 30
                                  else None),
             "primeiro_candle_hoje": self.primeiro_hoje,
-            # a tela relê o papel do banco quando `calculado_em` muda
+            # A tela relê o papel do banco quando `calculado_em` muda.
+            # `ligacoes` é só um aviso do que a captura viu por último (fica
+            # entrada de outros dias e de ligação já removida): a tela filtra
+            # por `dia == hoje` e lê o status de verdade de `papel_pregoes`.
             "papel": {
                 "calculado_em": self.papel_em,
                 "pendente": self.papel_pendente,
                 "ligacoes": self.papel_ligacoes,
                 "divergencias": self.papel_divergencias,
-                "erro": self.papel_erro,
+                "erros": self.papel_erros,
             },
             "erro": erro,
         }

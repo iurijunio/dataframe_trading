@@ -556,7 +556,7 @@ def test_falha_no_papel_inteiro_nao_impede_o_publicar(base, ligacao, monkeypatch
     s.volta()
     e = C.ler_estado(base / "ao_vivo" / "estado.json")
     assert e["erro"] is None and e["ultimo_salvo"] == "2026-10-01T09:04:00"
-    assert e["papel"]["calculado_em"] is None and "barras" in e["papel"]["erro"]
+    assert e["papel"]["calculado_em"] is None and "barras" in e["papel"]["erros"]["calculo"]
 
 
 def test_conferencia_do_dia_confere_o_papel(base, ligacao, monkeypatch):
@@ -571,3 +571,89 @@ def test_conferencia_do_dia_confere_o_papel(base, ligacao, monkeypatch):
     e = C.ler_estado(base / "ao_vivo" / "estado.json")
     assert e["conferencia"]["status"] == "concluida"
     assert e["papel"]["ligacoes"][str(ligacao)]["status"] == "conferido"
+
+def _conferir_falhando_uma_vez(monkeypatch, falha):
+    """`papel.conferir` falha (ou some, como num processo fechado) só na
+    primeira chamada; depois é o de verdade. Devolve os dias pedidos."""
+    from core import papel
+    real = papel.conferir
+    dias = []
+
+    def falso(con, dia, *a, **k):
+        dias.append(dia)
+        if len(dias) == 1:
+            return falha()
+        return real(con, dia, *a, **k)
+    monkeypatch.setattr(papel, "conferir", falso)
+    return dias
+
+
+def test_papel_que_falhou_na_conferencia_e_conferido_na_janela_seguinte(base, ligacao,
+                                                                        monkeypatch):
+    dias = _conferir_falhando_uma_vez(
+        monkeypatch, lambda: (_ for _ in ()).throw(RuntimeError("motor caiu")))
+    agora = datetime(2026, 10, 1, 18, 40)
+    mono = Mono()
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 3),
+                          tick=datetime(2026, 10, 1, 18, 24)), agora, base / "ao_vivo", mono)
+    s.volta()
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    # os candles estão conferidos (o dia sai das pendências), o papel não
+    assert e["conferencia"]["status"] == "concluida"
+    assert _pregao_papel(ligacao, agora.date())[0] == "rodando"
+    assert "motor caiu" in e["papel"]["erros"]["conferencia"]
+
+    mono.t += 1                       # a janela de 5 min ainda não passou
+    s.volta()
+    assert len(dias) == 1
+
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert dias == [agora.date(), agora.date()]
+    assert _pregao_papel(ligacao, agora.date())[0] == "conferido"
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["papel"]["erros"]["conferencia"] is None
+
+
+def test_dia_conferido_sem_papel_gravado_e_conferido_na_janela_seguinte(base, ligacao,
+                                                                        monkeypatch):
+    # dia recuperado (PC desligado): a conferência dos candles fez COMMIT e
+    # o processo fechou antes do papel — nenhuma linha do dia em papel_pregoes
+    d29, d30 = datetime(2026, 9, 29, 10, 0), datetime(2026, 9, 30, 10, 0)
+    with db.connect_write() as con:
+        from core.mt5_source import barras_de_taxas
+        C.gravar(con, "WIN$N", barras_de_taxas(
+            MT5Falso([d30], tick=d30).copy_rates_range("WIN$N", 1, d30, d30)),
+            C.origem_captura(1, "x"))
+        # o papel já existia antes do dia recuperado
+        con.execute("INSERT INTO papel_pregoes (ligacao_id, dia, status, "
+                    "n_operacoes, liquido, calculado_em) VALUES "
+                    "(?, ?, 'conferido', 0, 0, ?)", [ligacao, d29.date(), d29])
+    # uma ligação de outro símbolo nunca ganha linha no papel do WIN$N: não
+    # pode deixar o dia "por conferir" para sempre
+    from core import codigo, plano, variantes
+    from core import portfolio as PF
+    from tests._cadeia import campos_plano, mineracao, wfa
+    v2 = variantes.criar("outro-simbolo", "rompimento_canal")
+    mineracao(2, variante_id=v2)
+    wfa(2, 2)
+    plano.salvar(**campos_plano(wfa_id=2, run_id=2, symbol="WDO$N",
+                                codigo_hash=codigo.hash_estrategia("rompimento_canal")),
+                 agora=datetime(2026, 9, 1, 10))
+    PF.adicionar_variante(PF.criar("pf2"), v2)
+    with db.connect_write() as con:
+        con.execute("UPDATE portfolio_membros SET adicionado_em = '2026-09-01 09:00'")
+    dias = _conferir_falhando_uma_vez(monkeypatch, lambda: [])
+    agora = datetime(2026, 10, 1, 8, 0)
+    mono = Mono()
+    s = _servico(MT5Falso([d30], tick=agora), agora, base / "ao_vivo", mono)
+    s.volta()
+    assert dias == [d30.date()] and _pregao_papel(ligacao, d30.date()) is None
+
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert dias == [d30.date(), d30.date()]
+    assert _pregao_papel(ligacao, d30.date())[0] == "conferido"
+
+    mono.t += P.A_CADA_CONFERENCIA    # congelado: não é pedido de novo
+    s.volta()
+    assert len(dias) == 2

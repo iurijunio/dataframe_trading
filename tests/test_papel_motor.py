@@ -657,6 +657,30 @@ def test_mesma_variante_em_dois_portfolios_calcula_uma_vez(mundo, monkeypatch):
     assert all(o["conta"] for o in a) and not any(o["conta"] for o in b)
 
 
+def test_plano_quebrado_nao_derruba_o_papel_das_outras_ligacoes(mundo):
+    # perfil com campo que o motor não conhece: a montagem do perfil falha
+    # (antes até do aquecimento) só para esta variante — spec §4.6
+    v2 = variantes.criar("romp-quebrada", ESTRAT)
+    mineracao(2, variante_id=v2)
+    wfa(2, 2)
+    plano.salvar(**campos_plano(
+        wfa_id=2, run_id=2, params=PARAMS, contratos=CONTRATOS,
+        profile={**PERFIL, "campo_que_nao_existe": 1},
+        codigo_hash=codigo.hash_estrategia(ESTRAT)),
+        agora=datetime(2025, 12, 1, 10))
+    lig2 = P.adicionar_variante(mundo.pf, v2)
+    with db.connect() as con:
+        con.execute("UPDATE portfolio_membros SET adicionado_em = "
+                    "'2025-12-01 09:00'")
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        res = {r["ligacao_id"]: r for r in
+               papel.rodar_dia(con, dia, _as(dia, 19), {})}
+    assert res[mundo.lig]["operacoes"] and res[mundo.lig]["motivo"] is None
+    assert res[lig2]["operacoes"] is None and res[lig2]["status"] == "rodando"
+    assert res[lig2]["motivo"].startswith("falha no cálculo")
+
+
 def test_ligacao_removida_ou_adicionada_depois_fica_de_fora(mundo):
     dia = mundo.dias[30]
     with db.connect() as con:

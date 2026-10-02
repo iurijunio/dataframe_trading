@@ -476,20 +476,35 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
     if not fila:
         return resultados
 
-    # barras uma vez por volta, com o maior aquecimento entre as ligações
+    # Barras uma vez por volta, com o maior aquecimento entre as ligações.
+    # Plano com parâmetro quebrado falha aqui, mas só para as ligações dele
+    # (spec §4.6): a falha fica guardada e é levantada dentro do `try` de
+    # cada ligação, como qualquer outra falha de cálculo.
+    falhas: dict[int, Exception] = {}
     aquecimento = 0
-    for p, mod in planos.values():
-        estrat, perfil = perfil_do_plano(p)
-        aquecimento = max(aquecimento,
-                          pregoes_de_aquecimento(mod, estrat, perfil))
-    barras = barras_do_dia(con, symbol, dia, aquecimento)
-    inst = db.load_instrument_yaml(symbol)
+    for pid, (p, mod) in planos.items():
+        try:
+            estrat, perfil = perfil_do_plano(p)
+            aquecimento = max(aquecimento,
+                              pregoes_de_aquecimento(mod, estrat, perfil))
+        except Exception as erro:
+            falhas[pid] = erro
+    barras = inst = comum = None
+    try:
+        barras = barras_do_dia(con, symbol, dia, aquecimento)
+        inst = db.load_instrument_yaml(symbol)
+    except Exception as erro:
+        comum = erro
     fech = FECHAMENTO_DIA_ENCERRADO if dia_encerrado else None
 
     calculados: dict[int, list[dict]] = {}
     for r, l, p in fila:
         pid = l["plano_id"]
         try:
+            if pid in falhas:
+                raise falhas[pid]
+            if comum is not None:
+                raise comum
             if pid not in calculados:
                 # mesma variante em dois portfólios: o mesmo plano roda
                 # uma vez só e vale para as duas ligações
