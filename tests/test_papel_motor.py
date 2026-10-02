@@ -282,6 +282,41 @@ def test_aquecimento_estrategia_que_declara(mundo):
     assert papel.pregoes_de_aquecimento(sem, estrat, perfil) == 3
 
 
+# Parâmetros inteiros que NÃO olham barras para trás — cada um com o porquê.
+# Um parâmetro novo de janela com nome fora de `_PALAVRAS_PERIODO` cairia
+# no aquecimento zero, e o sinal de hoje sairia diferente do histórico sem
+# ninguém perceber: este teste obriga a decidir.
+_NAO_SAO_JANELA = {
+    "folga_ticks": "distância de preço do rompimento, não quantidade de barras",
+    "filtro_amplitude": "tamanho mínimo em pontos, não quantidade de barras",
+    "limite_extremo": "nível do RSI (0–100), não quantidade de barras",
+    # strategies/rompimento_abertura.py (arquivo do usuário): conta as
+    # barras desde a abertura do PRÓPRIO dia, que o papel sempre tem
+    "barras_abertura": "barras do próprio dia, a partir da abertura",
+}
+
+
+def test_todo_parametro_inteiro_de_janela_entra_no_aquecimento():
+    from strategies import registry
+    sem_regra = []
+    for e in registry.descobrir():
+        mod = registry.carregar(e["modulo"])
+        if callable(getattr(mod, "aquecimento_barras", None)):
+            continue
+        for nome, spec in mod.params_schema.items():
+            inteiro = (spec.get("tipo") == "int"
+                       or (isinstance(spec.get("default"), int)
+                           and not isinstance(spec.get("default"), bool)))
+            if not inteiro or nome in _NAO_SAO_JANELA:
+                continue
+            if not any(p in nome for p in papel._PALAVRAS_PERIODO):
+                sem_regra.append(f"{e['modulo']}.{nome}")
+    assert not sem_regra, (
+        "parâmetro inteiro que o aquecimento não reconhece: acrescente a "
+        "palavra em papel._PALAVRAS_PERIODO, declare aquecimento_barras na "
+        f"estratégia ou explique em _NAO_SAO_JANELA — {sem_regra}")
+
+
 def test_aquecimento_soma_o_atr_do_perfil():
     perfil = ExecutionProfile(timeframe="M15", stop_tipo="atr",
                               stop_atr_periodo=40, alvo_tipo="atr",
@@ -689,9 +724,105 @@ def test_ligacao_removida_ou_adicionada_depois_fica_de_fora(mundo):
         con.execute("UPDATE portfolio_membros SET adicionado_em = ?",
                     [_as(dia + timedelta(days=1), 9)])
         assert papel.ligacoes_do_papel(con, SIMB, dia) == []
+        # removida antes do dia: fora
         con.execute("UPDATE portfolio_membros SET adicionado_em = "
-                    "'2025-12-01', removido_em = ?", [_as(dia, 9)])
+                    "'2025-12-01', removido_em = ?",
+                    [_as(dia - timedelta(days=1), 15)])
         assert papel.ligacoes_do_papel(con, SIMB, dia) == []
+        # removida no meio do dia: entra, marcada — o pregão dela precisa
+        # ser encerrado, não esquecido
+        con.execute("UPDATE portfolio_membros SET removido_em = ?",
+                    [_as(dia, 9)])
+        ligs = papel.ligacoes_do_papel(con, SIMB, dia)
+        assert [(l["ligacao_id"], l["removida_em"]) for l in ligs] == [
+            (mundo.lig, _as(dia, 9))]
+        # removida depois do dia: naquele dia ela operava normalmente
+        con.execute("UPDATE portfolio_membros SET removido_em = ?",
+                    [_as(dia + timedelta(days=2), 9)])
+        ligs = papel.ligacoes_do_papel(con, SIMB, dia)
+        assert [(l["ligacao_id"], l["removida_em"]) for l in ligs] == [
+            (mundo.lig, None)]
+
+
+def _remover(con, mundo, quando):
+    con.execute("UPDATE portfolio_membros SET removido_em = ?", [quando])
+    diario.registrar(con, "membro_removido", "usuario", portfolio_id=mundo.pf,
+                     ligacao_id=mundo.lig, variante_id=mundo.v, quando=quando)
+
+
+def test_variante_removida_no_meio_do_pregao_interrompe_e_preserva(mundo):
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 12), {}),
+                     _as(dia, 12))
+        antes = _ops(con, mundo.lig, dia)
+        assert antes, "precisa de operação gravada antes da remoção"
+        _remover(con, mundo, _as(dia, 13))
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 14), {}),
+                     _as(dia, 14))
+        p = _pregao(con, mundo.lig, dia)
+        assert p["status"] == "interrompido"
+        assert p["motivo"] == "variante removida do portfólio"
+        assert p["interrompido_em"] == _as(dia, 13)
+        assert _ops(con, mundo.lig, dia) == antes
+        # a conferência não a traz de volta: o pregão está congelado
+        papel.conferir(con, dia, _as(dia, 19), {})
+        assert _pregao(con, mundo.lig, dia) == p
+        assert _ops(con, mundo.lig, dia) == antes
+
+
+def test_variante_removida_antes_de_calcular_nao_ganha_pregao(mundo):
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        _remover(con, mundo, _as(dia, 8))
+        assert papel.rodar_dia(con, dia, _as(dia, 12), {}) == []
+
+
+# ------------------------------------------------------------- falha
+_CALCULAR = papel.calcular
+
+
+def _falha(con, lig, dia):
+    return con.execute("SELECT falha FROM papel_pregoes WHERE ligacao_id = ? "
+                       "AND dia = ?", [lig, dia]).fetchone()[0]
+
+
+def test_falha_no_calculo_fica_num_campo_proprio_e_some_quando_volta(
+        mundo, monkeypatch):
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 12), {}),
+                     _as(dia, 12))
+        assert _falha(con, mundo.lig, dia) is None
+        antes = _ops(con, mundo.lig, dia)
+
+        def quebra(*a, **k):
+            raise RuntimeError("motor caiu")
+        monkeypatch.setattr(papel, "calcular", quebra)
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 13), {}),
+                     _as(dia, 13))
+        assert _falha(con, mundo.lig, dia) == "falha no cálculo: motor caiu"
+        assert _pregao(con, mundo.lig, dia)["status"] == "rodando"
+        assert _ops(con, mundo.lig, dia) == antes
+        monkeypatch.setattr(papel, "calcular", _CALCULAR)
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 14), {}),
+                     _as(dia, 14))
+        assert _falha(con, mundo.lig, dia) is None
+
+
+def test_falha_antes_do_motor_tambem_fica_no_campo(mundo, monkeypatch):
+    # plano que não abre (antes da fila do motor): mesma marca
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 12), {}),
+                     _as(dia, 12))
+
+        def quebra(*a, **k):
+            raise RuntimeError("plano ilegível")
+        monkeypatch.setattr(plano, "detalhes", quebra)
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 13), {}),
+                     _as(dia, 13))
+        assert _falha(con, mundo.lig, dia) == "falha no cálculo: plano ilegível"
 
 
 # ------------------------------------------------------------- conferência

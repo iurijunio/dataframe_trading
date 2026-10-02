@@ -90,11 +90,11 @@ def _ligacoes(con, portfolio_id: int, dia: date) -> list[dict]:
 
 
 def _pregao(con, ligacao_id: int, dia: date):
-    """(plano_id, status, motivo) gravados do pregão, ou Nones."""
-    r = con.execute("SELECT plano_id, status, motivo FROM papel_pregoes "
+    """(plano_id, status, motivo, falha) gravados do pregão, ou Nones."""
+    r = con.execute("SELECT plano_id, status, motivo, falha FROM papel_pregoes "
                     "WHERE ligacao_id = ? AND dia = ?",
                     [ligacao_id, dia]).fetchone()
-    return tuple(r) if r else (None, None, None)
+    return tuple(r) if r else (None, None, None, None)
 
 
 def _plano_do_dia(con, variante_id: int, dia: date,
@@ -150,12 +150,24 @@ def _ops_do_dia(con, ligacoes: list[int], dia: date) -> list[dict]:
 
 _MOTIVO_PRESO = "pregão não foi conferido: números da última volta"
 
+# Situação, na tabela do dia, da operação que está `aberta` no banco mas
+# não é posição de agora — pelo status do pregão para a tela. A "nota" diz
+# o porquê na linha; stop/alvo dela não se desenham (não são os vigentes).
+_ABERTA_PARADA = {"nao_conferido": ("nao_conferido", "pregão não conferido"),
+                  "falha": ("nao_atualizada", "falha no cálculo"),
+                  "interrompido": ("congelada", "código mudou")}
 
-def _situacao(status: str | None, dia: date, hoje: date) -> tuple:
+
+def _situacao(status: str | None, dia: date, hoje: date,
+              falha: str | None = None) -> tuple:
     """(status para a tela, vivo?). Pregão passado ainda `rodando` não é
-    pregão vivo: é a conferência que não fechou o dia."""
+    pregão vivo: é a conferência que não fechou o dia. Nem o de hoje cujo
+    último cálculo falhou: o gravado é de antes da falha, e a aberta dele
+    tem o stop/alvo de quando o motor ainda rodava."""
     if status == "rodando" and dia < hoje:
         return "nao_conferido", False
+    if status == "rodando" and falha:
+        return "falha", False
     return status, status == "rodando" and dia >= hoje
 
 
@@ -167,11 +179,13 @@ def _por_ligacao(con, portfolio_id: int, dia: date, hoje: date) -> list[dict]:
     out = []
     for l in ligs:
         lig = l["ligacao_id"]
-        gravado, status, motivo = _pregao(con, lig, dia)
+        gravado, status, motivo, falha = _pregao(con, lig, dia)
         p = _plano_do_dia(con, l["variante_id"], dia, gravado)
-        status, vivo = _situacao(status, dia, hoje)
+        status, vivo = _situacao(status, dia, hoje, falha)
         if status == "nao_conferido":
             motivo = _MOTIVO_PRESO
+        elif status == "falha":
+            motivo = falha
         minhas = [o for o in ops if o["ligacao_id"] == lig and o["conta"]]
         fechadas = [o for o in minhas if not o["aberta"]]
         posicao = sum(int(o["side"]) * int(o["contratos"])
@@ -329,26 +343,37 @@ def operacoes_do_dia(con, portfolio_id: int, dia: date,
     contam (`conta = false`: a tela as pinta de cinza, "fora do período
     ligado").
 
-    `situacao`: 'fechada' | 'aberta' (provisória) | 'nao_conferido' — a
-    "aberta" de um pregão passado que a conferência não fechou: não é
-    posição, não tem stop/alvo vigente.
+    `situacao`: 'fechada' | 'aberta' (provisória, pregão vivo) | uma
+    "aberta" do banco que não é posição de agora e não tem stop/alvo
+    vigente — 'nao_conferido' (pregão passado que a conferência não
+    fechou), 'nao_atualizada' (o último cálculo falhou) ou 'congelada'
+    (pregão interrompido: código mudou ou variante removida). `nota` diz o
+    porquê nesses três.
     """
     hoje = _hoje(hoje)
     ligs = {l["ligacao_id"]: l for l in _ligacoes(con, portfolio_id, dia)}
     ids = [ligacao_id] if ligacao_id is not None else list(ligs)
     ids = [i for i in ids if i in ligs]
-    status = {i: _situacao(_pregao(con, i, dia)[1], dia, hoje)[0]
-              for i in ids}
+    pregoes = {i: _pregao(con, i, dia) for i in ids}
+    status = {i: _situacao(p[1], dia, hoje, p[3])[0]
+              for i, p in pregoes.items()}
     out = []
     for o in _ops_do_dia(con, ids, dia):
-        l = ligs[o["ligacao_id"]]
+        lig = o["ligacao_id"]
+        l = ligs[lig]
         aberta = bool(o["aberta"])
-        preso = aberta and status[o["ligacao_id"]] == "nao_conferido"
-        situacao = ("nao_conferido" if preso
-                    else "aberta" if aberta else "fechada")
-        out.append({**o, "aberta": aberta and not preso,
-                    "provisorio": aberta and not preso,
-                    "situacao": situacao, "conta": bool(o["conta"]),
+        parada = _ABERTA_PARADA.get(status[lig]) if aberta else None
+        nota = None
+        if parada:
+            situacao, nota = parada
+            if pregoes[lig][2] == _papel.MOTIVO_REMOVIDA:
+                nota = "variante removida"
+        else:
+            situacao = "aberta" if aberta else "fechada"
+        viva = aberta and not parada
+        out.append({**o, "aberta": viva, "provisorio": viva,
+                    "situacao": situacao, "nota": nota,
+                    "conta": bool(o["conta"]),
                     "variante": l["nome"], "cor": l["cor"]})
     return out
 
@@ -512,22 +537,29 @@ def _acumular(valores):
 
 
 def curva_vs_esperado(con, portfolio_id: int, ligacao_id: int | None = None,
-                      *, hoje: date | None = None) -> dict:
+                      *, dia: date | None = None,
+                      hoje: date | None = None) -> dict:
     """Papel acumulado desde o plano em vigor contra o que o plano prometeu.
 
     Um ponto por pregão do plano. Por variante: faixa p10–p90 e mediana. No
     portfólio, só a soma das medianas (decisão 10): somar o p10 de cada
     variante não dá o p10 da soma — seria uma faixa falsa, larga demais.
+
+    `dia` é o pregão que a tela mostra (padrão: `hoje`). Antes da abertura
+    ela mostra o de ontem, e a curva tem de ser a desse dia — com o plano
+    que vigorava nele —, senão o topo diria um número e a curva outro.
+    `hoje` só decide se o último pregão conta inteiro ou pela fração.
     """
     hoje = _hoje(hoje)
-    ligs = _ligacoes(con, portfolio_id, hoje)
+    dia = dia or hoje
+    ligs = _ligacoes(con, portfolio_id, dia)
     if ligacao_id is not None:
         ligs = [l for l in ligs if l["ligacao_id"] == ligacao_id]
     series = []
     for l in ligs:
-        gravado = _pregao(con, l["ligacao_id"], hoje)[0]
-        p = _plano_do_dia(con, l["variante_id"], hoje, gravado)
-        s = _serie(con, l["ligacao_id"], p, hoje)
+        gravado = _pregao(con, l["ligacao_id"], dia)[0]
+        p = _plano_do_dia(con, l["variante_id"], dia, gravado)
+        s = _serie(con, l["ligacao_id"], p, dia)
         regua = (_regua(con, l["ligacao_id"], portfolio_id, p,
                         [d for d, _ in s], hoje) if p else [])
         series.append((p, s, regua))
@@ -620,7 +652,8 @@ def _metricas(linhas) -> dict:
     }
 
 
-def comparativo(con, portfolio_id: int, *, hoje: date | None = None) -> dict:
+def comparativo(con, portfolio_id: int, *, dia: date | None = None,
+                hoje: date | None = None) -> dict:
     """Esperado (WFA) × Papel × Demo × Real (spec §6.7, decisão 9).
 
     Esperado = os trades fora da amostra do walk-forward que gerou cada
@@ -629,13 +662,15 @@ def comparativo(con, portfolio_id: int, *, hoje: date | None = None) -> dict:
     operação por fazer não compara com trade do WFA. Por isso o `total`
     daqui pode ser menor que o `acumulado` do `resumo`, que inclui a aberta
     provisória — a (?) da tela explica. Demo/Real chegam na parte 4.
+
+    `dia`: o pregão que a tela mostra (ver `curva_vs_esperado`).
     """
-    hoje = _hoje(hoje)
+    dia = dia or _hoje(hoje)
     wfas: set[int] = set()
     papel = []
-    for l in _ligacoes(con, portfolio_id, hoje):
-        gravado = _pregao(con, l["ligacao_id"], hoje)[0]
-        p = _plano_do_dia(con, l["variante_id"], hoje, gravado)
+    for l in _ligacoes(con, portfolio_id, dia):
+        gravado = _pregao(con, l["ligacao_id"], dia)[0]
+        p = _plano_do_dia(con, l["variante_id"], dia, gravado)
         if p is None:
             continue
         if p.get("wfa_id") is not None:
@@ -644,7 +679,7 @@ def comparativo(con, portfolio_id: int, *, hoje: date | None = None) -> dict:
         papel += con.execute(
             "SELECT liquido, contratos, points FROM papel_operacoes "
             "WHERE ligacao_id = ? AND conta AND NOT aberta AND dia <= ? "
-            f"AND {filtro}", [l["ligacao_id"], hoje, *args]).fetchall()
+            f"AND {filtro}", [l["ligacao_id"], dia, *args]).fetchall()
     esperado = []
     if wfas:
         esperado = con.execute(
@@ -658,8 +693,9 @@ def comparativo(con, portfolio_id: int, *, hoje: date | None = None) -> dict:
 def alertas(con, portfolio_id: int, dia: date, *,
             hoje: date | None = None) -> list[dict]:
     """O que pede atenção (spec §6.8): plano gravado mesmo assim, pregão
-    pulado ou interrompido, pregão passado do plano em vigor que não foi
-    conferido e candle que mudou depois da conferência."""
+    pulado ou interrompido, cálculo de hoje que falhou, pregão passado do
+    plano em vigor que não foi conferido e candle que mudou depois da
+    conferência."""
     hoje = _hoje(hoje)
     out = []
     linhas = _por_ligacao(con, portfolio_id, dia, hoje)
@@ -674,6 +710,12 @@ def alertas(con, portfolio_id: int, dia: date, *,
             out.append({"tipo": l["status"], "ligacao_id": lig,
                         "texto": f"{nome}: pregão {l['status']} — "
                         f"{l['motivo'] or 'sem motivo gravado'}"})
+        if l["status"] == "falha":
+            # sem este aviso a variante parecia viva, com a aberta e o
+            # stop/alvo de antes da falha no gráfico
+            out.append({"tipo": "falha", "ligacao_id": lig,
+                        "texto": f"{nome}: {l['motivo']} — números parados "
+                        "na última volta que deu certo"})
     # pregão preso de plano antigo é história encerrada: o plano não opera
     # mais e o aviso não teria o que pedir
     em_vigor = [(l["ligacao_id"], l["plano_id"]) for l in linhas

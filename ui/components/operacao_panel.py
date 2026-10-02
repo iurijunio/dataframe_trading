@@ -251,8 +251,9 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
 _STATUS = {"pulado": ("pregão pulado", "rosa"),
            "interrompido": ("interrompido", "rosa"),
            "nao_conferido": ("não conferido", "ambar"),
+           "falha": ("falha no cálculo", "rosa"),
            None: ("sem papel hoje", "cinza")}
-_APAGADO = ("pulado", "interrompido", "nao_conferido")
+_APAGADO = ("pulado", "interrompido", "nao_conferido", "falha")
 
 
 # (rótulo, classe) de cada botão de ação. Num lugar só porque são duas as
@@ -442,6 +443,13 @@ def _cel(conteudo, classe="", title=None):
     return html.Td(conteudo, className=classe, **kw)
 
 
+# situação de uma "aberta" do banco que não é posição de agora (ver
+# `core.papel_leitura.operacoes_do_dia`) -> texto da coluna Saída
+_ABERTA_PARADA = {"nao_conferido": "não conferida",
+                  "nao_atualizada": "não atualizada",
+                  "congelada": "congelada"}
+
+
 def linha_operacao(o: dict) -> html.Tr:
     sit = o.get("situacao")
     compra = int(o["side"]) == 1
@@ -453,8 +461,14 @@ def linha_operacao(o: dict) -> html.Tr:
                            "preço marcado no último candle calculado")
         saiu = f"stop {_preco(o.get('stop_px'))} · alvo {_preco(o.get('alvo_px'))}"
         saiu_cls = "t acc"
-    elif sit == "nao_conferido":
-        saida = html.Span("não conferida", className="aviso")
+    elif sit in _ABERTA_PARADA:
+        # aberta no banco, mas não é posição de agora: o stop/alvo gravado
+        # é de quando o motor parou, mostrá-lo seria dizer que ainda vale
+        rotulo = _ABERTA_PARADA[sit]
+        if sit == "congelada" and o.get("nota"):
+            rotulo = f"{rotulo} — {o['nota']}"
+        saida = html.Span(rotulo, className="aviso",
+                          title=o.get("nota") or rotulo)
         preco_saida = _cel("—", "n")
         saiu, saiu_cls = "—", "t mut"
     else:
@@ -474,7 +488,7 @@ def linha_operacao(o: dict) -> html.Tr:
     classe = "op-linha"
     if sit == "aberta":
         classe += " op-aberta"
-    if sit == "nao_conferido":
+    if sit in _ABERTA_PARADA:
         classe += " op-preso"
     if not o.get("conta", True):
         classe += " op-fora"
@@ -642,6 +656,7 @@ _TIPO_ALERTA = {"mesmo_assim": ("gravado mesmo assim", "ambar"),
                 "pulado": ("pregão pulado", "rosa"),
                 "interrompido": ("interrompido", "rosa"),
                 "nao_conferido": ("não conferido", "ambar"),
+                "falha": ("falha no cálculo", "rosa"),
                 "divergencia": ("candles mudaram", "ambar")}
 
 

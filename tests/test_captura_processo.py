@@ -657,3 +657,101 @@ def test_dia_conferido_sem_papel_gravado_e_conferido_na_janela_seguinte(base, li
     mono.t += P.A_CADA_CONFERENCIA    # congelado: não é pedido de novo
     s.volta()
     assert len(dias) == 2
+
+# ------------------------------------------------ papel não trava os candles
+def test_falha_ao_listar_o_papel_nao_trava_a_conferencia_dos_candles(
+        base, ligacao, monkeypatch):
+    import duckdb
+    chamadas = []
+
+    def quebra(self, con):
+        chamadas.append(1)
+        raise duckdb.CatalogException("Table with name papel_pregoes does not exist")
+    monkeypatch.setattr(P.Servico, "_papel_a_conferir", quebra)
+    agora = datetime(2026, 10, 1, 18, 40)
+    mono = Mono()
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 3),
+                          tick=datetime(2026, 10, 1, 18, 24)), agora, base / "ao_vivo", mono)
+    s.volta()
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    # os candles foram conferidos e o espelho refeito, apesar do papel
+    assert e["conferencia"]["status"] == "concluida"
+    assert len(db.read_bars_parquet("WIN$N")["ts"]) == 4
+    assert "papel_pregoes" in e["papel"]["erros"]["conferencia"]
+    assert e["erro"] is None
+    # a janela foi gasta: nada de repetir (e de traceback) a cada volta
+    n = len(chamadas)
+    mono.t += 1
+    s.volta()
+    assert len(chamadas) == n
+    # e a falha não some sozinha enquanto não houver uma janela que dê certo
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["papel"]["erros"][
+        "conferencia"]
+
+
+def test_captura_cria_as_tabelas_do_papel_que_faltam(base, ligacao):
+    # banco real de antes da parte 3: o app ainda não subiu com o schema novo
+    with db.connect_write() as con:
+        con.execute("DROP TABLE papel_operacoes")
+        con.execute("DROP TABLE papel_pregoes")
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora),
+                 agora, base / "ao_vivo")
+    s.volta()
+    assert _pregao_papel(ligacao, agora.date())[0] == "rodando"
+
+
+def test_captura_com_banco_ocupado_tenta_o_schema_na_volta_seguinte(
+        base, ligacao, monkeypatch):
+    with db.connect_write() as con:
+        con.execute("DROP TABLE papel_operacoes")
+        con.execute("DROP TABLE papel_pregoes")
+    real = db.connect_write
+    ocupado = {"sim": True}
+
+    def escritor(**k):
+        if ocupado["sim"]:
+            raise RuntimeError("ocupado")
+        return real(**k)
+    monkeypatch.setattr(db, "connect_write", escritor)
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    mono = Mono()
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora),
+                 agora, base / "ao_vivo", mono)
+    s.volta()
+    ocupado["sim"] = False
+    mono.t += 1
+    s.volta()
+    assert _pregao_papel(ligacao, agora.date())[0] == "rodando"
+
+
+def test_variante_removida_no_meio_do_pregao_e_encerrada_na_conferencia(
+        base, ligacao, monkeypatch):
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    mono = Mono()
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora)
+    s = _servico(mt5, agora, base / "ao_vivo", mono)
+    s.volta()
+    assert _pregao_papel(ligacao, agora.date())[0] == "rodando"
+    # removida às 10h; a captura caiu antes de recalcular
+    with db.connect_write() as con:
+        con.execute("UPDATE portfolio_membros SET removido_em = '2026-10-01 10:00'")
+    # a primeira conferência do papel some (processo fechado no meio)
+    dias = _conferir_falhando_uma_vez(monkeypatch, lambda: [])
+    fim = datetime(2026, 10, 1, 18, 40)
+    # sem candle novo: o papel do minuto não roda, só a conferência
+    mt5.minutos = _minutos(datetime(2026, 10, 1, 9, 0), 5)
+    mt5.tick = datetime(2026, 10, 1, 18, 24)
+    s.agora = lambda: fim
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert dias == [agora.date()]
+    # a janela seguinte ainda a encontra por conferir — e a encerra
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert dias == [agora.date(), agora.date()]
+    assert _pregao_papel(ligacao, agora.date()) == (
+        "interrompido", "variante removida do portfólio")
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert len(dias) == 2

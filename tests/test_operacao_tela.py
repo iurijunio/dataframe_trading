@@ -275,6 +275,40 @@ def test_linha_nao_conferida():
     assert "não conferida" in textos(linha)
 
 
+def test_linha_nao_atualizada_pela_falha():
+    linha = OP.linha_operacao(_op(situacao="nao_atualizada", exit_ts=None,
+                                  exit_px=None, aberta=False,
+                                  nota="falha no cálculo"))
+    t = textos(linha)
+    assert "não atualizada" in t
+    assert "stop" not in t                 # stop/alvo parados não aparecem
+    assert "op-preso" in classes(linha)
+
+
+def test_linha_congelada_diz_por_que():
+    linha = OP.linha_operacao(_op(situacao="congelada", exit_ts=None,
+                                  exit_px=None, aberta=False, stop_px=100,
+                                  alvo_px=200, nota="código mudou"))
+    t = textos(linha)
+    assert "congelada — código mudou" in t
+    assert "stop" not in t
+    assert "op-preso" in classes(linha)
+
+
+def test_cartao_com_falha_no_calculo_mostra_o_motivo():
+    c = OP.cartao_variante(_var(status="falha",
+                                motivo="falha no cálculo: motor caiu"), None)
+    t = textos(c)
+    assert "falha no cálculo" in t and "motor caiu" in t
+    assert "op-var-apagada" in classes(c)
+
+
+def test_alerta_de_falha_tem_rotulo_proprio():
+    t = textos(OP.lista_alertas([{"tipo": "falha", "ligacao_id": 1,
+                                  "texto": "var-1: falha no cálculo: x"}]))
+    assert "falha no cálculo" in t and "atenção" not in t
+
+
 def test_tabela_vazia_explica():
     assert "nenhuma operação" in textos(OP.tabela_operacoes([]))
 
@@ -537,6 +571,48 @@ def test_o_pulso_so_muda_a_versao_quando_o_papel_muda():
     out = CO.pulso(_estado(), "2026-10-02T14:37:01", "2026-10-02T14:36:00",
                    "M1", None, AGORA)
     assert out[1] is no_update and out[2] is no_update
+
+
+def test_curva_e_comparativo_usam_o_dia_da_tela(monkeypatch):
+    """Antes da abertura a tela mostra o pregão de ontem (o do último
+    candle): a curva e o comparativo têm de ser os desse mesmo dia, não os
+    de `date.today()`."""
+    from contextlib import nullcontext
+
+    from core import db_manager as db
+    from ui import callbacks_operacao as CO
+    ontem = date(2026, 10, 1)
+    monkeypatch.setattr(CO.D, "estado_captura", lambda: {})
+    monkeypatch.setattr(CO.D, "dia_do_pregao", lambda estado: ontem)
+    monkeypatch.setattr(db, "connect", lambda *a, **k: nullcontext(None))
+    pedidos = []
+
+    def anota(nome, devolve):
+        def f(*a, **k):
+            pedidos.append((nome, k.get("dia")))
+            return devolve
+        return f
+    curva = {"dias": [], "papel": [], "mediana": None, "p10": None,
+             "p90": None, "faixa_atual": None, "diferenca_mediana": None,
+             "aviso": None}
+    vazio = {"n": 0, "resultado_por_contrato": None, "pontos_por_operacao": None,
+             "fator_lucro": None, "acerto": None, "contratos_por_operacao": None,
+             "total": 0.0}
+    PL = CO.PL
+    monkeypatch.setattr(PL, "portfolios_com_papel", lambda con: [
+        {"portfolio_id": 1, "nome": "pf", "ligado": True}])
+    monkeypatch.setattr(PL, "resumo", lambda *a, **k: _resumo())
+    monkeypatch.setattr(PL, "variantes", lambda *a, **k: [_var()])
+    monkeypatch.setattr(PL, "operacoes_do_dia", lambda *a, **k: [])
+    monkeypatch.setattr(PL, "alertas", lambda *a, **k: [])
+    monkeypatch.setattr(PL, "comparativo", anota("comparativo", {
+        "esperado_wfa": vazio, "papel": vazio, "demo": None, "real": None}))
+    monkeypatch.setattr(PL, "curva_vs_esperado", anota("curva", curva))
+    CO.montar(1, None, None, None)
+    CO.ler_curva(1, None)
+    CO.ler_curva(1, 1)
+    assert pedidos and all(d == ontem for _, d in pedidos), pedidos
+    assert {n for n, _ in pedidos} == {"comparativo", "curva"}
 
 
 def test_subtela_operacao_liga_o_pulso_dela():

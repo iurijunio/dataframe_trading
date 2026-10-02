@@ -185,6 +185,7 @@ class Servico:
         self.papel_ligacoes: dict = {}
         self._papel_ok = True           # nenhuma falha do papel nesta janela
         self.papel_divergencias = 0
+        self._schema_ok = False         # tabelas do papel criadas neste banco
 
     # ------------------------------------------------------------- banco
     @contextlib.contextmanager
@@ -204,6 +205,28 @@ class Servico:
 
     def _gravou(self) -> None:
         self.banco_ocupado_desde = None
+
+    def _garantir_schema(self, agora) -> None:
+        """As tabelas que a captura usa e o app cria na subida (papel_*).
+
+        A captura abre pelo `iniciar.bat` junto com o app, e nada garante
+        que o app subiu primeiro com o schema novo: no banco que ainda não
+        tem `papel_pregoes`, todo cálculo do papel falhava. Idempotente
+        (`IF NOT EXISTS`), uma vez por processo; banco ocupado tenta de novo
+        na volta seguinte, sem segurar a captura dos candles.
+        """
+        try:
+            with self._banco(agora, escrita=True) as con:
+                db.init_schema(con)
+        except _Ocupado:
+            return
+        except Exception:
+            # schema que não sobe (ex.: tabela de mineração divergente) é
+            # problema do app; o papel acusa a falha sozinho, os candles seguem
+            log.exception("não consegui conferir o schema do banco")
+        else:
+            self._gravou()
+        self._schema_ok = True
 
     def _carregar(self, agora) -> None:
         """Primeira volta, e a cada troca de dia: de onde a captura retoma e
@@ -443,16 +466,28 @@ class Servico:
         if (self._mono_conferencia is not None
                 and m - self._mono_conferencia < A_CADA_CONFERENCIA):
             return
+        falha_papel = None
         try:
             with self._banco(agora, escrita=False) as con:
                 dias = C.dias_pendentes(con, self.simbolo, agora.date(),
                                         self._fechou_hoje(agora))
-                papel_dias = [d for d in self._papel_a_conferir(con)
-                              if d not in dias]
+                try:
+                    papel_dias = [d for d in self._papel_a_conferir(con)
+                                  if d not in dias]
+                except Exception as e:
+                    # Os candles não esperam o papel: um erro aqui (a tabela
+                    # do papel ainda não existe, uma consulta que quebrou)
+                    # impedia a conferência e o Parquet do dia, a cada volta
+                    # de 1 s, com um traceback no log a cada vez.
+                    log.exception("não consegui listar o papel por conferir")
+                    falha_papel = str(e)
+                    papel_dias = []
                 self._divergencias(con)
         except _Ocupado:
             return      # a janela não conta: tenta de novo na volta seguinte
-        if not dias and not papel_dias:
+        if falha_papel is not None:
+            self.papel_erros["conferencia"] = falha_papel
+        elif not dias and not papel_dias:
             # nada do papel por conferir: uma falha antiga já não vale
             self.papel_erros["conferencia"] = None
         if not dias and not self.reexportar and not papel_dias:
@@ -470,7 +505,7 @@ class Servico:
                 for dia in papel_dias:
                     self._conferir_papel(con, dia, agora)
                 self._conferir_com(con, agora, barras)
-                if self._papel_ok:
+                if self._papel_ok and falha_papel is None:
                     self.papel_erros["conferencia"] = None
         except _Ocupado:
             return
@@ -521,7 +556,10 @@ class Servico:
             "WITH conf AS (SELECT DISTINCT CAST(substr(source_file, ?) AS DATE) AS d "
             "  FROM ingest_log WHERE symbol = ? AND source_file LIKE ?) "
             "SELECT DISTINCT c.d FROM conf c "
-            "JOIN portfolio_membros pm ON pm.removido_em IS NULL "
+            # removida no próprio dia (ou depois) ainda tem o pregão daquele
+            # dia a encerrar — `papel.rodar_dia` o interrompe
+            "JOIN portfolio_membros pm "
+            "  ON (pm.removido_em IS NULL OR pm.removido_em >= c.d) "
             "  AND pm.adicionado_em < c.d + INTERVAL 1 DAY "
             "LEFT JOIN papel_pregoes pp ON pp.ligacao_id = pm.ligacao_id AND pp.dia = c.d "
             "WHERE c.d >= (SELECT min(dia) FROM papel_pregoes) "
@@ -601,6 +639,8 @@ class Servico:
         if self._sem_yaml:
             raise ErroDeConfiguracao(self._sem_yaml)
         agora, m = self.agora(), self.mono()
+        if not self._schema_ok:
+            self._garantir_schema(agora)
         if not self.carregado or self.dia != agora.date():
             with contextlib.suppress(_Ocupado):
                 self._carregar(agora)

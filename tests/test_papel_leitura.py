@@ -549,6 +549,110 @@ def test_alertas(cenario):
         (101, date(2026, 9, 30), "0:0:0:0:0")]
 
 
+def _falhar_alfa_hoje():
+    # o motivo guarda outra coisa de propósito: é o campo `falha` que manda
+    with db.connect_write() as con:
+        con.execute("UPDATE papel_pregoes SET falha = ?, motivo = ? "
+                    "WHERE ligacao_id = 101 AND dia = '2026-10-02'",
+                    ["falha no cálculo: motor caiu",
+                     "plano sem impressão do código"])
+
+
+def test_falha_no_calculo_nao_e_pregao_vivo(cenario):
+    # o cálculo da alfa falhou na última volta: B continua "aberta" no
+    # banco, com o stop/alvo de quando ainda calculava
+    _falhar_alfa_hoje()
+    with _ler() as con:
+        vs = {v["ligacao_id"]: v for v in L.variantes(con, 1, DIA, hoje=DIA)}
+        r = L.resumo(con, 1, DIA, hoje=DIA)
+        ops = L.operacoes_do_dia(con, 1, DIA, hoje=DIA)
+        m = L.marcadores(con, 1, DIA, hoje=DIA)
+        a = L.alertas(con, 1, DIA, hoje=DIA)
+    assert vs[101]["status"] == "falha"
+    assert "motor caiu" in vs[101]["motivo"]
+    assert vs[101]["posicao"] == 0
+    assert r["posicao"]["liquida"] == 0
+    assert r["n_operando"] == 1                 # só a beta
+    b = ops[-1]
+    assert b["situacao"] == "nao_atualizada"
+    assert b["aberta"] is False and b["provisorio"] is False
+    assert m["linhas_abertas"] == []
+    falhas = [x for x in a if x["tipo"] == "falha"]
+    assert [x["ligacao_id"] for x in falhas] == [101]
+    assert "motor caiu" in falhas[0]["texto"]
+
+
+def test_falha_que_passou_volta_a_ser_pregao_vivo(cenario):
+    _falhar_alfa_hoje()
+    with db.connect_write() as con:
+        con.execute("UPDATE papel_pregoes SET falha = NULL, motivo = NULL "
+                    "WHERE ligacao_id = 101")
+    with _ler() as con:
+        vs = {v["ligacao_id"]: v for v in L.variantes(con, 1, DIA, hoje=DIA)}
+    assert vs[101]["status"] == "rodando" and vs[101]["posicao"] == 2
+
+
+def test_pregao_interrompido_com_aberta_fica_congelada(cenario):
+    with db.connect_write() as con:
+        con.execute("UPDATE papel_pregoes SET status = 'interrompido', "
+                    "motivo = 'código mudou no meio do pregão' "
+                    "WHERE ligacao_id = 101 AND dia = '2026-10-02'")
+    with _ler() as con:
+        ops = L.operacoes_do_dia(con, 1, DIA, hoje=DIA)
+        m = L.marcadores(con, 1, DIA, hoje=DIA)
+    b = ops[-1]
+    assert b["situacao"] == "congelada"
+    assert b["nota"] == "código mudou"
+    assert b["aberta"] is False and b["provisorio"] is False
+    assert m["linhas_abertas"] == []
+    assert len(m["marcadores"]) == 11       # a entrada de B continua lá
+
+
+def test_pregao_interrompido_pela_remocao_diz_o_motivo(cenario):
+    with db.connect_write() as con:
+        con.execute("UPDATE papel_pregoes SET status = 'interrompido', "
+                    "motivo = ? WHERE ligacao_id = 101 AND dia = '2026-10-02'",
+                    [_papel.MOTIVO_REMOVIDA])
+    with _ler() as con:
+        b = L.operacoes_do_dia(con, 1, DIA, hoje=DIA)[-1]
+    assert b["situacao"] == "congelada" and b["nota"] == "variante removida"
+
+
+def _plano_novo_amanha():
+    # alfa reotimizada: o plano 15 vale a partir de 03/10
+    with db.connect_write() as con:
+        _plano(con, 15, 1, 9, "2026-10-03", 2,
+               {"3_meses": {"pregoes": 63, "p10": 0.0, "p50": 63.0,
+                            "p90": 126.0}})
+
+
+def test_antes_da_abertura_a_curva_e_a_do_dia_da_tela(cenario):
+    # 03/10 antes da abertura: a tela mostra 02/10 (o dia do último candle)
+    _plano_novo_amanha()
+    with _ler() as con:
+        c = L.curva_vs_esperado(con, 1, 101, dia=DIA, hoje=date(2026, 10, 3))
+        pf = L.curva_vs_esperado(con, 1, dia=DIA, hoje=date(2026, 10, 3))
+    assert c["papel"] == pytest.approx([100, 60, 120, 106])
+    assert pf["papel"] == pytest.approx([100, 80, 145, 201])
+    # 02/10 já acabou: a régua anda o dia cheio, não a fração
+    assert c["mediana"] == pytest.approx([10, 20, 30, 40])
+    # sem pregão gravado no dia, vale o plano em vigor NAQUELE dia (12),
+    # não o de 03/10 (15, ainda sem papel nenhum)
+    with db.connect_write() as con:
+        con.execute("DELETE FROM papel_pregoes WHERE ligacao_id = 101 "
+                    "AND dia = '2026-10-02'")
+    with _ler() as con:
+        c = L.curva_vs_esperado(con, 1, 101, dia=DIA, hoje=date(2026, 10, 3))
+    assert c["papel"] == pytest.approx([100, 60, 120])
+
+
+def test_antes_da_abertura_o_comparativo_e_o_do_dia_da_tela(cenario):
+    _plano_novo_amanha()
+    with _ler() as con:
+        c = L.comparativo(con, 1, dia=DIA, hoje=date(2026, 10, 3))
+    assert c["papel"]["n"] == 10 and c["esperado_wfa"]["n"] == 4
+
+
 def test_alertas_sem_nada_alem_do_mesmo_assim(cenario):
     with _ler() as con:
         a = L.alertas(con, 1, DIA, hoje=DIA)

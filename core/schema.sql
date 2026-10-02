@@ -428,6 +428,12 @@ CREATE TABLE IF NOT EXISTS papel_pregoes (
     calculado_em TIMESTAMP,
     PRIMARY KEY (ligacao_id, dia)
 );
+-- a última volta do motor falhou: o que está gravado é de antes da falha
+-- (aberta com stop/alvo parados). Campo próprio, não o `motivo`, porque o
+-- motivo também carrega avisos de pregão vivo ("plano sem impressão do
+-- código") — e a tela não pode tratar um aviso como posição congelada.
+-- NULL de novo assim que um cálculo dá certo.
+ALTER TABLE papel_pregoes ADD COLUMN IF NOT EXISTS falha VARCHAR;
 
 -- o plano sabe de que variante é SEM depender da mineração (retrato): a
 -- mineração pode ser apagada, o histórico da variante não

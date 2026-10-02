@@ -81,6 +81,11 @@ _SAIDAS_DE_CORTE = (K.EXIT_CLOSE_TIME, K.EXIT_DATA_END)
 # dia acabou e a última barra é o fechamento real, mesmo num pregão curto
 FECHAMENTO_DIA_ENCERRADO = "00:00"
 
+# Variante tirada do portfólio no meio do pregão: o que ela fez até ali
+# fica, como no código que mudou (decisão 5). A tela lê este texto para
+# dizer por que a operação aberta congelou.
+MOTIVO_REMOVIDA = "variante removida do portfólio"
+
 
 # --------------------------------------------------------------- montagem
 def perfil_do_plano(plano: dict) -> tuple[dict, ExecutionProfile]:
@@ -247,26 +252,33 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
 
 # --------------------------------------------------------------- ligações
 def ligacoes_do_papel(con, symbol: str, dia: date) -> list[dict]:
-    """Quem entra no papel do dia (spec §3): toda ligação não removida, já
-    adicionada até o fim do dia, ligada ou não (decisão 4: o interruptor só
-    marca o que conta).
+    """Quem entra no papel do dia (spec §3): toda ligação que existia no
+    dia — adicionada até o fim dele e não removida antes do começo —,
+    ligada ou não (decisão 4: o interruptor só marca o que conta).
+
+    A removida NO dia entra, com `removida_em`: o pregão dela já pode ter
+    operação gravada, inclusive aberta, e precisa ser encerrado
+    (`rodar_dia`). Deixá-la de fora era esquecer o pregão em "rodando" para
+    sempre, com a aberta virando fantasma. Removida depois do dia operou
+    nele normalmente (`removida_em = None`).
 
     O plano é o do dia: o gravado no pregão, se já houver (reinício da
     captura não troca o plano no meio), senão o em vigor. Entra quem tem
     plano do `symbol` — e quem não tem plano nenhum, para o pregão ficar
     registrado como pulado em vez de sumir.
     """
-    _ini, fim = _limites(dia)
+    ini, fim = _limites(dia)
     linhas = con.execute(
         "SELECT pm.ligacao_id, pm.portfolio_id, pm.variante_id, ev.estrategia, "
-        "pp.plano_id FROM portfolio_membros pm "
+        "pp.plano_id, pm.removido_em FROM portfolio_membros pm "
         "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
         "LEFT JOIN papel_pregoes pp ON pp.ligacao_id = pm.ligacao_id "
         "     AND pp.dia = ? "
-        "WHERE pm.removido_em IS NULL AND pm.adicionado_em < ? "
-        "ORDER BY pm.ligacao_id", [dia, fim]).fetchall()
+        "WHERE (pm.removido_em IS NULL OR pm.removido_em >= ?) "
+        "  AND pm.adicionado_em < ? "
+        "ORDER BY pm.ligacao_id", [dia, ini, fim]).fetchall()
     out = []
-    for lig, pf, vid, estrategia, gravado in linhas:
+    for lig, pf, vid, estrategia, gravado, removido in linhas:
         pid = gravado
         if pid is None:
             vigor = V.plano_em_vigor(vid, dia, con=con)
@@ -278,7 +290,9 @@ def ligacoes_do_papel(con, symbol: str, dia: date) -> list[dict]:
                 continue
         out.append({"ligacao_id": int(lig), "portfolio_id": int(pf),
                     "variante_id": int(vid), "estrategia": estrategia,
-                    "plano_id": None if pid is None else int(pid)})
+                    "plano_id": None if pid is None else int(pid),
+                    "removida_em": removido if removido is not None
+                    and removido < fim else None})
     return out
 
 
@@ -404,8 +418,9 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
     Separado de `gravar` porque a captura calcula fora da conexão de
     escrita (spec §4.4.6): o motor não pode segurar a trava do banco.
     Cada resultado: `ligacao_id, dia, plano_id, codigo_hash, motor_versao,
-    status, motivo, interrompido_em, operacoes` — `operacoes = None` quer
-    dizer "não mexa no que está gravado". Pregão congelado não aparece.
+    status, motivo, interrompido_em, falha, operacoes` — `operacoes = None`
+    quer dizer "não mexa no que está gravado"; `falha` diz que foi por erro
+    no cálculo. Pregão congelado não aparece.
 
     Pregão `interrompido` (código mudou no meio, decisão 5) guarda o que
     tinha, como estava: uma operação aberta naquele minuto continua
@@ -430,10 +445,25 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
         antes = gravados.get(lig)
         if antes and antes["status"] in CONGELADOS:
             continue
+        if l["removida_em"] is not None:
+            # Tirada do portfólio hoje: o que ela fez até ali fica, como
+            # estava — a aberta inclusive, com o provisório da última volta
+            # (mesma regra do código que mudou, decisão 5). Sem pregão
+            # rodando não há o que encerrar: pulado já não operou, e quem
+            # nunca foi calculado não ganha linha.
+            if antes and antes["status"] == "rodando":
+                resultados.append({
+                    "ligacao_id": lig, "dia": dia, "plano_id": l["plano_id"],
+                    "codigo_hash": antes["codigo_hash"],
+                    "motor_versao": engine.VERSAO, "status": "interrompido",
+                    "motivo": MOTIVO_REMOVIDA,
+                    "interrompido_em": l["removida_em"], "falha": None,
+                    "operacoes": None})
+            continue
         r = {"ligacao_id": lig, "dia": dia, "plano_id": l["plano_id"],
              "codigo_hash": None, "motor_versao": engine.VERSAO,
              "status": "rodando", "motivo": None, "interrompido_em": None,
-             "operacoes": None}
+             "falha": None, "operacoes": None}
         resultados.append(r)
         try:
             if l["plano_id"] is None:
@@ -482,9 +512,10 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
         except Exception as erro:          # uma ligação não derruba as outras
             log.exception("papel: ligação #%s no dia %s", lig, dia)
             # o hash do pregão continua o do código que de fato calculou
+            texto = f"falha no cálculo: {erro}"
             r.update(status=antes["status"] if antes else "rodando",
                      codigo_hash=antes["codigo_hash"] if antes else None,
-                     motivo=f"falha no cálculo: {erro}", operacoes=None)
+                     motivo=texto, falha=texto, operacoes=None)
 
     if not fila:
         return resultados
@@ -530,8 +561,11 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
         except Exception as erro:
             log.exception("papel: ligação #%s no dia %s", l["ligacao_id"], dia)
             antes = gravados.get(l["ligacao_id"])
+            # `falha` à parte do motivo: é ela que diz à tela que a aberta
+            # gravada parou de ser atualizada (stop/alvo da volta anterior)
+            texto = f"falha no cálculo: {erro}"
             r.update(status=antes["status"] if antes else "rodando",
-                     motivo=f"falha no cálculo: {erro}", operacoes=None)
+                     motivo=texto, falha=texto, operacoes=None)
     return resultados
 
 
@@ -592,8 +626,8 @@ def _gravar(con, resultados: list[dict], agora: datetime) -> None:
         con.execute(
             "INSERT INTO papel_pregoes (ligacao_id, dia, plano_id, "
             "codigo_hash, motor_versao, status, motivo, interrompido_em, "
-            "n_operacoes, liquido, calculado_em) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?) "
+            "falha, n_operacoes, liquido, calculado_em) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT (ligacao_id, dia) DO UPDATE SET "
             "plano_id = excluded.plano_id, "
             "codigo_hash = coalesce(excluded.codigo_hash, "
@@ -601,11 +635,12 @@ def _gravar(con, resultados: list[dict], agora: datetime) -> None:
             "motor_versao = excluded.motor_versao, status = excluded.status, "
             "motivo = excluded.motivo, "
             "interrompido_em = excluded.interrompido_em, "
+            "falha = excluded.falha, "
             "n_operacoes = excluded.n_operacoes, "
             "liquido = excluded.liquido, calculado_em = excluded.calculado_em",
             [lig, dia, r["plano_id"], r["codigo_hash"], r["motor_versao"],
-             r["status"], r["motivo"], r["interrompido_em"], int(n),
-             float(liquido), agora])
+             r["status"], r["motivo"], r["interrompido_em"], r.get("falha"),
+             int(n), float(liquido), agora])
 
 
 def gravar(con, resultados: list[dict], agora: datetime) -> None:

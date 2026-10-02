@@ -114,9 +114,13 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
         vs = PL.variantes(con, pid, dia)
         ops = PL.operacoes_do_dia(con, pid, dia)
         alertas = PL.alertas(con, pid, dia)
-        comp = PL.comparativo(con, pid)
-        c_pf = PL.curva_vs_esperado(con, pid)
-        faixas = [PL.curva_vs_esperado(con, pid, v["ligacao_id"])["faixa_atual"]
+        # o mesmo `dia` dos indicadores: antes da abertura a tela mostra o
+        # pregão de ontem, e a curva/comparativo de "hoje" (sem pregão,
+        # talvez com outro plano) desmentiriam o topo
+        comp = PL.comparativo(con, pid, dia=dia)
+        c_pf = PL.curva_vs_esperado(con, pid, dia=dia)
+        faixas = [PL.curva_vs_esperado(con, pid, v["ligacao_id"],
+                                       dia=dia)["faixa_atual"]
                   for v in vs]
         return pfs, pf, res, vs, ops, alertas, comp, c_pf, faixas
 
@@ -151,6 +155,13 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
             _opcoes_filtro(vars_), filtro,
             [{"label": v["nome"], "value": v["ligacao_id"]} for v in vars_],
             curva)
+
+
+def ler_curva(pid, lig) -> dict:
+    """A curva papel × esperado do pregão que a tela mostra (o mesmo `dia`
+    de `montar`); `lig` None é o portfólio inteiro."""
+    dia = D.dia_do_pregao(D.estado_captura())
+    return _ler(lambda con: PL.curva_vs_esperado(con, pid, lig, dia=dia))
 
 
 def _opcoes_filtro(vars_):
@@ -295,8 +306,7 @@ def register(app):
         if por_variante and lig is None:
             return [], "escolha a variante ao lado", False, no_update
         try:
-            c = _ler(lambda con: PL.curva_vs_esperado(
-                con, pid, lig if por_variante else None))
+            c = ler_curva(pid, lig if por_variante else None)
         except (duckdb.Error, RuntimeError):
             raise PreventUpdate
         # poucos pregões ficavam espremidos num canto: enquadra a curva
