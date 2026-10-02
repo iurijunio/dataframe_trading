@@ -221,7 +221,9 @@ Pendente, não iniciado:
 
 Depois de qualquer mudança de tela, avise em destaque: **feche e abra o
 `iniciar.bat`** — o app aberto não carrega código nem CSS novos. Se mudou
-`captura.py`, `core/captura.py`, `core/ingest.py` ou `core/db_manager.py`,
+`captura.py`, `core/captura.py`, `core/ingest.py`, `core/db_manager.py`,
+`core/schema.sql` ou algo que o papel usa dentro da captura — `core/papel.py`,
+`core/engine/*`, `core/plano.py`, `core/variantes.py`, `strategies/*` —,
 feche também a janela **Dataframe - Captura** antes de reabrir o
 `iniciar.bat`: a captura antiga segura a trava e a nova sai calada (código 4),
 então reabrir só o `iniciar.bat` deixa o código velho gravando.
