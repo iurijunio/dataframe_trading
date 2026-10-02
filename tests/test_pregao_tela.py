@@ -221,6 +221,21 @@ def test_conferencia_nova_limpa_o_cache_de_barras(tmp_path, monkeypatch):
     assert "WIN$N" not in D._bars_cache
 
 
+def test_reconferencia_da_manha_tambem_limpa_o_cache_de_barras(tmp_path, monkeypatch):
+    # a reconferência apaga o leilão de ontem e regrava o 18:24: com a
+    # conferência de hoje ainda pendente, só ela avisa que as barras mudaram
+    from ui import data as D
+    p = tmp_path / "estado.json"
+    monkeypatch.setattr(D, "ESTADO_CAPTURA", p)
+    p.write_text('{"conferencia": {"em": "2026-10-01T18:30:00"}}', encoding="utf-8")
+    D.estado_captura()
+    D._bars_cache["WIN$N"] = {"x": 1}
+    p.write_text('{"conferencia": {"status": "pendente"}, '
+                 '"reconferencia": {"em": "2026-10-02T08:50:00"}}', encoding="utf-8")
+    D.estado_captura()
+    assert "WIN$N" not in D._bars_cache
+
+
 def test_conferencia_pendente_no_meio_nao_apaga_a_memoria(tmp_path, monkeypatch):
     # o serviço reabre com a conferência "pendente" (sem "em"); a seguinte
     # ainda tem de limpar o cache

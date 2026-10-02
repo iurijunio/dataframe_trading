@@ -61,7 +61,13 @@ def estado_captura() -> dict | None:
     if not isinstance(e, dict):
         return _estado_ultimo
     _estado_ultimo = e
-    em = (e.get("conferencia") or {}).get("em")
+    # A reconferência da manhã também reescreve barras (o leilão de ontem
+    # some, o 18:24 muda) com a conferência de hoje ainda pendente. Vale a
+    # mais recente das duas: ISO 8601 ordena como texto.
+    marcas = [m for m in ((e.get("conferencia") or {}).get("em"),
+                          (e.get("reconferencia") or {}).get("em"))
+              if isinstance(m, str)]
+    em = max(marcas) if marcas else None
     # sem "em" (serviço reaberto, conferência pendente) não esquece a última
     # vista: senão a conferência seguinte pareceria a primeira e não limparia
     if em is not None and em != _conferencia_vista:

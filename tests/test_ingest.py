@@ -276,3 +276,33 @@ def test_source_max_ts_informado_vence_versao_do_mesmo_minuto(con):
     assert r.rows_updated == 1
     assert con.execute("SELECT high, close FROM bars_m1").fetchone() == (120, 105)
     assert con.execute("SELECT max(source_max_ts) FROM ingest_log").fetchone()[0] == datetime(2026, 3, 9, 18, 30)
+
+
+# ------------------------------------------------------ tick_volume ignorado
+def _com(df, **cols):
+    return df.with_columns([pl.lit(v).alias(c) for c, v in cols.items()])
+
+
+def test_diferenca_so_no_tick_volume_e_barra_identica(con):
+    """tick_volume é contagem de atualizações de cotação, não de negócios, e
+    a corretora o revisa de madrugada: barra que só difere nele não é
+    correção — fica a gravada, com a proveniência dela."""
+    ts = datetime(2026, 3, 9, 9, 0)
+    ing.ingest_df(con, _df([(ts, 100, 110, 90, 100)]), "WIN$N", "captura://", "a")
+    dono = con.execute("SELECT src_ingest_id FROM bars_m1").fetchone()[0]
+    r = ing.ingest_df(con, _com(_df([(ts, 100, 110, 90, 100)]), tick_volume=999),
+                      "WIN$N", "conferencia://2026-03-09", "b",
+                      source_max_ts=datetime(2026, 3, 9, 18, 30))
+    assert (r.rows_identical, r.rows_updated, r.rows_rejected) == (1, 0, 0)
+    assert con.execute("SELECT src_ingest_id, tick_volume FROM bars_m1").fetchone() == (dono, 100)
+
+
+def test_diferenca_no_volume_ainda_e_revisao(con):
+    # volume são contratos negociados (da B3): esse continua comparado
+    ts = datetime(2026, 3, 9, 9, 0)
+    ing.ingest_df(con, _df([(ts, 100, 110, 90, 100)]), "WIN$N", "captura://", "a")
+    r = ing.ingest_df(con, _com(_df([(ts, 100, 110, 90, 100)]), volume=24212),
+                      "WIN$N", "conferencia://2026-03-09", "b",
+                      source_max_ts=datetime(2026, 3, 9, 18, 30))
+    assert r.rows_updated == 1
+    assert con.execute("SELECT volume FROM bars_m1").fetchone()[0] == 24212

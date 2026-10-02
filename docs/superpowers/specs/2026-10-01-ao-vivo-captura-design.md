@@ -181,6 +181,28 @@ pelo primeiro negócio (09:0x; 13:0x em quarta de cinzas). Fora do pregão a
 captura fica ociosa (estado a cada 30 s) e "Captura parada" não é alerta.
 Dia que não fechou (PC desligou antes) é conferido no dia seguinte.
 
+**Reconferência na manhã seguinte (02/10/2026):** de madrugada a corretora
+consolida o próprio histórico. Em 01/10 a captura gravou o leilão de
+fechamento como candle próprio às 18:31 (o=h=l=c=187760, 22.355 contratos)
+e o 18:24 fechando em 187800; a conferência das 18:38 bateu com o MT5
+daquela hora. No dia seguinte o MT5 já não tinha o 18:31: o 18:24 fechava em
+187760 com 24.212 contratos (leilão somado) — e todo o histórico baixado
+termina assim. Por isso, na janela da conferência (e na primeira volta
+conectada), cada dia passado com a marca `conferencia://` e sem
+`reconferencia://` é relido do MT5 (`dias_a_reconferir` →
+`reconferir_dia`): os candles que diferem são regravados e os do dia que o
+MT5 não tem mais são **apagados**, na mesma transação, gravando a marca
+`reconferencia://AAAA-MM-DD`. Só apaga com o MT5 devolvendo candles do dia;
+resposta vazia não mexe em nada e a janela seguinte tenta de novo. Depois,
+trading_days/rolagens e o Parquet são refeitos (marca `reexportar`), e o
+`estado.json` ganha `"reconferencia": {"em", "dia"}` — a tela limpa o cache
+de barras quando ele muda, sem mexer no cartão da conferência de hoje.
+Dia de exportação antiga (sem a marca `conferencia://`) nunca é reconferido.
+O `tick_volume` (atualizações de cotação, não negócios) a corretora também
+revisa de madrugada: o merge do ingest e o `gravar` o ignoram ao comparar —
+barra que só difere nele é idêntica e mantém a proveniência. O `volume`
+(contratos, da B3) continua comparado.
+
 **Dados:** série contínua `WIN$N`, da conta logada no MT5; `ingest_log`
 registra a origem; o estado registra o contrato vigente (para a rolagem na
 parte 4).

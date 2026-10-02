@@ -66,7 +66,9 @@ class RelogioServidor:
 
 PREFIXO_CAPTURA = "captura://"
 PREFIXO_CONFERENCIA = "conferencia://"
+PREFIXO_RECONFERENCIA = "reconferencia://"
 _COLUNAS = ("ts", "open", "high", "low", "close", "tick_volume", "volume", "spread")
+_COMPARADAS = tuple(c for c in _COLUNAS if c != "tick_volume")
 FOLGA_FECHAMENTO = timedelta(minutes=6)
 ABERTURA_ANTES = time(8, 55)
 FECHAMENTO_PADRAO = time(18, 24)
@@ -96,7 +98,9 @@ def gravar(con, symbol: str, barras: pl.DataFrame, origem: str,
     if linhas:
         banco = pl.DataFrame(linhas, schema=[*_COLUNAS, "_dono"], orient="row").with_columns(
             [pl.col(c).cast(barras.schema[c]) for c in _COLUNAS])
-        barras = barras.join(banco.select(_COLUNAS), on=list(_COLUNAS), how="anti")
+        # mesma comparação do ingest (sem tick_volume): candle que só mudou
+        # nele chegaria lá como "idêntico" e deixaria um lote vazio por volta
+        barras = barras.join(banco.select(_COMPARADAS), on=list(_COMPARADAS), how="anti")
         donos = banco.select("ts", "_dono")
         # O lote novo carrega como source_max_ts o maior ts que sobrar; tirar
         # um perdedor pode baixar esse máximo e transformar outro em perdedor.
@@ -168,6 +172,64 @@ def conferir_dia(con, symbol: str, dia: date, barras_mt5: pl.DataFrame,
                       ing.sha256_df(do_dia), source_max_ts=agora,
                       price_decimals=price_decimals)
     return {"revisados": r.rows_updated, "faltantes": r.rows_inserted}
+
+
+def reconferir_dia(con, symbol: str, dia: date, barras_mt5: pl.DataFrame,
+                   agora: datetime, price_decimals: int = 0) -> dict:
+    """Deixa um dia passado IDÊNTICO ao MT5 de hoje.
+
+    De madrugada a corretora consolida o histórico: o leilão de fechamento
+    que a captura gravou como candle próprio (01/10/2026, 18:31) some e vai
+    para dentro do 18:24. A conferência das 18:30 não tem como saber disso;
+    sem esta releitura o dia ficaria com um candle a mais que o histórico
+    baixado do MT5 — outra média móvel, outro fechamento para estratégia de
+    gap, e o papel deixaria de ser igual ao backtest.
+
+    Mesmo merge da conferência (`source_max_ts` = hora em que rodou, então
+    vence a conferência da véspera) e, na mesma transação, apaga os candles
+    do dia que o MT5 não tem mais. Só apaga com o MT5 respondendo pelo dia:
+    resposta vazia é terminal sem histórico, não um dia sem negócio.
+    """
+    do_dia = barras_mt5.filter(pl.col("ts").dt.date() == dia)
+    if do_dia.height == 0:
+        raise ValueError(f"o MT5 não devolveu candles de {dia:%d/%m/%Y}")
+    origem = f"{PREFIXO_RECONFERENCIA}{dia:%Y-%m-%d}"
+    df = ing.validar(do_dia, origem, price_decimals)
+    ini = datetime.combine(dia, time())
+    # Merge e remoção juntos: um dia pela metade (candle novo gravado e o
+    # leilão ainda lá) seria pior que o dia como estava.
+    con.execute("BEGIN TRANSACTION")
+    try:
+        r = ing._merge(con, origem, ing.sha256_df(df), symbol, df, agora)
+        con.register("_mt5_dia", df.select("ts"))
+        removidos = len(con.execute(
+            "DELETE FROM bars_m1 WHERE symbol = ? AND ts >= ? AND ts < ? "
+            "AND ts NOT IN (SELECT ts FROM _mt5_dia) RETURNING 1",
+            [symbol, ini, ini + timedelta(days=1)]).fetchall())
+        con.unregister("_mt5_dia")
+    except Exception:
+        con.execute("ROLLBACK")
+        con.execute("DROP TABLE IF EXISTS _stage")
+        raise
+    con.execute("COMMIT")
+    return {"revisados": r.rows_updated, "faltantes": r.rows_inserted,
+            "removidos": removidos}
+
+
+def dias_a_reconferir(con, symbol: str, hoje: date) -> list[date]:
+    """Dias passados já conferidos e ainda não relidos no dia seguinte. Só
+    os da captura (marca conferencia://): dia de exportação antiga — o MT5
+    nem serve mais aquele período — nunca entra. Uma vez por dia: a marca
+    reconferencia:// é o registro, como na conferência."""
+    n = len(PREFIXO_CONFERENCIA) + 1
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT CAST(substr(c.source_file, ?) AS DATE) AS d "
+        "FROM ingest_log c WHERE c.symbol = ? AND c.source_file LIKE ? "
+        "AND CAST(substr(c.source_file, ?) AS DATE) < ? "
+        "AND NOT EXISTS (SELECT 1 FROM ingest_log r WHERE r.symbol = ? "
+        "  AND r.source_file = ? || substr(c.source_file, ?)) ORDER BY d",
+        [n, symbol, PREFIXO_CONFERENCIA + "%", n, hoje,
+         symbol, PREFIXO_RECONFERENCIA, n]).fetchall()]
 
 
 def escrever_estado(caminho: Path, dados: dict, tentativas: int = 3,

@@ -149,6 +149,11 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   60 s ("feche a captura antes"). O relógio do PC pode atrasar ~1 min em
   relação à corretora; a captura usa o relógio do servidor (a tela avisa acima
   de 30 s). O Clear não publica o contrato vigente (`contrato_vigente` = None).
+- **Corretora consolida de madrugada:** o leilão de fechamento gravado ao vivo
+  como candle próprio (01/10: 18:31) vira parte do 18:24, e o `tick_volume` é
+  revisado. A captura reconfere cada dia passado no dia seguinte
+  (`reconferir_dia`, apaga o candle que o MT5 não tem mais e reconfere o
+  papel). O merge ignora `tick_volume` (não é negócio); `volume` segue comparado.
 - **Papel (`core/papel.py`):**
   - É backtest por construção. O perfil de execução é montado como no WFA
     (`CAMPOS_EXECUCAO_NOMES`); nunca `ExecutionProfile.from_config`.

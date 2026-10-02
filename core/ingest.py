@@ -49,7 +49,12 @@ MT5_COLUMNS = {
 
 PRICE_COLS = ("open", "high", "low", "close")
 
-_CONTENT_COLS = (*PRICE_COLS, "tick_volume", "volume", "spread")
+# tick_volume fica de fora de proposito: e a contagem de atualizacoes de
+# cotacao, nao de negocios, e a corretora o revisa de madrugada (a de
+# 01/10/2026 trocou 538 por 1195 com o volume em contratos igual). Contado,
+# cada releitura viraria "revisao" de um candle que nao mudou e trocaria a
+# proveniencia dele. O `volume` (contratos, da B3) continua comparado.
+_CONTENT_COLS = (*PRICE_COLS, "volume", "spread")
 
 
 def _differs(base: str = "b", stage: str = "s") -> str:

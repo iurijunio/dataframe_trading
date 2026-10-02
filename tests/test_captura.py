@@ -287,3 +287,96 @@ def test_captura_ativa_em_pelo_estado_de_menos_de_60_s(tmp_path):
     assert C.captura_ativa_em(p, agora) is False
     p.write_text("{meio arquivo", encoding="utf-8")
     assert C.captura_ativa_em(p, agora) is False
+
+
+# ---------------------------------------------- tick_volume e reconferência
+def test_gravar_reenvio_que_so_muda_tick_volume_nao_cria_lote(con):
+    # a corretora revisa o tick_volume; sem ignorá-lo no anti-join, cada
+    # volta de 1 s criaria um lote vazio no ingest_log
+    C.gravar(con, "WIN$N", barras("10:00"), "captura://1@srv")
+    outro = barras("10:00").with_columns(pl.lit(1195).alias("tick_volume"))
+    for _ in range(2):
+        assert C.gravar(con, "WIN$N", outro, "captura://1@srv") == {
+            "inseridos": 0, "revisados": 0}
+    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == 1
+
+
+def _leilao_separado(con):
+    """O caso real de 01/10: a captura gravou o 18:24 antes do leilão e o
+    leilão de fechamento como candle próprio às 18:31; a conferência das
+    18:38 bateu com o MT5 daquela hora."""
+    b = barras("18:23", "18:24", "18:31", base=187800)
+    b = b.with_columns(
+        pl.when(pl.col("ts").dt.minute() == 31).then(187760).otherwise(pl.col("open")).alias("open"),
+        pl.when(pl.col("ts").dt.minute() == 31).then(187760).otherwise(pl.col("high")).alias("high"),
+        pl.when(pl.col("ts").dt.minute() == 31).then(187760).otherwise(pl.col("low")).alias("low"),
+        pl.when(pl.col("ts").dt.minute() == 31).then(187760).otherwise(pl.col("close")).alias("close"),
+        pl.when(pl.col("ts").dt.minute() == 31).then(22355).otherwise(1857).alias("volume"))
+    C.gravar(con, "WIN$N", b, "captura://1@srv")
+    C.conferir_dia(con, "WIN$N", date(2026, 10, 1), b, agora=datetime(2026, 10, 1, 18, 38))
+    return b
+
+
+def _consolidado(b):
+    # o MT5 de madrugada: sem 18:31, o 18:24 fecha no leilão com o volume
+    # somado, e o tick_volume dos minutos anteriores revisado
+    return b.filter(pl.col("ts").dt.minute() != 31).with_columns(
+        pl.when(pl.col("ts").dt.minute() == 24).then(187760).otherwise(pl.col("close")).alias("close"),
+        pl.when(pl.col("ts").dt.minute() == 24).then(187760).otherwise(pl.col("low")).alias("low"),
+        pl.when(pl.col("ts").dt.minute() == 24).then(24212).otherwise(pl.col("volume")).alias("volume"),
+        pl.lit(1195).alias("tick_volume"))
+
+
+def _outro_dia(con):
+    df = barras("10:00").with_columns(pl.lit(datetime(2026, 9, 30, 18, 40)).alias("ts"))
+    C.gravar(con, "WIN$N", df, "captura://1@srv")
+
+
+def test_reconferencia_deixa_o_dia_igual_ao_mt5_consolidado(con):
+    _outro_dia(con)
+    b = _leilao_separado(con)
+    r = C.reconferir_dia(con, "WIN$N", date(2026, 10, 1), _consolidado(b),
+                         agora=datetime(2026, 10, 2, 8, 50))
+    assert r == {"revisados": 1, "faltantes": 0, "removidos": 1}
+    linhas = con.execute(
+        "SELECT CAST(ts AS TIME), close, volume FROM bars_m1 "
+        "WHERE CAST(ts AS DATE) = '2026-10-01' ORDER BY ts").fetchall()
+    assert linhas == [(time(18, 23), 187810, 1857), (time(18, 24), 187760, 24212)]
+    # o outro dia não é tocado
+    assert con.execute("SELECT count(*) FROM bars_m1 WHERE CAST(ts AS DATE) = '2026-09-30'"
+                       ).fetchone()[0] == 1
+    assert con.execute("SELECT count(*) FROM ingest_log WHERE source_file = "
+                       "'reconferencia://2026-10-01'").fetchone()[0] == 1
+
+
+def test_reconferencia_sem_candle_do_mt5_recusa_e_nao_apaga(con):
+    _leilao_separado(con)
+    antes = con.execute("SELECT * FROM bars_m1 ORDER BY ts").fetchall()
+    lotes = con.execute("SELECT count(*) FROM ingest_log").fetchone()[0]
+    vazio = barras("10:00").filter(pl.lit(False))
+    with pytest.raises(ValueError, match="não devolveu"):
+        C.reconferir_dia(con, "WIN$N", date(2026, 10, 1), vazio,
+                         agora=datetime(2026, 10, 2, 8, 50))
+    # o MT5 de outro dia também não serve: o filtro é pelo dia pedido
+    with pytest.raises(ValueError, match="não devolveu"):
+        C.reconferir_dia(con, "WIN$N", date(2026, 10, 1),
+                         barras("10:00").with_columns(pl.lit(datetime(2026, 10, 2, 10)).alias("ts")),
+                         agora=datetime(2026, 10, 2, 8, 50))
+    assert con.execute("SELECT * FROM bars_m1 ORDER BY ts").fetchall() == antes
+    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == lotes
+
+
+def test_dias_a_reconferir_so_passados_conferidos_e_uma_vez(con):
+    b1 = _leilao_separado(con)                  # 01/10 conferido
+    b2 = barras("10:00").with_columns(pl.lit(datetime(2026, 10, 2, 10)).alias("ts"))
+    C.gravar(con, "WIN$N", b2, "captura://1@srv")
+    C.conferir_dia(con, "WIN$N", date(2026, 10, 2), b2, agora=datetime(2026, 10, 2, 18, 30))
+    # dia sem conferência (exportação antiga) nunca é reconferido
+    ing.ingest_df(con, barras("10:00").with_columns(
+        pl.lit(datetime(2026, 3, 12, 10)).alias("ts")), "WIN$N", "antigo.csv", "s")
+    assert C.dias_a_reconferir(con, "WIN$N", date(2026, 10, 2)) == [date(2026, 10, 1)]
+    assert C.dias_a_reconferir(con, "WIN$N", date(2026, 10, 5)) == [
+        date(2026, 10, 1), date(2026, 10, 2)]
+    C.reconferir_dia(con, "WIN$N", date(2026, 10, 1), _consolidado(b1),
+                     agora=datetime(2026, 10, 2, 8, 50))
+    assert C.dias_a_reconferir(con, "WIN$N", date(2026, 10, 5)) == [date(2026, 10, 2)]

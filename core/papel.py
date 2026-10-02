@@ -689,6 +689,43 @@ def conferir(con, dia: date, agora: datetime, cache_codigo: dict, *,
     return res
 
 
+def reabrir_reconferido(con, dia: date, *, symbol: str = SIMBOLO) -> list[int]:
+    """Devolve a "rodando" o papel conferido de um dia que a reconferência
+    da manhã seguinte mudou, para o `conferir` refazê-lo nos candles finais.
+
+    Não fere a decisão 6: de madrugada a corretora consolida o próprio
+    histórico (o leilão de fechamento vai para dentro do 18:24) — esse é o
+    dia como o backtest o vê, não uma correção posterior. Sem reabrir, todo
+    pregão terminaria em divergência e o papel deixaria de ser o backtest.
+
+    Só reabre o que o `conferir` refaria igual, menos os candles: pregão de
+    variante tirada do portfólio no próprio dia (depois do fechamento) seria
+    encerrado como "removida", e pregão cujo código mudou desde então seria
+    interrompido. Esses ficam como estão — a divergência acusa.
+    """
+    soma = checksum(con, symbol, dia)
+    fim = _limites(dia)[1]
+    linhas = con.execute(
+        "SELECT pp.ligacao_id, pp.codigo_hash, "
+        "coalesce(p.strategy, ev.estrategia), pm.removido_em "
+        "FROM papel_pregoes pp "
+        "JOIN planos_operacao p ON p.plano_id = pp.plano_id "
+        "JOIN portfolio_membros pm ON pm.ligacao_id = pp.ligacao_id "
+        "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
+        "WHERE pp.dia = ? AND pp.status = 'conferido' AND p.symbol = ? "
+        "AND pp.checksum IS DISTINCT FROM ?", [dia, symbol, soma]).fetchall()
+    reabrir = [lig for lig, hash_dia, estrategia, removido in linhas
+               if (removido is None or removido >= fim)
+               and hash_dia is not None
+               and hash_dia == codigo.hash_estrategia(estrategia)]
+    if reabrir:
+        con.execute(
+            "UPDATE papel_pregoes SET status = 'rodando' WHERE dia = ? "
+            "AND status = 'conferido' AND ligacao_id IN "
+            f"({', '.join('?' * len(reabrir))})", [dia, *reabrir])
+    return reabrir
+
+
 def divergencias(con, symbol: str = SIMBOLO,
                  ligacoes=None) -> list[dict]:
     """Pregões conferidos cujos candles mudaram depois: o papel gravado foi

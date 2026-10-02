@@ -133,6 +133,22 @@ não mudam (mesmos trades).
 - Depois da conferência do dia: recalcula uma última vez com os candles
   conferidos, grava o **checksum** das barras do dia (quantidade + soma de
   OHLC) e marca `conferido`. A partir daí congelado (decisão 6).
+- Na manhã seguinte, a **reconferência** dos candles (spec da captura §5)
+  deixa o dia idêntico ao MT5 consolidado — o leilão de fechamento que a
+  captura gravou às 18:31 vai para dentro do 18:24. Isso não é "correção
+  posterior" (decisão 6): é o dia como o backtest o vê. Se o checksum do
+  dia mudou, o pregão `conferido` volta a `rodando` e é conferido de novo
+  na mesma conexão de escrita (`papel.reabrir_reconferido` + `conferir`),
+  com os candles finais; os `op_id` ficam (upsert por `entry_ts`). Escolhido
+  em vez de adiar o congelamento para a manhã: a tela mostra o pregão
+  conferido na mesma noite e um dia que nunca é reconferido (PC desligado)
+  não fica "rodando". Não reabre — fica congelado e a divergência acusa —
+  o pregão que o `conferir` refaria diferente por outro motivo: variante
+  tirada do portfólio no próprio dia depois do fechamento (seria encerrada
+  como removida) e código da estratégia mudado desde então (seria
+  interrompido). Reaberto cujo cálculo falha fica `rodando` num dia com a
+  marca `conferencia://`, e a janela seguinte o confere como qualquer
+  papel por conferir.
 - Dias recuperados (PC desligado): ganham papel na conferência deles.
 - Falha numa ligação não derruba a captura nem as outras (log + motivo).
 

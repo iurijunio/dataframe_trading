@@ -173,6 +173,8 @@ class Servico:
         self._mono_conferencia = None
         self.reexportar = False         # dia conferido sem pregões/Parquet refeitos
         self._dias_conferidos: list = []
+        # A última reconferência (a tela limpa o cache de barras quando muda)
+        self.reconferencia = None
         # O papel (spec 2026-10-02-ao-vivo-papel §4.4.6). O cache vive o
         # processo inteiro: guarda o módulo de cada estratégia pelo hash do
         # arquivo, para recarregar só quando o código no disco muda.
@@ -242,8 +244,9 @@ class Servico:
                 self.ultimo = ultimo
                 ultima_conf = con.execute(
                     "SELECT max(ingested_at) FROM ingest_log WHERE symbol = ? "
-                    "AND source_file LIKE ?",
-                    [self.simbolo, C.PREFIXO_CONFERENCIA + "%"]).fetchone()[0]
+                    "AND (source_file LIKE ? OR source_file LIKE ?)",
+                    [self.simbolo, C.PREFIXO_CONFERENCIA + "%",
+                     C.PREFIXO_RECONFERENCIA + "%"]).fetchone()[0]
                 # A marca de "reexportar" não sobrevive ao processo: se a
                 # captura caiu entre a conferência e o Parquet, o espelho
                 # mais velho que a última conferência denuncia.
@@ -471,6 +474,7 @@ class Servico:
             with self._banco(agora, escrita=False) as con:
                 dias = C.dias_pendentes(con, self.simbolo, agora.date(),
                                         self._fechou_hoje(agora))
+                rever = C.dias_a_reconferir(con, self.simbolo, agora.date())
                 try:
                     papel_dias = [d for d in self._papel_a_conferir(con)
                                   if d not in dias]
@@ -490,13 +494,14 @@ class Servico:
         elif not dias and not papel_dias:
             # nada do papel por conferir: uma falha antiga já não vale
             self.papel_erros["conferencia"] = None
-        if not dias and not self.reexportar and not papel_dias:
+        if not dias and not rever and not self.reexportar and not papel_dias:
             self._mono_conferencia = m
             return
         try:
             # Os dias vêm do MT5 antes de pegar o escritor: a mineração e a
             # tela não esperam o terminal responder.
             barras = {dia: self._barras_do_dia(dia, agora) for dia in dias}
+            rebarras = {dia: self._barras_do_dia(dia, agora) for dia in rever}
             with self._banco(agora, escrita=True) as con:
                 self._mono_conferencia = m
                 self._papel_ok = True
@@ -504,6 +509,7 @@ class Servico:
                 # adiar de novo o papel de um dia que já foi conferido
                 for dia in papel_dias:
                     self._conferir_papel(con, dia, agora)
+                self._reconferir_com(con, agora, rebarras)
                 self._conferir_com(con, agora, barras)
                 if self._papel_ok and falha_papel is None:
                     self.papel_erros["conferencia"] = None
@@ -602,6 +608,43 @@ class Servico:
         # dia passado está todo fechado; o de hoje segue a hora do servidor
         return C.fechados(df, self.agora_srv if dia == agora.date() else agora)
 
+    def _reconferir_com(self, con, agora, barras: dict) -> None:
+        """A manhã seguinte: deixa cada dia já conferido idêntico ao MT5.
+
+        De madrugada a corretora consolida o histórico — o leilão de
+        fechamento que a captura gravou como candle próprio (18:31) vai para
+        dentro do 18:24 —, e o histórico que o backtest usa é esse. A
+        reconstrução e o Parquet ficam com o `_conferir_com` logo depois
+        (marca `reexportar`), que já sabe refazê-los se falharem.
+        """
+        for dia, df in barras.items():
+            try:
+                r = C.reconferir_dia(con, self.simbolo, dia, df,
+                                     agora=max(agora, self.agora_srv or agora),
+                                     price_decimals=self.price_decimals)
+            except ValueError as e:
+                # o MT5 não tem o dia: nada foi apagado, a próxima janela
+                # tenta de novo. Não é a conferência de hoje: fica no log.
+                log.warning("reconferência de %s: %s", dia, e)
+                continue
+            log.info("reconferência de %s: %d revisado(s), %d faltante(s), "
+                     "%d removido(s)", dia, r["revisados"], r["faltantes"],
+                     r["removidos"])
+            self.reconferencia = {"em": agora, "dia": dia}
+            self.reexportar = True
+            try:
+                reabertos = papel.reabrir_reconferido(con, dia, symbol=self.simbolo)
+            except Exception as e:
+                log.exception("papel da reconferência de %s falhou", dia)
+                self.papel_erros["conferencia"] = f"{dia:%d/%m/%Y}: {e}"
+                self._papel_ok = False
+                continue
+            # Reaberto e não conferido (falha no cálculo) fica "rodando" num
+            # dia com a marca conferencia://: `_papel_a_conferir` o traz de
+            # volta na próxima janela, como qualquer papel por conferir.
+            if reabertos:
+                self._conferir_papel(con, dia, agora)
+
     def _conferir_com(self, con, agora, barras: dict) -> None:
         falhas = []
         for dia, df in barras.items():
@@ -634,6 +677,11 @@ class Servico:
             self.reexportar = False
             self._gravou()
         feitos, self._dias_conferidos = self._dias_conferidos, []
+        if not barras and self.conferencia.get("status") != "falhou":
+            # janela só da reconferência, do papel ou do Parquet: a
+            # conferência de HOJE não aconteceu, o cartão dela não muda (a
+            # menos que mostre a falha que esta janela acabou de refazer)
+            return
         if falhas:
             self.conferencia = {"status": "falhou", "em": agora, "dias": feitos,
                                 "erro": "; ".join(falhas)}
@@ -699,6 +747,7 @@ class Servico:
             "recuperados_hoje": self.recuperados,
             "revisados_hoje": self.revisados,
             "conferencia": self.conferencia,
+            "reconferencia": self.reconferencia,
             "banco_ocupado_desde": self.banco_ocupado_desde,
             # só um desvio que importa: abaixo de 30 s é ruído do tick
             "relogio_desvio_s": (round(self.desvio, 1)
