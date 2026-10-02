@@ -755,3 +755,49 @@ def test_variante_removida_no_meio_do_pregao_e_encerrada_na_conferencia(
     mono.t += P.A_CADA_CONFERENCIA
     s.volta()
     assert len(dias) == 2
+
+
+def test_variante_removida_antes_do_primeiro_calculo_nao_fica_por_conferir(
+        base, ligacao, monkeypatch):
+    # o papel já existia (um pregão conferido antes); a variante sai do
+    # portfólio às 08:00, antes de qualquer cálculo do dia: não há pregão
+    # a encerrar, e o dia não pode voltar à lista a cada janela
+    with db.connect_write() as con:
+        con.execute("INSERT INTO papel_pregoes (ligacao_id, dia, status, "
+                    "n_operacoes, liquido, calculado_em) VALUES "
+                    "(?, '2026-09-30', 'conferido', 0, 0, '2026-09-30 18:40')",
+                    [ligacao])
+        con.execute("UPDATE portfolio_membros SET removido_em = '2026-10-01 08:00'")
+    chamadas = _contar(monkeypatch, "conferir")
+    agora = datetime(2026, 10, 1, 18, 40)
+    mono = Mono()
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 3),
+                          tick=datetime(2026, 10, 1, 18, 24)), agora, base / "ao_vivo", mono)
+    s.volta()
+    assert len(chamadas) == 1                 # a conferência dos candles do dia
+    assert _pregao_papel(ligacao, agora.date()) is None
+    # o SQL já descarta o dia: nem chega à regra fina do papel
+    finas = _contar(monkeypatch, "ligacoes_do_papel")
+    with db.connect(read_only=True) as con:
+        assert s._papel_a_conferir(con) == []
+    assert finas == []
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert len(chamadas) == 1
+    # outra ligação, de outro símbolo e sem linha, põe o dia de volta no
+    # SQL: aí é a regra fina que não pode contar a removida como "rodando"
+    from core import codigo, plano, variantes
+    from core import portfolio as PF
+    from tests._cadeia import campos_plano, mineracao, wfa
+    v2 = variantes.criar("outro-simbolo", "rompimento_canal")
+    mineracao(2, variante_id=v2)
+    wfa(2, 2)
+    plano.salvar(**campos_plano(wfa_id=2, run_id=2, symbol="WDO$N",
+                                codigo_hash=codigo.hash_estrategia("rompimento_canal")),
+                 agora=datetime(2026, 9, 1, 10))
+    PF.adicionar_variante(PF.criar("pf2"), v2)
+    with db.connect_write() as con:
+        con.execute("UPDATE portfolio_membros SET adicionado_em = '2026-09-01 09:00'")
+    with db.connect(read_only=True) as con:
+        assert s._papel_a_conferir(con) == []
+    assert finas                              # passou pela regra fina

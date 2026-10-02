@@ -563,7 +563,12 @@ class Servico:
             "  AND pm.adicionado_em < c.d + INTERVAL 1 DAY "
             "LEFT JOIN papel_pregoes pp ON pp.ligacao_id = pm.ligacao_id AND pp.dia = c.d "
             "WHERE c.d >= (SELECT min(dia) FROM papel_pregoes) "
-            "  AND (pp.status IS NULL OR pp.status = 'rodando') ORDER BY c.d",
+            # sem linha no dia só pede papel quem não saiu nele: removida
+            # antes do primeiro cálculo não tem pregão a encerrar, e o
+            # papel nunca cria um para ela — o dia voltaria a cada janela
+            "  AND (pp.status = 'rodando' OR (pp.status IS NULL AND "
+            "       (pm.removido_em IS NULL "
+            "        OR pm.removido_em >= c.d + INTERVAL 1 DAY))) ORDER BY c.d",
             [len(prefixo) + 1, self.simbolo, prefixo + "%"]).fetchall()]
         out = []
         for dia in candidatos:
@@ -572,7 +577,10 @@ class Servico:
             gravados = dict(con.execute(
                 "SELECT ligacao_id, status FROM papel_pregoes WHERE dia = ?",
                 [dia]).fetchall())
-            if any(gravados.get(l["ligacao_id"], "rodando") == "rodando"
+            # a mesma regra do SQL: removida no dia sem linha = nada a fazer
+            if any(gravados.get(l["ligacao_id"],
+                                None if l["removida_em"] else "rodando")
+                   == "rodando"
                    for l in papel.ligacoes_do_papel(con, self.simbolo, dia)):
                 out.append(dia)
         return out
