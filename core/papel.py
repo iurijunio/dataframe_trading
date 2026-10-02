@@ -198,15 +198,26 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
     número que a operação teria se o pregão acabasse agora.
     """
     estrat, perfil = perfil_do_plano(plano)
-    res = run_strategy(barras, mod, estrat, perfil, inst)
+    n = len(barras["ts"])
+    if n == 0:
+        return []
+    ultimo = int(barras["ts"][n - 1].astype("datetime64[m]").astype(np.int64)
+                 % 1440)
+    encerrado = fechamento_hhmm == FECHAMENTO_DIA_ENCERRADO
+    corte = ultimo < _minutes(fechamento_hhmm or perfil.fechamento)
+    # a vela do timeframe da última barra ainda não fechou pelo relógio:
+    # para o stop/alvo, só vale a vela anterior (ver `run_strategy`). Dia
+    # encerrado não tem vela aberta: a última vela do pregão termina na
+    # última barra dele, no histórico inteiro também.
+    passo = TIMEFRAMES.get(perfil.timeframe, 1)
+    vela_aberta = (passo > 1 and not encerrado
+                   and (ultimo // passo) * passo + passo - 1 > ultimo)
+    res = run_strategy(barras, mod, estrat, perfil, inst,
+                       vela_aberta=vela_aberta)
     if res.n_trades == 0:
         return []
     din = metrics.monetize(res)
     t = res.trades
-    n = res.n_bars
-    ultimo = int(barras["ts"][n - 1].astype("datetime64[m]").astype(np.int64)
-                 % 1440)
-    corte = ultimo < _minutes(fechamento_hhmm or perfil.fechamento)
     no_dia = np.flatnonzero(t["entry_ts"].astype("datetime64[D]")
                             == np.datetime64(dia, "D"))
     out = []
@@ -349,21 +360,27 @@ def _modulo(estrategia: str, hash_disco: str, cache: dict):
     """
     item = cache.get(estrategia)
     if item is not None and item[0] == hash_disco:
+        if len(item) > 2:
+            # este mesmo arquivo já falhou ao carregar: tentar de novo a
+            # cada minuto só repetiria o erro (e o log). Só um arquivo
+            # diferente — hash novo — merece outra tentativa.
+            raise ImportError(item[2])
         return item[1]
     nome = f"strategies.{estrategia}"
-    if nome in sys.modules:
-        importlib.reload(importlib.import_module("strategies.base"))
-        mod = importlib.reload(sys.modules[nome])
-    else:
-        mod = importlib.import_module(nome)
+    try:
+        if nome in sys.modules:
+            importlib.reload(importlib.import_module("strategies.base"))
+            mod = importlib.reload(sys.modules[nome])
+        else:
+            mod = importlib.import_module(nome)
+    except Exception as erro:
+        # o módulo antigo fica no cache, intacto, junto com o erro: não é
+        # usado para este hash, mas também não é jogado fora
+        texto = f"código da estratégia não carrega ({type(erro).__name__}: {erro})"
+        cache[estrategia] = (hash_disco, item[1] if item else None, texto)
+        raise ImportError(texto) from erro
     cache[estrategia] = (hash_disco, mod)
     return mod
-
-
-def _plano_linha(con, plano_id: int) -> dict | None:
-    r = con.execute(f"SELECT {', '.join(_plano._COLUNAS)} FROM planos_operacao "
-                    "WHERE plano_id = ?", [plano_id]).fetchone()
-    return _plano._linha(r) if r else None
 
 
 # ---------------------------------------------------------------- o dia
@@ -376,6 +393,11 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
     Cada resultado: `ligacao_id, dia, plano_id, codigo_hash, motor_versao,
     status, motivo, interrompido_em, operacoes` — `operacoes = None` quer
     dizer "não mexa no que está gravado". Pregão congelado não aparece.
+
+    Pregão `interrompido` (código mudou no meio, decisão 5) guarda o que
+    tinha, como estava: uma operação aberta naquele minuto continua
+    `aberta` no banco, com o resultado provisório, e não entra no
+    `liquido` do pregão.
     """
     if not _tem_candle(con, symbol, dia):
         return []
@@ -404,7 +426,7 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
             if l["plano_id"] is None:
                 r.update(status="pulado", motivo="sem plano em vigor")
                 continue
-            p = _plano_linha(con, l["plano_id"])
+            p = _plano.detalhes(l["plano_id"], con=con)
             estrategia = p["strategy"] or l["estrategia"]
             hash_disco = codigo.hash_estrategia(estrategia)
             r["codigo_hash"] = hash_disco
@@ -416,14 +438,21 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
                 motivo = "código da estratégia não encontrado"
             elif p["codigo_hash"] and p["codigo_hash"] != hash_disco:
                 motivo = "código mudou desde o plano"
-            elif not p["codigo_hash"] and do_dia and do_dia != hash_disco:
+            elif (not p["codigo_hash"] and do_dia and do_dia != hash_disco
+                  and lig in com_ops):
+                # só com operação gravada: sem ela nada foi calculado com o
+                # código antigo, e o novo pode começar o pregão
                 motivo = "código mudou no meio do pregão"
             else:
                 motivo = None
             if motivo:
                 if lig in com_ops:
                     # o que já foi gravado fica: é o que a variante fez com
-                    # o código aprovado. Daqui para frente não há papel.
+                    # o código aprovado. Daqui para frente não há papel —
+                    # inclusive uma operação que estava ABERTA fica aberta,
+                    # com o resultado provisório da última volta (decisão
+                    # 5): fechá-la exigiria rodar o código que mudou. A
+                    # conferência também não a toca (pregão congelado).
                     r.update(status="interrompido", interrompido_em=agora,
                              codigo_hash=do_dia or p["codigo_hash"],
                              motivo=("código mudou no meio do pregão"
@@ -439,7 +468,9 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
             fila.append((r, l, p))
         except Exception as erro:          # uma ligação não derruba as outras
             log.exception("papel: ligação #%s no dia %s", lig, dia)
-            r.update(status=antes["status"] if antes else "pulado",
+            # o hash do pregão continua o do código que de fato calculou
+            r.update(status=antes["status"] if antes else "rodando",
+                     codigo_hash=antes["codigo_hash"] if antes else None,
                      motivo=f"falha no cálculo: {erro}", operacoes=None)
 
     if not fila:
@@ -471,7 +502,7 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
         except Exception as erro:
             log.exception("papel: ligação #%s no dia %s", l["ligacao_id"], dia)
             antes = gravados.get(l["ligacao_id"])
-            r.update(status=antes["status"] if antes else "pulado",
+            r.update(status=antes["status"] if antes else "rodando",
                      motivo=f"falha no cálculo: {erro}", operacoes=None)
     return resultados
 
@@ -578,7 +609,10 @@ def conferir(con, dia: date, agora: datetime, cache_codigo: dict, *,
     if not res:
         return res
     soma = checksum(con, symbol, dia)
-    rodando = [r["ligacao_id"] for r in res if r["status"] == "rodando"]
+    # falha no cálculo não congela: sem operações recalculadas o dia não foi
+    # conferido, e a próxima janela tenta de novo
+    rodando = [r["ligacao_id"] for r in res
+               if r["status"] == "rodando" and r["operacoes"] is not None]
     with db.transacao(con):
         _gravar(con, res, agora)
         if rodando:

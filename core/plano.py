@@ -204,11 +204,16 @@ def listar(wfa_id: int | None = None, apenas_ativos: bool = False
         return [_linha(r) for r in con.execute(sql, args).fetchall()]
 
 
-def detalhes(plano_id: int) -> dict | None:
-    with db.connect(read_only=True) as con:
-        r = con.execute(
-            f"SELECT {', '.join(_COLUNAS)} FROM planos_operacao "
-            "WHERE plano_id = ?", [plano_id]).fetchone()
+def detalhes(plano_id: int, con=None) -> dict | None:
+    """O plano inteiro, com os retratos já decodificados. `con` para quem
+    já está com uma conexão aberta (o papel, de dentro da volta da captura)."""
+    sql = (f"SELECT {', '.join(_COLUNAS)} FROM planos_operacao "
+           "WHERE plano_id = ?")
+    if con is not None:
+        r = con.execute(sql, [plano_id]).fetchone()
+    else:
+        with db.connect(read_only=True) as c:
+            r = c.execute(sql, [plano_id]).fetchone()
     return _linha(r) if r else None
 
 

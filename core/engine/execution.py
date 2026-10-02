@@ -145,8 +145,17 @@ def expand_signal(sinal: np.ndarray, fim: np.ndarray, n: int) -> np.ndarray:
 
 
 def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
-                 instrument: dict) -> "BacktestResult":
-    """Caminho completo: agrega no timeframe, gera sinais, executa em M1."""
+                 instrument: dict, vela_aberta: bool = False) -> "BacktestResult":
+    """Caminho completo: agrega no timeframe, gera sinais, executa em M1.
+
+    `vela_aberta` é do papel ao vivo: a última barra M1 é de uma vela do
+    timeframe que o relógio ainda não fechou. `resample` a daria por
+    fechada naquela barra (é a última do dado), e o stop/alvo por ATR — ou
+    o nível da estratégia — de uma entrada naquele minuto sairia da vela
+    pela metade. No histórico inteiro a mesma barra enxerga a vela
+    ANTERIOR; com a flag, ao vivo também. O sinal da vela parcial não muda
+    nada: ele cai na última barra, e não há barra seguinte para executar.
+    """
     from strategies.base import Signals
 
     n = len(bars["open"])
@@ -155,6 +164,9 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
         bars_tf, fechada, fim = bars, np.arange(n), np.arange(n)
     else:
         bars_tf, fechada, fim = resample(bars, passo)
+        if vela_aberta and n:
+            fechada = fechada.copy()
+            fechada[n - 1] -= 1
 
     s = estrategia.signals(bars_tf, params)
 

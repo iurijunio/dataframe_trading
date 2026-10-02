@@ -108,6 +108,27 @@ def sem_pandas(monkeypatch):
     monkeypatch.setitem(sys.modules, "pandas", None)
 
 
+class _Recargas(list):
+    quebrar = False
+
+
+@pytest.fixture(autouse=True)
+def recargas(monkeypatch):
+    """`importlib.reload` de verdade re-executaria `strategies.base` e a
+    estratégia no meio da suíte (classe `Signals` nova para uns, velha para
+    outros). Aqui só anota quem seria recarregado — e simula o arquivo com
+    erro de sintaxe quando `quebrar`."""
+    vistos = _Recargas()
+
+    def falsa(mod):
+        vistos.append(mod.__name__)
+        if vistos.quebrar:
+            raise SyntaxError("invalid syntax (rompimento_canal.py, line 1)")
+        return mod
+    monkeypatch.setattr(papel.importlib, "reload", falsa)
+    return vistos
+
+
 @pytest.fixture
 def mundo(banco):
     b, dias = _barras_sinteticas()
@@ -512,17 +533,50 @@ def test_plano_sem_impressao_do_codigo_roda_com_aviso(mundo):
         assert _ops(con, mundo.lig, dia)
 
 
-def test_codigo_novo_no_disco_recarrega_o_modulo(mundo, monkeypatch):
+def test_codigo_novo_no_disco_recarrega_o_modulo(mundo, recargas):
     real = codigo.hash_estrategia(ESTRAT)
     velho = SimpleNamespace(signals=None)        # quebraria se fosse usado
     cache = {ESTRAT: ("hash-antigo", velho)}
     dia = mundo.dias[30]
     with db.connect() as con:
         res = papel.rodar_dia(con, dia, _as(dia, 19), cache)
-    assert res[0]["status"] == "rodando" and res[0]["operacoes"]
-    assert cache[ESTRAT][0] == real
-    assert cache[ESTRAT][1] is not velho
-    assert cache[ESTRAT][1].__name__ == f"strategies.{ESTRAT}"
+        assert recargas == ["strategies.base", f"strategies.{ESTRAT}"]
+        assert res[0]["status"] == "rodando" and res[0]["operacoes"]
+        assert cache[ESTRAT][0] == real
+        assert cache[ESTRAT][1] is not velho
+        assert cache[ESTRAT][1].__name__ == f"strategies.{ESTRAT}"
+        # mesmo hash: não recarrega de novo
+        papel.rodar_dia(con, dia, _as(dia, 19), cache)
+        assert len(recargas) == 2
+
+
+def test_recarga_que_falha_nao_se_repete_a_cada_minuto(mundo, recargas,
+                                                       monkeypatch):
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        # plano sem hash: é o caso em que o código novo seria usado
+        con.execute("UPDATE planos_operacao SET codigo_hash = NULL")
+        cache = {ESTRAT: ("antigo", _mod())}
+        recargas.quebrar = True
+        _hash(monkeypatch, "quebrado")
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 12), cache),
+                     _as(dia, 12))
+        p = _pregao(con, mundo.lig, dia)
+        assert p["motivo"].startswith("falha no cálculo")
+        assert "SyntaxError" in p["motivo"] or "erro de sintaxe" in p["motivo"]
+        n = len(recargas)
+        assert n >= 1
+        res = papel.rodar_dia(con, dia, _as(dia, 12, 1), cache)
+        assert len(recargas) == n            # mesmo hash quebrado: não tenta
+        # e não roda o módulo antigo como se fosse o arquivo novo
+        assert res[0]["operacoes"] is None
+        assert res[0]["motivo"].startswith("falha no cálculo")
+        # o arquivo muda de novo (consertado): tenta, e volta a rodar
+        recargas.quebrar = False
+        _hash(monkeypatch, "consertado")
+        res = papel.rodar_dia(con, dia, _as(dia, 12, 2), cache)
+        assert len(recargas) > n
+        assert res[0]["status"] == "rodando" and res[0]["operacoes"]
 
 
 # ------------------------------------------------------------- interruptor
@@ -660,6 +714,109 @@ def test_conferir_dia_que_fechou_cedo_nao_deixa_aberta(mundo):
         ops = _ops(con, mundo.lig, dia)
     assert ops and not any(o["aberta"] for o in ops)
     assert [o["op_id"] for o in ops] == [o["op_id"] for o in ainda]
+
+
+def test_conferir_nao_congela_ligacao_que_falhou(mundo, monkeypatch):
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 12), {}),
+                     _as(dia, 12))
+        antes = _ops(con, mundo.lig, dia)
+
+        def quebra(*a, **k):
+            raise RuntimeError("motor caiu")
+        monkeypatch.setattr(papel, "calcular", quebra)
+        papel.conferir(con, dia, _as(dia, 19), {})
+        p = _pregao(con, mundo.lig, dia)
+        # fica para a próxima volta tentar de novo, sem checksum
+        assert p["status"] == "rodando"
+        assert p["motivo"].startswith("falha no cálculo")
+        assert p["checksum"] is None
+        assert _ops(con, mundo.lig, dia) == antes
+        monkeypatch.undo()
+        papel.conferir(con, dia, _as(dia, 19, 5), {})
+        assert _pregao(con, mundo.lig, dia)["status"] == "conferido"
+
+
+def test_plano_detalhes_com_conexao_aberta(mundo):
+    with db.connect() as con:
+        d = plano.detalhes(mundo.plano_id, con=con)
+    assert d == plano.detalhes(mundo.plano_id)
+    assert d["params"] == PARAMS and d["contratos"] == CONTRATOS
+
+
+# ------------------------------------------------------------- vela parcial
+def test_minuto_a_minuto_com_atr_igual_ao_historico(mundo):
+    """Ao vivo, o minuto da entrada é o primeiro de uma vela de 15 que ainda
+    não fechou. O ATR do stop/alvo tem que ser o da última vela FECHADA —
+    como no histórico inteiro —, não o da vela pela metade."""
+    estrategia, plano_d = _plano_cfg("canal-150-M15-atr")
+    mod = _mod(estrategia)
+    estrat, perfil = papel.perfil_do_plano(plano_d)
+    n_preg = papel.pregoes_de_aquecimento(mod, estrat, perfil)
+    full = run_strategy(mundo.barras, mod, estrat, perfil, mundo.inst)
+    t = full.trades
+    ent_ts = t["entry_ts"].astype("datetime64[us]")
+    checados = 0
+    for dia in mundo.dias[-5:]:
+        sel = [i for i in range(full.n_trades)
+               if ent_ts[i].astype("datetime64[D]") == np.datetime64(dia)]
+        if not sel:
+            continue
+        with db.connect(read_only=True) as con:
+            barras = papel.barras_do_dia(con, SIMB, dia, n_preg)
+        base = len(barras["ts"]) - len(_indices_do_dia(mundo.barras, dia))
+        g0 = _indices_do_dia(mundo.barras, dia)[0]
+        fechadas: dict = {}
+        ultimo = max(int(t["exit_i"][i]) for i in sel) - g0 + base
+        for k in range(base, ultimo + 2):
+            corte = {c: v[:k + 1] for c, v in barras.items()}
+            ops = {o["entry_ts"]: o for o in papel.calcular(
+                corte, dia, plano_d, mod, mundo.inst, None)}
+            for i in sel:
+                ts_e = ent_ts[i].item()
+                e_k = int(t["entry_i"][i]) - g0 + base
+                s_k = int(t["exit_i"][i]) - g0 + base
+                if k < e_k:
+                    assert ts_e not in ops
+                    continue
+                o = ops[ts_e]
+                lado, px = int(t["side"][i]), int(t["entry_px"][i])
+                assert o["entry_px"] == px
+                if k < s_k:
+                    assert o["aberta"], (dia, k)
+                    assert ts_e not in fechadas, "fechou e reabriu"
+                    sl, tp = int(full.sl_at_entry[i]), int(full.tp_at_entry[i])
+                    assert o["stop_px"] == px - lado * sl, (dia, k)
+                    assert o["alvo_px"] == px + lado * tp, (dia, k)
+                    checados += 1
+                else:
+                    assert not o["aberta"], (dia, k)
+                    assert (o["exit_ts"], o["exit_px"], o["stop_px"],
+                            o["alvo_px"]) == (
+                        t["exit_ts"][i].astype("datetime64[us]").item(),
+                        int(t["exit_px"][i]), int(t["stop_fim"][i]) or None,
+                        int(t["alvo_fim"][i]) or None), (dia, k)
+                    fechadas[ts_e] = True
+    assert checados > 0
+
+
+def test_sinal_de_vela_parcial_nao_abre_operacao(mundo):
+    """Se a vela de 15 que ainda não fechou já rompe o canal, isso não pode
+    virar entrada: a entrada é no minuto seguinte ao FECHAMENTO da vela."""
+    estrategia, plano_d = _plano_cfg("canal-20-M5")
+    mod = _mod(estrategia)
+    estrat, perfil = papel.perfil_do_plano(plano_d)
+    full = run_strategy(mundo.barras, mod, estrat, perfil, mundo.inst)
+    entradas = set(full.trades["entry_ts"].astype("datetime64[us]").tolist())
+    dia = mundo.dias[-1]
+    with db.connect(read_only=True) as con:
+        barras = papel.barras_do_dia(con, SIMB, dia, 3)
+    base = len(barras["ts"]) - len(_indices_do_dia(mundo.barras, dia))
+    for k in range(base, len(barras["ts"])):
+        corte = {c: v[:k + 1] for c, v in barras.items()}
+        for o in papel.calcular(corte, dia, plano_d, mod, mundo.inst, None):
+            assert o["entry_ts"] in entradas, (k, o["entry_ts"])
 
 
 # ------------------------------------------------------------- sem candle
