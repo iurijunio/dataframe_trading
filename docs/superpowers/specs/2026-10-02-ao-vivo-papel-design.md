@@ -139,14 +139,17 @@ não mudam (mesmos trades).
   posterior" (decisão 6): é o dia como o backtest o vê. Se o checksum do
   dia mudou, o pregão `conferido` volta a `rodando` e é conferido de novo
   na mesma conexão de escrita (`papel.reabrir_reconferido` + `conferir`),
-  com os candles finais; os `op_id` ficam (upsert por `entry_ts`). Escolhido
+  com os candles finais; os `op_id` ficam (upsert por `entry_ts`). Quem
+  reabrir é decidido pela divergência em dia com a marca `reconferencia://`
+  (`papel.reabriveis`), não por "acabou de reconferir": a captura que cai
+  entre o COMMIT dos candles e o papel o reabre na janela seguinte. Escolhido
   em vez de adiar o congelamento para a manhã: a tela mostra o pregão
   conferido na mesma noite e um dia que nunca é reconferido (PC desligado)
   não fica "rodando". Não reabre — fica congelado e a divergência acusa —
   o pregão que o `conferir` refaria diferente por outro motivo: variante
   tirada do portfólio no próprio dia depois do fechamento (seria encerrada
-  como removida) e código da estratégia mudado desde então (seria
-  interrompido). Reaberto cujo cálculo falha fica `rodando` num dia com a
+  como removida), código da estratégia mudado desde então (seria
+  interrompido) e motor de outra versão (`motor_versao`). Reaberto cujo cálculo falha fica `rodando` num dia com a
   marca `conferencia://`, e a janela seguinte o confere como qualquer
   papel por conferir.
 - Dias recuperados (PC desligado): ganham papel na conferência deles.

@@ -380,3 +380,67 @@ def test_dias_a_reconferir_so_passados_conferidos_e_uma_vez(con):
     C.reconferir_dia(con, "WIN$N", date(2026, 10, 1), _consolidado(b1),
                      agora=datetime(2026, 10, 2, 8, 50))
     assert C.dias_a_reconferir(con, "WIN$N", date(2026, 10, 5)) == [date(2026, 10, 2)]
+
+
+def test_gravar_reenvio_que_so_muda_spread_nao_cria_lote(con):
+    C.gravar(con, "WIN$N", barras("10:00"), "captura://1@srv")
+    outro = barras("10:00").with_columns(pl.lit(0).alias("spread"))
+    assert C.gravar(con, "WIN$N", outro, "captura://1@srv") == {"inseridos": 0, "revisados": 0}
+    assert con.execute("SELECT count(*) FROM ingest_log").fetchone()[0] == 1
+
+
+def _min(inicio, n, pular=()):
+    return [inicio + timedelta(minutes=i) for i in range(n) if i not in pular]
+
+
+def _barras_ts(ts):
+    n = len(ts)
+    return pl.DataFrame({"ts": ts, "open": [100000] * n, "high": [100050] * n,
+                         "low": [99950] * n, "close": [100010] * n,
+                         "tick_volume": [100] * n, "volume": [500] * n, "spread": [5] * n})
+
+
+@pytest.mark.parametrize("caso", ["comeca_tarde", "remove_demais", "so_a_tarde"])
+def test_reconferencia_com_dia_parcial_do_mt5_recusa_e_nao_apaga(con, caso):
+    """O MT5 que devolve o dia pela metade (histórico ainda carregando)
+    apagaria candles bons: só a falta de 1 a 3 minutos (o leilão) passa."""
+    nove = datetime(2026, 10, 1, 9, 0)
+    if caso == "comeca_tarde":
+        # um minuto a menos no começo, mas o MT5 só começa 6 min depois
+        banco, mt5 = [nove] + _min(nove + timedelta(minutes=10), 21), _min(nove + timedelta(minutes=6), 25)
+    elif caso == "remove_demais":
+        banco, mt5 = _min(nove, 20), _min(nove, 24, pular=(5, 6, 7, 8))
+    else:
+        banco, mt5 = _min(nove, 20) + _min(datetime(2026, 10, 1, 14, 0), 20), \
+            _min(datetime(2026, 10, 1, 14, 0), 20)
+    b = _barras_ts(banco)
+    C.gravar(con, "WIN$N", b, "captura://1@srv")
+    C.conferir_dia(con, "WIN$N", date(2026, 10, 1), b, agora=datetime(2026, 10, 1, 18, 40))
+    antes = con.execute("SELECT * FROM bars_m1 ORDER BY ts").fetchall()
+    with pytest.raises(ValueError):
+        C.reconferir_dia(con, "WIN$N", date(2026, 10, 1), _barras_ts(mt5),
+                         agora=datetime(2026, 10, 2, 9, 0))
+    assert con.execute("SELECT * FROM bars_m1 ORDER BY ts").fetchall() == antes
+    assert C.dias_a_reconferir(con, "WIN$N", date(2026, 10, 2)) == [date(2026, 10, 1)]
+
+
+def test_pode_reconferir_so_a_partir_da_abertura_do_dia_seguinte():
+    d = date(2026, 10, 1)
+    # logo depois da meia-noite a corretora ainda não consolidou
+    assert not C.pode_reconferir(d, datetime(2026, 10, 2, 0, 10))
+    assert not C.pode_reconferir(d, datetime(2026, 10, 2, 8, 54))
+    assert C.pode_reconferir(d, datetime(2026, 10, 2, 8, 56))
+    assert C.pode_reconferir(d, datetime(2026, 10, 2, 15, 0))
+    assert C.pode_reconferir(d, datetime(2026, 10, 5, 0, 10))
+
+
+def test_dia_mais_velho_que_5_pregoes_sai_da_reconferencia(con):
+    dias = [date(2026, 9, 24), date(2026, 9, 25), date(2026, 9, 28), date(2026, 9, 29),
+            date(2026, 9, 30), date(2026, 10, 1), date(2026, 10, 2)]
+    for d in dias:
+        b = _barras_ts([datetime(d.year, d.month, d.day, 10, 0)])
+        C.gravar(con, "WIN$N", b, "captura://1@srv")
+        C.conferir_dia(con, "WIN$N", d, b, agora=datetime(d.year, d.month, d.day, 18, 40))
+    # hoje = 05/10: os 5 pregões anteriores são 28/09..02/10
+    assert C.dias_a_reconferir(con, "WIN$N", date(2026, 10, 5)) == dias[2:]
+    assert C.dias_abandonados(con, "WIN$N", date(2026, 10, 5)) == dias[:2]

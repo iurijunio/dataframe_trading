@@ -68,7 +68,9 @@ PREFIXO_CAPTURA = "captura://"
 PREFIXO_CONFERENCIA = "conferencia://"
 PREFIXO_RECONFERENCIA = "reconferencia://"
 _COLUNAS = ("ts", "open", "high", "low", "close", "tick_volume", "volume", "spread")
-_COMPARADAS = tuple(c for c in _COLUNAS if c != "tick_volume")
+# a mesma regra do ingest (ver ing._CONTENT_COLS): tick_volume e spread a
+# corretora revisa de madrugada e não são preço
+_COMPARADAS = ("ts", *ing._CONTENT_COLS)
 FOLGA_FECHAMENTO = timedelta(minutes=6)
 ABERTURA_ANTES = time(8, 55)
 FECHAMENTO_PADRAO = time(18, 24)
@@ -98,8 +100,9 @@ def gravar(con, symbol: str, barras: pl.DataFrame, origem: str,
     if linhas:
         banco = pl.DataFrame(linhas, schema=[*_COLUNAS, "_dono"], orient="row").with_columns(
             [pl.col(c).cast(barras.schema[c]) for c in _COLUNAS])
-        # mesma comparação do ingest (sem tick_volume): candle que só mudou
-        # nele chegaria lá como "idêntico" e deixaria um lote vazio por volta
+        # mesma comparação do ingest (sem tick_volume nem spread): candle que
+        # só mudou neles chegaria lá como "idêntico" e deixaria um lote vazio
+        # por volta
         barras = barras.join(banco.select(_COMPARADAS), on=list(_COMPARADAS), how="anti")
         donos = banco.select("ts", "_dono")
         # O lote novo carrega como source_max_ts o maior ts que sobrar; tirar
@@ -200,6 +203,7 @@ def reconferir_dia(con, symbol: str, dia: date, barras_mt5: pl.DataFrame,
     # leilão ainda lá) seria pior que o dia como estava.
     con.execute("BEGIN TRANSACTION")
     try:
+        _dia_inteiro(con, symbol, dia, df, ini)
         r = ing._merge(con, origem, ing.sha256_df(df), symbol, df, agora)
         con.register("_mt5_dia", df.select("ts"))
         removidos = len(con.execute(
@@ -216,20 +220,84 @@ def reconferir_dia(con, symbol: str, dia: date, barras_mt5: pl.DataFrame,
             "removidos": removidos}
 
 
-def dias_a_reconferir(con, symbol: str, hoje: date) -> list[date]:
-    """Dias passados já conferidos e ainda não relidos no dia seguinte. Só
-    os da captura (marca conferencia://): dia de exportação antiga — o MT5
-    nem serve mais aquele período — nunca entra. Uma vez por dia: a marca
-    reconferencia:// é o registro, como na conferência."""
+# O que separa "o leilão foi para dentro do 18:24" de "o MT5 devolveu o dia
+# pela metade": a consolidação some com 1 ou 2 candles, nunca com o começo
+# do pregão. Acima disto a reconferência recusa em vez de apagar.
+REMOVER_NO_MAXIMO = 3
+COMECO_TOLERADO = timedelta(minutes=5)
+
+
+def _dia_inteiro(con, symbol: str, dia: date, mt5: pl.DataFrame, ini: datetime) -> None:
+    """Recusa (ValueError) o dia do MT5 que parece incompleto: terminal
+    ainda baixando o histórico, conexão que caiu no meio da resposta. O
+    único outro filtro era "zero candles" — um dia só com a tarde apagaria
+    a manhã inteira, que estava certa."""
+    n, primeiro = con.execute(
+        "SELECT count(*), min(ts) FROM bars_m1 WHERE symbol = ? AND ts >= ? "
+        "AND ts < ?", [symbol, ini, ini + timedelta(days=1)]).fetchone()
+    if n == 0:
+        return
+    sairiam = n - con.execute(
+        "SELECT count(*) FROM bars_m1 WHERE symbol = ? AND ts >= ? AND ts < ? "
+        "AND ts IN (SELECT ts FROM mt5)",
+        [symbol, ini, ini + timedelta(days=1)]).fetchone()[0]
+    if mt5.height < n - REMOVER_NO_MAXIMO:
+        raise ValueError(f"o MT5 devolveu {mt5.height} candles de {dia:%d/%m/%Y} "
+                         f"e o banco tem {n}: dia incompleto, nada apagado")
+    if sairiam > REMOVER_NO_MAXIMO:
+        raise ValueError(f"a reconferência de {dia:%d/%m/%Y} apagaria {sairiam} "
+                         "candles: dia incompleto no MT5, nada apagado")
+    if mt5["ts"].min() > primeiro + COMECO_TOLERADO:
+        raise ValueError(f"o MT5 começa {dia:%d/%m/%Y} às {mt5['ts'].min():%H:%M} "
+                         f"e o banco às {primeiro:%H:%M}: dia incompleto, nada apagado")
+
+
+def pode_reconferir(dia: date, agora: datetime) -> bool:
+    """Só da abertura do dia seguinte em diante: logo depois da meia-noite
+    a corretora ainda não consolidou, e a marca gravada impediria a
+    releitura que importa. Captura aberta mais tarde no dia também serve."""
+    return agora >= datetime.combine(dia + timedelta(days=1), ABERTURA_ANTES)
+
+
+# Dia que o MT5 deixou de servir não pode ser pedido para sempre: passados
+# 5 pregões, a reconferência desiste dele (o dia fica como a conferência o
+# deixou; a captura avisa uma vez).
+PREGOES_PARA_RECONFERIR = 5
+
+
+def _dias_sem_reconferencia(con, symbol: str, hoje: date) -> list[tuple[date, bool]]:
+    """(dia, ainda no prazo) dos dias conferidos e não reconferidos."""
     n = len(PREFIXO_CONFERENCIA) + 1
-    return [r[0] for r in con.execute(
-        "SELECT DISTINCT CAST(substr(c.source_file, ?) AS DATE) AS d "
+    linhas = con.execute(
+        "WITH pregoes AS (SELECT DISTINCT CAST(ts AS DATE) AS d FROM bars_m1 "
+        "  WHERE symbol = ? AND ts < ? ORDER BY d DESC LIMIT ?), "
+        "limite AS (SELECT min(d) AS d FROM pregoes) "
+        "SELECT DISTINCT CAST(substr(c.source_file, ?) AS DATE) AS d, "
+        "  CAST(substr(c.source_file, ?) AS DATE) >= (SELECT d FROM limite) "
         "FROM ingest_log c WHERE c.symbol = ? AND c.source_file LIKE ? "
         "AND CAST(substr(c.source_file, ?) AS DATE) < ? "
         "AND NOT EXISTS (SELECT 1 FROM ingest_log r WHERE r.symbol = ? "
         "  AND r.source_file = ? || substr(c.source_file, ?)) ORDER BY d",
-        [n, symbol, PREFIXO_CONFERENCIA + "%", n, hoje,
-         symbol, PREFIXO_RECONFERENCIA, n]).fetchall()]
+        [symbol, datetime.combine(hoje, time()), PREGOES_PARA_RECONFERIR,
+         n, n, symbol, PREFIXO_CONFERENCIA + "%", n, hoje,
+         symbol, PREFIXO_RECONFERENCIA, n]).fetchall()
+    return [(d, bool(no_prazo)) for d, no_prazo in linhas]
+
+
+def dias_abandonados(con, symbol: str, hoje: date) -> list[date]:
+    """Conferidos, nunca reconferidos e fora do prazo de 5 pregões."""
+    return [d for d, no_prazo in _dias_sem_reconferencia(con, symbol, hoje)
+            if not no_prazo]
+
+
+def dias_a_reconferir(con, symbol: str, hoje: date) -> list[date]:
+    """Dias passados já conferidos e ainda não relidos no dia seguinte, dos
+    últimos 5 pregões. Só os da captura (marca conferencia://): dia de
+    exportação antiga — o MT5 nem serve mais aquele período — nunca entra.
+    Uma vez por dia: a marca reconferencia:// é o registro, como na
+    conferência."""
+    return [d for d, no_prazo in _dias_sem_reconferencia(con, symbol, hoje)
+            if no_prazo]
 
 
 def escrever_estado(caminho: Path, dados: dict, tentativas: int = 3,

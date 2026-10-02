@@ -838,7 +838,7 @@ def test_na_manha_seguinte_reconfere_ontem_uma_vez_e_exporta(base, monkeypatch):
     real = C.reconferir_dia
     monkeypatch.setattr(C, "reconferir_dia",
                         lambda *a, **k: chamadas.append(a[2]) or real(*a, **k))
-    s.agora = lambda: datetime(2026, 10, 2, 8, 50)
+    s.agora = lambda: datetime(2026, 10, 2, 8, 56)
     mono.t += P.A_CADA_CONFERENCIA
     s.volta()
 
@@ -863,7 +863,7 @@ def test_reconferencia_sem_o_dia_no_mt5_nao_apaga_e_tenta_de_novo(base):
     ontem = datetime(2026, 10, 1).date()
     antes = _de(ontem)
     mt5.minutos = []                         # terminal sem o histórico de ontem
-    s.agora = lambda: datetime(2026, 10, 2, 8, 50)
+    s.agora = lambda: datetime(2026, 10, 2, 8, 56)
     mono.t += P.A_CADA_CONFERENCIA
     s.volta()
     assert _de(ontem) == antes
@@ -883,7 +883,7 @@ def test_papel_do_dia_reconferido_fica_conferido_nos_candles_finais(base, ligaca
     assert _pregao_papel(ligacao, ontem)[0] == "conferido"
 
     mt5.minutos = [t for t in mt5.minutos if t.minute != 31]
-    s.agora = lambda: datetime(2026, 10, 2, 8, 50)
+    s.agora = lambda: datetime(2026, 10, 2, 8, 56)
     mono.t += P.A_CADA_CONFERENCIA
     s.volta()
 
@@ -899,7 +899,8 @@ def test_papel_do_dia_reconferido_fica_conferido_nos_candles_finais(base, ligaca
     assert C.ler_estado(base / "ao_vivo" / "estado.json")["papel"]["divergencias"] == 0
 
 
-@pytest.mark.parametrize("caso", ["removida_apos_o_fechamento", "codigo_mudou"])
+@pytest.mark.parametrize("caso", ["removida_apos_o_fechamento", "codigo_mudou",
+                                  "motor_mudou"])
 def test_reconferencia_nao_reabre_o_que_o_conferir_refaria_diferente(
         base, ligacao, monkeypatch, caso):
     # refazer estes pregões os encerraria como "removida" ou "interrompido":
@@ -911,13 +912,160 @@ def test_reconferencia_nao_reabre_o_que_o_conferir_refaria_diferente(
     if caso == "removida_apos_o_fechamento":
         with db.connect_write() as con:
             con.execute("UPDATE portfolio_membros SET removido_em = '2026-10-01 19:00'")
-    else:
+    elif caso == "codigo_mudou":
         monkeypatch.setattr(codigo, "hash_estrategia", lambda nome: "outro")
+    else:
+        # o motor mudou de versão: refazer daria outro papel por outro motivo
+        with db.connect_write() as con:
+            con.execute("UPDATE papel_pregoes SET motor_versao = 'antigo'")
     mt5.minutos = [t for t in mt5.minutos if t.minute != 31]
-    s.agora = lambda: datetime(2026, 10, 2, 8, 50)
+    s.agora = lambda: datetime(2026, 10, 2, 8, 56)
     mono.t += P.A_CADA_CONFERENCIA
     s.volta()
     assert datetime(2026, 10, 1, 18, 31) not in _de(ontem)
     assert _pregao_papel(ligacao, ontem) == ("conferido", None)
     with db.connect(read_only=True) as con:
         assert [d["dia"] for d in papel.divergencias(con)] == [ontem]
+
+
+def _ontem_consolidado(s, mt5, mono, quando):
+    mt5.minutos = [t for t in mt5.minutos if t.minute != 31]
+    s.agora = lambda: quando
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+
+
+def test_logo_depois_da_meia_noite_nao_reconfere(base):
+    # a corretora ainda não consolidou: reconferir agora gravaria a marca e
+    # a releitura que importa nunca aconteceria
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    ontem = datetime(2026, 10, 1).date()
+    _ontem_consolidado(s, mt5, mono, datetime(2026, 10, 2, 0, 10))
+    assert datetime(2026, 10, 1, 18, 31) in _de(ontem)
+    with db.connect(read_only=True) as con:
+        assert C.dias_a_reconferir(con, "WIN$N", datetime(2026, 10, 2).date()) == [ontem]
+    s.agora = lambda: datetime(2026, 10, 2, 8, 56)
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert datetime(2026, 10, 1, 18, 31) not in _de(ontem)
+
+
+def test_falha_na_reconferencia_nao_impede_a_conferencia_de_hoje(base, monkeypatch):
+    # 02/10 fechado e 01/10 por reconferir na mesma janela: um erro
+    # qualquer (não só ValueError) na releitura de ontem não segura hoje
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    monkeypatch.setattr(C, "reconferir_dia", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("conexão caiu")))
+    mt5.minutos = [t for t in mt5.minutos if t.minute != 31] + _minutos(
+        datetime(2026, 10, 2, 9, 0), 3)
+    mt5.tick = datetime(2026, 10, 2, 18, 45)
+    s.agora = lambda: datetime(2026, 10, 2, 18, 45)
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["conferencia"]["status"] == "concluida" and e["conferencia"]["dias"] == ["2026-10-02"]
+    assert "conexão caiu" in e["reconferencia"]["erro"]
+    assert e["erro"] is None
+
+
+def test_reconferencia_que_falha_nao_marca_a_conferencia_de_hoje(base):
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    mt5.minutos = []                         # o MT5 não tem ontem
+    s.agora = lambda: datetime(2026, 10, 2, 8, 56)
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["conferencia"]["status"] == "pendente"
+    assert "01/10/2026" in e["reconferencia"]["erro"]
+
+
+def test_dia_que_o_mt5_deixou_de_servir_e_abandonado_depois_de_5_pregoes(base):
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    # cinco pregões depois, sem o MT5 ter devolvido 01/10 nenhuma vez
+    with db.connect_write() as con:
+        for d in (2, 5, 6, 7, 8):
+            con.execute("INSERT INTO bars_m1 SELECT symbol, ts + INTERVAL (?) DAY, open, "
+                        "high, low, close, tick_volume, volume, spread, src_ingest_id "
+                        "FROM bars_m1 WHERE ts = '2026-10-01 09:00'", [d - 1])
+    mt5.minutos = []
+    pedidos = []
+    real = s._barras_do_dia
+    s._barras_do_dia = lambda dia, agora: pedidos.append(dia) or real(dia, agora)
+    s.agora = lambda: datetime(2026, 10, 9, 8, 56)
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert datetime(2026, 10, 1).date() not in pedidos
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["reconferencia"]["abandonados"] == ["2026-10-01"]
+
+
+def _uma_operacao(monkeypatch):
+    """O motor de verdade não opera em 5 candles iguais: uma operação fixa
+    para provar que a reabertura não troca o op_id."""
+    from core import papel
+    op = {"entry_ts": datetime(2026, 10, 1, 9, 1), "exit_ts": datetime(2026, 10, 1, 9, 2),
+          "side": 1, "contratos": 1, "entry_px": 100000, "exit_px": 100010,
+          "points": 10, "bruto": 2.0, "custo": 1.0, "liquido": 1.0, "reason": 1,
+          "mae": 0, "mfe": 10, "stop_px": None, "alvo_px": None, "aberta": False}
+    monkeypatch.setattr(papel, "calcular", lambda *a, **k: [dict(op)])
+
+
+def test_reabertura_do_papel_mantem_o_op_id(base, ligacao, monkeypatch):
+    _uma_operacao(monkeypatch)
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    ontem = datetime(2026, 10, 1).date()
+    with db.connect(read_only=True) as con:
+        antes = con.execute("SELECT op_id FROM papel_operacoes WHERE dia = ?", [ontem]).fetchall()
+    assert len(antes) == 1
+    _ontem_consolidado(s, mt5, mono, datetime(2026, 10, 2, 8, 56))
+    assert datetime(2026, 10, 1, 18, 31) not in _de(ontem)
+    with db.connect(read_only=True) as con:
+        assert con.execute("SELECT op_id FROM papel_operacoes WHERE dia = ?",
+                           [ontem]).fetchall() == antes
+    assert _pregao_papel(ligacao, ontem)[0] == "conferido"
+
+
+def test_papel_reaberto_depois_de_uma_queda_entre_candles_e_papel(base, ligacao, monkeypatch):
+    # a reconferência dos candles fez COMMIT e o papel não foi reaberto
+    # (processo fechado, falha): a janela seguinte o acha pela divergência
+    from core import papel
+    real = papel.reabrir_reconferido
+    vezes = []
+
+    def falha_uma_vez(*a, **k):
+        vezes.append(1)
+        if len(vezes) == 1:
+            raise RuntimeError("caiu")
+        return real(*a, **k)
+    monkeypatch.setattr(papel, "reabrir_reconferido", falha_uma_vez)
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    ontem = datetime(2026, 10, 1).date()
+    _ontem_consolidado(s, mt5, mono, datetime(2026, 10, 2, 8, 56))
+    with db.connect(read_only=True) as con:
+        assert [d["dia"] for d in papel.divergencias(con)] == [ontem]
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    with db.connect(read_only=True) as con:
+        assert papel.divergencias(con) == []
+    assert _pregao_papel(ligacao, ontem)[0] == "conferido"
+
+
+def test_parquet_que_falha_na_reconferencia_nao_marca_a_conferencia_de_hoje(
+        base, monkeypatch):
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    _export_falha_uma_vez(monkeypatch)
+    _ontem_consolidado(s, mt5, mono, datetime(2026, 10, 2, 8, 56))
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["conferencia"]["status"] == "pendente"
+    assert "Parquet" in e["reconferencia"]["erro"]
+    mono.t += P.A_CADA_CONFERENCIA             # o Parquet é refeito na seguinte
+    s.volta()
+    no_parquet = [str(t)[:16] for t in db.read_bars_parquet("WIN$N")["ts"]]
+    assert "2026-10-01T18:31" not in no_parquet

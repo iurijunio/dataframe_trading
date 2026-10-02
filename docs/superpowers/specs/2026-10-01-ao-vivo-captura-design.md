@@ -192,16 +192,28 @@ conectada), cada dia passado com a marca `conferencia://` e sem
 `reconferencia://` é relido do MT5 (`dias_a_reconferir` →
 `reconferir_dia`): os candles que diferem são regravados e os do dia que o
 MT5 não tem mais são **apagados**, na mesma transação, gravando a marca
-`reconferencia://AAAA-MM-DD`. Só apaga com o MT5 devolvendo candles do dia;
-resposta vazia não mexe em nada e a janela seguinte tenta de novo. Depois,
-trading_days/rolagens e o Parquet são refeitos (marca `reexportar`), e o
-`estado.json` ganha `"reconferencia": {"em", "dia"}` — a tela limpa o cache
-de barras quando ele muda, sem mexer no cartão da conferência de hoje.
-Dia de exportação antiga (sem a marca `conferencia://`) nunca é reconferido.
-O `tick_volume` (atualizações de cotação, não negócios) a corretora também
-revisa de madrugada: o merge do ingest e o `gravar` o ignoram ao comparar —
-barra que só difere nele é idêntica e mantém a proveniência. O `volume`
-(contratos, da B3) continua comparado.
+`reconferencia://AAAA-MM-DD`. Só a partir das 08:55 do dia seguinte (logo
+depois da meia-noite a corretora ainda não consolidou, e a marca impediria a
+releitura que importa). Recusa — sem apagar nem marcar — o dia do MT5 que
+parece incompleto: vazio, com mais de 3 candles a menos que o banco, que
+apagaria mais de 3 candles, ou que começa mais de 5 min depois do banco (o
+caso real: 565 no MT5, 541 no banco, 1 removido). A janela seguinte tenta de
+novo; passados 5 pregões o dia é abandonado (aviso único no log e em
+`reconferencia.abandonados`). Qualquer erro numa reconferência fica no dia
+dela e não impede a conferência de hoje. Depois, trading_days/rolagens e o
+Parquet são refeitos (marca `reexportar`). O `estado.json` ganha
+`"reconferencia": {"em", "dias", "erro", "abandonados"}` e
+`"base_alterada_em"` (candles já espelhados reescritos: a tela limpa o cache
+de barras). O cartão da conferência de hoje só vira "concluída" com o dia
+de hoje conferido — nem a reconferência das 08:56 nem a conferência de um
+dia recuperado o mudam. Dia de exportação antiga (sem a marca
+`conferencia://`) nunca é reconferido. O `tick_volume` (atualizações de
+cotação, não negócios) e o `spread` (0 ao vivo, 5 no consolidado, em toda
+barra) a corretora também revisa de madrugada: o merge do ingest e o
+`gravar` os ignoram ao comparar — barra que só difere neles é idêntica e
+mantém a proveniência (para essas duas colunas o resultado deixa de ser
+independente da ordem de importação). O `volume` (contratos, da B3)
+continua comparado. Nada no motor lê tick_volume nem spread.
 
 **Dados:** série contínua `WIN$N`, da conta logada no MT5; `ingest_log`
 registra a origem; o estado registra o contrato vigente (para a rolagem na

@@ -689,6 +689,35 @@ def conferir(con, dia: date, agora: datetime, cache_codigo: dict, *,
     return res
 
 
+def reabriveis(con, dia: date, *, symbol: str = SIMBOLO) -> list[int]:
+    """As ligações cujo papel conferido do dia `reabrir_reconferido`
+    reabriria (sem mexer em nada): checksum diferente dos candles de agora
+    e o `conferir` refaria igual, menos os candles.
+
+    Fica de fora — congelado, com a divergência acusando — o pregão que o
+    `conferir` refaria diferente por outro motivo: variante tirada do
+    portfólio no próprio dia depois do fechamento (seria encerrada como
+    "removida"), código da estratégia mudado desde então (seria
+    interrompido) e motor de outra versão (outro cálculo, não outro dia).
+    """
+    soma = checksum(con, symbol, dia)
+    fim = _limites(dia)[1]
+    linhas = con.execute(
+        "SELECT pp.ligacao_id, pp.codigo_hash, pp.motor_versao, "
+        "coalesce(p.strategy, ev.estrategia), pm.removido_em "
+        "FROM papel_pregoes pp "
+        "JOIN planos_operacao p ON p.plano_id = pp.plano_id "
+        "JOIN portfolio_membros pm ON pm.ligacao_id = pp.ligacao_id "
+        "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
+        "WHERE pp.dia = ? AND pp.status = 'conferido' AND p.symbol = ? "
+        "AND pp.checksum IS DISTINCT FROM ?", [dia, symbol, soma]).fetchall()
+    return [lig for lig, hash_dia, motor, estrategia, removido in linhas
+            if (removido is None or removido >= fim)
+            and motor == engine.VERSAO
+            and hash_dia is not None
+            and hash_dia == codigo.hash_estrategia(estrategia)]
+
+
 def reabrir_reconferido(con, dia: date, *, symbol: str = SIMBOLO) -> list[int]:
     """Devolve a "rodando" o papel conferido de um dia que a reconferência
     da manhã seguinte mudou, para o `conferir` refazê-lo nos candles finais.
@@ -697,27 +726,9 @@ def reabrir_reconferido(con, dia: date, *, symbol: str = SIMBOLO) -> list[int]:
     histórico (o leilão de fechamento vai para dentro do 18:24) — esse é o
     dia como o backtest o vê, não uma correção posterior. Sem reabrir, todo
     pregão terminaria em divergência e o papel deixaria de ser o backtest.
-
-    Só reabre o que o `conferir` refaria igual, menos os candles: pregão de
-    variante tirada do portfólio no próprio dia (depois do fechamento) seria
-    encerrado como "removida", e pregão cujo código mudou desde então seria
-    interrompido. Esses ficam como estão — a divergência acusa.
+    Quem reabre o quê: `reabriveis`.
     """
-    soma = checksum(con, symbol, dia)
-    fim = _limites(dia)[1]
-    linhas = con.execute(
-        "SELECT pp.ligacao_id, pp.codigo_hash, "
-        "coalesce(p.strategy, ev.estrategia), pm.removido_em "
-        "FROM papel_pregoes pp "
-        "JOIN planos_operacao p ON p.plano_id = pp.plano_id "
-        "JOIN portfolio_membros pm ON pm.ligacao_id = pp.ligacao_id "
-        "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
-        "WHERE pp.dia = ? AND pp.status = 'conferido' AND p.symbol = ? "
-        "AND pp.checksum IS DISTINCT FROM ?", [dia, symbol, soma]).fetchall()
-    reabrir = [lig for lig, hash_dia, estrategia, removido in linhas
-               if (removido is None or removido >= fim)
-               and hash_dia is not None
-               and hash_dia == codigo.hash_estrategia(estrategia)]
+    reabrir = reabriveis(con, dia, symbol=symbol)
     if reabrir:
         con.execute(
             "UPDATE papel_pregoes SET status = 'rodando' WHERE dia = ? "

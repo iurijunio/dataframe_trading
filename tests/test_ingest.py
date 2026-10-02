@@ -306,3 +306,16 @@ def test_diferenca_no_volume_ainda_e_revisao(con):
                       source_max_ts=datetime(2026, 3, 9, 18, 30))
     assert r.rows_updated == 1
     assert con.execute("SELECT volume FROM bars_m1").fetchone()[0] == 24212
+
+
+def test_diferenca_so_no_spread_e_barra_identica(con):
+    # a corretora manda spread 0 ao vivo e 5 no histórico consolidado, em
+    # toda barra: não é preço, nada no motor o lê
+    ts = datetime(2026, 3, 9, 9, 0)
+    ing.ingest_df(con, _df([(ts, 100, 110, 90, 100)]), "WIN$N", "captura://", "a")
+    dono = con.execute("SELECT src_ingest_id FROM bars_m1").fetchone()[0]
+    r = ing.ingest_df(con, _com(_df([(ts, 100, 110, 90, 100)]), spread=0),
+                      "WIN$N", "conferencia://2026-03-09", "b",
+                      source_max_ts=datetime(2026, 3, 9, 18, 30))
+    assert (r.rows_identical, r.rows_updated) == (1, 0)
+    assert con.execute("SELECT src_ingest_id, spread FROM bars_m1").fetchone() == (dono, 5)

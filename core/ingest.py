@@ -49,12 +49,16 @@ MT5_COLUMNS = {
 
 PRICE_COLS = ("open", "high", "low", "close")
 
-# tick_volume fica de fora de proposito: e a contagem de atualizacoes de
-# cotacao, nao de negocios, e a corretora o revisa de madrugada (a de
-# 01/10/2026 trocou 538 por 1195 com o volume em contratos igual). Contado,
-# cada releitura viraria "revisao" de um candle que nao mudou e trocaria a
-# proveniencia dele. O `volume` (contratos, da B3) continua comparado.
-_CONTENT_COLS = (*PRICE_COLS, "volume", "spread")
+# tick_volume e spread ficam de fora de proposito: tick_volume e a contagem
+# de atualizacoes de cotacao, nao de negocios, e spread a corretora manda 0
+# ao vivo e 5 no historico consolidado, em toda barra; os dois ela revisa de
+# madrugada (01/10/2026: 538 -> 1195 com o volume em contratos igual).
+# Contados, cada releitura viraria "revisao" de um candle que nao mudou e
+# trocaria a proveniencia dele. Nada no motor le nenhum dos dois. O preco
+# custa: barra que difere SO neles fica a que chegou primeiro, entao para
+# essas duas colunas o resultado deixa de ser independente da ordem de
+# importacao. O `volume` (contratos, da B3) continua comparado.
+_CONTENT_COLS = (*PRICE_COLS, "volume")
 
 
 def _differs(base: str = "b", stage: str = "s") -> str:
@@ -249,7 +253,8 @@ def _merge(con, source_file: str, sha: str, symbol: str, df,
 
     # "Esta exportacao e mais nova que a que forneceu a barra que ja esta la?"
     # Comparacao por (source_max_ts, sha256) - determinista e independente
-    # da ordem de importacao.
+    # da ordem de importacao (menos tick_volume e spread de barra que so
+    # difere neles: ver _CONTENT_COLS).
     wins = """
         (ol.source_max_ts < ?
          OR (ol.source_max_ts = ? AND ol.source_sha256 < ?))
