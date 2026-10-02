@@ -8,6 +8,60 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Ao vivo, parte 3: incubação em papel** (`core/papel.py`,
+  `core/papel_leitura.py`, `ui/callbacks_operacao.py`,
+  `ui/components/operacao_panel.py`; desenho em
+  [docs/superpowers/specs/2026-10-02-ao-vivo-papel-design.md](docs/superpowers/specs/2026-10-02-ao-vivo-papel-design.md)).
+  Suíte: cerca de 1.293 testes. Demo e real ficam para a parte 4.
+  - **O papel roda sozinho.** Cada variante ligada num portfólio opera "no
+    papel" os contratos do plano: o serviço de captura calcula o sinal a cada
+    candle novo, sem mandar ordem nenhuma. A conta é a do backtest (mesmo
+    motor, mesmo perfil de execução do walk-forward), então o papel de hoje
+    é comparável ao que foi testado. A vela em formação vale para sinal, mas
+    não dispara stop nem alvo.
+  - **Sub-tela Ao vivo › Operação.** Operações de papel desenhadas no
+    gráfico do pregão, posição e contratos de cada variante, stop e alvo em
+    vigor da posição aberta, e legenda em que clicar esconde ou mostra cada
+    variante.
+  - **Papel × esperado.** Para cada variante, uma faixa (p10 a p90) do que o
+    walk-forward esperava e a curva do papel dentro dela. No portfólio, a
+    curva do papel e a soma das medianas, sem faixa (somar percentis não dá o
+    percentil da soma).
+  - **Comparativo Esperado (WFA) × Papel.** A coluna que seria "Backtest"
+    agora é "Esperado (WFA)": médias por operação e por contrato dos trades
+    fora da amostra do walk-forward que gerou o plano.
+  - **Pregão conferido fica congelado.** Depois da conferência do dia o papel
+    daquele pregão não muda mais; se refizerem a conta e der diferente, o
+    checksum acusa. Conferência que falha é refeita na janela seguinte.
+  - **Histórico suficiente para os indicadores.** O aquecimento é calculado
+    pelos parâmetros da estratégia (10 pregões divergiam do backtest em 32 de
+    59 pregões num teste com período 600 em M15).
+  - **Motor:** cada operação passa a trazer o stop e o alvo vigentes na saída
+    (com breakeven e stop móvel), `ids` de operação estáveis por ligação e
+    minuto de entrada, e tabelas novas `papel_operacoes` e `papel_pregoes`
+    (não se recriam: backup antes de migrar).
+- **Candidata e Walk-Forward, ajustes de 01–02/10.**
+  - **"Região larga" mede o lucro.** O portão conta os passos em que o vizinho
+    mantém pelo menos 60% do lucro do valor escolhido, não mais lucro ÷ maior
+    queda (a maior queda é um único trecho ruim e oscila entre vizinhos). No
+    walk-forward #25 o vizinho 27 caía para 4,93 contra 9,61 do centro e a
+    região era reprovada por um dia; com a régua nova passa. Centro sem lucro
+    não tem região para medir.
+  - **Sorteio parcial.** "Ganha de entradas sorteadas?" ignora a janela em que
+    o sorteio não conseguiu igualar o número de trades, nos dois lados. Com
+    metade ou mais das janelas calibradas mede normalmente; com menos vira
+    alerta. Antes ficava pendente para sempre e travava a gravação.
+  - **"Gravar mesmo assim".** Quando a única trava é o veredito (reprovada ou
+    aguardando testes), um botão secundário pede dois cliques e lista o que
+    falhou ou não foi medido. O plano guarda a decisão e as pendências, e o
+    diário registra o motivo. Sem parâmetro ou sem contrato continua
+    recusando.
+  - **Aviso "gravado mesmo assim"** (etiqueta âmbar com (?) das pendências) na
+    ficha e no cartão da variante e na linha do membro do Portfólio, sempre
+    do plano em vigor no dia.
+  - **Região larga no Walk-Forward.** O bloco "Parâmetros de hoje: a região é
+    larga?" aparece logo abaixo do selo, com o lucro dos vizinhos do
+    parâmetro mais frágil, para ver o pico antes de mandar para a Candidata.
 - **Ao vivo, parte 2: serviço de captura e sub-tela Pregão** (`core/captura.py`,
   `captura.py`, `captura.bat`, `ui/callbacks_pregao.py`,
   `ui/components/pregao_panel.py`; desenho em

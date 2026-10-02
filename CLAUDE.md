@@ -17,7 +17,7 @@ Candidata — não trabalhe nela.
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~1105 testes, <1 min de coleta)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~1293 testes, <1 min de coleta)
 ```
 
 - Para ver o app, use `preview_start` com o nome `dataframe` (`.claude/launch.json`).
@@ -103,7 +103,7 @@ Os sete modos do topo (`ui/app.py`) e onde vivem:
 | Candidata | `candidata.py`, `candidata_runner.py`, `aleatorio.py`, `spa.py`, `tamanho.py`, `plano.py` | `callbacks_candidata.py`, `components/candidata_panel.py` |
 | Estratégias | `variantes.py` | `callbacks_estrategias.py`, `components/estrategias_panel.py` |
 | Portfólio | `portfolio.py` | `callbacks_portfolio.py`, `components/portfolio_panel.py` |
-| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`) | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py` |
+| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`), `papel.py`, `papel_leitura.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py`, `callbacks_operacao.py`, `components/operacao_panel.py` |
 
 Outros: `core/mt5_source.py` + `ui/callbacks_mt5.py` (botão "Sincronizar com
 MT5"); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
@@ -133,7 +133,7 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - Risco de ruína e simulador de crescimento usam **o mesmo modelo**: aposta de
     fração fixa, em múltiplos de R (R = perda média histórica). Não divergir.
 - **O `.duckdb` deixou de ser só cache:** `contas`, `portfolio_membros`,
-  `ao_vivo_eventos` e `planos` não se recriam — backup antes de qualquer
+  `ao_vivo_eventos`, `planos`, `papel_operacoes` e `papel_pregoes` não se recriam — backup antes de qualquer
   migração; nunca apagar o banco.
 - **Hora do MT5:** o `time` das barras que o MT5 devolve **já é hora de
   Brasília** — não somar offset. A sincronização de 23/09/2026 subtraiu 3 h
@@ -149,6 +149,18 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   60 s ("feche a captura antes"). O relógio do PC pode atrasar ~1 min em
   relação à corretora; a captura usa o relógio do servidor (a tela avisa acima
   de 30 s). O Clear não publica o contrato vigente (`contrato_vigente` = None).
+- **Papel (`core/papel.py`):**
+  - É backtest por construção. O perfil de execução é montado como no WFA
+    (`CAMPOS_EXECUCAO_NOMES`); nunca `ExecutionProfile.from_config`.
+    `run_strategy(..., vela_aberta=True)` só no papel ao vivo.
+  - O aquecimento é calculado pelos parâmetros da estratégia; 10 pregões
+    não bastam e o resultado diverge do backtest.
+  - `op_id` é estável por (`ligacao_id`, `entry_ts`). A parte 4 depende dele.
+  - Pregão conferido fica congelado; o checksum acusa divergência.
+  - A captura calcula o papel só com candle novo e refaz a conferência do
+    papel na janela seguinte se ela falhar.
+  - A tela Operação lê o `estado.json` a cada 2 s e só abre o banco quando
+    `papel.calculado_em` muda.
 - **Campo numérico:** `<input type=number>` focado muda de valor com a rolagem do
   mouse (bug do Chrome). Use `type="text"` + `inputMode="numeric"` + parse manual;
   `ui/assets/num_input.js` protege o resto do app.
@@ -160,7 +172,7 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
-| `CHANGELOG.md` | atualizado até a parte 2 do Ao vivo (captura/Pregão); **não cobre variantes, portfólio nem gatilho** |
+| `CHANGELOG.md` | atualizado até a parte 3 do Ao vivo (papel/Operação); **não cobre variantes, portfólio nem gatilho** |
 | `README.md` | **desatualizado**: descreve o MVP (4 modos, "759 testes") |
 | `docs/METODOLOGIA.md` "Estado da plataforma" | **desatualizado**: marca Portfólio como ❌ |
 
@@ -180,11 +192,16 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
 2. Candles ao vivo (serviço de captura grava cada M1; completa lacunas;
    conferência do dia; sub-tela Pregão; selo da captura no topo) ✅. Spec:
    `docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md`.
-3. Incubação em papel — **o papel roda sempre**, em qualquer fase.
-   **Próximo passo:** spec própria, começar pelo brainstorming.
+3. Incubação em papel (**o papel roda sempre**, em qualquer fase) + sub-tela
+   Operação ✅. Spec: `docs/superpowers/specs/2026-10-02-ao-vivo-papel-design.md`.
 4. Ordens pelo próprio Dataframe (demo primeiro) + comparativo backtest ×
    papel × demo/real (sinal no mesmo minuto, preço, derrapagem).
+   **Próximo passo:** spec própria, começar pelo brainstorming. Requisito do
+   usuário: ao pausar portfólio ou variante com posição aberta, perguntar
+   "encerrar a posição" × "só não abrir novas".
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
+
+Entrega futura: tela "Mesa" (visão por conta/ativo), ainda sem spec.
 
 Pendente, não iniciado:
 - **Gatilho, fatia 2**: avisar na tela de Portfólio que a correlação/risco
