@@ -94,7 +94,7 @@ def run(
     max_trades_day, max_losses_day, daily_stop, daily_target,
     max_bars, slippage,
     o_entry_i, o_exit_i, o_side, o_entry_px, o_exit_px,
-    o_reason, o_mae, o_mfe, o_points,
+    o_reason, o_mae, o_mfe, o_points, o_stop_fim, o_alvo_fim,
 ):
     n = open_.shape[0]
 
@@ -146,6 +146,8 @@ def run(
             o_mae[n_trades] = mae
             o_mfe[n_trades] = mfe
             o_points[n_trades] = pts
+            o_stop_fim[n_trades] = stop_px
+            o_alvo_fim[n_trades] = tgt_px
             n_trades += 1
             trades_today += 1
             if pts < 0:
@@ -239,6 +241,8 @@ def run(
                 o_mae[n_trades] = mae
                 o_mfe[n_trades] = mfe
                 o_points[n_trades] = pts
+                o_stop_fim[n_trades] = stop_px
+                o_alvo_fim[n_trades] = tgt_px
                 n_trades += 1
                 trades_today += 1
                 if pts < 0:
@@ -296,6 +300,8 @@ def run(
                 o_mae[n_trades] = mae
                 o_mfe[n_trades] = mfe
                 o_points[n_trades] = pts
+                o_stop_fim[n_trades] = stop_px
+                o_alvo_fim[n_trades] = tgt_px
                 n_trades += 1
                 trades_today += 1
                 if pts < 0:
@@ -344,4 +350,8 @@ def allocate_outputs(n: int) -> dict:
         "mae": np.empty(n, dtype=np.int64),
         "mfe": np.empty(n, dtype=np.int64),
         "points": np.empty(n, dtype=np.int64),
+        # nivel vigente na saida (0 = sem stop/alvo), com breakeven e stop movel
+        # ja aplicados: e o que a tela de papel mostra da posicao aberta.
+        "stop_fim": np.empty(n, dtype=np.int64),
+        "alvo_fim": np.empty(n, dtype=np.int64),
     }

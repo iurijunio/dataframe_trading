@@ -330,6 +330,7 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         int(profile.max_barras or 0), int(profile.slippage_ticks * tick),
         out["entry_i"], out["exit_i"], out["side"], out["entry_px"],
         out["exit_px"], out["reason"], out["mae"], out["mfe"], out["points"],
+        out["stop_fim"], out["alvo_fim"],
     )
 
     trades = {k: v[:n_trades].copy() for k, v in out.items()}
