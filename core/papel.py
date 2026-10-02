@@ -318,18 +318,31 @@ def periodos_ligados(con, ligacao_id: int, portfolio_id: int,
     diário. A ligação só existe a partir de `adicionado_em` — adicionada
     hoje, o que entrou antes não conta.
     """
-    ini, fim = _limites(dia)
+    return periodos_ligados_dias(con, ligacao_id, portfolio_id,
+                                 [dia]).get(dia, [])
+
+
+def periodos_ligados_dias(con, ligacao_id: int, portfolio_id: int,
+                          dias) -> dict[date, list[tuple[datetime, datetime]]]:
+    """`periodos_ligados` de vários dias lendo o diário uma vez só — a régua
+    da expectativa (tela Operação) pergunta isso para cada pregão do plano,
+    e tem de ser a MESMA resposta que marcou o `conta` de cada operação."""
     r = con.execute("SELECT pm.adicionado_em, pm.ligada, "
                     "coalesce(pf.ligado, false) FROM portfolio_membros pm "
                     "JOIN portfolios pf ON pf.portfolio_id = pm.portfolio_id "
                     "WHERE pm.ligacao_id = ?", [ligacao_id]).fetchone()
     if r is None:
-        return []
+        return {d: [] for d in dias}
     adicionado, ligada, pf_ligado = r
     lig = _linha_do_tempo(con, "ligacao_id", ligacao_id, "membro_ligado",
                           ("membro_desligado", "membro_removido"), ligada)
     pf = _linha_do_tempo(con, "portfolio_id", portfolio_id, "portfolio_ligado",
                          ("portfolio_desligado",), pf_ligado)
+    return {d: _periodos(d, adicionado, lig, pf) for d in dias}
+
+
+def _periodos(dia, adicionado, lig, pf) -> list[tuple[datetime, datetime]]:
+    ini, fim = _limites(dia)
     marcos = {ini, fim}
     for q in [adicionado, *(q for q, _ in lig[1]), *(q for q, _ in pf[1])]:
         if ini < q < fim:
@@ -641,19 +654,41 @@ def conferir(con, dia: date, agora: datetime, cache_codigo: dict, *,
     return res
 
 
-def divergencias(con, symbol: str = SIMBOLO) -> list[dict]:
+def divergencias(con, symbol: str = SIMBOLO,
+                 ligacoes=None) -> list[dict]:
     """Pregões conferidos cujos candles mudaram depois: o papel gravado foi
-    calculado sobre outras barras. Aviso para a tela e para o auditor."""
+    calculado sobre outras barras. Aviso para a tela e para o auditor.
+
+    `ligacoes` restringe a busca (a tela olha um portfólio). As impressões
+    saem numa consulta só, agrupada por dia, com a mesma conta de
+    `checksum` — a tela relê isto a cada volta da captura, e uma varredura
+    das barras por pregão conferido crescia com o histórico do papel.
+    """
+    filtro, args = "", []
+    if ligacoes is not None:
+        ligacoes = list(ligacoes)
+        if not ligacoes:
+            return []
+        filtro = f" AND pp.ligacao_id IN ({', '.join('?' * len(ligacoes))})"
+        args = ligacoes
     linhas = con.execute(
         "SELECT pp.ligacao_id, pp.dia, pp.checksum FROM papel_pregoes pp "
         "JOIN planos_operacao p ON p.plano_id = pp.plano_id "
-        "WHERE pp.status = 'conferido' AND p.symbol = ? "
-        "ORDER BY pp.dia, pp.ligacao_id", [symbol]).fetchall()
-    atuais: dict[date, str] = {}
+        f"WHERE pp.status = 'conferido' AND p.symbol = ?{filtro} "
+        "ORDER BY pp.dia, pp.ligacao_id", [symbol, *args]).fetchall()
+    if not linhas:
+        return []
+    dias = sorted({r[1] for r in linhas})
+    ini, fim = _limites(dias[0])[0], _limites(dias[-1])[1]
+    agrupado = {r[0]: ":".join(str(int(x or 0)) for x in r[1:])
+                for r in con.execute(
+                    "SELECT CAST(ts AS DATE), count(*), sum(open), sum(high), "
+                    "sum(low), sum(close) FROM bars_m1 WHERE symbol = ? "
+                    "AND ts >= ? AND ts < ? GROUP BY CAST(ts AS DATE)",
+                    [symbol, ini, fim]).fetchall()}
+    atuais = {d: agrupado.get(d, "0:0:0:0:0") for d in dias}
     out = []
     for lig, dia, gravado in linhas:
-        if dia not in atuais:
-            atuais[dia] = checksum(con, symbol, dia)
         if gravado != atuais[dia]:
             out.append({"ligacao_id": lig, "dia": dia, "gravado": gravado,
                         "atual": atuais[dia]})

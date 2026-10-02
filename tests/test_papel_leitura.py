@@ -29,10 +29,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import db_manager as db  # noqa: E402
+from core import papel as _papel  # noqa: E402
 from core import papel_leitura as L  # noqa: E402
 from tests._cadeia import banco  # noqa: E402,F401
 
 DIA = date(2026, 10, 2)
+# fração do pregão de hoje já andada: último candle 10:08 -> até 10:09,
+# 69 min dos 510 entre 09:00 e o fechamento padrão do perfil (17:30)
+F_HOJE = 69 / 510
 
 
 def _ts(dia: str, hhmm: str) -> datetime:
@@ -127,6 +131,15 @@ def cenario(banco):
         for d in ("2026-09-30", "2026-10-01"):
             _pregao(con, 102, d, 13, "conferido")
         _pregao(con, 102, "2026-10-02", 13, "rodando")
+        # gama: desligada o pregão de 30/09 inteiro (régua não anda),
+        # religada em 01/10 e desligada de novo hoje às 09:30
+        for eid, quando, tipo in ((1, "2026-09-30 08:00", "membro_desligado"),
+                                  (2, "2026-10-01 08:00", "membro_ligado"),
+                                  (3, "2026-10-02 09:30", "membro_desligado")):
+            con.execute("INSERT INTO ao_vivo_eventos (evento_id, quando, tipo, "
+                        "origem, portfolio_id, ligacao_id) "
+                        "VALUES (?,?,?,'usuario',1,103)", [eid, quando, tipo])
+        _pregao(con, 103, "2026-09-30", 14, "conferido")
         _pregao(con, 103, "2026-10-01", 14, "conferido")
         _pregao(con, 103, "2026-10-02", 14, "rodando")
 
@@ -222,6 +235,40 @@ def test_resumo_dia_passado_preso_em_rodando_nao_e_posicao_viva(cenario):
     with _ler() as con:
         r = L.resumo(con, 1, DIA, hoje=date(2026, 10, 3))
     assert r["posicao"]["liquida"] == 0
+    assert r["n_operando"] == 0                 # nenhum pregão vivo
+    assert r["resultado_hoje"] == pytest.approx(56.0)   # último número que há
+
+
+def test_pior_momento_nao_depende_do_relogio_do_pc(cenario):
+    # o relógio do PC 70 s atrás da corretora: o cálculo das 10:09 sai
+    # carimbado 10:07:50. A marcação é a mesma — o pior momento também.
+    with db.connect_write() as con:
+        con.execute("UPDATE papel_operacoes SET calculado_em = "
+                    "'2026-10-02 10:07:50' WHERE aberta")
+    with _ler() as con:
+        r = L.resumo(con, 1, DIA, hoje=DIA)
+    assert r["pior_momento"]["valor"] == pytest.approx(-4.0)
+    assert r["pior_momento"]["quando"] == _ts("2026-10-02", "10:06")
+
+
+def test_pior_momento_com_papel_pendente_e_barra_nova(cenario):
+    # candle das 10:09 gravado, papel ainda não recalculado: no mesmo preço
+    # da marcação nada muda...
+    with db.connect_write() as con:
+        con.execute("INSERT INTO bars_m1 (symbol, ts, open, high, low, close, "
+                    "src_ingest_id) VALUES ('WIN$N', '2026-10-02 10:09:00', "
+                    "130050, 130050, 130050, 130050, 1)")
+    with _ler() as con:
+        assert L.resumo(con, 1, DIA, hoje=DIA)["pior_momento"]["valor"] \
+            == pytest.approx(-4.0)
+    # ...e num preço pior é preço real: 40 + 16 + (129800-130050)·0,2·2 = -44
+    with db.connect_write() as con:
+        con.execute("UPDATE bars_m1 SET close = 129800 "
+                    "WHERE ts = '2026-10-02 10:09:00'")
+    with _ler() as con:
+        r = L.resumo(con, 1, DIA, hoje=DIA)
+    assert r["pior_momento"]["valor"] == pytest.approx(-44.0)
+    assert r["pior_momento"]["quando"] == _ts("2026-10-02", "10:09")
 
 
 # ---------------------------------------------------------------- variantes
@@ -278,12 +325,13 @@ def test_variantes_status_pulado_com_motivo(cenario):
 # --------------------------------------------------------------- operações
 def test_operacoes_do_dia(cenario):
     with _ler() as con:
-        ops = L.operacoes_do_dia(con, 1, DIA)
-        so_gama = L.operacoes_do_dia(con, 1, DIA, ligacao_id=103)
+        ops = L.operacoes_do_dia(con, 1, DIA, hoje=DIA)
+        so_gama = L.operacoes_do_dia(con, 1, DIA, ligacao_id=103, hoje=DIA)
     assert [(o["entry_ts"].strftime("%H:%M"), o["ligacao_id"]) for o in ops] \
         == [("09:05", 103), ("09:10", 101), ("09:20", 102), ("09:45", 102),
             ("10:00", 103), ("10:05", 101)]
     b = ops[-1]
+    assert b["situacao"] == "aberta"
     assert b["aberta"] is True and b["exit_ts"] is None
     assert b["provisorio"] is True and b["liquido"] == pytest.approx(16.0)
     assert (b["stop_px"], b["alvo_px"]) == (129900, 130300)
@@ -294,7 +342,7 @@ def test_operacoes_do_dia(cenario):
 # --------------------------------------------------------------- marcadores
 def test_marcadores(cenario):
     with _ler() as con:
-        m = L.marcadores(con, 1, DIA)
+        m = L.marcadores(con, 1, DIA, hoje=DIA)
     mk = m["marcadores"]
     # 6 entradas + 5 saídas (B ainda aberta)
     assert len(mk) == 11
@@ -303,14 +351,28 @@ def test_marcadores(cenario):
     epoch_b = int((_ts("2026-10-02", "10:05")
                    - datetime(1970, 1, 1)).total_seconds())
     b = [x for x in mk if x["time"] == epoch_b]
+    # sem `color`: a tela pinta pelo índice da variante
     assert b == [{"time": epoch_b, "position": "belowBar", "shape": "arrowUp",
-                  "color": L.PALETA[0], "text": "C", "ligacao_id": 101}]
+                  "text": "C", "cor": 0, "conta": True, "ligacao_id": 101}]
     epoch_f = int((_ts("2026-10-02", "10:00")
                    - datetime(1970, 1, 1)).total_seconds())
     f = [x for x in mk if x["time"] == epoch_f]
-    assert f[0]["color"] == L.CINZA          # F não conta
+    assert f[0]["conta"] is False and f[0]["cor"] == 2     # F não conta
     assert {(x["tipo"], x["price"]) for x in m["linhas_abertas"]} == {
         ("stop", 129900), ("alvo", 130300)}
+
+
+def test_dia_passado_preso_nao_tem_aberta_nem_linhas(cenario):
+    hoje = date(2026, 10, 3)
+    with _ler() as con:
+        ops = L.operacoes_do_dia(con, 1, DIA, hoje=hoje)
+        m = L.marcadores(con, 1, DIA, hoje=hoje)
+    b = ops[-1]
+    assert b["situacao"] == "nao_conferido"
+    assert b["aberta"] is False and b["provisorio"] is False
+    assert all(o["situacao"] == "fechada" for o in ops[:-1])
+    assert m["linhas_abertas"] == []
+    assert len(m["marcadores"]) == 11       # a entrada de B continua lá
 
 
 # ------------------------------------------------------- papel × esperado
@@ -326,6 +388,26 @@ def test_interpolacao_da_expectativa():
     assert L._interp({}, "p50", 10) is None
 
 
+def test_faixa_cresce_com_raiz_de_n():
+    exp = {"3_meses": {"pregoes": 63, "p10": 0.0, "p50": 630.0, "p90": 1260.0},
+           "6_meses": {"pregoes": 126, "p10": 630.0, "p50": 1890.0,
+                       "p90": 3150.0}}
+    # n = 16: marco mais perto é 63 (distância de 1/2 da faixa: -630, +630)
+    assert L._interp(exp, "p10", 16) == pytest.approx(
+        160 - 630 * math.sqrt(16 / 63))
+    assert L._interp(exp, "p90", 16) == pytest.approx(
+        160 + 630 * math.sqrt(16 / 63))
+    # no marco, o próprio valor gravado
+    assert L._interp(exp, "p10", 63) == pytest.approx(0.0)
+    # n = 100: mais perto de 126 (26) que de 63 (37); faixa -1260
+    assert L._interp(exp, "p10", 100) == pytest.approx(
+        1370 - 1260 * math.sqrt(100 / 126))
+    # depois do último marco: mediana estendida (3370), N = 126
+    assert L._interp(exp, "p10", 200) == pytest.approx(
+        3370 - 1260 * math.sqrt(200 / 126))
+    assert L._interp(exp, "p10", 0) == pytest.approx(0.0)
+
+
 @pytest.mark.parametrize("v,faixa", [(-50, "abaixo_p10"), (0, "p10_p50"),
                                      (50, "p50_p90"), (150, "acima_p90")])
 def test_faixa(v, faixa):
@@ -339,11 +421,17 @@ def test_curva_por_variante(cenario):
                          date(2026, 10, 1), date(2026, 10, 2)]
     # 100, -40, +60, -14 (hoje: A -30 + B +16)
     assert c["papel"] == pytest.approx([100, 60, 120, 106])
-    # 630/63 = 10 por pregão; -630/63 = -10; 1890/63 = 30
-    assert c["mediana"] == pytest.approx([10, 20, 30, 40])
-    assert c["p10"] == pytest.approx([-10, -20, -30, -40])
-    assert c["p90"] == pytest.approx([30, 60, 90, 120])
-    assert c["faixa_atual"] == "p50_p90"                  # 40 <= 106 <= 120
+    # régua: 3 pregões cheios + hoje pela fração andada — último candle
+    # 10:08, então até 10:09 = 69 min de 09:00→17:30 (510 min)
+    n = [1, 2, 3, 3 + F_HOJE]
+    # mediana 630/63 = 10 por pregão; faixa ±1260 no marco, com √(n/63)
+    assert c["mediana"] == pytest.approx([10 * x for x in n])
+    assert c["p10"] == pytest.approx(
+        [10 * x - 1260 * math.sqrt(x / 63) for x in n])
+    assert c["p90"] == pytest.approx(
+        [10 * x + 1260 * math.sqrt(x / 63) for x in n])
+    # 31,4 <= 106 <= 31,4 + 281,1
+    assert c["faixa_atual"] == "p50_p90"
     assert c["aviso"] is None
 
 
@@ -359,9 +447,27 @@ def test_curva_por_variante_sem_expectativa(cenario):
 def test_curva_da_gama_acima_de_p90(cenario):
     with _ler() as con:
         c = L.curva_vs_esperado(con, 1, 103, hoje=DIA)
-    # 15, 15+40 (F fora); p90 = 315/63 = 5 por pregão -> 10 no 2º
-    assert c["papel"] == pytest.approx([15, 55])
+    # 30/09 desligada o dia todo: 0; 01/10 15; hoje +40 (F fora)
+    assert c["papel"] == pytest.approx([0, 15, 55])
+    # a régua não anda em 30/09; hoje anda a fração (ligada 09:00→09:30)
+    n = [0, 1, 1 + F_HOJE]
+    assert c["mediana"] == pytest.approx([2 * x for x in n])
+    # p90: 2(1+f) + 189·√((1+f)/63) ≈ 27,6 < 55
+    assert c["p90"][-1] == pytest.approx(
+        2 * n[-1] + 189 * math.sqrt(n[-1] / 63))
     assert c["faixa_atual"] == "acima_p90"
+
+
+def test_regua_nao_anda_com_a_variante_desligada_o_dia_todo(cenario):
+    # gama desligada desde ontem cedo: hoje não anda, nem pela fração
+    with db.connect_write() as con:
+        con.execute("DELETE FROM ao_vivo_eventos WHERE evento_id = 3")
+        con.execute("INSERT INTO ao_vivo_eventos (evento_id, quando, tipo, "
+                    "origem, portfolio_id, ligacao_id) VALUES (4, "
+                    "'2026-10-01 18:00', 'membro_desligado', 'usuario', 1, 103)")
+    with _ler() as con:
+        c = L.curva_vs_esperado(con, 1, 103, hoje=DIA)
+    assert c["mediana"] == pytest.approx([0, 2, 2])
 
 
 def test_curva_do_portfolio_soma_medianas_sem_faixa(cenario):
@@ -371,12 +477,13 @@ def test_curva_do_portfolio_soma_medianas_sem_faixa(cenario):
                          date(2026, 10, 1), date(2026, 10, 2)]
     # 100 · +(-40+20) · +(60-10+15) · +(-14+30+40)
     assert c["papel"] == pytest.approx([100, 80, 145, 201])
-    # alfa 10/pregão (n = 1..4) + gama 2/pregão (n = 0,0,1,2); beta sem
-    # expectativa fica fora
-    assert c["mediana"] == pytest.approx([10, 20, 32, 44])
+    # alfa 10/pregão (n = 1, 2, 3, 3+f) + gama 2/pregão (n = 0, 0, 1, 1+f);
+    # beta sem expectativa fica fora
+    hoje = 10 * (3 + F_HOJE) + 2 * (1 + F_HOJE)
+    assert c["mediana"] == pytest.approx([10, 20, 32, hoje])
     assert c["p10"] is None and c["p90"] is None
     assert c["faixa_atual"] is None
-    assert c["diferenca_mediana"] == pytest.approx(201 - 44)
+    assert c["diferenca_mediana"] == pytest.approx(201 - hoje)
     assert "1 variante" in c["aviso"]
 
 
@@ -422,15 +529,24 @@ def test_alertas(cenario):
         con.execute("UPDATE papel_pregoes SET status = 'rodando', "
                     "checksum = NULL "
                     "WHERE ligacao_id = 103 AND dia = '2026-10-01'")
+        # preso também, mas do plano ANTIGO da alfa: história encerrada
+        con.execute("UPDATE papel_pregoes SET status = 'rodando' "
+                    "WHERE ligacao_id = 101 AND dia = '2026-09-25'")
         # candles de 30/09 mudaram depois da conferência
         con.execute("UPDATE papel_pregoes SET checksum = 'x' "
                     "WHERE ligacao_id = 101 AND dia = '2026-09-30'")
     with _ler() as con:
         a = L.alertas(con, 1, DIA, hoje=DIA)
-    tipos = {(x["tipo"], x["ligacao_id"]) for x in a}
-    assert tipos == {("mesmo_assim", 101), ("interrompido", 102),
-                     ("nao_conferido", 103), ("divergencia", 101)}
+        so_beta = _papel.divergencias(con, ligacoes=[102])
+        todas = _papel.divergencias(con)
+    tipos = sorted((x["tipo"], x["ligacao_id"]) for x in a)
+    assert tipos == sorted([("mesmo_assim", 101), ("interrompido", 102),
+                            ("nao_conferido", 103), ("divergencia", 101)])
     assert all(x["texto"] for x in a)
+    # o filtro por ligação; e a impressão agrupada bate com a de `checksum`
+    assert so_beta == []
+    assert [(d["ligacao_id"], d["dia"], d["atual"]) for d in todas] == [
+        (101, date(2026, 9, 30), "0:0:0:0:0")]
 
 
 def test_alertas_sem_nada_alem_do_mesmo_assim(cenario):
