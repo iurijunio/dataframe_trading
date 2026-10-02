@@ -163,19 +163,30 @@ def janela_inicial(n: int) -> dict:
     return {"from": inicio, "to": fim}
 
 
+def mostrar_subtela(qual, modo) -> tuple:
+    """(Estratégias, Pregão, Operação, pulso do Pregão desligado, pulso da
+    Operação desligado). Cada pulso de 2 s só roda com a sua sub-tela na
+    frente e o modo Ao vivo aberto."""
+    pregao, operacao = qual == "pregao", qual == "operacao"
+    vivo = modo == "aovivo"
+    return (OCULTO if pregao or operacao else BLOCO,
+            BLOCO if pregao else OCULTO,
+            BLOCO if operacao else OCULTO,
+            not (pregao and vivo), not (operacao and vivo))
+
+
 def register_pregao(app):
     @app.callback(
         Output("av-bloco-estrategias", "style"),
         Output("av-bloco-pregao", "style"),
+        Output("av-bloco-operacao", "style"),
         Output("av-pg-intervalo", "disabled"),
+        Output("av-op-intervalo", "disabled"),
         Input("av-subtela", "value"),
         Input("modo", "value"),
     )
     def subtela(qual, modo):
-        pregao = qual == "pregao"
-        # o pulso de 2 s só roda com a sub-tela na frente
-        return (OCULTO if pregao else BLOCO, BLOCO if pregao else OCULTO,
-                not (pregao and modo == "aovivo"))
+        return mostrar_subtela(qual, modo)
 
     @app.callback(
         Output("av-pg-faixa", "children"),

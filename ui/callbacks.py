@@ -1968,3 +1968,6 @@ def register(app):
 
     from ui import callbacks_pregao
     callbacks_pregao.register(app)
+
+    from ui import callbacks_operacao
+    callbacks_operacao.register(app)

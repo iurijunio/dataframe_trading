@@ -31,6 +31,15 @@ WARN = "#FFC93C"
 UP = POS
 DOWN = NEG
 
+# Uma cor por variante nos marcadores do papel (Ao vivo › Operação). Fora
+# do verde e do rosa de propósito: são as cores dos candles, e um marcador
+# verde sumiria em cima de um candle de alta. Com mais de 8 variantes as
+# cores repetem e a tela troca a forma do marcador de saída.
+CORES_VARIANTE = ["#22E4FF", "#B96BFF", "#FF9F43", "#F7F06D",
+                  "#7C9CFF", "#FF7AE0", "#F2F5FA", "#D4A373"]
+# operação fora do período ligado: aparece, mas não chama atenção
+CINZA_FORA = "#56627C"
+
 CHART_OPTIONS = {
     "layout": {
         "background": {"type": "solid", "color": SURFACE},

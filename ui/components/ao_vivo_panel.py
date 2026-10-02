@@ -4,6 +4,8 @@
   docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md §5.
 - Pregão — o serviço de captura e o gráfico do dia ao vivo; desenhada em
   `pregao_panel.py`. Spec: docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md §6.
+- Operação — o papel do portfólio ao vivo; desenhada em
+  `operacao_panel.py`. Spec: docs/superpowers/specs/2026-10-02-ao-vivo-papel-design.md §6.
 
 Só desenha — quem lê o banco é `ui/callbacks_ao_vivo.py` (Estratégias) e
 `ui/callbacks_pregao.py` (Pregão). As outras sub-telas (Conta, Histórico)
@@ -23,6 +25,7 @@ from dash import dcc, html
 from core import plano as _plano
 
 from . import ficha as FI
+from . import operacao_panel as OP
 from . import pregao_panel as PG
 from .cartao import brl, dica, etiqueta_mesmo_assim
 
@@ -95,12 +98,15 @@ def painel():
                           className="av-subtelas",
                           options=[{"label": "Estratégias",
                                     "value": "estrategias"},
-                                   {"label": "Pregão", "value": "pregao"}])],
+                                   {"label": "Pregão", "value": "pregao"},
+                                   {"label": "Operação",
+                                    "value": OP.SUBTELA}])],
                      className="panel-head"),
         ], className="panel av-topo"),
         html.Div(_estrategias(), id="av-bloco-estrategias",
                  className="av-bloco"),
         PG.bloco(),
+        OP.bloco(),
     ], id="painel-aovivo", className="modo-bloco", style={"display": "none"})
 
 

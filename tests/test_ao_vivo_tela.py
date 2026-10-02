@@ -50,7 +50,8 @@ def test_painel_tem_as_pecas():
     assert {"av-subtela", "av-bloco-estrategias", "av-bloco-pregao"} <= ids(p)
     # `textos` não lê as `options` de um RadioItems: procura o seletor
     seletor = _achar(p, "av-subtela")
-    assert [o["label"] for o in seletor.options] == ["Estratégias", "Pregão"]
+    assert [o["label"] for o in seletor.options] == ["Estratégias", "Pregão",
+                                                     "Operação"]
     assert seletor.value == "estrategias"
 
 
