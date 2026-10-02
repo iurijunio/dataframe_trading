@@ -25,6 +25,7 @@ import polars as pl
 from core import calendar as cal
 from core import captura as C
 from core import db_manager as db
+from core import papel
 from core import rollovers as roll
 from core.mt5_source import barras_de_taxas
 
@@ -172,6 +173,15 @@ class Servico:
         self._mono_conferencia = None
         self.reexportar = False         # dia conferido sem pregões/Parquet refeitos
         self._dias_conferidos: list = []
+        # O papel (spec 2026-10-02-ao-vivo-papel §4.4.6). O cache vive o
+        # processo inteiro: guarda o módulo de cada estratégia pelo hash do
+        # arquivo, para recarregar só quando o código no disco muda.
+        self.cache_codigo: dict = {}
+        self.papel_pendente = False     # banco ocupado: refazer sem esperar candle
+        self.papel_em = None
+        self.papel_erro = None
+        self.papel_ligacoes: dict = {}
+        self.papel_divergencias = 0
 
     # ------------------------------------------------------------- banco
     @contextlib.contextmanager
@@ -293,11 +303,12 @@ class Servico:
         return C.origem_captura(c.get("login"), c.get("servidor"))
 
     # -------------------------------------------------------------- passos
-    def _buscar_e_gravar(self, agora, m) -> None:
+    def _buscar_e_gravar(self, agora, m) -> bool:
+        """Devolve se gravou candle: só então o papel tem o que recalcular."""
         df = self._taxas(self.ultimo + timedelta(minutes=1), agora + timedelta(days=1))
         if df is None:
             self.em_formacao = None
-            return
+            return False
         prontos = C.fechados(df, self.agora_srv)
         ultima = df.row(-1, named=True)
         self.em_formacao = ({k: ultima[k] for k in ("ts", "open", "high", "low", "close")}
@@ -306,13 +317,13 @@ class Servico:
         if self.candle_mais_novo is None or mais_novo > self.candle_mais_novo:
             self.candle_mais_novo = mais_novo
         if prontos.height == 0:
-            return
+            return False
         try:
             with self._banco(agora, escrita=True) as con:
                 r = C.gravar(con, self.simbolo, prontos, self._origem(), self.price_decimals)
         except _Ocupado:
             # sem avançar `ultimo`: a volta seguinte pede os mesmos candles ao MT5
-            return
+            return False
         self._gravou()
         self.ultimo = max(self.ultimo, prontos["ts"].max())
         # Voltando de dias desligado, o lote traz dias anteriores; o placar é
@@ -325,6 +336,7 @@ class Servico:
         limite = (self.agora_srv or agora) - timedelta(minutes=2)
         self.recuperados += de_hoje.filter(pl.col("ts") < limite).height
         self._marca_primeiro(prontos, agora)
+        return True
 
     def _marca_primeiro(self, barras: pl.DataFrame, agora) -> None:
         de_hoje = barras.filter(pl.col("ts").dt.date() == agora.date())
@@ -332,11 +344,12 @@ class Servico:
                                or de_hoje["ts"].min() < self.primeiro_hoje):
             self.primeiro_hoje = de_hoje["ts"].min()
 
-    def _lacunas(self, agora, m) -> None:
+    def _lacunas(self, agora, m) -> bool:
+        """Devolve se recuperou candle (o papel do dia mudou com ele)."""
         if not C.em_pregao(agora, self.fechamento):
-            return
+            return False
         if self._mono_lacuna is not None and m - self._mono_lacuna < A_CADA_LACUNA:
-            return
+            return False
         zero = datetime.combine(agora.date(), datetime.min.time())
         df = self._taxas(zero, agora + timedelta(days=1))
         mt5_hoje = (C.fechados(df, self.agora_srv) if df is not None
@@ -348,19 +361,19 @@ class Servico:
                     "SELECT ts FROM bars_m1 WHERE symbol = ? AND CAST(ts AS DATE) = ?",
                     [self.simbolo, agora.date()]).fetchall()]
         except _Ocupado:
-            return
+            return False
         self._mono_lacuna = m
         faltam = C.lacunas(mt5_hoje["ts"].to_list(), banco)
         self.lacunas_hoje = faltam
         if not faltam:
-            return
+            return False
         # a recuperação é o mesmo gravar: a lacuna se fecha sozinha
         repor = mt5_hoje.filter(pl.col("ts").is_in(faltam))
         try:
             with self._banco(agora, escrita=True) as con:
                 r = C.gravar(con, self.simbolo, repor, self._origem(), self.price_decimals)
         except _Ocupado:
-            return
+            return False
         self._gravou()
         log.info("lacuna recuperada: %d candle(s) de %s a %s",
                  repor.height, faltam[0], faltam[-1])
@@ -370,6 +383,47 @@ class Servico:
         self.recuperados += r["inseridos"]
         self.ultimo = max(self.ultimo, repor["ts"].max())
         self._marca_primeiro(repor, agora)
+        return True
+
+    def _papel(self, agora) -> None:
+        """O papel de hoje, recalculado inteiro (o pregão até o último candle).
+
+        Calcula numa leitura curta e só depois pega o escritor: o motor não
+        pode segurar a trava do banco (spec §4.4.6). Banco ocupado vira
+        "pendente", refeito na volta seguinte mesmo sem candle novo — senão
+        o papel ficaria um minuto atrás até o próximo candle. Qualquer outra
+        falha vai para o log e para o estado, nunca para a volta: a captura
+        existe para gravar candles, e o `publicar` não pode atrasar por causa
+        do papel.
+        """
+        dia = agora.date()
+        self.papel_pendente = False
+        try:
+            with self._banco(agora, escrita=False) as con:
+                res = papel.rodar_dia(con, dia, agora, self.cache_codigo,
+                                      symbol=self.simbolo)
+            if res:
+                with self._banco(agora, escrita=True) as con:
+                    papel.gravar(con, res, agora)
+                self._gravou()
+        except _Ocupado:
+            self.papel_pendente = True
+            return
+        except Exception as e:
+            # sem "pendente": a mesma falha a cada segundo só encheria o log;
+            # o candle seguinte tenta de novo
+            log.exception("papel do dia %s falhou", dia)
+            self.papel_erro = str(e)
+            return
+        self.papel_em, self.papel_erro = agora, None
+        self._anotar_papel(res)
+
+    def _anotar_papel(self, resultados) -> None:
+        # O `dia` vai junto: um pregão de ontem que ficou "rodando" (o cálculo
+        # falhou na conferência) não pode parecer o pregão de hoje na tela.
+        for r in resultados:
+            self.papel_ligacoes[str(r["ligacao_id"])] = {
+                "status": r["status"], "motivo": r["motivo"], "dia": r["dia"]}
 
     def _fechou_hoje(self, agora) -> bool:
         if agora <= datetime.combine(agora.date(), self.fechamento) + C.FOLGA_FECHAMENTO:
@@ -389,6 +443,7 @@ class Servico:
             with self._banco(agora, escrita=False) as con:
                 dias = C.dias_pendentes(con, self.simbolo, agora.date(),
                                         self._fechou_hoje(agora))
+                self._divergencias(con)
         except _Ocupado:
             return      # a janela não conta: tenta de novo na volta seguinte
         if not dias and not self.reexportar:
@@ -413,6 +468,32 @@ class Servico:
             log.exception("conferência do dia falhou")
             self.conferencia = {"status": "falhou", "em": agora,
                                 "dias": self._dias_conferidos, "erro": str(e)}
+
+    def _conferir_papel(self, con, dia, agora) -> None:
+        """A última volta do papel do dia, com os candles já conferidos —
+        inclusive dia recuperado de PC desligado, que só ganha papel aqui.
+        Na mesma conexão de escrita da conferência: o checksum gravado tem
+        de ser o das barras que acabaram de ser conferidas."""
+        try:
+            res = papel.conferir(con, dia, agora, self.cache_codigo,
+                                 symbol=self.simbolo)
+        except Exception as e:
+            # os candles do dia estão conferidos e isso não se desfaz por
+            # causa do papel; o pregão segue "rodando", com o dia no estado
+            log.exception("papel da conferência de %s falhou", dia)
+            self.papel_erro = str(e)
+            return
+        self.papel_em = agora
+        self._anotar_papel(res)
+
+    def _divergencias(self, con) -> None:
+        # Uma soma por dia conferido: barato, mas a cada candle seria
+        # desperdício. Na janela da conferência (5 min) basta — candle
+        # corrigido depois só vem de reimportação ou reparo.
+        try:
+            self.papel_divergencias = len(papel.divergencias(con, self.simbolo))
+        except Exception:
+            log.exception("não consegui conferir as divergências do papel")
 
     def _barras_do_dia(self, dia, agora) -> pl.DataFrame:
         zero = datetime.combine(dia, datetime.min.time())
@@ -441,6 +522,7 @@ class Servico:
             log.info("conferência de %s: %d revisado(s), %d faltante(s)",
                      dia, r["revisados"], r["faltantes"])
             self._dias_conferidos.append(dia)
+            self._conferir_papel(con, dia, agora)
             # A linha conferencia://<dia> já foi gravada: o dia sai das
             # pendências. Se a reconstrução ou o Parquet falharem daqui em
             # diante, só esta marca faz a próxima janela refazê-los — sem ela
@@ -476,8 +558,12 @@ class Servico:
             self.agora_srv = self.relogio.agora(m)
             self.desvio = self.relogio.desvio_s(agora, m)
             if self.carregado:
-                self._buscar_e_gravar(agora, m)
-                self._lacunas(agora, m)
+                novo = self._buscar_e_gravar(agora, m)
+                novo = self._lacunas(agora, m) or novo
+                # Só com candle novo: sem ele o recálculo daria o mesmo
+                # resultado, e cada volta de 1 s pegaria o escritor à toa.
+                if novo or self.papel_pendente:
+                    self._papel(agora)
                 self._conferir(agora, m)
 
         fechamento = self.fechamento or C.FECHAMENTO_PADRAO
@@ -518,6 +604,14 @@ class Servico:
                                  if self.desvio is not None and abs(self.desvio) > 30
                                  else None),
             "primeiro_candle_hoje": self.primeiro_hoje,
+            # a tela relê o papel do banco quando `calculado_em` muda
+            "papel": {
+                "calculado_em": self.papel_em,
+                "pendente": self.papel_pendente,
+                "ligacoes": self.papel_ligacoes,
+                "divergencias": self.papel_divergencias,
+                "erro": self.papel_erro,
+            },
             "erro": erro,
         }
         try:

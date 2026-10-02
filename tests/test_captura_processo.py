@@ -416,3 +416,158 @@ def test_trava_solta_quando_o_processo_morre_a_forca(tmp_path):
                    capture_output=True)
     filho.wait()
     assert P.travar(lock) is not None
+
+
+# ----------------------------------------------------------------- papel
+@pytest.fixture
+def ligacao(base, monkeypatch):
+    """Uma variante com plano em vigor, ligada num portfólio ligado, no
+    banco temporário. O reload de verdade re-executaria a estratégia no
+    meio da suíte (ver tests/test_papel_motor.py:recargas)."""
+    from core import codigo, plano, variantes
+    from core import papel
+    from core import portfolio as PF
+    from tests._cadeia import campos_plano, mineracao, wfa
+
+    monkeypatch.setattr(papel.importlib, "reload", lambda mod: mod)
+    v = variantes.criar("romp-captura", "rompimento_canal")
+    mineracao(1, variante_id=v)
+    wfa(1, 1)
+    plano.salvar(**campos_plano(
+        params={"periodo_canal": 20, "folga_ticks": 0, "filtro_amplitude": 0},
+        codigo_hash=codigo.hash_estrategia("rompimento_canal")),
+        agora=datetime(2026, 9, 1, 10))
+    lig = PF.adicionar_variante(PF.criar("pf"), v)
+    with db.connect_write() as con:
+        con.execute("UPDATE portfolio_membros SET adicionado_em = '2026-09-01 09:00'")
+        con.execute("UPDATE portfolios SET ligado = true")
+    return lig
+
+
+def _pregao_papel(lig, dia):
+    with db.connect(read_only=True) as con:
+        return con.execute("SELECT status, motivo FROM papel_pregoes WHERE "
+                           "ligacao_id = ? AND dia = ?", [lig, dia]).fetchone()
+
+
+def _contar(monkeypatch, nome, antes=None):
+    """Espiona `core.papel.<nome>`: anota os argumentos e chama o original."""
+    from core import papel
+    real = getattr(papel, nome)
+    chamadas = []
+
+    def espiao(*a, **k):
+        chamadas.append(a)
+        if antes:
+            antes()
+        return real(*a, **k)
+    monkeypatch.setattr(papel, nome, espiao)
+    return chamadas
+
+
+def test_candle_novo_calcula_e_publica_o_papel(base, ligacao):
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora),
+                 agora, base / "ao_vivo")
+    s.volta()
+
+    assert _pregao_papel(ligacao, agora.date())[0] == "rodando"
+    p = C.ler_estado(base / "ao_vivo" / "estado.json")["papel"]
+    assert p["calculado_em"] == "2026-10-01T09:05:20" and p["pendente"] is False
+    assert p["ligacoes"][str(ligacao)] == {"status": "rodando", "motivo": None,
+                                           "dia": "2026-10-01"}
+    assert p["divergencias"] == 0
+
+
+def test_volta_sem_candle_novo_nao_recalcula_o_papel(base, ligacao, monkeypatch):
+    chamadas = _contar(monkeypatch, "rodar_dia")
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    mt5 = MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora)
+    mono = Mono()
+    s = _servico(mt5, agora, base / "ao_vivo", mono)
+    s.volta()
+    assert len(chamadas) == 1
+
+    mono.t += 1                       # 09:05 ainda em formação: nada novo
+    s.volta()
+    assert len(chamadas) == 1
+
+    # o 09:05 fechou: candle novo, papel recalculado
+    mt5.minutos = _minutos(datetime(2026, 10, 1, 9, 0), 7)
+    mt5.tick = depois = datetime(2026, 10, 1, 9, 6, 10)
+    s.agora = lambda: depois
+    mono.t += 50
+    s.volta()
+    assert len(chamadas) == 2
+
+
+def test_banco_ocupado_no_papel_fica_pendente_e_refaz_sem_candle_novo(base, ligacao,
+                                                                     monkeypatch):
+    real = db.connect_write
+    ocupado = {"sim": False}
+
+    def escritor(**k):
+        if ocupado["sim"]:
+            raise RuntimeError("ocupado")
+        return real(**k)
+    monkeypatch.setattr(db, "connect_write", escritor)
+    # a mineração pega o escritor justo entre o cálculo e a gravação do papel
+    chamadas = _contar(monkeypatch, "rodar_dia",
+                       antes=lambda: ocupado.update(sim=len(chamadas) == 1))
+
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    mono = Mono()
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora),
+                 agora, base / "ao_vivo", mono)
+    s.volta()
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["papel"]["pendente"] is True and e["erro"] is None
+    assert _pregao_papel(ligacao, agora.date()) is None
+
+    mono.t += 1                       # sem candle novo, mas o papel estava pendente
+    s.volta()
+    assert len(chamadas) == 2
+    assert _pregao_papel(ligacao, agora.date())[0] == "rodando"
+    assert C.ler_estado(base / "ao_vivo" / "estado.json")["papel"]["pendente"] is False
+
+
+def test_falha_no_papel_de_uma_ligacao_nao_derruba_a_volta(base, ligacao, monkeypatch):
+    from core import papel
+    monkeypatch.setattr(papel, "calcular",
+                        lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora),
+                 agora, base / "ao_vivo")
+    assert s.volta() == P.ESPERA_PREGAO
+
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["erro"] is None and e["gravados_hoje"] == 5
+    lig = e["papel"]["ligacoes"][str(ligacao)]
+    assert lig["status"] == "rodando" and "falha no cálculo" in lig["motivo"]
+
+
+def test_falha_no_papel_inteiro_nao_impede_o_publicar(base, ligacao, monkeypatch):
+    from core import papel
+    monkeypatch.setattr(papel, "rodar_dia",
+                        lambda *a, **k: (_ for _ in ()).throw(KeyError("barras")))
+    agora = datetime(2026, 10, 1, 9, 5, 20)
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 6), tick=agora),
+                 agora, base / "ao_vivo")
+    s.volta()
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["erro"] is None and e["ultimo_salvo"] == "2026-10-01T09:04:00"
+    assert e["papel"]["calculado_em"] is None and "barras" in e["papel"]["erro"]
+
+
+def test_conferencia_do_dia_confere_o_papel(base, ligacao, monkeypatch):
+    chamadas = _contar(monkeypatch, "conferir")
+    agora = datetime(2026, 10, 1, 18, 40)
+    s = _servico(MT5Falso(_minutos(datetime(2026, 10, 1, 9, 0), 3),
+                          tick=datetime(2026, 10, 1, 18, 24)), agora, base / "ao_vivo")
+    s.volta()
+
+    assert [a[1] for a in chamadas] == [agora.date()]
+    assert _pregao_papel(ligacao, agora.date())[0] == "conferido"
+    e = C.ler_estado(base / "ao_vivo" / "estado.json")
+    assert e["conferencia"]["status"] == "concluida"
+    assert e["papel"]["ligacoes"][str(ligacao)]["status"] == "conferido"
