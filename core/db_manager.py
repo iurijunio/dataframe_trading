@@ -4,7 +4,8 @@ Regra de ouro deste modulo: as BARRAS do .duckdb sao cache. A verdade delas
 sao os CSVs em data/raw/ e o espelho Parquet em data/parquet/; reconstruir
 as barras tem que dar exatamente a mesma coisa - e existe teste que cobra
 isso. Mas o banco tambem guarda o que NAO se reconstroi: contas,
-portfolio_membros, ao_vivo_eventos (o diario) e planos_operacao. Nao o apague;
+portfolio_membros, ao_vivo_eventos (o diario), planos_operacao,
+papel_operacoes e papel_pregoes (o papel). Nao o apague;
 faca copia do arquivo com o app fechado.
 
 Excecao ao "barras sao cache": as barras de HOJE, gravadas pelo servico de

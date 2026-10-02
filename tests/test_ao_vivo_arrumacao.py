@@ -98,7 +98,7 @@ def test_orfao_que_fica_so_passa_a_valer_quando_o_outro_sai(banco):
     [amanha] = [l for l in AV.em_operacao(date(2026, 10, 2))
                 if l["ligacao_id"] == lig]
     assert amanha["plano"]["plano_id"] == p3
-    assert amanha["pregoes_com_plano"] == 1
+    assert amanha["pregoes_com_plano"] == 0   # sem papel rodado ainda
 
 
 def test_manter_o_plano_do_destino_nao_mexe_na_data_dele(banco):

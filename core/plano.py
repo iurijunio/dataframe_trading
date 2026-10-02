@@ -245,6 +245,14 @@ def motivo_protecao(con, plano_ids, hoje: date | None = None) -> str | None:
         if pf is not None:
             return (f"o plano #{pid} é da variante {variante}, que está no "
                     f"portfólio {pf}")
+    # o papel é o histórico de incubação e não se recria: apagar o plano
+    # (ou o WFA/mineração que o carrega) deixaria as operações órfãs
+    ph = ", ".join("?" * len(ids))
+    r = con.execute(f"SELECT plano_id FROM papel_operacoes "
+                    f"WHERE plano_id IN ({ph}) ORDER BY plano_id LIMIT 1",
+                    ids).fetchone()
+    if r is not None:
+        return f"o plano #{r[0]} tem operações de papel"
     return None
 
 

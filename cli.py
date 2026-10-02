@@ -154,7 +154,8 @@ def cmd_verify(args) -> None:
     """Prova que as BARRAS do .duckdb se reconstroem do Parquet e compara.
 
     So as barras sao descartaveis. As tabelas do Ao vivo (contas,
-    portfolio_membros, ao_vivo_eventos, planos_operacao) NAO se reconstroem
+    portfolio_membros, ao_vivo_eventos, planos_operacao, papel_operacoes,
+    papel_pregoes) NAO se reconstroem
     de arquivo nenhum: nao apague o .duckdb, faca copia dele.
 
     As barras de HOJE, gravadas pela captura, so existem no banco ate a

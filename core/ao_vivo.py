@@ -405,11 +405,15 @@ def em_operacao(hoje: date | None = None) -> list[dict]:
             if futuro:
                 avisos.append(f"plano #{futuro['plano_id']} entra em "
                               f"{futuro['vale_a_partir']:%d/%m}")
-            inicio = None
+            # pregões REAIS: os que o papel de fato rodou com este plano,
+            # não os dias úteis desde a gravação (o serviço pode ter ficado
+            # fora do ar)
+            n_pregoes = 0
             if plano_vigor:
-                inicio = (plano_vigor["vale_a_partir"]
-                          or _plano.proximo_dia_util(
-                              plano_vigor["created_at"].date()))
+                n_pregoes = con.execute(
+                    "SELECT count(*) FROM papel_pregoes WHERE ligacao_id = ? "
+                    "AND plano_id = ? AND status IN ('rodando', 'conferido')",
+                    [lig, plano_vigor["plano_id"]]).fetchone()[0]
             out.append({
                 "portfolio_id": pf_id, "portfolio_nome": pf_nome,
                 "portfolio_ligado": bool(pf_lig), "ligacao_id": lig,
@@ -420,7 +424,7 @@ def em_operacao(hoje: date | None = None) -> list[dict]:
                 "ligada": bool(ligada), "desligada_por": por,
                 "desligada_em": em, "plano": plano_vigor,
                 "plano_futuro": futuro,
-                "pregoes_com_plano": _dias_uteis(inicio, hoje),
+                "pregoes_com_plano": n_pregoes,
                 "motivo": motivo, "avisos": avisos, "roda": motivo is None,
             })
     # a mesma variante ligada em 2+ portfólios ligados roda 2+ vezes na

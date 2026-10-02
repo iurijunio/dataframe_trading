@@ -387,6 +387,48 @@ CREATE TABLE IF NOT EXISTS ao_vivo_eventos (
     motivo        VARCHAR
 );
 
+-- papel (parte 3): o que a variante teria feito no pregão, ao vivo. NÃO se
+-- recria de arquivo nenhum (decisão do usuário: é o histórico de incubação,
+-- insubstituível) — por isso fica fora de reparo_base.TABELAS_DERIVADAS e
+-- protege a cadeia (plano.motivo_protecao) contra apagar plano/WFA/mineração.
+CREATE SEQUENCE IF NOT EXISTS seq_papel_op START 1;
+CREATE TABLE IF NOT EXISTS papel_operacoes (
+    op_id        BIGINT PRIMARY KEY,
+    ligacao_id   BIGINT NOT NULL,
+    plano_id     BIGINT NOT NULL,
+    dia          DATE NOT NULL,
+    entry_ts     TIMESTAMP NOT NULL,
+    exit_ts      TIMESTAMP,            -- nulo = aberta
+    side         INTEGER NOT NULL,     -- +1 compra, -1 venda
+    contratos    BIGINT NOT NULL,
+    entry_px     BIGINT NOT NULL,
+    exit_px      BIGINT,
+    points       BIGINT,
+    bruto        DOUBLE, custo DOUBLE, liquido DOUBLE,
+    reason       INTEGER,              -- códigos de wfa_trades
+    mae BIGINT, mfe BIGINT,
+    stop_px      BIGINT, alvo_px BIGINT,   -- vigentes (aberta)
+    aberta       BOOLEAN NOT NULL,
+    conta        BOOLEAN NOT NULL,     -- decisão 4
+    calculado_em TIMESTAMP NOT NULL,
+    UNIQUE (ligacao_id, entry_ts)
+);
+CREATE TABLE IF NOT EXISTS papel_pregoes (
+    ligacao_id   BIGINT NOT NULL,
+    dia          DATE NOT NULL,
+    plano_id     BIGINT,
+    codigo_hash  VARCHAR,
+    motor_versao VARCHAR,
+    status       VARCHAR NOT NULL,     -- 'rodando'|'conferido'|'pulado'|'interrompido'
+    motivo       VARCHAR,
+    interrompido_em TIMESTAMP,
+    n_operacoes  INTEGER,
+    liquido      DOUBLE,               -- só operações fechadas que contam
+    checksum     VARCHAR,              -- barras do dia na conferência
+    calculado_em TIMESTAMP,
+    PRIMARY KEY (ligacao_id, dia)
+);
+
 -- o plano sabe de que variante é SEM depender da mineração (retrato): a
 -- mineração pode ser apagada, o histórico da variante não
 ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS variante_id BIGINT;

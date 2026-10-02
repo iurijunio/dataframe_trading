@@ -101,8 +101,9 @@ def test_plano_futuro_vencido_e_contagens(banco):
     assert l["plano_futuro"] == {"plano_id": novo, "vale_a_partir": date(2026, 10, 2)}
     assert f"plano #{novo} entra em 02/10" in l["avisos"]
     assert "plano vencido: reotimizar desde 20/09/2026" in l["avisos"]
-    # velho vale desde 02/09 (qua): dias úteis 02/09..01/10 = 22
-    assert l["pregoes_com_plano"] == 22
+    # pregões contam o que o papel rodou (tabela papel_pregoes), não dias
+    # úteis: sem papel gravado, 0 (a contagem com papel: test_papel_dados)
+    assert l["pregoes_com_plano"] == 0
 
 
 def test_conta_da_fase(banco):
