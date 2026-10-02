@@ -100,7 +100,7 @@ def _ler(fn):
 
 
 def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
-    """As partes da tela que leem o banco por portfólio. Onze saídas, na
+    """As partes da tela que leem o banco por portfólio. Treze saídas, na
     ordem do callback `desenhar_op`."""
     estado = D.estado_captura()
     dia = D.dia_do_pregao(estado)
@@ -125,8 +125,8 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
         msg = ("nenhum portfólio ainda — crie um na tela Portfólio e ligue em "
                "Ao vivo › Estratégias" if not pfs else "escolha um portfólio")
         vazio = [html.P(msg, className="av-vazio op-vazio")]
-        return ([], [], vazio, [], [], [], [], _opcoes_filtro([]), "todas",
-                [], None)
+        return ([], [], vazio, [], [], [], [], [], [], _opcoes_filtro([]),
+                "todas", [], None)
 
     cab = OP.cabecalho(pf, res)
     botoes = OP.botoes_portfolio(pf, armado)
@@ -144,7 +144,9 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
         esperado = {"diferenca": c_pf.get("diferenca_mediana"),
                     "faixas": faixas, "aviso": c_pf.get("aviso")}
         kpis = OP.kpis(res, ops, esperado, nomes)
-    return (cab, botoes, kpis, OP.coluna_variantes(vs, armado, res),
+    return (cab, botoes, kpis,
+            OP.cabecalho_colunas() if vs else [], OP.cartoes(vs, armado),
+            OP.risco_dia(res) if vs else [],
             OP.lista_alertas(alertas), OP.tabela_comparativo(comp), vars_,
             _opcoes_filtro(vars_), filtro,
             [{"label": v["nome"], "value": v["ligacao_id"]} for v in vars_],
@@ -219,7 +221,9 @@ def register(app):
         Output("av-op-cabecalho", "children"),
         Output("av-op-botoes", "children"),
         Output("av-op-kpis", "children"),
-        Output("av-op-variantes", "children"),
+        Output("av-op-var-cab", "children"),
+        Output("av-op-var-lista", "children"),
+        Output("av-op-risco", "children"),
         Output("av-op-alertas", "children"),
         Output("av-op-comparativo", "children"),
         Output("av-op-vars", "data"),
@@ -230,13 +234,16 @@ def register(app):
         Input("av-op-versao", "data"),
         Input("av-op-portfolio", "value"),
         Input("av-op-acao-versao", "data"),
-        Input("av-op-armado", "data"),
         Input("av-subtela", "value"),
         Input("modo", "value"),
+        # State, não Input: armar um botão só troca o rótulo (`rotulos_op`);
+        # o armado entra aqui para um redesenho no meio do caminho não
+        # mostrar "Pausar" num botão que já está pedindo confirmação
+        State("av-op-armado", "data"),
         State("av-op-filtro", "value"),
         State("av-op-curva-variante", "value"),
     )
-    def desenhar_op(_versao, pid, _acoes, armado, qual, modo, filtro, curva):
+    def desenhar_op(_versao, pid, _acoes, qual, modo, armado, filtro, curva):
         if not _visivel(qual, modo):
             raise PreventUpdate
         try:
@@ -244,11 +251,11 @@ def register(app):
         except (duckdb.Error, RuntimeError) as e:
             motivo = ("banco ocupado" if isinstance(e, RuntimeError)
                       else "erro ao ler o banco")
-            sem = (no_update,) * 11
-            return (*sem[:4], [html.P(
+            sem = (no_update,) * 13
+            return (*sem[:6], [html.P(
                 f"não foi possível ler agora: {motivo} — a tela tenta de novo "
                 "no próximo cálculo do papel", className="av-alerta")],
-                *sem[5:])
+                *sem[7:])
 
     @app.callback(
         Output("av-op-operacoes", "children"),
@@ -357,6 +364,40 @@ def register(app):
         return armado, (versao or 0) + 1, aviso, (versao_av or 0) + 1
 
     @app.callback(
+        Output({"type": "av-op-acao", "acao": ALL, "id": ALL}, "children"),
+        Output({"type": "av-op-acao", "acao": ALL, "id": ALL}, "className"),
+        Input("av-op-armado", "data"),
+        prevent_initial_call=True,
+    )
+    def rotulos_op(armado):
+        # sem banco: só "Confirmar?" no botão armado e o rótulo normal nos
+        # outros (inclusive o que deixou de estar armado)
+        estados = [OP.estado_botao(o["id"]["acao"], o["id"]["id"], armado)
+                   for o in ctx.outputs_list[0]]
+        return [e[0] for e in estados], [e[1] for e in estados]
+
+    # O botão armado desarma sozinho depois de 5 s: um "Confirmar?"
+    # esquecido viraria uma ação por engano no próximo clique, minutos depois.
+    app.clientside_callback(
+        """function (armado) {
+            window._avOpArmado = armado || null;
+            if (armado) {
+                setTimeout(function () {
+                    if (window._avOpArmado === armado) {
+                        window._avOpArmado = null;
+                        window.dash_clientside.set_props('av-op-armado', {data: null});
+                        window.dash_clientside.set_props('av-op-aviso', {children: ''});
+                    }
+                }, 5000);
+            }
+            return window.dash_clientside.no_update;
+        }""",
+        Output("av-op-aviso", "role"),
+        Input("av-op-armado", "data"),
+        prevent_initial_call=True,
+    )
+
+    @app.callback(
         Output("av-subtela", "value"),
         Input("av-op-ficha", "n_clicks"),
         prevent_initial_call=True,
@@ -386,12 +427,12 @@ def register(app):
         return ocultas
 
     @app.callback(
-        Output("av-op-legenda", "children"),
+        Output("av-op-chips", "children"),
         Input("av-op-vars", "data"),
         Input("av-op-ocultas", "data"),
     )
     def legenda_op(vars_, ocultas):
-        return OP.legenda(vars_ or [], ocultas)
+        return OP.chips(vars_ or [], ocultas)
 
     # Enquadrar de novo um instante depois. A sub-tela nasce escondida: o
     # gráfico ainda tem largura zero quando a primeira posição chega, e ao

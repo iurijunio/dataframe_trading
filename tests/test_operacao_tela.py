@@ -201,6 +201,56 @@ def test_legenda_quinze_chips_rolaveis_e_forma_depois_de_oito():
     assert "op-amostra-quadrado" in classes(amostras[8])
 
 
+def test_cartao_traduz_a_fase():
+    t = textos(OP.cartao_variante(_var(fase="real_minimo"), None))
+    assert "real mínimo" in t and "real_minimo" not in t
+
+
+def test_pior_momento_sem_hora_nao_comeca_com_separador():
+    c = _kpi(OP.kpis(_resumo(pior_momento={"valor": 0.0, "quando": None}),
+                     [], {}), "Pior momento")
+    nota = next(x for x in todos(c) if "op-kpi-n" in classes(x))
+    assert not nota.children.startswith(" ·")
+    assert nota.children.startswith("limite do dia")
+
+
+def _com_dica(arvore, rotulo):
+    for x in todos(arvore):
+        filhos = getattr(x, "children", None)
+        if isinstance(filhos, list) and filhos and filhos[0] == rotulo:
+            return any("dica-mark" in classes(y) for y in todos(filhos[1:]))
+    raise AssertionError(f"rótulo {rotulo!r} não achado")
+
+
+def test_colunas_da_variante_tem_dica():
+    arvore = OP.coluna_variantes([_var()], None, _resumo())
+    for rot in ("Hoje", "Operações", "Acerto", "Acumulado"):
+        assert _com_dica(arvore, rot), rot
+
+
+def test_cabecalho_da_tabela_tem_dica_nas_metricas():
+    arvore = OP.tabela_operacoes([_op()])
+    for rot in ("Contr. papel / demo", "Pontos", "Resultado papel"):
+        assert _com_dica(arvore, rot), rot
+
+
+def test_comparativo_tem_dica_em_todas_as_linhas():
+    vazio = {"n": 0}
+    arvore = OP.tabela_comparativo({"esperado_wfa": vazio, "papel": vazio,
+                                    "demo": None, "real": None})
+    for rot in ("Contratos por operação", "Pontos por operação", "Acerto",
+                "Fator de lucro", "Operações"):
+        assert _com_dica(arvore, rot), rot
+
+
+def test_botao_estado_armado_sem_reler_o_banco():
+    assert OP.estado_botao("membro-desligar", 1, None)[0] == "Pausar"
+    rot, cls = OP.estado_botao("membro-desligar", 1, "membro-desligar:1")
+    assert rot == "Confirmar?" and "av-armado" in cls
+    assert OP.estado_botao("membro-desligar", 2, "membro-desligar:1")[0] == "Pausar"
+    assert OP.estado_botao("pf-ligar", 3, None)[0] == "Ligar portfólio"
+
+
 # -------------------------------------------------------------- operações
 def test_linha_aberta_mostra_stop_alvo_e_provisorio():
     o = _op(situacao="aberta", aberta=True, provisorio=True, exit_ts=None,
@@ -283,6 +333,22 @@ def test_linhas_de_stop_e_alvo():
     _, linhas = OP.marcadores_tela(dados, [], "M1")
     assert [l["price"] for l in linhas] == [100, 200]
     assert all(l["lineStyle"] == 2 for l in linhas)
+    assert all(l["axisLabelVisible"] for l in linhas)
+
+
+def test_mais_de_duas_abertas_escondem_os_rotulos_do_eixo():
+    linhas = [{"tipo": t, "price": 100 + i, "title": "x", "cor": i,
+               "conta": True, "ligacao_id": i}
+              for i in range(3) for t in ("stop", "alvo")]
+    _, saida = OP.marcadores_tela({"marcadores": [], "linhas_abertas": linhas},
+                                  [], "M1")
+    assert len(saida) == 6
+    assert not any(l["axisLabelVisible"] for l in saida)
+    assert all(l["title"] == "" for l in saida)
+    # escondendo uma pela legenda, voltam a ser duas: rótulos aparecem
+    _, saida = OP.marcadores_tela({"marcadores": [], "linhas_abertas": linhas},
+                                  [0], "M1")
+    assert all(l["axisLabelVisible"] for l in saida)
 
 
 # ------------------------------------------------- tick sem ler o banco
@@ -415,6 +481,40 @@ def test_nenhum_callback_que_le_o_banco_ouve_o_pulso(app):
               else [chave])
     # só o que vem do estado.json: situação, versão, último candle e tick
     assert {p.split("@")[0] for p in partes} == set(SAIDAS_DO_PULSO)
+
+
+def test_armar_um_botao_nao_rele_o_banco(app):
+    """O primeiro clique só troca o rótulo: `av-op-armado` não pode ser
+    Input do redesenho que lê o banco."""
+    pesado = next(cb for cb in app.callback_map.values()
+                  if getattr(cb.get("callback"), "__name__", "") == "desenhar_op")
+    assert "av-op-armado.data" not in _entradas(pesado)
+    # quem ouve o armado é só o callback dos rótulos (sem banco)
+    ouvem = {getattr(cb.get("callback"), "__name__", "")
+             for cb in app.callback_map.values()
+             if "av-op-armado.data" in _entradas(cb)}
+    assert "rotulos_op" in ouvem and "desenhar_op" not in ouvem
+
+
+def test_caixas_que_rolam_sao_fixas_no_layout():
+    """A rolagem só sobrevive à releitura de minuto em minuto se a caixa
+    que rola não for recriada: ela mora no layout, o callback troca só o
+    conteúdo dela."""
+    fixas = {x.id: classes(x) for x in todos(OP.bloco())
+             if isinstance(getattr(x, "id", None), str)}
+    assert "op-var-lista" in fixas["av-op-var-lista"]
+    assert "op-tabela-caixa" in fixas["av-op-operacoes"]
+    assert "op-chips" in fixas["av-op-chips"]
+    # e o conteúdo devolvido não traz outra caixa de rolagem dentro
+    assert not [x for x in todos(OP.cartoes([_var()], None))
+                if "op-var-lista" in classes(x)]
+    assert not [x for x in todos(OP.tabela_operacoes([_op()]))
+                if "op-tabela-caixa" in classes(x)]
+
+
+def test_botao_abrir_em_estrategias():
+    b = next(x for x in todos(OP.bloco()) if getattr(x, "id", None) == "av-op-ficha")
+    assert b.children == "Abrir em Estratégias"
 
 
 def test_o_pulso_nao_abre_o_banco(monkeypatch):

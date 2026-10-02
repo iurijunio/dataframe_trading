@@ -19,6 +19,12 @@ from __future__ import annotations
 from dash import html
 
 
+# Fase da variante na tela (o banco guarda o código). Aqui porque as
+# sub-telas Estratégias e Operação mostram a mesma fase com o mesmo nome.
+FASES = {"papel": "papel", "demo": "demo", "real_minimo": "real mínimo",
+         "real": "real"}
+
+
 # ------------------------------------------------------------- formatação
 def brl(v: float) -> str:
     s = f"{abs(v):,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")

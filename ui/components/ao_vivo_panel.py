@@ -27,10 +27,7 @@ from core import plano as _plano
 from . import ficha as FI
 from . import operacao_panel as OP
 from . import pregao_panel as PG
-from .cartao import brl, dica, etiqueta_mesmo_assim
-
-FASES = {"papel": "papel", "demo": "demo", "real_minimo": "real mínimo",
-         "real": "real"}
+from .cartao import FASES, brl, dica, etiqueta_mesmo_assim  # noqa: F401
 
 
 # ------------------------------------------------------------ peças comuns

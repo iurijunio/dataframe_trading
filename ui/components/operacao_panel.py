@@ -23,7 +23,7 @@ from dash import dcc, html
 from .. import theme as T
 from ..data import to_epoch
 from . import pregao_panel as PP
-from .cartao import dica, etiqueta_mesmo_assim, inteiro, num, pct
+from .cartao import FASES, dica, etiqueta_mesmo_assim, inteiro, num, pct
 
 CINZA = T.CINZA_FORA
 SUBTELA = "operacao"
@@ -38,6 +38,8 @@ _FAIXAS = {"abaixo_p10": "abaixo do p10", "p10_p50": "entre p10 e p50",
 
 # título da linha de stop/alvo no eixo de preço: nome longo cobriria o gráfico
 _TITULO_MAX = 22
+# posições abertas visíveis até onde stop/alvo ganham rótulo no eixo
+_ROTULOS_MAX = 2
 
 # curva por pregão: um ponto por dia, sem hora no eixo
 CHART_CURVA = {**T.CHART_OPTIONS,
@@ -167,16 +169,18 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
     valor_pior = pior.get("valor")
     limite = resumo.get("limite_dia")
     demo = (resumo.get("contas") or {}).get("demo")
-    nota_pior = f"às {_hora(pior.get('quando'))}" if pior.get("quando") else ""
+    partes_pior = ([f"às {_hora(pior.get('quando'))}"]
+                   if pior.get("quando") else [])
     barra = None
     if limite:
         uso = max(0.0, -(valor_pior or 0.0)) / limite * 100
-        nota_pior += f" · limite do dia R$ {inteiro(int(round(limite)))}"
+        partes_pior.append(f"limite do dia R$ {inteiro(int(round(limite)))}")
         barra = _barra(uso)
     elif demo:
-        nota_pior += " · conta demo sem limite cadastrado"
+        partes_pior.append("conta demo sem limite cadastrado")
     else:
-        nota_pior += " · portfólio sem conta demo"
+        partes_pior.append("portfólio sem conta demo")
+    nota_pior = " · ".join(partes_pior)
 
     acum = resumo.get("acumulado") or {}
     nota_acum = (f"{acum.get('pregoes', 0)} pregões · "
@@ -251,12 +255,29 @@ _STATUS = {"pulado": ("pregão pulado", "rosa"),
 _APAGADO = ("pulado", "interrompido", "nao_conferido")
 
 
-def _botao(rotulo, acao, alvo, armado, classe="btn-ghost btn-sm", title=""):
-    aqui = armado == f"{acao}:{alvo}"
-    return html.Button("Confirmar?" if aqui else rotulo,
-                       id={"type": "av-op-acao", "acao": acao, "id": alvo},
-                       n_clicks=0, title=title,
-                       className=classe + (" av-armado" if aqui else ""))
+# (rótulo, classe) de cada botão de ação. Num lugar só porque são duas as
+# mãos que os desenham: o redesenho que lê o banco e o callback leve que só
+# troca o rótulo para "Confirmar?" no primeiro clique.
+_BOTOES = {
+    "membro-desligar": ("Pausar", "btn-ghost btn-sm av-btn-sec op-var-botao"),
+    "membro-ligar": ("Ligar", "btn-ghost btn-sm av-btn-principal op-var-botao"),
+    "pf-desligar": ("Desligar portfólio", "btn-ghost av-btn-sec"),
+    "pf-ligar": ("Ligar portfólio", "btn-ghost av-btn-principal"),
+}
+
+
+def estado_botao(acao, alvo, armado) -> tuple[str, str]:
+    """(rótulo, classe) do botão, armado ou não."""
+    rotulo, classe = _BOTOES[acao]
+    if armado == f"{acao}:{alvo}":
+        return "Confirmar?", classe + " av-armado"
+    return rotulo, classe
+
+
+def _botao(acao, alvo, armado, title=""):
+    rotulo, classe = estado_botao(acao, alvo, armado)
+    return html.Button(rotulo, n_clicks=0, title=title, className=classe,
+                       id={"type": "av-op-acao", "acao": acao, "id": alvo})
 
 
 def cartao_variante(v: dict, armado) -> html.Div:
@@ -265,14 +286,12 @@ def cartao_variante(v: dict, armado) -> html.Div:
     status = v.get("status")
     pos_txt, pos_tom = _lado_pos(int(v.get("posicao") or 0))
     if v.get("ligada"):
-        botao = _botao("Pausar", "membro-desligar", lig, armado,
-                       "btn-ghost btn-sm av-btn-sec op-var-botao",
+        botao = _botao("membro-desligar", lig, armado,
                        "Pausar esta variante: as operações dela deixam de "
                        "contar a partir de agora (o papel segue calculando, "
                        "em cinza). Clique duas vezes para confirmar.")
     else:
-        botao = _botao("Ligar", "membro-ligar", lig, armado,
-                       "btn-ghost btn-sm av-btn-principal op-var-botao",
+        botao = _botao("membro-ligar", lig, armado,
                        "Ligar esta variante: as operações dela voltam a "
                        "contar. Clique duas vezes para confirmar.")
     cab = html.Div([
@@ -307,7 +326,8 @@ def cartao_variante(v: dict, armado) -> html.Div:
                           className="op-var-ctr")]),
         html.Span(f"plano #{v['plano_id']}" if v.get("plano_id")
                   else "sem plano", className="op-var-plano"),
-        html.Span(v.get("fase") or "papel", className="op-var-fase"),
+        html.Span(FASES.get(v.get("fase") or "papel", v.get("fase")),
+                  className="op-var-fase"),
         *tags,
     ], className="op-var-rodape")
 
@@ -354,45 +374,66 @@ def coluna_variantes(vs: list[dict], armado, resumo: dict) -> list:
     """Cabeçalho das colunas (uma vez, com os (?)), a lista que rola e o
     risco do dia preso embaixo."""
     if not vs:
-        return [html.P("Este portfólio não tem variantes — adicione em "
-                       "Portfólio e ligue em Ao vivo › Estratégias.",
-                       className="av-vazio op-vazio")]
-    cols = html.Div([
+        return [_SEM_VARIANTES]
+    return [cabecalho_colunas(),
+            html.Div(cartoes(vs, armado), className="op-var-lista"),
+            risco_dia(resumo)]
+
+
+_SEM_VARIANTES = html.P("Este portfólio não tem variantes — adicione em "
+                        "Portfólio e ligue em Ao vivo › Estratégias.",
+                        className="av-vazio op-vazio")
+
+
+def cartoes(vs: list[dict], armado) -> list:
+    """Só os cartões: a caixa que rola fica fixa no layout (ver `bloco`)."""
+    return [cartao_variante(v, armado) for v in vs] if vs else [_SEM_VARIANTES]
+
+
+def cabecalho_colunas():
+    return html.Div([
         _rotulo("Hoje", "Resultado de hoje da variante (fechadas mais a "
                 "aberta provisória). Bom: positivo. Ruim: perda maior que a "
                 "perda média do plano."),
-        _rotulo("Operações", "Operações de hoje que contam."),
-        _rotulo("Acerto", "Ganhadoras sobre fechadas hoje. Um dia sozinho "
-                "diz pouco: compare com o acerto do plano no Comparativo."),
+        _rotulo("Operações", "Operações de hoje que contam. Bom: perto da "
+                "média de operações por pregão do plano. Atenção: muito acima "
+                "(a estratégia está girando demais) ou zero num dia com "
+                "movimento (confira se o papel está calculando)."),
+        _rotulo("Acerto", "Ganhadoras sobre fechadas hoje. Bom: perto do "
+                "acerto esperado (veja o Comparativo; acima de 40–50% na "
+                "maioria das estratégias). Ruim: bem abaixo dele por vários "
+                "pregões. Um dia sozinho diz pouco."),
         _rotulo("Acumulado", "Papel desde o plano em vigor desta variante. "
                 "Bom: dentro da faixa esperada (veja Papel × esperado, Por "
                 "variante). Ruim: abaixo do p10."),
     ], className="op-var-cols")
-    return [cols,
-            html.Div([cartao_variante(v, armado) for v in vs],
-                     className="op-var-lista"),
-            risco_dia(resumo)]
 
 
 def legenda(vs: list[dict], ocultas) -> html.Div:
     """Um chip por variante (clicar esconde/mostra no gráfico) e a chave
-    dos símbolos, presa à direita."""
+    dos símbolos, embaixo."""
+    return html.Div([html.Div(chips(vs, ocultas), className="op-chips"),
+                     _CHAVE], className="op-legenda-in")
+
+
+_CHAVE = html.Span("▲ compra · ▼ venda · ● saída (■ quando a cor repete) · "
+                   "tracejado = stop/alvo da posição aberta · cinza = fora do "
+                   "período ligado", className="op-legenda-chave")
+
+
+def chips(vs: list[dict], ocultas) -> list:
+    """Só os chips: a fileira que rola fica fixa no layout."""
     ocultas = set(ocultas or [])
-    chips = []
+    out = []
     for v in sorted(vs, key=lambda x: x.get("cor") or 0):
         off = v["ligacao_id"] in ocultas
-        chips.append(html.Button(
+        out.append(html.Button(
             [amostra(v.get("cor")), html.Span(v["nome"], className="op-chip-nome")],
             id={"type": "av-op-chip", "id": v["ligacao_id"]}, n_clicks=0,
             title=f"{v['nome']} — clique para "
                   f"{'mostrar' if off else 'esconder'} no gráfico",
             className="op-chip" + (" op-chip-off" if off else "")))
-    return html.Div([
-        html.Div(chips, className="op-chips"),
-        html.Span("▲ compra · ▼ venda · ● saída (■ quando a cor repete) · "
-                  "tracejado = stop/alvo da posição aberta · cinza = fora do "
-                  "período ligado", className="op-legenda-chave"),
-    ], className="op-legenda-in")
+    return out
 
 
 # -------------------------------------------------------------- operações
@@ -465,10 +506,13 @@ def tabela_operacoes(ops: list[dict]):
     cab = html.Tr([
         th("Entrada"), th("Saída"), th("Variante"), th("Lado"),
         th("Contr. papel / demo", "Contratos da operação no papel (os do "
-           "plano) e na demo (parte 4).", True),
+           "plano) e na demo (parte 4). Bom: os dois iguais ao plano. Ruim: "
+           "demo com mais contratos que o plano (risco maior que o medido).",
+           True),
         th("Preço entrada", n=True), th("Preço saída", n=True),
         th("Pontos", "Pontos a favor (+) ou contra (−) por contrato, já com a "
-           "derrapagem do plano.", True),
+           "derrapagem do plano. Bom: ganhos maiores que as perdas na média "
+           "do dia. Ruim: perdas no tamanho do stop seguidas.", True),
         th("Resultado papel", "Em reais, com os contratos e os custos do "
            "plano. Na aberta é provisório: o preço do último candle. Bom: a "
            "média por operação do plano ou mais.", True),
@@ -476,10 +520,11 @@ def tabela_operacoes(ops: list[dict]):
         th("Papel × demo", "Diferença por contrato entre o papel e a demo na "
            "mesma operação (parte 4). Bom: perto de zero.", True),
     ])
-    return html.Div(html.Table([html.Thead(cab),
-                                html.Tbody([linha_operacao(o) for o in ops])],
-                               className="op-tabela"),
-                    className="op-tabela-caixa")
+    # sem a caixa que rola: ela fica fixa no layout (`av-op-operacoes`),
+    # senão cada releitura a recriava e a rolagem voltava ao topo
+    return html.Table([html.Thead(cab),
+                       html.Tbody([linha_operacao(o) for o in ops])],
+                      className="op-tabela")
 
 
 # ---------------------------------------------------------------- gráfico
@@ -504,16 +549,20 @@ def marcadores_tela(dados: dict, ocultas, tf: str) -> tuple[list, list]:
                    "color": cor(m.get("cor")) if m.get("conta", True) else CINZA,
                    "text": m.get("text", "")})
     mk.sort(key=lambda x: x["time"])
+    visiveis = [l for l in dados.get("linhas_abertas") or []
+                if l.get("ligacao_id") not in ocultas]
+    # Com mais de 2 posições abertas os rótulos no eixo empilhavam
+    # ("stop stop stop… alvo") e cobriam o preço: ficam só as linhas, e a
+    # legenda esconde as outras variantes para ler uma de cada vez.
+    rotulos = len({l.get("ligacao_id") for l in visiveis}) <= _ROTULOS_MAX
     linhas = []
-    for l in dados.get("linhas_abertas") or []:
-        if l.get("ligacao_id") in ocultas:
-            continue
-        # só "stop"/"alvo": a cor já diz de quem é, e o nome da variante
-        # em cada linha empilhava etiquetas ilegíveis no eixo de preço
+    for l in visiveis:
+        # só "stop"/"alvo": a cor já diz de quem é
         titulo = (l.get("tipo") or l.get("title") or "")[:_TITULO_MAX]
         linhas.append({"price": int(l["price"]), "lineWidth": 1, "lineStyle": 2,
                        "color": cor(l.get("cor")) if l.get("conta", True) else CINZA,
-                       "axisLabelVisible": True, "title": titulo})
+                       "axisLabelVisible": rotulos,
+                       "title": titulo if rotulos else ""})
     return mk, linhas
 
 
@@ -688,7 +737,8 @@ def tabela_comparativo(c: dict):
          lambda v: num(v, 1),
          "Média de contratos por operação. O papel usa os do plano; o "
          "walk-forward, os do backtest — por isso o resto compara por "
-         "contrato."),
+         "contrato. Bom: papel e demo iguais aos contratos do plano. Ruim: "
+         "demo/real acima do plano (risco maior que o medido)."),
         ("Resultado por contrato", None),
         ("Operações", "n", lambda v: inteiro(int(v)),
          "Quantas operações fechadas entram na conta. Poucas (menos de 30) "
@@ -699,13 +749,17 @@ def tabela_comparativo(c: dict):
          "do esperado. Ruim: papel bem abaixo por muitos pregões."),
         ("Pontos por operação", "pontos_por_operacao",
          lambda v: ("+" if v > 0 else "") + num(v, 0),
-         "Pontos médios por operação. Bom: papel perto do esperado."),
+         "Pontos médios por operação. Bom: papel perto do esperado ou "
+         "acima. Ruim: negativo, ou menos da metade do esperado depois de "
+         "30 operações."),
         ("Fator de lucro", "fator_lucro", _fator,
          "Ganhos divididos pelas perdas. Bom: acima de 1,3. Ruim: abaixo "
          "de 1 (perde mais do que ganha)."),
         ("Acerto", "acerto", lambda v: pct(v * 100, 0),
-         "Operações ganhadoras sobre o total. Compare com o esperado: o "
-         "valor sozinho não diz se a estratégia é boa."),
+         "Operações ganhadoras sobre o total. Bom: papel a até 5 pontos "
+         "percentuais do esperado. Ruim: 10 pontos ou mais abaixo do "
+         "esperado depois de 30 operações. O valor sozinho não diz se a "
+         "estratégia é boa."),
         ("Resultado total", "total", lambda v: _rs(v, 2),
          "Soma com o tamanho real de cada operação. Só fechadas: pode ser "
          "menor que o Acumulado lá em cima, que inclui a aberta."),
@@ -770,12 +824,10 @@ def cabecalho(pf: dict, resumo: dict) -> list:
 def botoes_portfolio(pf: dict, armado) -> list:
     pid = pf["portfolio_id"]
     if pf.get("ligado"):
-        return [_botao("Desligar portfólio", "pf-desligar", pid, armado,
-                       "btn-ghost av-btn-sec",
+        return [_botao("pf-desligar", pid, armado,
                        "Para o portfólio inteiro: as operações deixam de "
                        "contar a partir de agora. Clique duas vezes.")]
-    return [_botao("Ligar portfólio", "pf-ligar", pid, armado,
-                   "btn-ghost av-btn-principal",
+    return [_botao("pf-ligar", pid, armado,
                    "Libera as variantes ligadas do portfólio para o papel. "
                    "Clique duas vezes.")]
 
@@ -827,7 +879,7 @@ def bloco():
                 ], className="op-cab-esq"),
                 html.Div([
                     html.Div(id="av-op-botoes", className="op-botoes"),
-                    html.Button("Ver ficha do portfólio", id="av-op-ficha",
+                    html.Button("Abrir em Estratégias", id="av-op-ficha",
                                 n_clicks=0, className="btn-ghost av-btn-sec",
                                 title="Abre Ao vivo › Estratégias, onde ficam "
                                       "o portfólio, as contas e a ficha de "
@@ -857,12 +909,22 @@ def bloco():
                                           chartOptions=T.CHART_OPTIONS,
                                           height="100%"),
                          id="av-op-grafico-caixa", className="pg-grafico op-grafico"),
-                html.Div(id="av-op-legenda", className="op-legenda"),
+                # As caixas que rolam (chips, cartões, tabela) são fixas no
+                # layout e só o conteúdo delas é trocado: recriadas a cada
+                # releitura do papel (uma por minuto), a rolagem voltava ao
+                # topo no meio da leitura.
+                html.Div(html.Div([html.Div(id="av-op-chips",
+                                            className="op-chips"), _CHAVE],
+                                  className="op-legenda-in"),
+                         id="av-op-legenda", className="op-legenda"),
             ], className="panel op-painel-grafico"),
             html.Section([
                 _sec_head("Variantes", "Posição aberta primeiro, depois o "
                           "resultado do dia."),
-                html.Div(id="av-op-variantes", className="op-variantes"),
+                html.Div([html.Div(id="av-op-var-cab"),
+                          html.Div(id="av-op-var-lista", className="op-var-lista"),
+                          html.Div(id="av-op-risco")],
+                         id="av-op-variantes", className="op-variantes"),
             ], className="panel op-painel-var"),
         ], className="op-grade"),
         html.Section([
@@ -873,7 +935,7 @@ def bloco():
                                    options=[{"label": "Todas as variantes",
                                              "value": "todas"}]),
                       classe="pg-grafico-head"),
-            html.Div(id="av-op-operacoes", className="op-operacoes"),
+            html.Div(id="av-op-operacoes", className="op-operacoes op-tabela-caixa"),
         ], className="panel"),
         html.Div([
             html.Section([
