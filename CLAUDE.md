@@ -208,7 +208,7 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    "encerrar a posição" × "só não abrir novas".
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
 
-Entrega futura: tela "Mesa" (visão por conta/ativo), ainda sem spec.
+Entrega futura: aba **Conta** no topo (nome escolhido pelo usuário; nunca "Mesa"): todo o controle e a visão por conta/ativo ficam lá. Ainda sem spec.
 
 Pendente, não iniciado:
 - **Gatilho, fatia 2**: avisar na tela de Portfólio que a correlação/risco
