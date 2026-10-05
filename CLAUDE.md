@@ -203,9 +203,9 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    Operação ✅. Spec: `docs/superpowers/specs/2026-10-02-ao-vivo-papel-design.md`.
 4. Ordens pelo próprio Dataframe (demo primeiro) + comparativo backtest ×
    papel × demo/real (sinal no mesmo minuto, preço, derrapagem).
-   **Próximo passo:** spec própria, começar pelo brainstorming. Requisito do
-   usuário: ao pausar portfólio ou variante com posição aberta, perguntar
-   "encerrar a posição" × "só não abrir novas".
+   **Em brainstorming:** 12 decisões já tomadas em
+   `docs/superpowers/specs/2026-10-05-ao-vivo-ordens-decisoes.md` (retomar dali:
+   rascunho visual → spec → revisão → plano). Pausar com posição aberta encerra na hora.
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
 
 Entrega futura: aba **Conta** no topo (nome escolhido pelo usuário; nunca "Mesa"): todo o controle e a visão por conta/ativo ficam lá. Ainda sem spec.
