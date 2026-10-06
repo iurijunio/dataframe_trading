@@ -49,7 +49,12 @@ def montar_espaco(schema: dict, ranges: dict, extras: dict | None = None) -> dic
     espaco: dict[str, list] = {}
     for nome, meta in {**schema, **(extras or {})}.items():
         r = ranges.get(nome) or {}
-        atual = r.get("valor", meta.get("default"))
+        atual = r.get("valor")
+        if atual is None:
+            # caixa limpa na tela chega como None; sem cair no default, a
+            # lista vira [None] e a varredura inteira estoura dentro de
+            # _uma, e a tabela de resultados aparece vazia sem aviso
+            atual = meta.get("default")
         if not r.get("on"):
             espaco[nome] = [atual]
             continue
@@ -90,6 +95,32 @@ def _num(v):
 def combinacoes(espaco: dict[str, list]) -> list[dict]:
     nomes = list(espaco)
     return [dict(zip(nomes, vals)) for vals in itertools.product(*espaco.values())]
+
+
+def campos_minerados(espaco: dict) -> set[str]:
+    """O que a varredura varreu de fato.
+
+    Valor único não foi minerado: é o valor fixo da tela viajando dentro
+    do produto cartesiano, igual em toda a coluna da tabela. É a mesma
+    régua de `faixas_do_espaco` — "um parâmetro com um valor só não foi
+    minerado".
+    """
+    return {k for k, vals in espaco.items() if len(vals) > 1}
+
+
+def txt_combinacao(params: dict, minerados: set | None = None,
+                   fmt=str) -> str:
+    """Texto da coluna de combinação — só os parâmetros minerados.
+
+    O `params` da linha continua completo; filtrar isto aqui não muda o
+    que clicar carrega nem o que vai para o banco. Sem espaço varrido
+    (ou sem interseção) o texto completo é o identificador da linha.
+    """
+    filtrados = [(k, v) for k, v in params.items()
+                 if not minerados or k in minerados]
+    if not filtrados:
+        filtrados = list(params.items())
+    return " · ".join(f"{k}={fmt(v)}" for k, v in filtrados)
 
 
 # ------------------------------------------------------------------- worker
@@ -451,8 +482,11 @@ class Mineracao:
     # A nuvem precisa das combinacoes RUINS tambem: sem o vermelho em volta
     # nao da para ver se o verde e uma regiao ou um acidente. Cortar no topo
     # do ranking transformaria o scatter num grafico so de vencedores.
-    @staticmethod
-    def _ranking(resultados: list[dict], limite: int = 5000) -> list[dict]:
+    def _ranking(self, resultados: list[dict], limite: int = 5000) -> list[dict]:
+        # o que foi varrido sai do MESMO contexto que alimenta o botão de
+        # salvar (onde o `space` é gravado): a tabela viva e a recarregada
+        # do banco enxergam a coluna de combinação igual
+        varridos = campos_minerados((self._contexto or {}).get("espaco") or {})
         bons = [r for r in resultados if not r.get("erro")]
         bons.sort(key=lambda r: (r.get("score_robusto", r["score"]), r["score"]),
                   reverse=True)
@@ -463,7 +497,7 @@ class Mineracao:
                 "n": i + 1,
                 "trial_id": r["trial_id"],
                 "params": r["params"],
-                "params_txt": " · ".join(f"{k}={v}" for k, v in r["params"].items()),
+                "params_txt": txt_combinacao(r["params"], varridos),
                 "lucro": round(r["geral"].get("lucro", 0), 2),
                 # criterio padrao de otimizacao do MT5: lucro dividido pelo
                 # drawdown que foi preciso aguentar para consegui-lo
@@ -606,6 +640,9 @@ def carregar_salva(run_id: int) -> list[dict]:
     não saibam a diferença entre uma varredura recém-rodada e uma recuperada.
     """
     with db.connect(read_only=True) as con:
+        espaco_gravado = con.execute(
+            "SELECT space FROM mining_runs WHERE run_id = ?",
+            [run_id]).fetchone()
         linhas = con.execute(
             "SELECT trial_id, params, trades, lucro, profit_factor, max_dd, "
             "folds_positivos, folds_com_trades, mediana_fold, score, "
@@ -615,12 +652,15 @@ def carregar_salva(run_id: int) -> list[dict]:
             [run_id],
         ).fetchall()
 
+    espaco = json.loads(espaco_gravado[0]) if espaco_gravado and espaco_gravado[0] else {}
+    varridos = campos_minerados(espaco)
+
     out = []
     for i, r in enumerate(linhas):
         params = json.loads(r[1])
         out.append({
             "n": i + 1, "trial_id": r[0], "params": params,
-            "params_txt": " · ".join(f"{k}={v}" for k, v in params.items()),
+            "params_txt": txt_combinacao(params, varridos),
             "trades": r[2], "lucro": _num(r[3]), "pf": _num(r[4]),
             "dd": _num(r[5]),
             "fr": (round(r[3] / r[5], 2) if r[3] is not None and r[5] else None),

@@ -27,8 +27,9 @@ import numpy as np
 
 from . import kernel as K
 
-TIMEFRAMES = {"M1": 1, "M5": 5, "M10": 10, "M15": 15, "M20": 20, "M30": 30,
-              "H1": 60, "H2": 120, "H4": 240}
+TIMEFRAMES = {"M1": 1, "M2": 2, "M3": 3, "M5": 5, "M7": 7, "M9": 9,
+              "M10": 10, "M11": 11, "M13": 13, "M15": 15, "M17": 17,
+              "M20": 20, "M30": 30, "H1": 60, "H2": 120, "H4": 240}
 
 
 def _minutes(hhmm: str) -> int:
@@ -47,12 +48,18 @@ class ExecutionProfile:
     fechamento: str = "17:30"
     dias_semana: tuple[int, ...] = (1, 2, 3, 4, 5)
     direcao: str = "ambas"
+    # horas sem ENTRADA nova ("13:00" = nada entra das 13:00 às 13:59).
+    # Stop, alvo e fechamento da posicao aberta continuam agindo.
+    sem_entrada1: str = ""
+    sem_entrada2: str = ""
+    sem_entrada3: str = ""
 
-    # gestao: pontos fixos ou multiplo de ATR
-    alvo_tipo: str = "pontos"           # pontos | atr
+    # gestao: pontos fixos, multiplo de ATR ou multiplicador do stop
+    alvo_tipo: str = "pontos"           # pontos | atr | multiplicador
     alvo_pontos: int = 600
     alvo_atr_periodo: int = 20
     alvo_atr_mult: float = 3.0
+    alvo_razao: float = 2.0             # alvo / stop quando tipo = multiplicador
 
     stop_tipo: str = "pontos"
     stop_pontos: int = 300
@@ -220,7 +227,8 @@ def _nivel(bars_tf, fechada, tipo, pontos, periodo, mult, n_m1) -> np.ndarray:
 # ------------------------------------------------------------- sessao
 @dataclass
 class SessionArrays:
-    in_entry_window: np.ndarray
+    in_entry_window: np.ndarray   # pode ENTRAR neste minuto (bloqueios aplicados)
+    arm_window: np.ndarray        # janela sem os bloqueios: sinal pode nascer aqui
     is_close_time: np.ndarray
     day_id: np.ndarray
 
@@ -245,7 +253,18 @@ def build_session_arrays(ts: np.ndarray, profile: ExecutionProfile) -> SessionAr
     ini, fim = _minutes(profile.entrada_inicio), _minutes(profile.entrada_fim)
     fech = _minutes(profile.fechamento)
 
-    in_entry = (minuto >= ini) & (minuto <= fim) & dia_ok
+    arm = (minuto >= ini) & (minuto <= fim) & dia_ok
+    in_entry = arm.copy()
+
+    # horas sem entrada: mascaram so a ENTRADA. O sinal pode nascer dentro
+    # da hora bloqueada, desde que caia para fora (13:59 -> entra 14:00);
+    # pendencia que executaria DENTRO da hora cai - o kernel so arma o sinal
+    # se a barra seguinte estiver liberada.
+    for b in (profile.sem_entrada1, profile.sem_entrada2,
+              profile.sem_entrada3):
+        if b:
+            h = _minutes(b)
+            in_entry &= ~((minuto >= h) & (minuto < h + 60))
 
     is_close = np.zeros(len(ts), dtype=bool)
 
@@ -267,7 +286,7 @@ def build_session_arrays(ts: np.ndarray, profile: ExecutionProfile) -> SessionAr
         sem = ~np.isin(dias[alvo], dias_com_fechamento)
         is_close[alvo[sem]] = True
 
-    return SessionArrays(in_entry, is_close, dias)
+    return SessionArrays(in_entry, arm, is_close, dias)
 
 
 # ------------------------------------------------------------ resultado
@@ -308,11 +327,16 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         else:
             bars_tf, fechada, _ = resample(bars, passo)
 
-    tp = _nivel(bars_tf, fechada, profile.alvo_tipo, profile.alvo_pontos,
-                profile.alvo_atr_periodo, profile.alvo_atr_mult, n)
     sl = _nivel(bars_tf, fechada, profile.stop_tipo, profile.stop_pontos,
                 profile.stop_atr_periodo, profile.stop_atr_mult, n)
     sl = _override(sl, signals.sl_points, n)
+    if profile.alvo_tipo == "multiplicador":
+        # o alvo e o stop VIGENTE x razao, por barra; stop 0 nao ha o que
+        # multiplicar, e o kernel ja trata alvo 0 como 'sem alvo'
+        tp = (sl * float(profile.alvo_razao)).astype(np.int64)
+    else:
+        tp = _nivel(bars_tf, fechada, profile.alvo_tipo, profile.alvo_pontos,
+                    profile.alvo_atr_periodo, profile.alvo_atr_mult, n)
     tp = _override(tp, signals.tp_points, n)
 
     # protecoes em % do alvo -> pontos, por barra
@@ -331,7 +355,8 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
 
     n_trades, ambiguous, bloqueios = K.run(
         bars["open"], bars["high"], bars["low"], bars["close"],
-        sess.in_entry_window, sess.is_close_time, sess.day_id,
+        sess.in_entry_window, sess.arm_window, sess.is_close_time,
+        sess.day_id,
         signals.entry_long, signals.entry_short,
         signals.exit_long, signals.exit_short,
         sl, tp, be, step_t, step_d, trail,

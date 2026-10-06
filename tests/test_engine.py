@@ -410,7 +410,192 @@ def test_sinal_de_m5_executa_no_minuto_seguinte():
     assert r.trades["entry_i"][0] == 10       # minuto seguinte, nao o proximo M5
 
 
+NOVOS_TF = {"M2": 2, "M3": 3, "M7": 7, "M9": 9, "M11": 11, "M13": 13,
+            "M17": 17}
+
+
+def _barras_minutos(n, inicio=(9, 0), base=100000):
+    o = np.arange(base, base + n * 10, 10, dtype=np.int64)
+    ts = (np.datetime64(datetime(2026, 1, 5, *inicio))
+          + np.arange(n).astype("timedelta64[m]"))
+    return {
+        "ts": ts,
+        "open": o, "high": o + 30, "low": o - 30, "close": o + 5,
+        "tick_volume": np.ones(n, dtype=np.int64),
+    }
+
+
+def test_timeframes_novos_agregam_sem_quebrar():
+    """M2..M17 entram no dict e passam pelo mesmo resample dos atuais:
+    barras contiguas, e a barra do timeframe so e conhecida no minuto
+    em que ela fecha (sem olhar o futuro)."""
+    from core.engine.execution import TIMEFRAMES, resample
+
+    for nome, minutos in NOVOS_TF.items():
+        assert TIMEFRAMES.get(nome) == minutos, nome
+
+    n = 40
+    bars = _barras_minutos(n)
+    minuto = bars["ts"].astype("datetime64[m]").astype(np.int64) % 1440
+    for nome, minutos in NOVOS_TF.items():
+        tf, fechada, fim = resample(bars, minutos)
+        # o numero de barras e o de grupos distintos de minuto//minutos
+        # (M17 nao alinha em 09:00 e abre com vela parcial — é o esperado)
+        chave = minuto // minutos
+        grupos = 1 + np.count_nonzero(chave[1:] != chave[:-1])
+        assert len(tf["open"]) == grupos, nome
+        assert fim[-1] == n - 1, nome             # ultima barra fecha no fim
+        assert fechada[fim[0]] == 0, nome         # k=0 conhecido em fim[0]
+        assert fechada[:fim[0]].tolist() == [-1] * fim[0], nome
+
+
+def test_dropdown_do_backtest_mostra_os_timeframes_novos():
+    """O seletor da barra lateral itera o dict do core: se um dia alguem
+    trocar por lista escrita a mao, este teste acusa."""
+    from ui.components.controls import periodo
+
+    def achando(c, alvo):
+        if isinstance(c, (list, tuple)):
+            for x in c:
+                achado = achando(x, alvo)
+                if achado is not None:
+                    return achado
+            return None
+        if getattr(c, "id", None) == alvo:
+            return c
+        filhos = getattr(c, "children", None)
+        return None if filhos is None else achando(filhos, alvo)
+
+    comp = achando(periodo(datetime(2026, 1, 5), datetime(2026, 1, 10)),
+                   "e-timeframe")
+    assert comp is not None
+    vistos = {o["value"] for o in comp.options}
+    assert set(NOVOS_TF) <= vistos
+
+
+# ==================================================== horarios bloqueados
+def _janela_larga(**kw):
+    base = dict(entrada_inicio="12:00", entrada_fim="17:00",
+                fechamento="17:30", slippage_ticks=0,
+                corretagem_por_contrato=0.0, emolumentos_por_contrato=0.0,
+                contratos=1, capital_inicial=10_000.0,
+                stop_pontos=200, alvo_pontos=100_000)
+    base.update(kw)
+    return ExecutionProfile(**base)
+
+
+def test_bloqueio_de_hora_impede_a_entrada_na_hora_marcada():
+    """Sinal às 12:59 executaria na abertura de 13:00 — dentro da hora
+    bloqueada. Sem bloqueio, o trade existe; com ele, cai."""
+    bars = _barras_minutos(7, inicio=(12, 59))
+    s = empty_like(7)
+    s["entry_long"][0] = True
+    sig = Signals(**s)
+
+    sem_bloqueio = backtest(bars, sig, _janela_larga(), WIN)
+    assert sem_bloqueio.n_trades == 1
+    assert sem_bloqueio.trades["entry_ts"][0].astype("datetime64[m]") == \
+        np.datetime64("2026-01-05T13:00")
+
+    bloqueado = backtest(bars, sig, _janela_larga(sem_entrada1="13:00"), WIN)
+    assert bloqueado.n_trades == 0
+
+
+def test_apos_a_hora_bloqueada_a_entrada_volta():
+    """Sinal às 13:59 (na hora bloqueada) executam às 14:00, que já é fora:
+    o sinal NÃO é enfileirado para a hora bloqueada passar — ele cai."""
+    bars = _barras_minutos(7, inicio=(13, 57))
+    s = empty_like(7)
+    s["entry_long"][2] = True
+    sig = Signals(**s)
+
+    r = backtest(bars, sig, _janela_larga(sem_entrada1="13:00"), WIN)
+    assert r.n_trades == 1
+    assert r.trades["entry_ts"][0].astype("datetime64[m]") == \
+        np.datetime64("2026-01-05T14:00")
+
+
+def test_bloqueio_nao_mexe_na_posicao_ja_aberta():
+    """Stop, alvo e fechamento continuam agindo na posição aberta: o
+    bloqueio é de ENTRADA, não de gestão."""
+    n = 15
+    bars = _barras_minutos(n, inicio=(12, 50))
+    hora_bloqueada = np.datetime64("2026-01-05T13:00")
+    i = int(np.flatnonzero(bars["ts"] == hora_bloqueada)[0])
+    bars["low"][i] = 99700                    # estoura o stop 99800
+
+    s = empty_like(n)
+    s["entry_long"][0] = True                 # sinal 12:50 -> entra 12:51
+    r = backtest(bars, Signals(**s), _janela_larga(sem_entrada1="13:00"), WIN)
+
+    assert r.n_trades == 1
+    assert r.trades["reason"][0] == K.EXIT_STOP
+    assert r.trades["exit_ts"][0] == hora_bloqueada
+
+
 # ================================================================ gestao ATR
+def test_alvo_multiplicador_segue_o_stop():
+    """Alvo tipo multiplicador: 2,5x o stop (risco:retorno 1:2.5).
+    O alvo vale o stop VIGENTE por barra — e o alvo da estratégia, quando
+    existir, continua mandando."""
+    bars, sig = cenario()
+    r = backtest(bars, sig,
+                 perfil(stop_pontos=200, alvo_tipo="multiplicador",
+                        alvo_razao=2.5), WIN)
+
+    assert r.n_trades == 3
+    assert r.sl_at_entry[0] == 200
+    assert r.tp_at_entry[0] == 500              # 200 x 2,5
+    # entra 100000, alvo 100500 tocado no alto da barra 5
+    assert r.trades["exit_px"][0] == 100500
+    assert r.trades["reason"][0] == K.EXIT_TARGET
+    # segunda entrada 100500: stop 100300 bate primeiro que o alvo 101000
+    assert r.trades["exit_px"][1] == 100300
+    assert r.trades["reason"][1] == K.EXIT_STOP
+
+
+def test_alvo_multiplicador_com_stop_desligado_fica_sem_alvo():
+    """0 x razao = 0: sem stop nao ha risco para multiplicar, e o kernel
+    trata alvo 0 como 'sem alvo' (mesma regra dos pontos fixos)."""
+    bars, sig = cenario()
+    r = backtest(bars, sig,
+                 perfil(stop_pontos=0, alvo_tipo="multiplicador",
+                        alvo_razao=2.5), WIN)
+
+    assert r.sl_at_entry[0] == 0
+    assert r.tp_at_entry[0] == 0
+    assert r.trades["reason"][0] == K.EXIT_CLOSE_TIME
+
+
+def test_alvo_da_estrategia_vence_o_multiplicador():
+    bars, sig = cenario()
+    d = {k: getattr(sig, k) for k in
+         ("entry_long", "entry_short", "exit_long", "exit_short")}
+    r = backtest(bars, Signals(**d, tp_points=100),   # alvo proprio
+                 perfil(stop_pontos=200, alvo_tipo="multiplicador",
+                        alvo_razao=2.5), WIN)
+
+    assert r.tp_at_entry[0] == 100               # 100, nao 500
+    assert r.trades["exit_px"][0] == 100100
+    assert r.trades["reason"][0] == K.EXIT_TARGET
+
+
+def test_multiplicador_parte_do_stop_da_estrategia_nao_do_perfil():
+    """O multiplicador usa o stop VIGENTE (override da estratégia), não o
+    do perfil: estratégia 150, perfil 300, razão 2 -> alvo 300. Se o alvo
+    fosse calculado do perfil antes do override, sairia 600 e o
+    risco:retorno dobraria sem a tela mostrar."""
+    bars, sig = cenario()
+    d = {k: getattr(sig, k) for k in
+         ("entry_long", "entry_short", "exit_long", "exit_short")}
+    r = backtest(bars, Signals(**d, sl_points=150),
+                 perfil(stop_pontos=300, alvo_tipo="multiplicador",
+                        alvo_razao=2.0), WIN)
+
+    assert r.sl_at_entry[0] == 150
+    assert r.tp_at_entry[0] == 300               # 150 x 2, nao 300 x 2
+
+
 def test_stop_em_atr_varia_com_a_volatilidade():
     from core.engine.execution import atr
 

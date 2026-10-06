@@ -63,6 +63,9 @@ def formatar(campo: str, formato: str, v) -> str:
         return f"{valor(v)} tick" + ("" if v == 1 else "s")
     if formato == "texto":
         return str(v)
+    if formato == "hora":
+        # "" = não bloqueado; "13:00" = a hora inteira, como na tela
+        return "—" if not v else f"{int(str(v).split(':')[0])}h"
     return valor(v)
 
 

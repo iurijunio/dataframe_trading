@@ -175,7 +175,7 @@ def test_extrato_nao_trunca_como_o_ranking():
         for i in range(8_000)
     ]
     extrato = Mineracao._extrato(resultados)
-    ranking = Mineracao._ranking(resultados)
+    ranking = Mineracao()._ranking(resultados)
 
     assert len(extrato) == 8_000        # a estatística vê tudo
     assert len(ranking) == 5_000        # a tabela, só o topo

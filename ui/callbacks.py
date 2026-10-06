@@ -111,6 +111,11 @@ _SCHEMA_EXECUCAO_META = {
     "step_gatilho_pct": {"default": 0, "step": 5, "tipo": "float"},
     "step_distancia_pct": {"default": 0, "step": 5, "tipo": "float"},
     "trailing_pontos": {"default": 0, "step": 10, "tipo": "int"},
+    "alvo_razao": {"default": 2.0, "step": 0.1, "tipo": "float"},
+    "alvo_atr_periodo": {"default": 20, "step": 1, "tipo": "int"},
+    "alvo_atr_mult": {"default": 3.0, "step": 0.1, "tipo": "float"},
+    "stop_atr_periodo": {"default": 20, "step": 1, "tipo": "int"},
+    "stop_atr_mult": {"default": 1.5, "step": 0.1, "tipo": "float"},
 }
 SCHEMA_EXECUCAO = {nome: _SCHEMA_EXECUCAO_META[nome]
                    for nome in wfa_runner.CAMPOS_EXECUCAO_NOMES}
@@ -122,9 +127,9 @@ CAMPOS_PERFIL = [
 ("e-timeframe", "timeframe"), ("e-ent-ini", "entrada_inicio"),
 ("e-ent-fim", "entrada_fim"), ("e-fechamento", "fechamento"),
 ("e-dias", "dias_semana"), ("e-direcao", "direcao"),
-("e-alvo-tipo", "alvo_tipo"), ("e-alvo-atr-per", "alvo_atr_periodo"),
-("e-alvo-atr-mult", "alvo_atr_mult"), ("e-stop-tipo", "stop_tipo"),
-("e-stop-atr-per", "stop_atr_periodo"), ("e-stop-atr-mult", "stop_atr_mult"),
+("e-sem-ent1", "sem_entrada1"), ("e-sem-ent2", "sem_entrada2"),
+("e-sem-ent3", "sem_entrada3"),
+("e-alvo-tipo", "alvo_tipo"), ("e-stop-tipo", "stop_tipo"),
 ("e-max-barras", "max_barras"), ("e-lim-ganho", "limite_ganho_contrato"),
 ("e-lim-perda", "limite_perda_contrato"), ("e-max-trades", "max_trades_dia"),
 ("e-max-loss", "max_prejuizos_dia"),
@@ -198,6 +203,21 @@ def _varredura(linhas):
     if completo and e.get("fonte"):
         return completo
     return linhas or []
+
+
+def _referencias_operadas(res, perfil):
+    """Stop e alvo que o motor operou, mediana por trade.
+
+    O perfil pode guardar valores que nunca entraram em jogo (alvo por
+    multiplicador do stop, ATR, stop da estratégia) — as sugestões e as
+    linhas do MAE/MFE precisam do operado, senão o "% do alvo" que a tela
+    mostra estaria errado no número em que o usuário decide o que mexer.
+    Sem trades, cai no perfil (não há mediana para tirar).
+    """
+    sl, tp = res.sl_at_entry, res.tp_at_entry
+    stop = int(np.median(sl)) if len(sl) else perfil.stop_pontos
+    alvo = int(np.median(tp)) if len(tp) else perfil.alvo_pontos
+    return stop, alvo
 
 
 def _detalhes(res, run, liq):
@@ -292,12 +312,14 @@ def register(app):
     # --------------------------- so o bloco do tipo escolhido fica na tela
     @app.callback(
         Output("blk-alvo-pontos", "style"), Output("blk-alvo-atr", "style"),
+        Output("blk-alvo-razao", "style"),
         Output("blk-stop-pontos", "style"), Output("blk-stop-atr", "style"),
         Input("e-alvo-tipo", "value"), Input("e-stop-tipo", "value"),
     )
     def tipos(alvo, stop):
-        return (OCULTO if alvo == "atr" else VISIVEL,
+        return (VISIVEL if alvo == "pontos" else OCULTO,
                 VISIVEL if alvo == "atr" else OCULTO,
+                VISIVEL if alvo == "multiplicador" else OCULTO,
                 OCULTO if stop == "atr" else VISIVEL,
                 VISIVEL if stop == "atr" else OCULTO)
 
@@ -512,10 +534,9 @@ def register(app):
         State("e-ent-ini", "value"), State("e-ent-fim", "value"),
         State("e-fechamento", "value"), State("e-dias", "value"),
         State("e-direcao", "value"),
-        State("e-alvo-tipo", "value"), State("e-alvo-atr-per", "value"),
-        State("e-alvo-atr-mult", "value"),
-        State("e-stop-tipo", "value"), State("e-stop-atr-per", "value"),
-        State("e-stop-atr-mult", "value"),
+        State("e-sem-ent1", "value"), State("e-sem-ent2", "value"),
+        State("e-sem-ent3", "value"),
+        State("e-alvo-tipo", "value"), State("e-stop-tipo", "value"),
         State("e-max-barras", "value"),
         State("e-lim-ganho", "value"), State("e-lim-perda", "value"),
         State("e-max-trades", "value"), State("e-max-loss", "value"),
@@ -530,12 +551,15 @@ def register(app):
         prevent_initial_call=False,
     )
     def rodar(n, ativo, de, ate, tf, valores, ids_val, ent_ini, ent_fim, fechamento,
-              dias, direcao, alvo_tipo, alvo_per, alvo_mult, stop_tipo, stop_per,
-              stop_mult, max_barras, lim_ganho, lim_perda, max_trades, max_loss,
-              corretagem, emolumentos, slippage, modo, contratos, risco, capital,
-              min_ops, sem_holdout, holdout_m, treino_m, teste_m, passo_m):
+              dias, direcao, sem1, sem2, sem3, alvo_tipo, stop_tipo, max_barras,
+              lim_ganho, lim_perda, max_trades, max_loss, corretagem,
+              emolumentos, slippage, modo, contratos, risco, capital, min_ops,
+              sem_holdout, holdout_m, treino_m, teste_m, passo_m):
         v = {i["p"]: val for i, val in zip(ids_val, valores)}
         mod = registry.atual()
+        # 0 e um valor legitimo (sem alvo); so o vazio cai no padrao
+        razao = v.get("alvo_razao")
+        razao = 2.0 if razao is None else razao
 
         try:
             params = validate(mod.params_schema,
@@ -548,10 +572,15 @@ def register(app):
             entrada_inicio=ent_ini or "09:00", entrada_fim=ent_fim or "17:00",
             fechamento=fechamento or "17:30",
             dias_semana=tuple(dias or (1, 2, 3, 4, 5)), direcao=direcao,
+            sem_entrada1=sem1 or "", sem_entrada2=sem2 or "",
+            sem_entrada3=sem3 or "",
             alvo_tipo=alvo_tipo, alvo_pontos=v.get("alvo_pontos") or 0,
-            alvo_atr_periodo=alvo_per or 20, alvo_atr_mult=alvo_mult or 0,
+            alvo_atr_periodo=v.get("alvo_atr_periodo") or 20,
+            alvo_atr_mult=v.get("alvo_atr_mult") or 0,
+            alvo_razao=razao,
             stop_tipo=stop_tipo, stop_pontos=v.get("stop_pontos") or 0,
-            stop_atr_periodo=stop_per or 20, stop_atr_mult=stop_mult or 0,
+            stop_atr_periodo=v.get("stop_atr_periodo") or 20,
+            stop_atr_mult=v.get("stop_atr_mult") or 0,
             breakeven_pct=v.get("breakeven_pct") or 0,
             step_gatilho_pct=v.get("step_gatilho_pct") or 0,
             step_distancia_pct=v.get("step_distancia_pct") or 0,
@@ -696,9 +725,9 @@ def register(app):
         State("e-timeframe", "value"), State("e-ent-ini", "value"),
         State("e-ent-fim", "value"), State("e-fechamento", "value"),
         State("e-dias", "value"), State("e-direcao", "value"),
-        State("e-alvo-tipo", "value"), State("e-alvo-atr-per", "value"),
-        State("e-alvo-atr-mult", "value"), State("e-stop-tipo", "value"),
-        State("e-stop-atr-per", "value"), State("e-stop-atr-mult", "value"),
+        State("e-sem-ent1", "value"), State("e-sem-ent2", "value"),
+        State("e-sem-ent3", "value"),
+        State("e-alvo-tipo", "value"), State("e-stop-tipo", "value"),
         State("e-max-barras", "value"), State("e-lim-ganho", "value"),
         State("e-lim-perda", "value"), State("e-max-trades", "value"),
         State("e-max-loss", "value"), State("e-corretagem", "value"),
@@ -711,11 +740,10 @@ def register(app):
     )
     def minerar(n, _tick, treino, teste, passo, holdout, ligados, faixas,
                 ids_on, ids_faixa, de, ate, valores, ids_val, tf, ent_ini,
-                ent_fim, fechamento, dias, direcao, alvo_tipo, alvo_per,
-                alvo_mult, stop_tipo, stop_per, stop_mult, max_barras,
-                lim_ganho, lim_perda, max_trades, max_loss, corretagem,
-                emolumentos, slippage, modo, contratos, risco, capital,
-                min_ops, workers, ativo):
+                ent_fim, fechamento, dias, direcao, sem1, sem2, sem3,
+                alvo_tipo, stop_tipo, max_barras, lim_ganho, lim_perda,
+                max_trades, max_loss, corretagem, emolumentos, slippage,
+                modo, contratos, risco, capital, min_ops, workers, ativo):
         e = MINERACAO.estado
         if ctx.triggered_id != "btn-minerar":
             return e.get("mensagem") or no_update
@@ -734,9 +762,13 @@ def register(app):
             entrada_inicio=ent_ini or "09:00", entrada_fim=ent_fim or "17:00",
             fechamento=fechamento or "17:30",
             dias_semana=tuple(dias or (1, 2, 3, 4, 5)), direcao=direcao,
-            alvo_tipo=alvo_tipo, alvo_atr_periodo=alvo_per or 20,
-            alvo_atr_mult=alvo_mult or 0, stop_tipo=stop_tipo,
-            stop_atr_periodo=stop_per or 20, stop_atr_mult=stop_mult or 0,
+            sem_entrada1=sem1 or "", sem_entrada2=sem2 or "",
+            sem_entrada3=sem3 or "",
+            alvo_tipo=alvo_tipo,
+            alvo_atr_periodo=v.get("alvo_atr_periodo") or 20,
+            alvo_atr_mult=v.get("alvo_atr_mult") or 0, stop_tipo=stop_tipo,
+            stop_atr_periodo=v.get("stop_atr_periodo") or 20,
+            stop_atr_mult=v.get("stop_atr_mult") or 0,
             max_barras=max_barras or 0,
             limite_ganho_contrato=lim_ganho or 0, limite_perda_contrato=lim_perda or 0,
             max_trades_dia=max_trades or 0, max_prejuizos_dia=max_loss or 0,
@@ -1454,7 +1486,7 @@ def register(app):
                          holdout_de=e["ate_holdout"] if estende else None),
                 WP.kpis(passos, ts, liq, ag, capital,
                         custo=oos["custo"], saida=oos["exit_ts"]),
-                WP.linhas_steps(passos),
+                WP.linhas_steps(passos, d["espaco"]),
                 f"{ag.get('steps', 0)} janelas · IS {is_m}/OOS {oos_m} · {rotulo}"
                 + (" · holdout incluído" if estende else " · até o holdout")
                 + f" · {origem_crit} · {simbolo}",
@@ -1885,7 +1917,8 @@ def register(app):
         t, p = res.trades, run["profile"]
 
         diag = analytics.calor_mae_mfe(t["mae"], t["mfe"], liq)
-        dicas = analytics.sugestoes(diag, p.stop_pontos, p.alvo_pontos)
+        stop_ref, alvo_ref = _referencias_operadas(res, p)
+        dicas = analytics.sugestoes(diag, stop_ref, alvo_ref)
 
         return (
             AC.ganho_perda(analytics.por_hora(t["entry_ts"], liq),
@@ -1895,7 +1928,7 @@ def register(app):
             AC.ganho_perda(analytics.por_mes(t["entry_ts"], liq),
                            "Lucro × prejuízo por mês do ano"),
             AC.calendario(analytics.calendario_mensal(t["entry_ts"], liq)),
-            AC.mae_mfe(diag, p.stop_pontos, p.alvo_pontos),
+            AC.mae_mfe(diag, stop_ref, alvo_ref),
             AC.barras(analytics.por_duracao(t["bars_held"], liq,
                                             TIMEFRAMES.get(p.timeframe, 1)),
                       f"Lucro por tempo em posição (barras {p.timeframe})"),

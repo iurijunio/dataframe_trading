@@ -176,7 +176,17 @@ def execucao():
             _field("direção", dcc.Dropdown(
                 id="e-direcao", value="ambas", clearable=False, className="dd",
                 options=opcoes("direcao"))),
-
+            html.Div([
+                _field("sem entradas · 1", dcc.Dropdown(
+                    id="e-sem-ent1", value="", clearable=False, className="dd",
+                    options=opcoes("hora"))),
+                _field("sem entradas · 2", dcc.Dropdown(
+                    id="e-sem-ent2", value="", clearable=False, className="dd",
+                    options=opcoes("hora"))),
+                _field("sem entradas · 3", dcc.Dropdown(
+                    id="e-sem-ent3", value="", clearable=False, className="dd",
+                    options=opcoes("hora"))),
+            ], className="grid-3"),
             html.H3("Gestão", className="grp"),
             _field("tipo de alvo", dcc.Dropdown(
                 id="e-alvo-tipo", value="pontos", clearable=False, className="dd",
@@ -185,9 +195,14 @@ def execucao():
             html.Div(_opt("alvo_pontos", "Alvo (pontos)", 600, 200, 100, 1200, 10, 0),
                      id="blk-alvo-pontos"),
             html.Div([
-                _field("ATR período", _num("e-alvo-atr-per", 20, 1, 2)),
-                _field("ATR multiplicador", _num("e-alvo-atr-mult", 3.0, 0.1, 0.1)),
+                _opt("alvo_atr_periodo", "ATR período", 20, 5, 1, 60, 1, 2),
+                _opt("alvo_atr_mult", "ATR multiplicador", 3.0, 1.0, 0.1,
+                     6.0, 0.1, 0.1),
             ], className="grid-2", id="blk-alvo-atr", style={"display": "none"}),
+            html.Div(_opt("alvo_razao", "Alvo · vezes o stop", 2.0, 1.0, 0.5,
+                           5.0, 0.1, 0.1,
+                           "risco:retorno — 2,0 = alvo a duas vezes o stop"),
+                     id="blk-alvo-razao", style={"display": "none"}),
 
             _field("tipo de stop", dcc.Dropdown(
                 id="e-stop-tipo", value="pontos", clearable=False, className="dd",
@@ -195,8 +210,9 @@ def execucao():
             html.Div(_opt("stop_pontos", "Stop (pontos)", 300, 100, 50, 600, 10, 0),
                      id="blk-stop-pontos"),
             html.Div([
-                _field("ATR período", _num("e-stop-atr-per", 20, 1, 2)),
-                _field("ATR multiplicador", _num("e-stop-atr-mult", 1.5, 0.1, 0.1)),
+                _opt("stop_atr_periodo", "ATR período", 20, 5, 1, 60, 1, 2),
+                _opt("stop_atr_mult", "ATR multiplicador", 1.5, 1.0, 0.1,
+                     4.0, 0.1, 0.1),
             ], className="grid-2", id="blk-stop-atr", style={"display": "none"}),
 
             html.H3("Proteções", className="grp"),
@@ -246,7 +262,9 @@ def execucao():
 # campos da camada 4 que tambem aceitam faixa de otimizacao. Os da estrategia
 # entram antes destes e mudam conforme a estrategia ativa.
 CAMPOS_EXECUCAO = ["alvo_pontos", "stop_pontos", "breakeven_pct",
-                   "step_gatilho_pct", "step_distancia_pct", "trailing_pontos"]
+                   "step_gatilho_pct", "step_distancia_pct", "trailing_pontos",
+                   "alvo_razao", "alvo_atr_periodo", "alvo_atr_mult",
+                   "stop_atr_periodo", "stop_atr_mult"]
 
 
 def opt_fields(mod=None):

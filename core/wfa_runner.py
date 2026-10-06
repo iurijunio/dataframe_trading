@@ -53,7 +53,9 @@ CAMPOS = {"entry_ts": "datetime64[s]", "exit_ts": "datetime64[s]",
 # evita para valor de parâmetro — aqui é o mesmo cuidado para o NOME dele.
 CAMPOS_EXECUCAO_NOMES = ("alvo_pontos", "stop_pontos", "breakeven_pct",
                         "step_gatilho_pct", "step_distancia_pct",
-                        "trailing_pontos")
+                        "trailing_pontos", "alvo_razao",
+                        "alvo_atr_periodo", "alvo_atr_mult",
+                        "stop_atr_periodo", "stop_atr_mult")
 
 
 def _sem_trades() -> dict:

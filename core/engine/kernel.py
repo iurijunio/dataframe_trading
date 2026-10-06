@@ -87,7 +87,7 @@ def _melhora(stop_atual, candidato, side):
 @njit(cache=True, nogil=True)
 def run(
     open_, high, low, close,
-    in_entry_window, is_close_time, day_id,
+    in_entry_window, arm_window, is_close_time, day_id,
     entry_long, entry_short, exit_long, exit_short,
     sl_points, tp_points, be_trigger, step_trigger, step_dist, trail_dist,
     allow_long, allow_short,
@@ -321,11 +321,15 @@ def run(
         if pos != 0:
             if (pos == 1 and exit_long[i]) or (pos == -1 and exit_short[i]):
                 pend_exit = True
-        elif (in_entry_window[i] and blocked == 0 and i + 1 < n
+        elif (arm_window[i] and blocked == 0 and i + 1 < n
               and in_entry_window[i + 1] and day_id[i + 1] == day_id[i]):
             # A ordem a mercado entra na barra seguinte - que, num sinal
             # fechado no ultimo minuto de um candle de 15, e exatamente a
             # abertura do proximo candle de 15.
+            # O sinal pode nascer numa hora bloqueada, desde que a barra
+            # seguinte ja esteja liberada: sinal das 13:59 entra as 14:00,
+            # que e fora da hora sem operar. O que nao passa e a ENTRADA na
+            # hora - essa a barra seguinte ja barra.
             # Duas travas: a proxima barra tem que estar na janela de entrada
             # e ser do MESMO pregao. Sem a segunda, um sinal no fim do dia
             # abriria posicao na abertura do dia seguinte.

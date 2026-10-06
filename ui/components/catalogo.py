@@ -18,10 +18,14 @@ DIAS = [("seg", 1), ("ter", 2), ("qua", 3), ("qui", 4), ("sex", 5)]
 OPCOES = {
     "direcao": [("compra e venda", "ambas"), ("só compra", "compra"),
                 ("só venda", "venda")],
-    "alvo_tipo": [("pontos fixos", "pontos"), ("múltiplo de ATR", "atr")],
+    "alvo_tipo": [("pontos fixos", "pontos"), ("múltiplo de ATR", "atr"),
+                  ("múltiplo do stop", "multiplicador")],
     "stop_tipo": [("pontos fixos", "pontos"), ("múltiplo de ATR", "atr")],
     "modo_posicao": [("contratos fixos", "contratos_fixos"),
                      ("risco fixo", "risco_fixo")],
+    # (rótulo, value): a tela mostra "13h"; o value é "HH:00" para o motor
+    # parsear com _minutes
+    "hora": [("—", "")] + [(f"{h:02d}h", f"{h:02d}:00") for h in range(24)],
 }
 
 
@@ -45,11 +49,16 @@ CAMPOS: dict[str, tuple] = {
     "fechamento": ("Janela", "fechar posições às", "texto"),
     "dias_semana": ("Janela", "dias da semana", "dias"),
     "direcao": ("Janela", "direção", "opcao"),
+    "sem_entrada1": ("Janela", "sem entradas · 1", "hora"),
+    "sem_entrada2": ("Janela", "sem entradas · 2", "hora"),
+    "sem_entrada3": ("Janela", "sem entradas · 3", "hora"),
 
     "alvo_tipo": ("Gestão", "tipo de alvo", "opcao"),
     "alvo_pontos": ("Gestão", "alvo (pontos)", "int", ("alvo_tipo", "pontos")),
     "alvo_atr_periodo": ("Gestão", "alvo · ATR período", "int", ("alvo_tipo", "atr")),
     "alvo_atr_mult": ("Gestão", "alvo · ATR multiplicador", "num", ("alvo_tipo", "atr")),
+    "alvo_razao": ("Gestão", "alvo · vezes o stop", "num",
+                   ("alvo_tipo", "multiplicador")),
     "stop_tipo": ("Gestão", "tipo de stop", "opcao"),
     "stop_pontos": ("Gestão", "stop (pontos)", "int", ("stop_tipo", "pontos")),
     "stop_atr_periodo": ("Gestão", "stop · ATR período", "int", ("stop_tipo", "atr")),

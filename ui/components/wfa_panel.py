@@ -17,6 +17,7 @@ import plotly.graph_objects as go
 from dash import dcc, html
 
 from core import candidata, metrics, wfa
+from core.optimizer import campos_minerados, txt_combinacao
 
 from .. import theme as T
 from .analytics_charts import BASE, EIXO, TITULO, _vazio
@@ -97,14 +98,20 @@ def _br(d) -> str:
     return f"{p[2]}/{p[1]}/{p[0]}" if len(p) == 3 else str(d)[:10]
 
 
-def linhas_steps(passos) -> list[dict]:
+def linhas_steps(passos, espaco: dict | None = None) -> list[dict]:
+    """Uma linha por janela do walk-forward.
+
+    `espaco` é o da mineração que originou o WFA: com ele a coluna de
+    parâmetros mostra só o que a varredura varreu, igual à tabela de
+    mineração — fixo é o mesmo valor em todos os passos, não é informação.
+    """
+    varridos = campos_minerados(espaco) if espaco else None
     fora = []
     for p in passos:
         j = p.janela
         fora.append({
             "step": "DEPLOY" if j.deploy else f"Step {j.step}",
-            "params_txt": (" · ".join(f"{k}={_valor(v)}"
-                                      for k, v in p.params.items())
+            "params_txt": (txt_combinacao(p.params, varridos, fmt=_valor)
                            if p.params else "—"),
             "is_de": _br(j.is_de), "is_ate": _br(j.is_ate),
             "oos_de": _br(j.oos_de), "oos_ate": _br(j.oos_ate),
