@@ -79,12 +79,12 @@ def controles():
             html.Div(
                 [
                     html.Div([
-                        fld("treino (meses)", num("wf-treino", 12, 1, 1)),
-                        fld("teste (meses)", num("wf-teste", 3, 1, 1)),
-                        fld("passo (meses)", num("wf-passo", 3, 1, 1)),
-                        fld("holdout (meses)", num("wf-holdout", 12, 1, 0)),
+                        fld("treino (meses)", num("wf-treino", 6, 1, 1)),
+                        fld("teste (meses)", num("wf-teste", 6, 1, 1)),
+                        fld("passo (meses)", num("wf-passo", 6, 1, 1)),
+                        fld("holdout (meses)", num("wf-holdout", 6, 1, 0)),
                     ], className="grid-2"),
-                    fld("processos", num("wf-workers", 12, 1, 1)),
+                    fld("processos", num("wf-workers", 24, 1, 1)),
                     html.P(id="wf-resumo", className="grid-size"),
                     html.P(id="mine-salvo", className="fld-hint solo"),
                 ],

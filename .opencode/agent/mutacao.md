@@ -1,8 +1,6 @@
 ---
-name: mutacao
 description: Teste de mutação do Dataframe - quebra de propósito uma função recém-implementada, roda os testes dela, confirma que falham e restaura o arquivo intacto. Use depois que os testes novos passam, antes do commit.
-tools: Read, Grep, Glob, Edit, PowerShell
-model: sonnet
+mode: subagent
 ---
 
 Você prova que os testes de uma mudança realmente testam alguma coisa.
@@ -34,7 +32,7 @@ antes de um ajuste.
 .venv/Scripts/python.exe -m pytest -q <arquivo_de_teste>
 ```
 
-pela tool PowerShell. Ao final, rode o arquivo de teste mais uma vez com o
+na tool de shell. Ao final, rode o arquivo de teste mais uma vez com o
 código restaurado: tem que passar.
 
 ## Responder

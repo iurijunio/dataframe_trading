@@ -565,6 +565,61 @@ def test_margem_de_atr_reproduz_o_resultado_do_historico_inteiro():
     assert lucro_fatia == pytest.approx(lucro_ref)
 
 
+def test_margem_de_adx_reproduz_o_resultado_do_historico_inteiro():
+    """A margem do teste aleatório só conhecia o ATR. Com o filtro de ADX
+    ligado e stop/alvo em PONTOS, a fatia começava exatamente em oos_de:
+    as primeiras barras do dia tinham ADX NaN e bloqueavam entrada que o
+    histórico completo (com o ADX aquecido dias antes) deixava entrar —
+    e os dois lados do teste deixavam de disputar as mesmas faixas.
+
+    Rango com limiar 101 deixa o caso nítido: depois de aquecido,
+    `ADX < 101` é sempre verdade (o ADX não passa de 100), então a única
+    diferença possível entre fatia e histórico é o aquecimento. M30 com
+    período 40 de propósito: o aquecimento (78 × 30 = 2.340 min) passa do
+    piso de margem (um pregão, 1.440) — a margem tem de olhar o ADX, não
+    só acordar para o dia inteiro."""
+    from core import metrics, wfa
+
+    bars = _bars_com_volatilidade(n_dias=6, semente=0)
+    instrumento = {"point_value": 1.0, "tick_size": 1}
+    perfil = exe.ExecutionProfile(
+        entrada_inicio="00:00", entrada_fim="23:59", fechamento="23:59",
+        dias_semana=(1, 2, 3, 4, 5, 6, 7), timeframe="M30",
+        filtro_adx="rango", adx_periodo=40, adx_limiar=101,
+    )
+    trades_reais = [
+        {"step": 1, "entry_ts": "2024-01-04T00:05", "side": 1},
+        {"step": 1, "entry_ts": "2024-01-05T00:10", "side": -1},
+    ]
+    janela = wfa.Janela(step=1,
+                        is_de=np.datetime64("2024-01-02T00:00", "s"),
+                        is_ate=np.datetime64("2024-01-04T00:00", "s"),
+                        oos_de=np.datetime64("2024-01-04T00:00", "s"),
+                        oos_ate=np.datetime64("2024-01-06T00:00", "s"))
+
+    # mesma hora 0 concentrada do teste de ATR: é onde uma fatia sem
+    # margem teria as primeiras barras do dia ainda com ADX NaN
+    N_SINAIS = 110
+    rodar_janela = aleatorio.rodador_do_motor(bars, None, perfil, instrumento,
+                                              trades_reais)
+    n_fatia, lucro_fatia = rodar_janela(janela, n_sinais=N_SINAIS, semente=3)
+
+    de = np.datetime64(janela.oos_de).astype(bars["ts"].dtype)
+    ate = np.datetime64(janela.oos_ate).astype(bars["ts"].dtype)
+    horarios = aleatorio._histograma_horario_execucao(trades_reais)
+    p_compra = aleatorio._proporcao_compra(trades_reais)
+    estrategia = aleatorio.EntradaAleatoria(N_SINAIS, horarios, p_compra, 3,
+                                            janela_valida=(de, ate))
+    res = exe.run_strategy(bars, estrategia, {}, perfil, instrumento)
+    dentro = (res.trades["entry_ts"] >= de) & (res.trades["entry_ts"] < ate)
+    n_ref = int(dentro.sum())
+    lucro_ref = float(metrics.monetize(res)["liquido"][dentro].sum())
+
+    assert n_fatia > 0 and n_ref > 0     # o cenário precisa gerar trade
+    assert n_fatia == n_ref
+    assert lucro_fatia == pytest.approx(lucro_ref)
+
+
 def test_rodador_do_motor_rejeita_janela_de_outro_step():
     """Correção 2: `rodador_do_motor` é montado com o perfil e o histograma
     de UMA janela (aqui, step 1). Chamar `rodar_janela` com a janela de

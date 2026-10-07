@@ -160,6 +160,30 @@ def execucao():
     return _section(
         None,
         [
+            # primeiro grupo de todos: antes de decidir QUANDO entrar
+            # (Janela), o operador decide se o mercado deixa entrar
+            html.H3("Filtro de mercado", className="grp"),
+            _field("régua (ADX)", dcc.Dropdown(
+                id="e-filtro-adx", value="tendencia", clearable=False,
+                className="dd", options=opcoes("filtro_adx"))),
+            html.Div([
+                _opt("adx_periodo", "ADX · período", 0, 5, 1, 40, 1, 0,
+                     "0 desliga"),
+                _opt("adx_limiar", "ADX · limiar", 0, 10, 5, 40, 5, 0,
+                     "0 desliga"),
+            ], className="grid-2"),
+            html.Div([
+                _opt("adx_filtro_di", "DI confirma o lado", 0, 0, 1, 1, 1, 0,
+                     "só na tendência: compra com DI+ acima de DI−, e o "
+                     "contrário na venda"),
+                _opt("adx_subindo", "ADX subindo", 0, 0, 1, 1, 1, 0,
+                     "só na tendência: barra atual acima da anterior"),
+            ], className="grid-2"),
+            html.P("Em tendência, só entra com ADX no limiar ou acima; em "
+                   "rango, só com ADX abaixo. 0 em período ou limiar desliga "
+                   "o filtro — e é o que deixa minerar ligado x desligado "
+                   "na mesma varredura.", className="fld-hint solo"),
+
             html.H3("Janela", className="grp"),
             html.Div([
                 _field("entradas de", dcc.Input(id="e-ent-ini", value="09:00",
@@ -264,7 +288,9 @@ def execucao():
 CAMPOS_EXECUCAO = ["alvo_pontos", "stop_pontos", "breakeven_pct",
                    "step_gatilho_pct", "step_distancia_pct", "trailing_pontos",
                    "alvo_razao", "alvo_atr_periodo", "alvo_atr_mult",
-                   "stop_atr_periodo", "stop_atr_mult"]
+                   "stop_atr_periodo", "stop_atr_mult",
+                   "adx_periodo", "adx_limiar", "adx_filtro_di",
+                   "adx_subindo"]
 
 
 def opt_fields(mod=None):

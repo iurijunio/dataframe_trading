@@ -327,6 +327,20 @@ def test_aquecimento_soma_o_atr_do_perfil():
         perfil) == 15
 
 
+def test_aquecimento_soma_o_adx_do_filtro():
+    """O ADX do filtro exige (2×período−2) barras do timeframe antes da
+    primeira barra válida. Sem contar isso, o papel (M30, período 40) ia
+    acordar com 1.130 minutos de aquecimento para os 2.340 que o filtro
+    pede — e bloquearia TODA entrada do começo do dia, enquanto o backtest
+    entra normal."""
+    perfil = ExecutionProfile(timeframe="M30", adx_periodo=40)
+    # ⌈(2×40 − 2) × 30 / 565⌉ + 2 = ⌈4,14⌉ + 2 = 7
+    assert papel.pregoes_de_aquecimento(SimpleNamespace(), {}, perfil) == 7
+    # desligado (0), a conta é a mesma de sempre
+    assert papel.pregoes_de_aquecimento(
+        SimpleNamespace(), {}, ExecutionProfile(timeframe="M30")) == 2
+
+
 # ------------------------------------------------------------- montagem
 def test_montagem_separa_execucao_de_estrategia():
     plano_d = {"params": {"periodo_canal": 20, "stop_pontos": 123,

@@ -502,8 +502,8 @@ def test_bloqueio_de_hora_impede_a_entrada_na_hora_marcada():
 
 
 def test_apos_a_hora_bloqueada_a_entrada_volta():
-    """Sinal às 13:59 (na hora bloqueada) executam às 14:00, que já é fora:
-    o sinal NÃO é enfileirado para a hora bloqueada passar — ele cai."""
+    """Sinal às 13:59 (na hora bloqueada) executa às 14:00, que já é fora
+    do bloqueio: entra."""
     bars = _barras_minutos(7, inicio=(13, 57))
     s = empty_like(7)
     s["entry_long"][2] = True
@@ -513,6 +513,16 @@ def test_apos_a_hora_bloqueada_a_entrada_volta():
     assert r.n_trades == 1
     assert r.trades["entry_ts"][0].astype("datetime64[m]") == \
         np.datetime64("2026-01-05T14:00")
+
+
+def test_sinal_no_meio_da_hora_bloqueada_nao_fica_para_depois():
+    """Sinal às 13:30 executaria às 13:31, bloqueado: o sinal cai — NÃO é
+    guardado para entrar às 14:00."""
+    bars = _barras_minutos(40, inicio=(13, 30))
+    s = empty_like(40)
+    s["entry_long"][0] = True
+    r = backtest(bars, Signals(**s), _janela_larga(sem_entrada1="13:00"), WIN)
+    assert r.n_trades == 0
 
 
 def test_bloqueio_nao_mexe_na_posicao_ja_aberta():
@@ -552,6 +562,20 @@ def test_alvo_multiplicador_segue_o_stop():
     # segunda entrada 100500: stop 100300 bate primeiro que o alvo 101000
     assert r.trades["exit_px"][1] == 100300
     assert r.trades["reason"][1] == K.EXIT_STOP
+
+
+def test_alvo_multiplicador_arredonda_ao_tick():
+    """200 x 2,3 é 459,999... em ponto flutuante: cortar as casas dava alvo
+    459, um preço que o WIN (tick 5) não negocia, e cada ganho saía 1 ponto
+    menor. 90 x 0,7 = 63 cai no tick mais próximo, 65."""
+    assert WIN["tick_size"] == 5
+    bars, sig = cenario()
+    r = backtest(bars, sig, perfil(stop_pontos=200, alvo_tipo="multiplicador",
+                                   alvo_razao=2.3), WIN)
+    assert r.tp_at_entry[0] == 460
+    r = backtest(bars, sig, perfil(stop_pontos=90, alvo_tipo="multiplicador",
+                                   alvo_razao=0.7), WIN)
+    assert r.tp_at_entry[0] == 65
 
 
 def test_alvo_multiplicador_com_stop_desligado_fica_sem_alvo():

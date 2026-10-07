@@ -82,7 +82,8 @@ def _combinacoes(campos: dict) -> int:
         de, passo, ate = r.get("de"), r.get("passo"), r.get("ate")
         if de is None or ate is None or not passo:
             continue
-        total *= max(1, int((ate - de) / passo) + 1)
+        # round: (2,3 - 2,0) / 0,1 = 2,9999... e o int() perdia um valor
+        total *= max(1, int(round((ate - de) / passo, 9)) + 1)
     return total
 
 
@@ -116,6 +117,12 @@ _SCHEMA_EXECUCAO_META = {
     "alvo_atr_mult": {"default": 3.0, "step": 0.1, "tipo": "float"},
     "stop_atr_periodo": {"default": 20, "step": 1, "tipo": "int"},
     "stop_atr_mult": {"default": 1.5, "step": 0.1, "tipo": "float"},
+    # filtro de mercado (ADX): 0 = desligado, e o zero ser mineravel e o
+    # que deixa medir ligado x desligado na mesma varredura
+    "adx_periodo": {"default": 0, "step": 1, "tipo": "int"},
+    "adx_limiar": {"default": 0, "step": 5, "tipo": "int"},
+    "adx_filtro_di": {"default": 0, "step": 1, "tipo": "int"},
+    "adx_subindo": {"default": 0, "step": 1, "tipo": "int"},
 }
 SCHEMA_EXECUCAO = {nome: _SCHEMA_EXECUCAO_META[nome]
                    for nome in wfa_runner.CAMPOS_EXECUCAO_NOMES}
@@ -127,6 +134,7 @@ CAMPOS_PERFIL = [
 ("e-timeframe", "timeframe"), ("e-ent-ini", "entrada_inicio"),
 ("e-ent-fim", "entrada_fim"), ("e-fechamento", "fechamento"),
 ("e-dias", "dias_semana"), ("e-direcao", "direcao"),
+("e-filtro-adx", "filtro_adx"),
 ("e-sem-ent1", "sem_entrada1"), ("e-sem-ent2", "sem_entrada2"),
 ("e-sem-ent3", "sem_entrada3"),
 ("e-alvo-tipo", "alvo_tipo"), ("e-stop-tipo", "stop_tipo"),
@@ -500,8 +508,12 @@ def register(app):
         r[0] = d["estrategia"]
         r[2] = controls.campos_da_estrategia(mod, faixas)
         r[3] = ""
+        # campo que a mineração antiga nem conhecia (sem entradas, ADX) cai
+        # no padrão do motor - com no_update ficava o que estava na tela, e
+        # o backtest do clique dava outro lucro que o da tabela
+        padrao = ExecutionProfile().to_config()
         r[9] = [faixas.get(i["p"], {}).get("valor",
-                                          perfil.get(i["p"], no_update))
+                                          perfil.get(i["p"], padrao.get(i["p"], no_update)))
                 for i in ids_val]
         r[10] = [faixas.get(i["p"], {}).get(i["k"], no_update) for i in ids_faixa]
         r[11] = [["on"] if faixas.get(i["p"], {}).get("on") else []
@@ -514,7 +526,8 @@ def register(app):
         w = d.get("wf_config") or {}
         r[13:17] = (w.get("treino_meses", no_update), w.get("teste_meses", no_update),
                     w.get("passo_meses", no_update), w.get("holdout_meses", no_update))
-        r[17:] = [perfil.get(chave, no_update) for _, chave in CAMPOS_PERFIL]
+        r[17:] = [perfil.get(chave, padrao.get(chave, no_update))
+                  for _, chave in CAMPOS_PERFIL]
         return r
 
     # ------------------------------------------------------------------ rodar
@@ -532,8 +545,9 @@ def register(app):
         State({"type": "val", "p": ALL}, "value"),
         State({"type": "val", "p": ALL}, "id"),
         State("e-ent-ini", "value"), State("e-ent-fim", "value"),
-        State("e-fechamento", "value"), State("e-dias", "value"),
+        State("e-fechamento", "value"),         State("e-dias", "value"),
         State("e-direcao", "value"),
+        State("e-filtro-adx", "value"),
         State("e-sem-ent1", "value"), State("e-sem-ent2", "value"),
         State("e-sem-ent3", "value"),
         State("e-alvo-tipo", "value"), State("e-stop-tipo", "value"),
@@ -551,7 +565,7 @@ def register(app):
         prevent_initial_call=False,
     )
     def rodar(n, ativo, de, ate, tf, valores, ids_val, ent_ini, ent_fim, fechamento,
-              dias, direcao, sem1, sem2, sem3, alvo_tipo, stop_tipo, max_barras,
+              dias, direcao, filtro, sem1, sem2, sem3, alvo_tipo, stop_tipo, max_barras,
               lim_ganho, lim_perda, max_trades, max_loss, corretagem,
               emolumentos, slippage, modo, contratos, risco, capital, min_ops,
               sem_holdout, holdout_m, treino_m, teste_m, passo_m):
@@ -574,6 +588,12 @@ def register(app):
             dias_semana=tuple(dias or (1, 2, 3, 4, 5)), direcao=direcao,
             sem_entrada1=sem1 or "", sem_entrada2=sem2 or "",
             sem_entrada3=sem3 or "",
+            filtro_adx=filtro or "tendencia",
+            # 0 e legitimo (desligado); so o vazio cai no padrao
+            adx_periodo=v.get("adx_periodo") or 0,
+            adx_limiar=v.get("adx_limiar") or 0,
+            adx_filtro_di=v.get("adx_filtro_di") or 0,
+            adx_subindo=v.get("adx_subindo") or 0,
             alvo_tipo=alvo_tipo, alvo_pontos=v.get("alvo_pontos") or 0,
             alvo_atr_periodo=v.get("alvo_atr_periodo") or 20,
             alvo_atr_mult=v.get("alvo_atr_mult") or 0,
@@ -725,6 +745,7 @@ def register(app):
         State("e-timeframe", "value"), State("e-ent-ini", "value"),
         State("e-ent-fim", "value"), State("e-fechamento", "value"),
         State("e-dias", "value"), State("e-direcao", "value"),
+        State("e-filtro-adx", "value"),
         State("e-sem-ent1", "value"), State("e-sem-ent2", "value"),
         State("e-sem-ent3", "value"),
         State("e-alvo-tipo", "value"), State("e-stop-tipo", "value"),
@@ -740,7 +761,7 @@ def register(app):
     )
     def minerar(n, _tick, treino, teste, passo, holdout, ligados, faixas,
                 ids_on, ids_faixa, de, ate, valores, ids_val, tf, ent_ini,
-                ent_fim, fechamento, dias, direcao, sem1, sem2, sem3,
+                ent_fim, fechamento, dias, direcao, filtro, sem1, sem2, sem3,
                 alvo_tipo, stop_tipo, max_barras, lim_ganho, lim_perda,
                 max_trades, max_loss, corretagem, emolumentos, slippage,
                 modo, contratos, risco, capital, min_ops, workers, ativo):
@@ -764,6 +785,11 @@ def register(app):
             dias_semana=tuple(dias or (1, 2, 3, 4, 5)), direcao=direcao,
             sem_entrada1=sem1 or "", sem_entrada2=sem2 or "",
             sem_entrada3=sem3 or "",
+            filtro_adx=filtro or "tendencia",
+            adx_periodo=v.get("adx_periodo") or 0,
+            adx_limiar=v.get("adx_limiar") or 0,
+            adx_filtro_di=v.get("adx_filtro_di") or 0,
+            adx_subindo=v.get("adx_subindo") or 0,
             alvo_tipo=alvo_tipo,
             alvo_atr_periodo=v.get("alvo_atr_periodo") or 20,
             alvo_atr_mult=v.get("alvo_atr_mult") or 0, stop_tipo=stop_tipo,

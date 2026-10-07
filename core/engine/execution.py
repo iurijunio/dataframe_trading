@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+from numba import njit
 
 from . import kernel as K
 
@@ -65,6 +66,15 @@ class ExecutionProfile:
     stop_pontos: int = 300
     stop_atr_periodo: int = 20
     stop_atr_mult: float = 1.5
+
+    # filtro de mercado (ADX) - camada 4, vale para toda estrategia.
+    # 0 em periodo OU limiar desliga o filtro por completo, e o zero ser
+    # mineravel e o que deixa comparar ligado x desligado na mesma varredura.
+    filtro_adx: str = "tendencia"   # tendencia | rango
+    adx_periodo: int = 0            # 0 = desligado
+    adx_limiar: int = 0             # 0 tambem desliga
+    adx_filtro_di: int = 0          # tendencia: DI+ > DI- na compra
+    adx_subindo: int = 0            # tendencia: adx[i] > adx[i-1]
 
     # protecoes, em % do alvo (0 = desligado) - como no robo MQL5
     breakeven_pct: float = 0.0
@@ -211,6 +221,83 @@ def atr(bars: dict, periodo: int) -> np.ndarray:
     return out
 
 
+def adx(bars: dict, periodo: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """ADX de Wilder com DI+ e DI-, barra a barra: (adx, di_pos, di_neg).
+
+    DI comeca na barra periodo-1 e o ADX em 2*periodo-2 (media das
+    primeiras period DX); antes disso e NaN, que a mascara de entrada le
+    como "fora da regua". So olha barras ja fechadas do proprio timeframe
+    da estrategia - o mesmo dado que a estrategia viu, sem look-ahead.
+    """
+    n = int(periodo)
+    m = len(bars["close"])
+    if n < 1 or m < n:
+        vazio = np.full(m, np.nan)
+        return vazio, vazio.copy(), vazio.copy()
+    return _adx_wilder(
+        np.ascontiguousarray(bars["high"], dtype=np.float64),
+        np.ascontiguousarray(bars["low"], dtype=np.float64),
+        np.ascontiguousarray(bars["close"], dtype=np.float64),
+        n,
+    )
+
+
+@njit(cache=True)
+def _adx_wilder(h, l, c, n):
+    m = len(c)
+    tr = np.empty(m)
+    pdm = np.empty(m)
+    ndm = np.empty(m)
+    tr[0] = h[0] - l[0]
+    pdm[0] = 0.0
+    ndm[0] = 0.0
+    for i in range(1, m):
+        up = h[i] - h[i - 1]
+        dn = l[i - 1] - l[i]
+        pdm[i] = up if (up > dn and up > 0.0) else 0.0
+        ndm[i] = dn if (dn > up and dn > 0.0) else 0.0
+        pc = c[i - 1]
+        tr[i] = max(h[i] - l[i], abs(h[i] - pc), abs(l[i] - pc))
+
+    dip = np.full(m, np.nan)
+    dim = np.full(m, np.nan)
+    da = np.full(m, np.nan)
+    if m < n:
+        return da, dip, dim
+
+    str_ = 0.0
+    sp = 0.0
+    sn = 0.0
+    for i in range(n):
+        str_ += tr[i]
+        sp += pdm[i]
+        sn += ndm[i]
+
+    # suavizacao de Wilder: a media anterior menos 1/n dela, mais o valor
+    # novo - igual a formula classica do ADX
+    dx = np.zeros(m)
+    for i in range(n - 1, m):
+        if i > n - 1:
+            str_ = str_ - str_ / n + tr[i]
+            sp = sp - sp / n + pdm[i]
+            sn = sn - sn / n + ndm[i]
+        p = 100.0 * sp / str_ if str_ > 0.0 else 0.0
+        q = 100.0 * sn / str_ if str_ > 0.0 else 0.0
+        dip[i] = p
+        dim[i] = q
+        den = p + q
+        dx[i] = 100.0 * abs(p - q) / den if den > 0.0 else 0.0
+
+    if m >= 2 * n - 1:
+        soma = 0.0
+        for i in range(n - 1, 2 * n - 1):
+            soma += dx[i]
+        da[2 * n - 2] = soma / n
+        for i in range(2 * n - 1, m):
+            da[i] = (da[i - 1] * (n - 1) + dx[i]) / n
+    return da, dip, dim
+
+
 def _nivel(bars_tf, fechada, tipo, pontos, periodo, mult, n_m1) -> np.ndarray:
     """Stop ou alvo em pontos, por barra M1."""
     if tipo == "pontos":
@@ -330,10 +417,15 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
     sl = _nivel(bars_tf, fechada, profile.stop_tipo, profile.stop_pontos,
                 profile.stop_atr_periodo, profile.stop_atr_mult, n)
     sl = _override(sl, signals.sl_points, n)
+    tick = int(instrument.get("tick_size", 1)) or 1
     if profile.alvo_tipo == "multiplicador":
         # o alvo e o stop VIGENTE x razao, por barra; stop 0 nao ha o que
-        # multiplicar, e o kernel ja trata alvo 0 como 'sem alvo'
-        tp = (sl * float(profile.alvo_razao)).astype(np.int64)
+        # multiplicar, e o kernel ja trata alvo 0 como 'sem alvo'.
+        # Arredonda ao tick mais proximo: 200 x 2,3 da 459,999... em ponto
+        # flutuante, e cortar as casas punha o alvo num preco que o WIN
+        # nao negocia (1 ponto a menos em cada ganho)
+        tp = (np.rint(sl * float(profile.alvo_razao) / tick)
+              * tick).astype(np.int64)
     else:
         tp = _nivel(bars_tf, fechada, profile.alvo_tipo, profile.alvo_pontos,
                     profile.alvo_atr_periodo, profile.alvo_atr_mult, n)
@@ -350,14 +442,54 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
     stop_dia = -int(round(profile.limite_perda_contrato / ponto)) if profile.limite_perda_contrato else 0
     meta_dia = int(round(profile.limite_ganho_contrato / ponto)) if profile.limite_ganho_contrato else 0
 
+    # regua de mercado (ADX): so corta ENTRADA, nunca saida nem stop.
+    # 0 em periodo ou limiar = filtro morto, identico a nao ter filtro.
+    # O ADX e calculado nas barras do timeframe que gerou o sinal (ou
+    # proprio M1); fechada leva do minuto ao indice daquela barra, e NaN
+    # do aquecimento cai como False. Os sinais do chamador nao sao
+    # tocados: so uma copia local vai para o kernel.
+    el, es = signals.entry_long, signals.entry_short
+    # int() antes do teste: 0.5 passaria em `> 0` mas viraria periodo 0
+    # dentro de adx(), e ai o filtro morto bloquearia tudo em silencio
+    if (profile.filtro_adx in ("tendencia", "rango")
+            and int(profile.adx_periodo or 0) > 0
+            and int(profile.adx_limiar or 0) > 0):
+        va, dip, dim = adx(bars_tf, int(profile.adx_periodo))
+        if profile.filtro_adx == "rango":
+            # DI e "subindo" pedem direcao/aceleracao - quem procura rango
+            # nao quer isso, entao valem so no modo tendencia
+            base_tf = va < float(profile.adx_limiar)
+            l_tf = s_tf = base_tf
+        else:
+            base_tf = va >= float(profile.adx_limiar)
+            if profile.adx_subindo:
+                anterior = np.empty_like(va)
+                anterior[0] = np.nan
+                anterior[1:] = va[:-1]
+                base_tf = base_tf & (va > anterior)
+            # o DI e POR LADO: compra quer DI+ acima de DI-, venda o contrario
+            if profile.adx_filtro_di:
+                l_tf = base_tf & (dip > dim)
+                s_tf = base_tf & (dim > dip)
+            else:
+                l_tf = s_tf = base_tf
+
+        def na_barra(tf):
+            ok = np.zeros(n, dtype=bool)
+            tem = fechada >= 0
+            ok[tem] = tf[fechada[tem]]
+            return ok
+
+        el = el & na_barra(l_tf)
+        es = es & na_barra(s_tf)
+
     out = K.allocate_outputs(n)
-    tick = int(instrument.get("tick_size", 1))
 
     n_trades, ambiguous, bloqueios = K.run(
         bars["open"], bars["high"], bars["low"], bars["close"],
         sess.in_entry_window, sess.arm_window, sess.is_close_time,
         sess.day_id,
-        signals.entry_long, signals.entry_short,
+        el, es,
         signals.exit_long, signals.exit_short,
         sl, tp, be, step_t, step_d, trail,
         profile.direcao in ("ambas", "compra"),

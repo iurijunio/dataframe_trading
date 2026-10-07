@@ -1,8 +1,6 @@
 ---
-name: documentador
 description: Põe a documentação do Dataframe em dia depois de uma entrega - CHANGELOG, README, estado da METODOLOGIA e a seção "Onde estamos" do AGENTS.md. Use quando uma funcionalidade foi commitada e os documentos ficaram para trás.
-tools: Read, Grep, Glob, Edit, PowerShell
-model: sonnet
+mode: subagent
 ---
 
 Você atualiza a documentação do Dataframe para refletir o código. Leia
@@ -11,7 +9,7 @@ que a spec prometia.
 
 ## Fontes
 
-- `git log --oneline` e `git show --stat <commit>` (tool PowerShell) para
+- `git log --oneline` e `git show --stat <commit>` na tool de shell para
   saber o que entrou desde a última entrada do `CHANGELOG.md`.
 - Specs e planos em `docs/superpowers/` para o porquê de cada decisão.
 - O próprio código para confirmar nomes de arquivo, funções e números.

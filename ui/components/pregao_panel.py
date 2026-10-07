@@ -410,22 +410,13 @@ def bloco():
         # série — o resto entra pelo `tick` e o zoom fica onde está
         dcc.Store(id="av-pg-ultimo"),
         html.Section([
-            html.Div([html.H3("Situação da captura",
-                              className="panel-title av-sec-titulo"),
-                      html.P("O serviço de captura grava cada minuto do "
-                             "WIN$N no banco durante o pregão. Esta tela se "
-                             "atualiza a cada 2 s.", className="av-sec-nota")],
+            html.Div([html.H3("Situação da captura", className="panel-title av-sec-titulo")],
                      className="av-sec-head"),
             html.Div(id="av-pg-faixa", className="av-corpo"),
         ], className="panel"),
         html.Section([
             html.Div([
-                html.Div([html.H3("WIN$N ao vivo",
-                                  className="panel-title av-sec-titulo"),
-                          html.P("O último candle é o que está se formando "
-                                 "agora. Role o mouse para dar zoom; arraste "
-                                 "para voltar no dia.",
-                                 className="av-sec-nota")]),
+                html.Div([html.H3("WIN$N ao vivo", className="panel-title av-sec-titulo")]),
                 html.Div([
                     dcc.RadioItems(
                         id="av-pg-tf", value="M1", className="pg-tf",

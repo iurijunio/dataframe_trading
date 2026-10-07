@@ -33,6 +33,9 @@ from . import metrics, walkforward as wf
 from . import plano as _plano
 from .engine.execution import ExecutionProfile, run_strategy
 
+# perfil gravado antes de um campo existir cai no padrão do motor
+_PADRAO_PERFIL = ExecutionProfile().to_config()
+
 _BARS: dict | None = None
 _INST: dict | None = None
 _ESTRATEGIA = None
@@ -79,8 +82,13 @@ def montar_espaco(schema: dict, ranges: dict, extras: dict | None = None) -> dic
             espaco[nome] = [atual]
             continue
 
-        n = int((ate - de) / passo) + 1
-        vals = [de + i * passo for i in range(n)]
+        # (2,3 - 2,0) / 0,1 da 2,9999... em ponto flutuante e o int() cortava
+        # o ultimo valor da faixa; arredondar antes, e cada valor as casas do
+        # passo, para nao gravar 2,3000000000000003 no plano
+        n = int(round((ate - de) / passo, 9)) + 1
+        casas = max(len(f"{passo:.10f}".rstrip("0").split(".")[1]),
+                    len(f"{de:.10f}".rstrip("0").split(".")[1]))
+        vals = [round(de + i * passo, casas) for i in range(n)]
         if meta.get("tipo", "int") == "int":
             vals = sorted({int(round(v)) for v in vals})
         espaco[nome] = vals
@@ -95,6 +103,61 @@ def _num(v):
 def combinacoes(espaco: dict[str, list]) -> list[dict]:
     nomes = list(espaco)
     return [dict(zip(nomes, vals)) for vals in itertools.product(*espaco.values())]
+
+
+# campo -> (campo do perfil, valores em que ele vale)
+_SO_VALE_COM = {
+    "alvo_pontos": ("alvo_tipo", ("pontos",)),
+    "alvo_atr_periodo": ("alvo_tipo", ("atr",)),
+    "alvo_atr_mult": ("alvo_tipo", ("atr",)),
+    "alvo_razao": ("alvo_tipo", ("multiplicador",)),
+    "stop_pontos": ("stop_tipo", ("pontos",)),
+    "stop_atr_periodo": ("stop_tipo", ("atr",)),
+    "stop_atr_mult": ("stop_tipo", ("atr",)),
+    "adx_filtro_di": ("filtro_adx", ("tendencia",)),
+    "adx_subindo": ("filtro_adx", ("tendencia",)),
+}
+_CAMPOS_ADX = ("adx_periodo", "adx_limiar", "adx_filtro_di", "adx_subindo")
+
+
+def espaco_util(espaco: dict, perfil: dict) -> dict:
+    """Tira do espaço o campo que o perfil não usa.
+
+    A tela só ESCONDE o bloco do tipo não escolhido (multiplicador de ATR
+    com alvo em pontos, DI no modo rango) — o "minerar" lá dentro continua
+    marcado. Varrê-lo dava N cópias idênticas de cada combinação: o total
+    inflava, o `score_vizinhanca` via vizinhos iguais (platô falso) e a
+    coluna "combinação" listava o campo como minerado. Fica o primeiro
+    valor, que não muda nada no resultado.
+    """
+    out = dict(espaco)
+    for campo, (chave, vale) in _SO_VALE_COM.items():
+        if campo in out and len(out[campo]) > 1 \
+                and perfil.get(chave, _PADRAO_PERFIL.get(chave)) not in vale:
+            out[campo] = out[campo][:1]
+    return out
+
+
+def combinacoes_uteis(espaco: dict) -> list[dict]:
+    """`combinacoes` sem as cópias do filtro de ADX desligado.
+
+    Período ou limiar 0 desliga o filtro inteiro, então todas as variações
+    dos outros campos do ADX dão o MESMO resultado — fica uma por
+    combinação do resto, a primeira da grade (os vizinhos que faltam o
+    `score_vizinhanca` já ignora).
+    """
+    vistos = set()
+    out = []
+    for c in combinacoes(espaco):
+        if any(k in c for k in _CAMPOS_ADX) and not (
+                int(c.get("adx_periodo") or 0) > 0
+                and int(c.get("adx_limiar") or 0) > 0):
+            chave = tuple((k, v) for k, v in c.items() if k not in _CAMPOS_ADX)
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+        out.append(c)
+    return out
 
 
 def campos_minerados(espaco: dict) -> set[str]:
@@ -352,9 +415,10 @@ class Mineracao:
             e.update(inicio=time.time(), mensagem="montando espaço de busca")
 
             espaco_p = montar_espaco(schema, ranges)
-            espaco_e = montar_espaco(campos_execucao_schema, ranges)
+            espaco_e = espaco_util(
+                montar_espaco(campos_execucao_schema, ranges), perfil_base)
             combos_p = combinacoes(espaco_p)
-            combos_e = combinacoes(espaco_e)
+            combos_e = combinacoes_uteis(espaco_e)
             tarefas_params = [(p, x) for p in combos_p for x in combos_e]
             e["total"] = len(tarefas_params)
 

@@ -55,7 +55,12 @@ CAMPOS_EXECUCAO_NOMES = ("alvo_pontos", "stop_pontos", "breakeven_pct",
                         "step_gatilho_pct", "step_distancia_pct",
                         "trailing_pontos", "alvo_razao",
                         "alvo_atr_periodo", "alvo_atr_mult",
-                        "stop_atr_periodo", "stop_atr_mult")
+                        "stop_atr_periodo", "stop_atr_mult",
+                        # filtro de mercado (ADX): o MODO (filtro_adx) fica
+                        # de fora de propósito - ele nao e numero e vai no
+                        # dicionario do perfil, junto de alvo_tipo
+                        "adx_periodo", "adx_limiar", "adx_filtro_di",
+                        "adx_subindo")
 
 
 def _sem_trades() -> dict:
@@ -201,13 +206,14 @@ class Varredura:
     # -------------------------------------------------------------- motor
     def _rodar(self, symbol, estrategia_nome, espaco, perfil_base, de, ate,
                campos_execucao_nomes, geracao, workers):
-        from .optimizer import combinacoes
+        from .optimizer import combinacoes_uteis, espaco_util
 
         e = self.estado
         viva = lambda: geracao == self._geracao
         inicio = time.time()
         try:
-            combos = combinacoes(espaco)
+            # mineração salva antes da poda ainda tem as cópias no espaço
+            combos = combinacoes_uteis(espaco_util(espaco, perfil_base))
             e["total"] = len(combos)
             tarefas = []
             for i, p in enumerate(combos):

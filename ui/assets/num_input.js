@@ -18,30 +18,29 @@
   }, { passive: false });
 })();
 
-/* Casas decimais de um campo de número são as do step dele. Sem isto o
- * spinner do Chrome somava 0,1 em ponto flutuante e o valor virava
- * 2,3000000000000003, e a digitação livre mandava 2,123456 para o plano e
- * para o motor (multiplicador do alvo, 06/10/2026). Arredonda no
- * change/blur/Enter na fase de captura, ANTES do Dash ler o valor — o
- * redondinho do passo é a régua do campo: corretagem de passo 0,01 mantém
- * 0,35, multiplicador de passo 0,1 vira 2,1, campo inteiro vira 4. Nunca
- * cola no múltiplo do step (capital com passo 1000 aceita 10500), só
- * limita casa decimal. */
+/* O spinner do Chrome soma o passo em ponto flutuante e o valor vira
+ * 2,3000000000000003 (multiplicador do alvo, 06/10/2026). Limpa só esse
+ * resto de conta (10 casas), nunca o que foi digitado: a versão anterior
+ * cortava nas casas do step e mudava o dado em silêncio — limite de perda
+ * R$ 37,50 com passo 50 virava 38, passo de faixa 0,25 virava 0,3 e 0,04
+ * virava 0 (o campo marcado deixava de ser minerado). Roda no
+ * change/blur/Enter na fase de captura, ANTES do Dash ler o valor, e troca
+ * o valor pelo setter nativo + evento `input`: atribuir `value` direto
+ * passa despercebido pelo React, e o Dash ficaria com o número antigo
+ * enquanto a tela mostra o novo. */
 (function () {
-  function casas(step) {
-    if (!step || step === "any") return null;
-    var p = String(step).split(".")[1];
-    return p ? p.length : 0;
-  }
+  var setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype, "value").set;
   function arredondar(alvo) {
     if (!alvo || alvo.tagName !== "INPUT" || alvo.type !== "number") return;
-    var n = casas(alvo.step);
-    if (n === null || alvo.value === "") return;
+    if (alvo.value === "") return;
     var v = parseFloat(alvo.value);
     if (isNaN(v)) return;
-    var f = Math.pow(10, n);
-    var limpo = String(Math.round(v * f) / f);
-    if (alvo.value !== limpo) alvo.value = limpo;
+    var limpo = String(Math.round(v * 1e10) / 1e10);
+    if (alvo.value !== limpo) {
+      setter.call(alvo, limpo);
+      alvo.dispatchEvent(new Event("input", { bubbles: true }));
+    }
   }
   document.addEventListener("change", function (e) { arredondar(e.target); }, true);
   document.addEventListener("blur", function (e) { arredondar(e.target); }, true);

@@ -370,8 +370,9 @@ def rodador_do_motor(bars: dict, estrategia_real, perfil, instrumento: dict,
     anteriores a ela, nunca de barras mais antigas — então essa margem
     reproduz EXATAMENTE o ATR que o histórico completo daria a partir de
     `oos_de`, não uma aproximação. Perfil só em pontos (`stop_tipo` e
-    `alvo_tipo` != "atr") não precisa de margem nenhuma: pontos fixos não
-    aquecem.
+    `alvo_tipo` != "atr") não pedia margem nenhuma até o filtro de ADX
+    entrar: pontos fixos não aquecem, mas o ADX do filtro sim — por isso
+    a margem também cobre `adx_periodo` quando ele está ligado.
 
     A margem é só para o INDICADOR aquecer: o sorteio em si (`EntradaAleatoria
     .janela_valida`) só abre entrada com EXECUÇÃO dentro de
@@ -427,8 +428,16 @@ def rodador_do_motor(bars: dict, estrategia_real, perfil, instrumento: dict,
     if perfil.alvo_tipo == "atr":
         periodo_atr = max(periodo_atr, int(perfil.alvo_atr_periodo))
     minutos_tf = TIMEFRAMES.get(perfil.timeframe, 1)
-    margem_m1 = (max(periodo_atr * minutos_tf * 3, PISO_MARGEM_ATR_M1)
-                if periodo_atr > 0 else 0)
+    # o ADX do filtro de mercado precisa da mesma folga: 2*periodo-2
+    # barras do timeframe antes da primeira barra valida. Sem isso o
+    # comeco de cada fatia bloquearia entrada que o historico completo
+    # (com o ADX ja aquecido) deixaria entrar - e os dois lados do
+    # teste aleatorio deixariam de disputar as mesmas faixas.
+    adx_min = ((2 * int(perfil.adx_periodo) - 2) * minutos_tf
+               if perfil.adx_periodo else 0)
+    margem_m1 = (max(periodo_atr * minutos_tf * 3, adx_min,
+                     PISO_MARGEM_ATR_M1)
+                 if (periodo_atr > 0 or adx_min > 0) else 0)
 
     def rodar_janela(janela, n_sinais: int, semente: int) -> tuple[int, float]:
         if step_esperado is not None and janela.step != step_esperado:

@@ -23,6 +23,9 @@ OPCOES = {
     "stop_tipo": [("pontos fixos", "pontos"), ("múltiplo de ATR", "atr")],
     "modo_posicao": [("contratos fixos", "contratos_fixos"),
                      ("risco fixo", "risco_fixo")],
+    # o rotulo ja diz a regua inteira: o value e so a chave do motor
+    "filtro_adx": [("tendência · ADX ≥ limiar", "tendencia"),
+                   ("rango · ADX < limiar", "rango")],
     # (rótulo, value): a tela mostra "13h"; o value é "HH:00" para o motor
     # parsear com _minutes
     "hora": [("—", "")] + [(f"{h:02d}h", f"{h:02d}:00") for h in range(24)],
@@ -35,14 +38,22 @@ def opcoes(campo: str) -> list[dict]:
 
 
 # A ordem dos grupos é a ordem de leitura da ficha.
-GRUPOS = ["Janela", "Gestão", "Proteções", "Limites diários", "Custos",
-          "Posição", "Filtro de mineração"]
+GRUPOS = ["Filtro de mercado", "Janela", "Gestão", "Proteções",
+          "Limites diários", "Custos", "Posição", "Filtro de mineração"]
 
 # campo -> (grupo, rótulo, formato[, (campo, valor) em que ele vale])
 #
 # formatos: texto · int · num · opcao · dias · brl · desliga (0 = desligado)
-#           · brl_desliga · pct_alvo · ticks
+#           · brl_desliga · pct_alvo · ticks · sim_nao (0/1 = não/sim)
 CAMPOS: dict[str, tuple] = {
+    "filtro_adx": ("Filtro de mercado", "ADX · régua", "opcao"),
+    "adx_periodo": ("Filtro de mercado", "ADX · período", "desliga"),
+    "adx_limiar": ("Filtro de mercado", "ADX · limiar", "desliga"),
+    "adx_filtro_di": ("Filtro de mercado", "DI confirma o lado", "sim_nao",
+                      ("filtro_adx", "tendencia")),
+    "adx_subindo": ("Filtro de mercado", "ADX subindo", "sim_nao",
+                    ("filtro_adx", "tendencia")),
+
     "timeframe": ("Janela", "tempo gráfico", "texto"),
     "entrada_inicio": ("Janela", "entradas de", "texto"),
     "entrada_fim": ("Janela", "entradas até", "texto"),

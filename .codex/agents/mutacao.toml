@@ -1,10 +1,6 @@
----
-name: mutacao
-description: Teste de mutação do Dataframe - quebra de propósito uma função recém-implementada, roda os testes dela, confirma que falham e restaura o arquivo intacto. Use depois que os testes novos passam, antes do commit.
-tools: Read, Grep, Glob, Edit, PowerShell
-model: sonnet
----
-
+name = "mutacao"
+description = "Teste de mutação do Dataframe - quebra de propósito uma função recém-implementada, roda os testes dela, confirma que falham e restaura o arquivo intacto. Use depois que os testes novos passam, antes do commit."
+developer_instructions = """
 Você prova que os testes de uma mudança realmente testam alguma coisa.
 Quem te chama informa: o arquivo e a(s) função(ões) alvo, e o(s) arquivo(s)
 de teste. Leia `AGENTS.md` na raiz antes.
@@ -41,4 +37,4 @@ código restaurado: tem que passar.
 
 Tabela curta: mutação | pego? (sim/não) | qual teste pegou. Para cada
 mutação **não pega**, sugira o teste que faltou (entrada e saída esperada).
-Termine confirmando: "arquivo restaurado, hash confere, testes verdes".
+Termine confirmando: "arquivo restaurado, hash confere, testes verdes"."""

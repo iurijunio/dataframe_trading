@@ -117,9 +117,11 @@ def pregoes_de_aquecimento(estrategia_mod, params: dict,
 
     Medido no banco real: 10 pregões não bastam (`reversao_rsi` com
     tendência 600 em M15 divergiu em 32 de 59 pregões). A conta é a janela
-    mais longa em minutos — maior período da estratégia mais o ATR do stop
-    ou alvo — dividida pelo pregão, com 2 de folga para o pregão curto e
-    para a barra a mais que todo "primeiro rompimento" olha.
+    mais longa em minutos — maior período da estratégia, o ATR do stop ou
+    alvo, e o aquecimento do ADX do filtro (2×período−2 barras do
+    timeframe, que sem isso deixaria o papel sem entrada nenhuma no
+    começo do dia) — dividida pelo pregão, com 2 de folga para o pregão
+    curto e para a barra a mais que todo "primeiro rompimento" olha.
 
     Estratégia com indicador recursivo (média exponencial) nunca esquece o
     passado: ela declara `aquecimento_barras(params)`, que tem prioridade.
@@ -136,7 +138,9 @@ def pregoes_de_aquecimento(estrategia_mod, params: dict,
         maior = max(valores, default=0)
     atr = max(perfil.stop_atr_periodo if perfil.stop_tipo == "atr" else 0,
               perfil.alvo_atr_periodo if perfil.alvo_tipo == "atr" else 0)
-    return math.ceil((maior * min_tf + atr * min_tf) / MINUTOS_PREGAO) + 2
+    adx = (2 * int(perfil.adx_periodo) - 2) if perfil.adx_periodo else 0
+    return math.ceil((maior * min_tf + atr * min_tf + adx * min_tf)
+                     / MINUTOS_PREGAO) + 2
 
 
 # ------------------------------------------------------------------ barras

@@ -61,6 +61,8 @@ def formatar(campo: str, formato: str, v) -> str:
         return f"{valor(v)}% do alvo"
     if formato == "ticks":
         return f"{valor(v)} tick" + ("" if v == 1 else "s")
+    if formato == "sim_nao":
+        return "sim" if v else "não"
     if formato == "texto":
         return str(v)
     if formato == "hora":

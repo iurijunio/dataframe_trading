@@ -21,15 +21,16 @@ from ui.callbacks import _referencias_operadas  # noqa: E402
 
 
 def test_usa_o_stop_e_o_alvo_operados_quando_diferem_do_perfil():
-    # multiplicador: razao 1.0 -> alvo operado 200; o perfil ainda guarda
-    # 600 do campo de pontos fixos, que nunca entrou em jogo
+    # multiplicador: razao 2,3 -> alvo operado 460; o perfil ainda guarda
+    # 600 do campo de pontos fixos, que nunca entrou em jogo. Stop e alvo
+    # diferentes entre si: trocar um pelo outro tem de falhar
     res = SimpleNamespace(
         sl_at_entry=np.array([200, 200, 200], dtype=np.int64),
-        tp_at_entry=np.array([200, 200, 200], dtype=np.int64),
+        tp_at_entry=np.array([460, 460, 460], dtype=np.int64),
     )
     perfil = SimpleNamespace(stop_pontos=300, alvo_pontos=600)
 
-    assert _referencias_operadas(res, perfil) == (200, 200)
+    assert _referencias_operadas(res, perfil) == (200, 460)
 
 
 def test_sem_trades_cai_no_perfil_para_nao_dividir_por_zero():
