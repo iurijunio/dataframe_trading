@@ -1,0 +1,198 @@
+"""MT5 falso de ORDENS: posições, ordens pendentes, negócios do dia e um
+roteiro de retornos para o order_send. Nada aqui fala com terminal.
+
+As constantes são as do pacote MetaTrader5 5.0.6180 (conferidas): o código
+de produção as lê do objeto `mt5`, então o falso precisa dos mesmos valores.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from types import SimpleNamespace as NS
+
+
+def _epoch(d: datetime) -> int:
+    return int(d.replace(tzinfo=timezone.utc).timestamp())
+
+
+class MT5Ordens:
+    TRADE_ACTION_DEAL, TRADE_ACTION_SLTP, TRADE_ACTION_REMOVE = 1, 6, 8
+    ORDER_TYPE_BUY, ORDER_TYPE_SELL = 0, 1
+    ORDER_FILLING_FOK, ORDER_FILLING_IOC, ORDER_FILLING_RETURN = 0, 1, 2
+    ORDER_TIME_GTC = 0
+    POSITION_TYPE_BUY, POSITION_TYPE_SELL = 0, 1
+    DEAL_TYPE_BUY, DEAL_TYPE_SELL = 0, 1
+    DEAL_ENTRY_IN, DEAL_ENTRY_OUT = 0, 1
+    DEAL_REASON_CLIENT, DEAL_REASON_EXPERT, DEAL_REASON_SL, DEAL_REASON_TP = 0, 3, 4, 5
+    ACCOUNT_MARGIN_MODE_RETAIL_HEDGING = 2
+    SYMBOL_TRADE_MODE_FULL = 4
+    TIMEFRAME_M1 = 1
+
+    def __init__(self, *, login=1193398927, servidor="ClearInvestimentos-DEMO",
+                 preco=189_000, agora=datetime(2026, 10, 9, 10, 1, 1)):
+        self.login, self.servidor = login, servidor
+        self.preco = preco
+        self.agora = agora                 # hora dos negócios criados
+        self.posicoes: dict[int, NS] = {}
+        self.ordens: dict[int, NS] = {}
+        self.historico: list[NS] = []      # toda ordem enviada (DEAL e PLACED)
+        self.negocios: list[NS] = []
+        self.enviados: list[dict] = []
+        self.checados: list[dict] = []
+        self.roteiro: list = []
+        self.margem_livre = 10_000.0
+        self.algo = True
+        self.conectado = True
+        self.hedging = True
+        self.vazio_uma_vez = False         # lista vazia logo após reconectar
+        self.erro_leitura = False          # positions_get/orders_get/... -> None
+        self.filling = 3                   # máscara FOK|IOC
+        self.parcial_volume = 1.0
+        self.precos = {"WIN$N": preco, "WINV26": preco, "WINZ26": preco + 1500}
+        self.vencimentos = {"WINV26": datetime(2026, 10, 14, 18, 30),
+                            "WINZ26": datetime(2026, 12, 16, 18, 30)}
+        self._ticket = 1000
+
+    # ---------------------------------------------------------- leitura
+    def last_error(self):
+        return (-10004, "IPC") if self.erro_leitura else (1, "Success")
+
+    def positions_get(self, **k):
+        if self.erro_leitura:
+            return None
+        if self.vazio_uma_vez:
+            self.vazio_uma_vez = False
+            return ()
+        return tuple(self.posicoes.values())
+
+    def orders_get(self, **k):
+        return None if self.erro_leitura else tuple(self.ordens.values())
+
+    def history_deals_get(self, de, ate, **k):
+        return None if self.erro_leitura else tuple(self.negocios)
+
+    def history_orders_get(self, de, ate, **k):
+        return None if self.erro_leitura else tuple(self.historico)
+
+    def account_info(self):
+        return NS(login=self.login, server=self.servidor,
+                  margin_mode=2 if self.hedging else 0,
+                  margin_free=self.margem_livre)
+
+    def terminal_info(self):
+        return NS(connected=self.conectado, trade_allowed=self.algo)
+
+    def symbol_info(self, s):
+        venc = self.vencimentos.get(s)
+        return NS(name=s, filling_mode=self.filling, trade_stops_level=0,
+                  trade_tick_size=5.0, trade_mode=4, basis="",
+                  expiration_time=_epoch(venc) if venc else 0)
+
+    def symbol_info_tick(self, s):
+        p = self.precos.get(s, self.preco)
+        return NS(time=_epoch(self.agora), last=float(p), bid=float(p),
+                  ask=float(p + 5))
+
+    def symbols_get(self, group=None):
+        return tuple(self.symbol_info(s) for s in self.precos)
+
+    def order_check(self, req):
+        self.checados.append(dict(req))
+        sem = self.margem_livre <= 0
+        return NS(retcode=10019 if sem else 0, comment="No money" if sem else "Done",
+                  margin_free=self.margem_livre)
+
+    # ----------------------------------------------------------- envio
+    def _novo(self):
+        self._ticket += 1
+        return self._ticket
+
+    def _registrar(self, ticket, req):
+        self.historico.append(NS(ticket=ticket, magic=req.get("magic", 0),
+                                 time_setup=_epoch(self.agora),
+                                 symbol=req["symbol"]))
+
+    def order_send(self, req):
+        self.enviados.append(dict(req))
+        r = self.roteiro.pop(0) if self.roteiro else 10009
+        if r is None:
+            return None
+        if r == "executou_sem_resposta":
+            self._executar(req)
+            return None
+        if r == 10008:                      # PLACED: fica como ordem pendente
+            t = self._novo()
+            self.ordens[t] = NS(ticket=t, magic=req.get("magic", 0),
+                                symbol=req["symbol"], volume_current=req["volume"],
+                                time_setup=_epoch(self.agora), req=dict(req))
+            self._registrar(t, req)
+            return NS(retcode=10008, order=t, deal=0, volume=0.0, price=0.0, comment="")
+        if r in (10009, 10010):
+            return self._executar(req, parcial=r == 10010)
+        return NS(retcode=r, order=0, deal=0, volume=0.0, price=0.0, comment="")
+
+    def _executar(self, req, parcial=False, registrar=True):
+        acao = req["action"]
+        if acao == self.TRADE_ACTION_SLTP:
+            p = self.posicoes.get(req["position"])
+            if p is None:
+                return NS(retcode=10036, order=0, deal=0, volume=0.0, price=0.0, comment="")
+            p.sl, p.tp = req["sl"], req["tp"]
+            return NS(retcode=10009, order=0, deal=0, volume=0.0, price=0.0, comment="")
+        if acao == self.TRADE_ACTION_REMOVE:
+            self.ordens.pop(req["order"], None)
+            return NS(retcode=10009, order=req["order"], deal=0, volume=0.0, price=0.0, comment="")
+        if "position" in req:               # saída
+            p = self.posicoes.pop(req["position"], None)
+            if p is None:
+                return NS(retcode=10036, order=0, deal=0, volume=0.0, price=0.0, comment="")
+            if registrar:
+                self._registrar(self._novo(), req)
+            self.negocios.append(NS(ticket=self._novo(), order=0,
+                                    time=_epoch(self.agora), type=req["type"], entry=1,
+                                    magic=p.magic, position_id=p.ticket, reason=3,
+                                    volume=p.volume, price=float(self.preco),
+                                    commission=0.0, swap=0.0, fee=0.0,
+                                    profit=p.profit, symbol=p.symbol))
+            return NS(retcode=10009, order=self._ticket, deal=self._ticket,
+                      volume=p.volume, price=float(self.preco), comment="")
+        vol = self.parcial_volume if parcial else req["volume"]
+        t = self._novo()
+        if registrar:
+            self._registrar(t, req)
+        # como a ordem real: sem sl/tp no pedido, a posição nasce sem proteção
+        self.posicoes[t] = NS(ticket=t, identifier=t, magic=req["magic"],
+                              symbol=req["symbol"], type=req["type"], volume=vol,
+                              price_open=float(self.preco),
+                              sl=req.get("sl", 0.0), tp=req.get("tp", 0.0),
+                              profit=0.0, time=_epoch(self.agora))
+        self.negocios.append(NS(ticket=self._novo(), order=t, time=_epoch(self.agora),
+                                type=req["type"], entry=0, magic=req["magic"],
+                                position_id=t, reason=3, volume=vol,
+                                price=float(self.preco), commission=0.0, swap=0.0,
+                                fee=0.0, profit=0.0, symbol=req["symbol"]))
+        if parcial:                          # o resto fica vivo (RETURN)
+            o = self._novo()
+            self.ordens[o] = NS(ticket=o, magic=req["magic"], symbol=req["symbol"],
+                                volume_current=req["volume"] - vol,
+                                time_setup=_epoch(self.agora), req=dict(req))
+        return NS(retcode=10010 if parcial else 10009, order=t, deal=self._ticket,
+                  volume=vol, price=float(self.preco), comment="")
+
+    # ------------------------------------------------------- cenários
+    def abrir_manual(self, lado, volume=1.0, magic=0, simbolo="WINV26"):
+        return self._executar({"action": 1, "symbol": simbolo, "volume": volume,
+                               "type": 0 if lado > 0 else 1, "sl": 0.0, "tp": 0.0,
+                               "magic": magic}).order
+
+    def stopar(self, ticket, motivo=4):
+        """O servidor executou o SL (4) ou o TP (5)."""
+        p = self.posicoes.pop(ticket)
+        self.negocios.append(NS(ticket=self._novo(), order=0, time=_epoch(self.agora),
+                                type=1 - p.type, entry=1, magic=p.magic,
+                                position_id=p.ticket, reason=motivo, volume=p.volume,
+                                price=float(self.preco), commission=0.0, swap=0.0,
+                                fee=0.0, profit=p.profit, symbol=p.symbol))
+
+    def executar_pendente(self, ordem):
+        o = self.ordens.pop(ordem)
+        return self._executar(o.req, registrar=False)   # a ordem já está no histórico
