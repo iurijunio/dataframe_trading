@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cli  # noqa: E402
 import corrigir_base  # noqa: E402
 from core import db_manager as db  # noqa: E402
+from core import diario_ordens  # noqa: E402
 from ui import data as ui_data  # noqa: E402
 
 
@@ -30,6 +31,9 @@ def _banco_isolado(tmp_path, monkeypatch):
     estado = tmp_path / "ao_vivo" / "estado.json"
     for modulo in (ui_data, cli, corrigir_base):
         monkeypatch.setattr(modulo, "ESTADO_CAPTURA", estado)
+    # diario das ordens: a captura real le essa pasta ao subir, e um teste
+    # que escrevesse nela mudaria o que ela acha que ja enviou
+    monkeypatch.setattr(diario_ordens, "PASTA", tmp_path / "ao_vivo" / "ordens")
     # memoria da ultima leitura: sem zerar, um teste herdaria o estado do outro
     monkeypatch.setattr(ui_data, "_estado_ultimo", None)
     monkeypatch.setattr(ui_data, "_conferencia_vista", None)
