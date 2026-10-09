@@ -70,3 +70,54 @@ def test_provisoria_repetida_velha_ou_depois_de_buraco_nao_entra():
     c = papel.com_barra_provisoria(b, SINAL + timedelta(minutes=1), 189_100)
     assert len(c["ts"]) == len(b["ts"]) + 1
     assert c["open"][-1] == c["high"][-1] == c["low"][-1] == c["close"][-1] == 189_100
+
+
+# ---- saídas forçadas na barra provisória: o "fechamento" dela é falso
+def _plano(**perfil):
+    return {**PLANO, "profile": {**PLANO["profile"], **perfil}}
+
+
+def _com_prov(ate_real: datetime, abertura: int):
+    return papel.com_barra_provisoria(_barras(ate_real),
+                                      ate_real + timedelta(minutes=1), abertura)
+
+
+def test_fechamento_no_minuto_provisorio_continua_aberta():
+    plano = _plano(fechamento="10:03")
+    b = _com_prov(datetime(2026, 10, 9, 10, 2), 189_300)
+    op = papel.calcular(b, DIA, plano, _mod(), INST, provisoria=True)[0]
+    assert op["aberta"] and op["exit_ts"] is None
+    assert op["exit_px"] is None and op["reason"] is None
+
+
+def test_fechamento_com_candle_real_fecha_igual_a_versao_sem_provisoria():
+    plano = _plano(fechamento="10:03")
+    real = _barras(datetime(2026, 10, 9, 10, 3))
+    sem = papel.calcular(real, DIA, plano, _mod(), INST)[0]
+    com = papel.com_barra_provisoria(real, datetime(2026, 10, 9, 10, 4), 189_300)
+    com = papel.calcular(com, DIA, plano, _mod(), INST, provisoria=True)[0]
+    assert not com["aberta"] and not sem["aberta"]
+    assert (com["exit_ts"], com["exit_px"], com["reason"]) == \
+           (sem["exit_ts"], sem["exit_px"], sem["reason"])
+    assert com["exit_px"] == 188_995           # o fechamento real, não 189_300
+
+
+def test_tempo_maximo_na_barra_provisoria_continua_aberta():
+    plano = _plano(max_barras=2)
+    b = _com_prov(datetime(2026, 10, 9, 10, 2), 189_300)
+    op = papel.calcular(b, DIA, plano, _mod(), INST, provisoria=True)[0]
+    assert op["aberta"] and op["exit_px"] is None
+
+
+def test_saida_por_sinal_na_provisoria_fecha_na_abertura():
+    def signals(bars, params):
+        n = len(bars["close"])
+        z = np.zeros(n, dtype=bool)
+        el = bars["ts"] == np.datetime64(SINAL, "ns")
+        xl = bars["ts"] == np.datetime64(SINAL + timedelta(minutes=1), "ns")
+        return Signals(el, z.copy(), xl, z.copy())
+    mod = SimpleNamespace(signals=signals)
+    b = _com_prov(datetime(2026, 10, 9, 10, 1), 189_100)
+    op = papel.calcular(b, DIA, PLANO, mod, INST, provisoria=True)[0]
+    assert not op["aberta"] and op["exit_px"] is not None
+    assert op["exit_ts"] == SINAL + timedelta(minutes=2)

@@ -77,6 +77,9 @@ CONGELADOS = ("conferido", "interrompido")
 # incompleto parece um pregão que fechou cedo (motivo 3) ou o fim dos dados
 # (motivo 5). Stop, alvo, sinal ou tempo na última barra aconteceram de fato.
 _SAIDAS_DE_CORTE = (K.EXIT_CLOSE_TIME, K.EXIT_DATA_END)
+# saídas que o motor precifica no fechamento da barra: na barra provisória
+# esse fechamento é falso
+_SAIDAS_FORCADAS = (K.EXIT_CLOSE_TIME, K.EXIT_DATA_END, K.EXIT_MAXBARS)
 
 # "nada está aberto": passado como horário de fechamento na conferência, o
 # dia acabou e a última barra é o fechamento real, mesmo num pregão curto
@@ -200,6 +203,10 @@ def com_barra_provisoria(barras: dict | None, ts: datetime,
     atrasado. Com a barra provisória a entrada aparece no primeiro segundo
     do minuto, ao preço de abertura — o mesmo do backtest. Nunca é gravada
     em bars_m1: o candle real a substitui no minuto seguinte.
+
+    Em M1 com stop/alvo por ATR, o stop_px/alvo_px da operação aberta usa a
+    faixa falsa da provisória até o candle real chegar (risco conhecido do
+    motor; esses planos ficam barrados na demo, Tarefa 12).
     """
     if barras is None:
         return None
@@ -223,7 +230,8 @@ def _dt(x) -> datetime:
 
 
 def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
-             fechamento_hhmm: str | None = None) -> list[dict]:
+             fechamento_hhmm: str | None = None,
+             provisoria: bool = False) -> list[dict]:
     """As operações com entrada no `dia`, pelo motor de sempre. Puro.
 
     `fechamento_hhmm`: o horário abaixo do qual uma saída forçada na última
@@ -235,6 +243,13 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
     resultado dela é a marcação a mercado que ele já fez (fechamento da
     última barra com a derrapagem do perfil) — provisório, mas o mesmo
     número que a operação teria se o pregão acabasse agora.
+
+    `provisoria=True`: a última barra é a provisória (`com_barra_provisoria`),
+    cujo "fechamento" é só a abertura do minuto. O corte olha a última barra
+    REAL, e uma saída forçada (fechamento, tempo máximo, fim dos dados) na
+    provisória fica aberta — o preço dela seria falso e um minuto adiantado.
+    Saída por sinal, stop ou alvo na provisória (a preço de abertura/gap) é
+    a do backtest e não muda.
     """
     estrat, perfil = perfil_do_plano(plano)
     n = len(barras["ts"])
@@ -243,7 +258,11 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
     ultimo = int(barras["ts"][n - 1].astype("datetime64[m]").astype(np.int64)
                  % 1440)
     encerrado = fechamento_hhmm == FECHAMENTO_DIA_ENCERRADO
-    corte = ultimo < _minutes(fechamento_hhmm or perfil.fechamento)
+    ref = ultimo
+    if provisoria and n >= 2:
+        ref = int(barras["ts"][n - 2].astype("datetime64[m]").astype(np.int64)
+                  % 1440)
+    corte = ref < _minutes(fechamento_hhmm or perfil.fechamento)
     # a vela do timeframe da última barra ainda não fechou pelo relógio:
     # para o stop/alvo, só vale a vela anterior (ver `run_strategy`). Dia
     # encerrado não tem vela aberta: a última vela do pregão termina na
@@ -263,6 +282,9 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
     for i in no_dia:
         aberta = bool(corte and int(t["exit_i"][i]) == n - 1
                       and int(t["reason"][i]) in _SAIDAS_DE_CORTE)
+        if (provisoria and not encerrado and int(t["exit_i"][i]) == n - 1
+                and int(t["reason"][i]) in _SAIDAS_FORCADAS):
+            aberta = True
         stop, alvo = int(t["stop_fim"][i]), int(t["alvo_fim"][i])
         out.append({
             "entry_ts": _dt(t["entry_ts"][i]),
@@ -572,9 +594,9 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
         return []
     resultados, fila, planos = preparar_dia(con, dia, agora, cache_codigo,
                                             symbol=symbol)
-    gravados = _gravados(con, dia)
     if not fila:
         return resultados
+    gravados = _gravados(con, dia)
 
     # Barras uma vez por volta, com o maior aquecimento entre as ligações.
     # Plano com parâmetro quebrado falha aqui, mas só para as ligações dele
@@ -590,11 +612,15 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
         except Exception as erro:
             falhas[pid] = erro
     barras = inst = comum = None
+    usou_provisoria = False
     try:
         barras = barras_do_dia(con, symbol, dia, aquecimento)
         if (provisoria is not None and not dia_encerrado
                 and provisoria[0].date() == dia):
+            antes_n = len(barras["ts"]) if barras is not None else 0
             barras = com_barra_provisoria(barras, *provisoria)
+            usou_provisoria = (barras is not None
+                               and len(barras["ts"]) > antes_n)
         inst = db.load_instrument_yaml(symbol)
     except Exception as erro:
         comum = erro
@@ -612,7 +638,7 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
                 # mesma variante em dois portfólios: o mesmo plano roda
                 # uma vez só e vale para as duas ligações
                 calculados[pid] = calcular(barras, dia, p, planos[pid][1],
-                                           inst, fech)
+                                           inst, fech, usou_provisoria)
             periodos = periodos_ligados(con, l["ligacao_id"],
                                         l["portfolio_id"], dia)
             r["operacoes"] = [{**o, "conta": _conta(o["entry_ts"], periodos)}
