@@ -435,6 +435,54 @@ CREATE TABLE IF NOT EXISTS papel_pregoes (
 -- NULL de novo assim que um cálculo dá certo.
 ALTER TABLE papel_pregoes ADD COLUMN IF NOT EXISTS falha VARCHAR;
 
+-- parte 4 (ordens): spec 2026-10-08-ao-vivo-ordens-design.md §7.1.
+-- Envio de ordens por conta, começa DESLIGADO: desligado, a automação
+-- calcula tudo e registra "seria enviada" sem mandar nada.
+ALTER TABLE contas ADD COLUMN IF NOT EXISTS envio_ligado BOOLEAN DEFAULT false;
+-- contratos na conta, por variante; NULL = os do plano (o papel usa sempre
+-- os do plano)
+ALTER TABLE portfolio_membros ADD COLUMN IF NOT EXISTS contratos_demo BIGINT;
+ALTER TABLE portfolio_membros ADD COLUMN IF NOT EXISTS contratos_real BIGINT;
+-- o "real mínimo" deixou de existir (decisão 8); idempotente
+UPDATE portfolio_membros SET fase = 'real' WHERE fase = 'real_minimo';
+
+-- espelho do diário de ordens (data/ao_vivo/ordens/*.jsonl). SÓ INSERÇÃO,
+-- como ao_vivo_eventos: o estado de cada ordem é derivado dos eventos. Não
+-- se recria de lugar nenhum fora do arquivo do dia — não apagar.
+CREATE TABLE IF NOT EXISTS ordens_eventos (
+    evento_id   VARCHAR PRIMARY KEY,
+    quando      TIMESTAMP NOT NULL,
+    tipo        VARCHAR NOT NULL,
+    conta_id    BIGINT,
+    ligacao_id  BIGINT,
+    entry_ts    TIMESTAMP,
+    lado        INTEGER,
+    contratos   DOUBLE,
+    simbolo     VARCHAR,
+    ticket      BIGINT,
+    retcode     INTEGER,
+    preco_papel BIGINT,
+    preco       BIGINT,
+    atraso_ms   INTEGER,
+    tentativa   INTEGER,
+    motivo      VARCHAR,
+    dados       JSON
+);
+
+-- conferência diária papel × backtest (spec §8): o papel conferido de um
+-- dia, comparado operação a operação com o backtest do plano nos mesmos
+-- candles já reconferidos
+CREATE TABLE IF NOT EXISTS papel_backtest (
+    ligacao_id   BIGINT NOT NULL,
+    dia          DATE NOT NULL,
+    conferido_em TIMESTAMP NOT NULL,
+    ok           BOOLEAN NOT NULL,
+    n_papel      INTEGER,
+    n_backtest   INTEGER,
+    diferencas   JSON,
+    PRIMARY KEY (ligacao_id, dia)
+);
+
 -- o plano sabe de que variante é SEM depender da mineração (retrato): a
 -- mineração pode ser apagada, o histórico da variante não
 ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS variante_id BIGINT;
