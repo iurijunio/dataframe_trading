@@ -60,10 +60,11 @@ def test_ordens_pendentes_e_historico_trazem_a_hora_e_o_magic():
     mt5.order_send(req)
     f = K.fotografar(mt5, DIA)
     assert f.ordens[0]["ligacao_id"] == 4 and f.ordens[0]["quando"] == mt5.agora
-    assert f.historico_ordens == [{"ticket": f.ordens[0]["ticket"],
-                                   "magic": K.magic(4), "ligacao_id": 4,
-                                   "quando": mt5.agora}]
-    assert f.posicoes == []
+    assert f.historico_ordens == [] and f.posicoes == []   # ativa: ainda não é histórico
+    t = f.ordens[0]["ticket"]
+    mt5.executar_pendente(t)
+    assert K.fotografar(mt5, DIA).historico_ordens == [
+        {"ticket": t, "magic": K.magic(4), "ligacao_id": 4, "quando": mt5.agora}]
 
 
 def test_entrada_sem_sl_tp_abre_posicao_sem_protecao():
@@ -75,3 +76,32 @@ def test_entrada_sem_sl_tp_abre_posicao_sem_protecao():
     p = K.fotografar(mt5, DIA).posicoes[0]
     assert p.sl == 0.0 and p.tp == 0.0
     assert len(K.fotografar(mt5, DIA).historico_ordens) == 1
+
+
+def _entrada(mt5, volume=1):
+    return K.pedido_entrada(mt5, simbolo="WINV26", lado=1, volume=volume,
+                            preco=189_000, magic_=K.magic(4), comentario="x",
+                            desvio=10, preenchimento=2)
+
+
+def test_ordem_ativa_so_vai_ao_historico_ao_executar_ou_ser_removida():
+    mt5 = MT5Ordens()
+    mt5.roteiro = [10008, 10008]
+    a = mt5.order_send(_entrada(mt5)).order
+    b = mt5.order_send(_entrada(mt5)).order
+    f = K.fotografar(mt5, DIA)
+    assert {o["ticket"] for o in f.ordens} == {a, b} and f.historico_ordens == []
+    mt5.executar_pendente(a)
+    mt5.order_send(K.pedido_cancelar(mt5, ordem=b))
+    f = K.fotografar(mt5, DIA)
+    assert f.ordens == [] and {o["ticket"] for o in f.historico_ordens} == {a, b}
+
+
+def test_resto_de_parcial_executa_so_o_que_faltava():
+    mt5 = MT5Ordens()
+    mt5.roteiro = [10010]
+    r = mt5.order_send(_entrada(mt5, volume=2))
+    assert r.deal != r.order
+    resto = next(iter(mt5.ordens))
+    mt5.executar_pendente(resto)
+    assert sum(p.volume for p in mt5.posicoes.values()) == 2.0

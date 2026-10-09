@@ -124,7 +124,7 @@ class MT5Ordens:
             self.ordens[t] = NS(ticket=t, magic=req.get("magic", 0),
                                 symbol=req["symbol"], volume_current=req["volume"],
                                 time_setup=_epoch(self.agora), req=dict(req))
-            self._registrar(t, req)
+            # ativa: só está em orders_get; vai ao histórico ao sair de self.ordens
             return NS(retcode=10008, order=t, deal=0, volume=0.0, price=0.0, comment="")
         if r in (10009, 10010):
             return self._executar(req, parcial=r == 10010)
@@ -139,7 +139,9 @@ class MT5Ordens:
             p.sl, p.tp = req["sl"], req["tp"]
             return NS(retcode=10009, order=0, deal=0, volume=0.0, price=0.0, comment="")
         if acao == self.TRADE_ACTION_REMOVE:
-            self.ordens.pop(req["order"], None)
+            o = self.ordens.pop(req["order"], None)
+            if o is not None:
+                self._registrar(o.ticket, o.req)
             return NS(retcode=10009, order=req["order"], deal=0, volume=0.0, price=0.0, comment="")
         if "position" in req:               # saída
             p = self.posicoes.pop(req["position"], None)
@@ -147,13 +149,14 @@ class MT5Ordens:
                 return NS(retcode=10036, order=0, deal=0, volume=0.0, price=0.0, comment="")
             if registrar:
                 self._registrar(self._novo(), req)
-            self.negocios.append(NS(ticket=self._novo(), order=0,
+            deal = self._novo()
+            self.negocios.append(NS(ticket=deal, order=0,
                                     time=_epoch(self.agora), type=req["type"], entry=1,
                                     magic=p.magic, position_id=p.ticket, reason=3,
                                     volume=p.volume, price=float(self.preco),
                                     commission=0.0, swap=0.0, fee=0.0,
                                     profit=p.profit, symbol=p.symbol))
-            return NS(retcode=10009, order=self._ticket, deal=self._ticket,
+            return NS(retcode=10009, order=deal, deal=deal,
                       volume=p.volume, price=float(self.preco), comment="")
         vol = self.parcial_volume if parcial else req["volume"]
         t = self._novo()
@@ -165,7 +168,8 @@ class MT5Ordens:
                               price_open=float(self.preco),
                               sl=req.get("sl", 0.0), tp=req.get("tp", 0.0),
                               profit=0.0, time=_epoch(self.agora))
-        self.negocios.append(NS(ticket=self._novo(), order=t, time=_epoch(self.agora),
+        deal = self._novo()
+        self.negocios.append(NS(ticket=deal, order=t, time=_epoch(self.agora),
                                 type=req["type"], entry=0, magic=req["magic"],
                                 position_id=t, reason=3, volume=vol,
                                 price=float(self.preco), commission=0.0, swap=0.0,
@@ -174,8 +178,9 @@ class MT5Ordens:
             o = self._novo()
             self.ordens[o] = NS(ticket=o, magic=req["magic"], symbol=req["symbol"],
                                 volume_current=req["volume"] - vol,
-                                time_setup=_epoch(self.agora), req=dict(req))
-        return NS(retcode=10010 if parcial else 10009, order=t, deal=self._ticket,
+                                time_setup=_epoch(self.agora),
+                                req=dict(req, volume=req["volume"] - vol))
+        return NS(retcode=10010 if parcial else 10009, order=t, deal=deal,
                   volume=vol, price=float(self.preco), comment="")
 
     # ------------------------------------------------------- cenários
@@ -195,4 +200,5 @@ class MT5Ordens:
 
     def executar_pendente(self, ordem):
         o = self.ordens.pop(ordem)
+        self._registrar(o.ticket, o.req)     # saiu das ativas: vai ao histórico
         return self._executar(o.req, registrar=False)   # a ordem já está no histórico
