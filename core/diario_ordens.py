@@ -11,14 +11,19 @@ entrada.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from core import db_manager as db
 
+log = logging.getLogger(__name__)
+
 # constante de módulo: o tests/conftest.py a desvia para tmp_path, para um
-# teste nunca escrever onde a captura real do usuário lê
+# teste nunca escrever onde a captura real do usuário lê. Quem consome deve
+# ler `diario_ordens.PASTA` na hora de usar (nunca `from ... import PASTA`),
+# senão o desvio do conftest não chega nele.
 PASTA = db.DATA / "ao_vivo" / "ordens"
 
 TIPOS = frozenset({
@@ -51,6 +56,7 @@ class Diario:
         self.pasta, self.dia, self.origem = Path(pasta), dia, origem
         self.arquivo = self.pasta / f"{dia:%Y-%m-%d}.jsonl"
         self._quebrar_linha = False
+        self._seq = 0
         self.eventos: list[dict] = self._ler()
 
     def _ler(self) -> list[dict]:
@@ -60,18 +66,32 @@ class Diario:
         # queda no meio da escrita deixa a última linha sem "\n": a próxima
         # escrita começaria nela e as duas virariam lixo juntas
         self._quebrar_linha = bool(texto) and not texto.endswith("\n")
-        out = []
-        for linha in texto.splitlines():
-            try:
-                out.append(_de_json(json.loads(linha)))
-            except (json.JSONDecodeError, TypeError, ValueError):
+        out, brutas, maior = [], 0, 0
+        # só a quebra "\n" separa linhas: splitlines() também quebra em U+2028,
+        # \x0b etc., que json.dumps(ensure_ascii=False) deixa passar dentro
+        # de um texto
+        for linha in texto.split("\n"):
+            if not linha.strip():
                 continue
+            brutas += 1
+            try:
+                ev = _de_json(json.loads(linha))
+                if not isinstance(ev, dict) or "tipo" not in ev:
+                    continue
+                out.append(ev)
+                maior = max(maior, int(str(ev.get("evento_id", "")).rsplit("-", 1)[-1]))
+            except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+                continue
+        # linha pulada (queda, lixo) não pode devolver o número dela ao
+        # próximo evento: o id repetido travaria o espelho no banco para sempre
+        self._seq = max(maior, brutas)
         return out
 
     def registrar(self, tipo: str, *, quando: datetime, **campos) -> dict:
         if tipo not in TIPOS:
             raise ValueError(f"tipo de evento de ordem desconhecido: {tipo}")
-        ev = {"evento_id": f"{self.origem}-{self.dia:%Y%m%d}-{len(self.eventos) + 1:06d}",
+        self._seq += 1
+        ev = {"evento_id": f"{self.origem}-{self.dia:%Y%m%d}-{self._seq:06d}",
               "quando": quando, "tipo": tipo, **campos}
         self.pasta.mkdir(parents=True, exist_ok=True)
         with open(self.arquivo, "a", encoding="utf-8") as f:
@@ -172,15 +192,22 @@ class Diario:
             "SELECT evento_id FROM ordens_eventos WHERE evento_id LIKE ?",
             [prefixo]).fetchall()}
         novos = [e for e in self.eventos if e["evento_id"] not in ja]
+        inseridos = 0
         for e in novos:
             extra = {k: v for k, v in e.items() if k not in _COLUNAS}
-            con.execute(
-                f"INSERT INTO ordens_eventos ({', '.join(_COLUNAS)}, dados) "
-                f"VALUES ({', '.join('?' * (len(_COLUNAS) + 1))})",
-                [e.get(c) for c in _COLUNAS]
-                + [json.dumps(_para_json(extra), ensure_ascii=False, default=str)
-                   if extra else None])
-        return len(novos)
+            try:
+                # uma linha ruim não pode impedir as outras de chegar ao banco
+                r = con.execute(
+                    f"INSERT INTO ordens_eventos ({', '.join(_COLUNAS)}, dados) "
+                    f"VALUES ({', '.join('?' * (len(_COLUNAS) + 1))}) "
+                    "ON CONFLICT (evento_id) DO NOTHING",
+                    [e.get(c) for c in _COLUNAS]
+                    + [json.dumps(_para_json(extra), ensure_ascii=False, default=str)
+                       if extra else None]).fetchone()
+                inseridos += int(r[0]) if r else 0
+            except Exception:
+                log.exception("evento %s não espelhado", e.get("evento_id"))
+        return inseridos
 
 
 def espelhar_pendentes(pasta, con, dias: int = 5, origem: str = "demo",
@@ -202,5 +229,8 @@ def espelhar_pendentes(pasta, con, dias: int = 5, origem: str = "demo",
         except ValueError:
             continue
         if dia >= corte:
-            total += Diario(pasta, dia, origem).espelhar(con)
+            try:
+                total += Diario(pasta, dia, origem).espelhar(con)
+            except Exception:
+                log.exception("espelho do dia %s falhou", dia)
     return total

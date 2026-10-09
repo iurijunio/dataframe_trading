@@ -174,3 +174,53 @@ def test_espelhar_pendentes_pega_so_os_ultimos_dias(tmp_path):
         assert con.execute("SELECT count(*) FROM ordens_eventos").fetchone()[0] == 3
         assert espelhar_pendentes(pasta, con, dias=60, hoje=hoje) == 4
     assert espelhar_pendentes(tmp_path / "nao_existe", None) == 0
+
+
+def test_linha_do_meio_pulada_nao_repete_id(tmp_path):
+    d = Diario(tmp_path, DIA)
+    d.registrar("enviando", quando=Q, ligacao_id=4, entry_ts=T)
+    d.registrar("executada", quando=Q, ligacao_id=4, entry_ts=T, ticket=1)
+    d.registrar("saida_enviando", quando=Q, ligacao_id=4, ticket=1)
+    linhas = d.arquivo.read_text(encoding="utf-8").split("\n")
+    linhas[1] = '{"evento_id": "lixo'                       # corrompe a do meio
+    d.arquivo.write_text("\n".join(linhas), encoding="utf-8")
+    d2 = Diario(tmp_path, DIA)
+    d2.registrar("saida_executada", quando=Q, ligacao_id=4, ticket=1)
+    ids = [e["evento_id"] for e in Diario(tmp_path, DIA).eventos]
+    assert len(ids) == 3 and len(set(ids)) == 3
+    assert ids[-1].endswith("-000004")
+
+
+def test_motivo_com_separador_unicode_volta_inteiro(tmp_path):
+    d = Diario(tmp_path, DIA)
+    motivo = "linha um linha dois\x0bfim"
+    d.registrar("recusada", quando=Q, ligacao_id=4, entry_ts=T, motivo=motivo)
+    d.registrar("enviando", quando=Q, ligacao_id=4, entry_ts=T)
+    novo = Diario(tmp_path, DIA)
+    assert [e["tipo"] for e in novo.eventos] == ["recusada", "enviando"]
+    assert novo.eventos[0]["motivo"] == motivo
+
+
+def test_linha_que_nao_e_evento_e_ignorada(tmp_path):
+    d = Diario(tmp_path, DIA)
+    d.registrar("enviando", quando=Q, ligacao_id=4, entry_ts=T)
+    with open(d.arquivo, "a", encoding="utf-8") as f:
+        f.write("123\n[1, 2]\n{\"sem\": \"tipo\"}\n")
+    novo = Diario(tmp_path, DIA)
+    assert [e["tipo"] for e in novo.eventos] == ["enviando"]
+    assert novo.registrar("executada", quando=Q, ligacao_id=4, entry_ts=T,
+                          ticket=3)["evento_id"].endswith("-000005")
+
+
+def test_linha_ruim_nao_impede_o_espelho_das_outras(tmp_path):
+    d = Diario(tmp_path, DIA)
+    d.registrar("enviando", quando=Q, ligacao_id=4, entry_ts=T)
+    d.registrar("executada", quando=Q, ligacao_id=4, entry_ts=T, ticket="abc")
+    d.registrar("saida_enviando", quando=Q, ligacao_id=4, ticket=5)
+    with db.connect_write() as con:
+        db.init_schema(con)
+        assert d.espelhar(con) == 2
+        assert espelhar_pendentes(tmp_path, con, dias=5, hoje=DIA) == 0
+        tipos = [r[0] for r in con.execute(
+            "SELECT tipo FROM ordens_eventos ORDER BY evento_id").fetchall()]
+    assert tipos == ["enviando", "saida_enviando"]
