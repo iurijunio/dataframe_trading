@@ -121,3 +121,39 @@ def test_saida_por_sinal_na_provisoria_fecha_na_abertura():
     op = papel.calcular(b, DIA, PLANO, mod, INST, provisoria=True)[0]
     assert not op["aberta"] and op["exit_px"] is not None
     assert op["exit_ts"] == SINAL + timedelta(minutes=2)
+
+
+# ---- stop/alvo INICIAIS: os que valem durante o minuto da entrada
+def test_stop_e_alvo_iniciais_da_compra():
+    plano = _plano(breakeven_pct=25)
+    # entra 10:01 a 189_000 (+ derrapagem); a provisória das 10:06 abre 200
+    # acima: o breakeven moveria o stop no fim dela
+    b = papel.com_barra_provisoria(_barras(datetime(2026, 10, 9, 10, 5)),
+                                   datetime(2026, 10, 9, 10, 6), 189_200)
+    op = papel.calcular(b, DIA, plano, _mod(), INST, provisoria=True)[0]
+    assert op["side"] == 1 and op["aberta"]
+    assert op["stop_ini_px"] == op["entry_px"] - 200
+    assert op["alvo_ini_px"] == op["entry_px"] + 400
+    assert op["stop_px"] == op["entry_px"]          # o breakeven já agiu
+
+
+def test_stop_e_alvo_iniciais_da_venda():
+    def signals(bars, params):
+        n = len(bars["close"])
+        z = np.zeros(n, dtype=bool)
+        es = bars["ts"] == np.datetime64(SINAL, "ns")
+        return Signals(z, es, z.copy(), z.copy())
+    b = _com_prov(datetime(2026, 10, 9, 10, 3), 189_000)
+    op = papel.calcular(b, DIA, PLANO, SimpleNamespace(signals=signals), INST,
+                        provisoria=True)[0]
+    assert op["side"] == -1
+    assert op["stop_ini_px"] == op["entry_px"] + 200
+    assert op["alvo_ini_px"] == op["entry_px"] - 400
+
+
+def test_sem_alvo_o_alvo_inicial_e_none():
+    plano = _plano(alvo_pontos=0)
+    b = _com_prov(datetime(2026, 10, 9, 10, 3), 189_000)
+    op = papel.calcular(b, DIA, plano, _mod(), INST, provisoria=True)[0]
+    assert op["alvo_ini_px"] is None and op["alvo_px"] is None
+    assert op["stop_ini_px"] == op["entry_px"] - 200

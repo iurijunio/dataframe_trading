@@ -1,0 +1,232 @@
+"""Papel ao vivo para as ordens: o desejado de cada ligação, sem banco.
+
+Spec 2026-10-08-ao-vivo-ordens-design.md §3 e §5.1. O papel gravado no
+banco (`papel.rodar_dia` + `gravar`) continua sendo o da tela e da
+conferência; este módulo calcula A MESMA COISA, com as mesmas funções, só
+que de um retrato da configuração e de barras em memória — uma mineração
+segurando o banco não pode atrasar uma saída. Quem escolhe as ligações e o
+plano do dia é `papel.preparar_dia`, a mesma régua do papel gravado.
+
+Três estados por ligação: POSICAO (o papel tem operação aberta que conta e
+a ligação opera agora), ZERADO (sabidamente não tem — a corretora deve
+estar zerada) e INDISPONIVEL (não dá para saber; a automação só protege).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta
+
+import numpy as np
+import polars as pl
+
+from . import db_manager as db
+from . import papel
+from .engine.execution import prepare_bars
+
+POSICAO, ZERADO, INDISPONIVEL = "posicao", "zerado", "indisponivel"
+
+
+@dataclass(frozen=True)
+class Desejado:
+    estado: str
+    lado: int = 0
+    entry_ts: datetime | None = None
+    entry_px: int | None = None
+    stop_px: int | None = None
+    alvo_px: int | None = None
+    contratos: int = 0
+    motivo: str | None = None
+
+
+@dataclass
+class LigacaoViva:
+    ligacao_id: int
+    portfolio_id: int | None
+    status: str
+    motivo: str | None
+    plano: dict | None
+    modulo: object | None
+    periodos: list = field(default_factory=list)
+    fase: str = "papel"
+    conta_id: int | None = None
+    contratos_conta: int | None = None
+    ligada: bool = False          # pm.ligada AND portfolio.ligado, AGORA
+    falha: str | None = None      # o preparo do papel falhou (não é "zerado")
+    desvio: int = 0               # deviation da ordem, em pontos
+
+
+@dataclass
+class Retrato:
+    dia: date
+    lido_em: datetime
+    ligacoes: dict
+    contas: dict
+    portfolio_de: dict
+
+
+def ler_retrato(con, dia: date, agora: datetime, cache_codigo: dict, *,
+                symbol: str = papel.SIMBOLO) -> Retrato:
+    resultados, fila, planos = papel.preparar_dia(con, dia, agora, cache_codigo,
+                                                  symbol=symbol)
+    na_fila = {l["ligacao_id"]: (r, p) for r, l, p in fila}
+    # "ligada agora" vem do estado atual das duas chaves, não dos períodos
+    # do diário: o diário usa a hora do PC, e com o PC adiantado uma
+    # variante desligada ainda entraria por alguns segundos (os períodos
+    # ficam só para o `conta` de cada operação, como no papel gravado)
+    meta = {r[0]: r[1:] for r in con.execute(
+        "SELECT pm.ligacao_id, pm.portfolio_id, pm.fase, p.conta_demo_id, "
+        "pm.contratos_demo, pm.ligada AND coalesce(p.ligado, false) "
+        "FROM portfolio_membros pm "
+        "JOIN portfolios p ON p.portfolio_id = pm.portfolio_id").fetchall()}
+    tick = int(db.load_instrument_yaml(symbol)["tick_size"])
+    ligs = {}
+    for r in resultados:
+        lig = r["ligacao_id"]
+        pf, fase, conta, contratos, ligada = meta.get(
+            lig, (None, "papel", None, None, False))
+        lp = na_fila.get(lig)
+        plano = lp[1] if lp else None
+        falha = r.get("falha")
+        desvio = 2 * tick
+        if plano is not None:
+            try:
+                _, perfil = papel.perfil_do_plano(plano)
+                desvio += int(round(float(perfil.slippage_ticks or 0) * tick))
+            except Exception as erro:
+                # plano que não monta perfil também não calcula papel: o
+                # `rodar_dia` daria falha a esta ligação, aqui também — e
+                # um plano quebrado não derruba o retrato das outras
+                falha = f"falha no cálculo: {erro}"
+        ligs[lig] = LigacaoViva(
+            ligacao_id=lig, portfolio_id=pf, status=r["status"], motivo=r["motivo"],
+            plano=plano,
+            modulo=planos[plano["plano_id"]][1] if plano is not None else None,
+            periodos=papel.periodos_ligados(con, lig, pf, dia) if pf else [],
+            fase=fase, conta_id=conta,
+            contratos_conta=int(contratos) if contratos else None,
+            ligada=bool(ligada), falha=falha, desvio=desvio)
+    contas = {int(r[0]): {"login": r[1], "servidor": r[2], "limite": r[3],
+                          "envio": bool(r[4])}
+              for r in con.execute(
+                  "SELECT conta_id, login, servidor, limite_perda_dia, "
+                  "coalesce(envio_ligado, false) FROM contas "
+                  "WHERE arquivada_em IS NULL").fetchall()}
+    return Retrato(dia=dia, lido_em=agora, ligacoes=ligs, contas=contas,
+                   portfolio_de={lig: v[0] for lig, v in meta.items()})
+
+
+def carregar_aquecimento(con, symbol: str, dia: date,
+                         retrato: Retrato) -> dict | None:
+    """Os pregões ANTES do dia, uma vez por pregão: o maior aquecimento entre
+    as ligações do retrato (mesma conta de `papel.pregoes_de_aquecimento`)."""
+    pregoes = 1
+    for lv in retrato.ligacoes.values():
+        if lv.plano is None or lv.modulo is None:
+            continue
+        try:       # um plano quebrado não derruba o aquecimento dos outros
+            estrat, perfil = papel.perfil_do_plano(lv.plano)
+            pregoes = max(pregoes, papel.pregoes_de_aquecimento(
+                lv.modulo, estrat, perfil))
+        except Exception:
+            continue
+    ini = datetime.combine(dia, time())
+    datas = con.execute(
+        "SELECT DISTINCT CAST(ts AS DATE) AS d FROM bars_m1 WHERE symbol = ? "
+        "AND ts < ? ORDER BY d DESC LIMIT ?", [symbol, ini, pregoes]).fetchall()
+    if not datas:
+        return None
+    return prepare_bars(con, symbol,
+                        start=datetime.combine(min(r[0] for r in datas), time()),
+                        end=ini - timedelta(microseconds=1))
+
+
+def barras_de_hoje(df: pl.DataFrame) -> dict:
+    """O que a captura buscou no MT5 (`mt5_source.barras_de_taxas`), no
+    formato de `prepare_bars`. Preço com 0 casas (`price_decimals` do WIN)."""
+    def inteiro(c):
+        return np.rint(df[c].to_numpy()).astype(np.int64)
+    return {"ts": df["ts"].to_numpy().astype("datetime64[ns]"),
+            "open": inteiro("open"), "high": inteiro("high"),
+            "low": inteiro("low"), "close": inteiro("close"),
+            "tick_volume": inteiro("tick_volume"), "volume": inteiro("volume")}
+
+
+def _juntar(a: dict, b: dict) -> dict:
+    return {k: np.concatenate([a[k], b[k]]) for k in a}
+
+
+def desejados(retrato: Retrato | None, aquecimento: dict | None,
+              hoje: dict | None, provisoria: tuple[datetime, int] | None,
+              inst: dict, agora_srv: datetime | None) -> tuple[dict, bool]:
+    """O desejado de cada ligação e se o papel está disponível.
+
+    `({}, False)` sem retrato do dia, aquecimento, barras ou relógio do
+    servidor: nada se sabe e a automação só confere a proteção.
+
+    O stop/alvo é o que vale DURANTE o minuto em formação. O motor roda as
+    proteções (breakeven, stop móvel, trailing) no fim de toda barra,
+    inclusive da provisória, e com ela subiria o stop um minuto antes do
+    backtest. Por isso cada plano é calculado duas vezes: com a provisória
+    (decide entradas e saídas) e sem ela (o stop do fim da última barra
+    fechada). A operação que entrou na provisória ainda não passou por fim
+    de barra nenhum: vale o stop/alvo da entrada.
+    """
+    if (retrato is None or aquecimento is None or hoje is None
+            or agora_srv is None or retrato.dia != agora_srv.date()):
+        return {}, False
+    barras = _juntar(aquecimento, hoje)
+    com = barras
+    if provisoria is not None and provisoria[0].date() == retrato.dia:
+        com = papel.com_barra_provisoria(barras, *provisoria)
+    usou = len(com["ts"]) > len(barras["ts"])
+    out: dict[int, Desejado] = {}
+    # plano_id -> (operações decididas, {entry_ts: operação sem a provisória})
+    calculados: dict[int, tuple[list, dict | None]] = {}
+    for lig, lv in retrato.ligacoes.items():
+        if lv.falha:
+            # falha no preparo (plano, hash do código): não se sabe — protege
+            out[lig] = Desejado(INDISPONIVEL, motivo=lv.falha)
+            continue
+        if lv.status != "rodando" or lv.plano is None:
+            out[lig] = Desejado(ZERADO, motivo=lv.motivo or lv.status)
+            continue
+        if lv.fase != "demo":
+            out[lig] = Desejado(ZERADO, motivo="fase papel")
+            continue
+        if not lv.ligada:
+            out[lig] = Desejado(ZERADO, motivo="desligada")
+            continue
+        pid = lv.plano["plano_id"]
+        try:
+            if pid not in calculados:
+                ops = papel.calcular(com, retrato.dia, lv.plano, lv.modulo,
+                                     inst, None, usou)
+                vigente = None
+                if usou:
+                    vigente = {o["entry_ts"]: o for o in papel.calcular(
+                        barras, retrato.dia, lv.plano, lv.modulo, inst)}
+                calculados[pid] = (ops, vigente)
+        except Exception as erro:          # uma ligação não derruba as outras
+            out[lig] = Desejado(INDISPONIVEL, motivo=f"falha no cálculo: {erro}")
+            continue
+        ops, vigente = calculados[pid]
+        abertas = [o for o in ops
+                   if o["aberta"] and papel._conta(o["entry_ts"], lv.periodos)]
+        if not abertas:
+            out[lig] = Desejado(ZERADO)
+            continue
+        o = abertas[-1]
+        stop, alvo = o["stop_px"], o["alvo_px"]
+        if vigente is not None:
+            antes = vigente.get(o["entry_ts"])
+            if antes is not None:
+                # já existia no fim da última barra fechada: o stop de lá
+                stop, alvo = antes["stop_px"], antes["alvo_px"]
+            else:
+                # entrou na provisória: o da entrada
+                stop, alvo = o["stop_ini_px"], o["alvo_ini_px"]
+        out[lig] = Desejado(POSICAO, lado=int(o["side"]), entry_ts=o["entry_ts"],
+                            entry_px=int(o["entry_px"]), stop_px=stop,
+                            alvo_px=alvo,
+                            contratos=lv.contratos_conta or int(lv.plano["contratos"]))
+    return out, True

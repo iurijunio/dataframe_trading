@@ -19,6 +19,7 @@ from core import portfolio as P  # noqa: E402
 from core.engine import kernel as K  # noqa: E402
 from core.engine.execution import ExecutionProfile, run_strategy  # noqa: E402
 from tests._cadeia import banco, campos_plano, mineracao, wfa  # noqa: E402,F401
+from tests.fabrica_ao_vivo import inserir_barras, ligacao_com_plano  # noqa: E402
 
 SIMB = "WIN$N"
 ESTRAT = "rompimento_canal"
@@ -71,28 +72,7 @@ def _barras_sinteticas(n_dias=40, seed=11):
 
 
 def _inserir(con, b, sl=slice(None)):
-    ts = [str(x) for x in b["ts"][sl].astype("datetime64[s]")]
-    cols = [b[c][sl].tolist() for c in ("open", "high", "low", "close")]
-    if len(ts) == 1:
-        con.execute("INSERT INTO bars_m1 VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, 1)",
-                    [SIMB, ts[0], *(c[0] for c in cols)])
-        return
-    # parâmetro em lista é lento demais para 22 mil barras: vai por CSV
-    import tempfile
-    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False,
-                                     encoding="ascii") as f:
-        f.write("ts,open,high,low,close\n")
-        f.writelines(f"{t},{o},{h},{lo},{c}\n" for t, o, h, lo, c
-                     in zip(ts, *cols))
-        caminho = f.name
-    try:
-        con.execute(
-            "INSERT INTO bars_m1 SELECT ?, ts, open, high, low, close, 1, 1, "
-            f"0, 1 FROM read_csv({db._sql_str(Path(caminho).as_posix())}, "
-            "header = true, columns = {'ts': 'TIMESTAMP', 'open': 'BIGINT', "
-            "'high': 'BIGINT', 'low': 'BIGINT', 'close': 'BIGINT'})", [SIMB])
-    finally:
-        Path(caminho).unlink()
+    inserir_barras(con, b, sl, SIMB)
 
 
 def _indices_do_dia(b, dia):
@@ -134,20 +114,9 @@ def mundo(banco):
     b, dias = _barras_sinteticas()
     with db.connect() as con:
         _inserir(con, b)
-    v = variantes.criar("romp-teste", ESTRAT)
-    mineracao(1, variante_id=v)
-    wfa(1, 1)
-    pid = plano.salvar(**campos_plano(
-        params=PARAMS, profile=PERFIL, contratos=CONTRATOS,
-        codigo_hash=codigo.hash_estrategia(ESTRAT)),
-        agora=datetime(2025, 12, 1, 10))
-    pf = P.criar("pf")
-    lig = P.adicionar_variante(pf, v)
-    with db.connect() as con:
-        # adicionada e ligada bem antes dos pregões sintéticos
-        con.execute("UPDATE portfolio_membros SET adicionado_em = "
-                    "'2025-12-01 09:00'")
-        con.execute("UPDATE portfolios SET ligado = true")
+    f = ligacao_com_plano("romp-teste", params=PARAMS, profile=PERFIL,
+                          contratos=CONTRATOS, portfolio_id=P.criar("pf"))
+    v, pid, pf, lig = f.v, f.plano_id, f.pf, f.lig
     return SimpleNamespace(barras=b, dias=dias, plano_id=pid, lig=lig, pf=pf,
                            v=v, inst=db.load_instrument_yaml(SIMB))
 

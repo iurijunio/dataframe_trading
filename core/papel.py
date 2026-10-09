@@ -286,6 +286,11 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
                 and int(t["reason"][i]) in _SAIDAS_FORCADAS):
             aberta = True
         stop, alvo = int(t["stop_fim"][i]), int(t["alvo_fim"][i])
+        # os níveis da ENTRADA, antes de breakeven/stop móvel: são os que
+        # valem durante o minuto em que ela entrou — as proteções só agem no
+        # fim da barra, e a da provisória ainda não acabou (`papel_vivo`)
+        lado, ent = int(t["side"][i]), int(t["entry_px"][i])
+        sl_ini, tp_ini = int(res.sl_at_entry[i]), int(res.tp_at_entry[i])
         out.append({
             "entry_ts": _dt(t["entry_ts"][i]),
             "exit_ts": None if aberta else _dt(t["exit_ts"][i]),
@@ -301,6 +306,8 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
             "reason": None if aberta else int(t["reason"][i]),
             "mae": int(t["mae"][i]), "mfe": int(t["mfe"][i]),
             "stop_px": stop or None, "alvo_px": alvo or None,
+            "stop_ini_px": ent - lado * sl_ini if sl_ini else None,
+            "alvo_ini_px": ent + lado * tp_ini if tp_ini else None,
             "aberta": aberta,
         })
     return out
