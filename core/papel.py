@@ -188,6 +188,35 @@ def checksum(con, symbol: str, dia: date) -> str:
     return ":".join(str(int(x or 0)) for x in r)
 
 
+def com_barra_provisoria(barras: dict | None, ts: datetime,
+                         abertura: int) -> dict | None:
+    """As barras do dia com o minuto EM FORMAÇÃO, provisório: abertura,
+    máxima, mínima e fechamento iguais à abertura dele.
+
+    O motor só cria a entrada (ou a saída por sinal) do sinal da barra i
+    quando a barra i+1 existe (`kernel.py`, "sinais desta barra, para a
+    próxima") — e a captura nunca grava o candle em formação. Sem isto o
+    papel ao vivo, e com ele a ordem da demo, sairia sempre um minuto
+    atrasado. Com a barra provisória a entrada aparece no primeiro segundo
+    do minuto, ao preço de abertura — o mesmo do backtest. Nunca é gravada
+    em bars_m1: o candle real a substitui no minuto seguinte.
+    """
+    if barras is None:
+        return None
+    t = np.datetime64(ts, "ns")
+    # só cola no minuto seguinte ao último candle: com um buraco (candles
+    # atrasados no banco), a provisória viraria a "barra seguinte" de um
+    # sinal velho e inventaria uma entrada
+    if not len(barras["ts"]) or barras["ts"][-1] != t - np.timedelta64(1, "m"):
+        return barras
+    a = int(abertura)
+    out = {}
+    for k, v in barras.items():
+        novo = t if k == "ts" else (a if k in ("open", "high", "low", "close") else 0)
+        out[k] = np.append(v, np.array([novo], dtype=v.dtype))
+    return out
+
+
 # ------------------------------------------------------------------ cálculo
 def _dt(x) -> datetime:
     return np.datetime64(x, "us").item()
@@ -416,28 +445,22 @@ def _modulo(estrategia: str, hash_disco: str, cache: dict):
 
 
 # ---------------------------------------------------------------- o dia
-def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
-              symbol: str = SIMBOLO, dia_encerrado: bool = False) -> list[dict]:
-    """O papel do dia de cada ligação, calculado — sem gravar.
+def _gravados(con, dia: date) -> dict[int, dict]:
+    return {r[0]: {"status": r[1], "codigo_hash": r[2]}
+            for r in con.execute(
+                "SELECT ligacao_id, status, codigo_hash FROM papel_pregoes "
+                "WHERE dia = ?", [dia]).fetchall()}
 
-    Separado de `gravar` porque a captura calcula fora da conexão de
-    escrita (spec §4.4.6): o motor não pode segurar a trava do banco.
-    Cada resultado: `ligacao_id, dia, plano_id, codigo_hash, motor_versao,
-    status, motivo, interrompido_em, falha, operacoes` — `operacoes = None`
-    quer dizer "não mexa no que está gravado"; `falha` diz que foi por erro
-    no cálculo. Pregão congelado não aparece.
 
-    Pregão `interrompido` (código mudou no meio, decisão 5) guarda o que
-    tinha, como estava: uma operação aberta naquele minuto continua
-    `aberta` no banco, com o resultado provisório, e não entra no
-    `liquido` do pregão.
-    """
-    if not _tem_candle(con, symbol, dia):
-        return []
-    gravados = {r[0]: {"status": r[1], "codigo_hash": r[2]}
-                for r in con.execute(
-                    "SELECT ligacao_id, status, codigo_hash FROM papel_pregoes "
-                    "WHERE dia = ?", [dia]).fetchall()}
+def preparar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
+                 symbol: str = SIMBOLO) -> tuple[
+                     list[dict], list[tuple[dict, dict, dict]],
+                     dict[int, tuple[dict, object]]]:
+    """O que `rodar_dia` monta antes de ler as barras: `(resultados, fila,
+    planos)` — o resultado de cada ligação já decidido (pulada, interrompida,
+    removida) e a fila das que vão ser calculadas. Não confere se o dia tem
+    candle: o papel ao vivo a chama às 09:00, antes do primeiro."""
+    gravados = _gravados(con, dia)
     com_ops = {r[0] for r in con.execute(
         "SELECT DISTINCT ligacao_id FROM papel_operacoes WHERE dia = ?",
         [dia]).fetchall()}
@@ -522,6 +545,34 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
                      codigo_hash=antes["codigo_hash"] if antes else None,
                      motivo=texto, falha=texto, operacoes=None)
 
+    return resultados, fila, planos
+
+
+def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
+              symbol: str = SIMBOLO, dia_encerrado: bool = False,
+              provisoria: tuple[datetime, int] | None = None) -> list[dict]:
+    """O papel do dia de cada ligação, calculado — sem gravar.
+
+    Separado de `gravar` porque a captura calcula fora da conexão de
+    escrita (spec §4.4.6): o motor não pode segurar a trava do banco.
+    Cada resultado: `ligacao_id, dia, plano_id, codigo_hash, motor_versao,
+    status, motivo, interrompido_em, falha, operacoes` — `operacoes = None`
+    quer dizer "não mexa no que está gravado"; `falha` diz que foi por erro
+    no cálculo. Pregão congelado não aparece.
+
+    Pregão `interrompido` (código mudou no meio, decisão 5) guarda o que
+    tinha, como estava: uma operação aberta naquele minuto continua
+    `aberta` no banco, com o resultado provisório, e não entra no
+    `liquido` do pregão.
+
+    `provisoria = (minuto, abertura)` é o candle em formação — só no pregão
+    vivo; a conferência nunca a usa.
+    """
+    if not _tem_candle(con, symbol, dia):
+        return []
+    resultados, fila, planos = preparar_dia(con, dia, agora, cache_codigo,
+                                            symbol=symbol)
+    gravados = _gravados(con, dia)
     if not fila:
         return resultados
 
@@ -541,6 +592,9 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
     barras = inst = comum = None
     try:
         barras = barras_do_dia(con, symbol, dia, aquecimento)
+        if (provisoria is not None and not dia_encerrado
+                and provisoria[0].date() == dia):
+            barras = com_barra_provisoria(barras, *provisoria)
         inst = db.load_instrument_yaml(symbol)
     except Exception as erro:
         comum = erro
