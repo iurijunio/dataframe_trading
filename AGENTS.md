@@ -5,9 +5,9 @@
 
 Plataforma quantitativa em Python (Dash + DuckDB + Numba) para criar, minerar,
 validar e operar estratégias de day trade no Mini Índice (`WIN$N`),
-substituindo o fluxo que antes vivia no MT5. Branch de trabalho: `candidata`
-(remoto `origin` no GitHub). `master` é só o estado anterior ao modo
-Candidata — não trabalhe nela.
+substituindo o fluxo que antes vivia no MT5. Branch de trabalho:
+`live-trading` (parte 4, ordens), criada do `master` em 08/10/2026 depois
+de o usuário juntar o `candidata` nele (remoto `origin` no GitHub).
 
 ## O usuário
 
