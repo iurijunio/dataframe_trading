@@ -273,9 +273,11 @@ class Motor:
     def diario(self, dia) -> Diario:
         if self._diario is None or self._diario.dia != dia:
             self._diario = Diario(self.pasta, dia, self.origem)
-            # "só encerramento" vale para o resto do DIA
+            # "só encerramento" vale para o resto do DIA; chamados também
+            # não atravessam a noite (nada fica aberto de um pregão ao outro)
             self.so_encerrar = {}
             self._envios = {}
+            self.chamados = {}
         return self._diario
 
     def _quando(self, agora_srv):
@@ -325,11 +327,19 @@ class Motor:
         if self.chamados.pop(chave, None) is not None:
             self.diario(agora.date()).registrar("chamado_fechado", quando=agora,
                                                 motivo=chave)
+            return True
+        return False
 
-    def _fechar_resolvidos(self, foto, agora):
+    def fechar(self, chave, agora=None) -> bool:
+        """Fecha um chamado de fora (botão "Manter e acompanhar"). Sem hora,
+        usa a estimativa da hora do servidor."""
+        return self._fechar(chave, agora or self._quando(None))
+
+    def _fechar_resolvidos(self, foto, agora, estavel):
         """Chamado de posição fecha quando a posição sumiu da corretora; o de
-        posição sem stop, também quando o stop apareceu."""
-        if foto is None:
+        posição sem stop, também quando o stop apareceu. Logo após reconectar
+        a lista pode vir vazia por engano: aí não fecha nada."""
+        if foto is None or not estavel:
             return
         vivas = {p.ticket: p for p in foto.posicoes}
         for chave, c in list(self.chamados.items()):
@@ -346,13 +356,28 @@ class Motor:
             if c.get("ligacao_id") == lig and c.get("entry_ts") == entry_ts:
                 self._fechar(chave, agora)
 
+    def _fechar_operacoes_encerradas(self, agora_srv):
+        """Chamado de entrada (sem margem, Algo desligado...) cai quando a
+        janela de entrada passou e a operação já tem desfecho final: não há
+        mais nada a decidir sobre ela."""
+        if agora_srv is None:
+            return
+        dia = self.diario(agora_srv.date())
+        for chave, c in list(self.chamados.items()):
+            ts = c.get("entry_ts")
+            if ts is None or _seg(agora_srv, ts) <= JANELA_ENTRADA_S:
+                continue
+            if dia.desfecho(c.get("ligacao_id"), ts) is not None:
+                self._fechar(chave, agora_srv)
+
     # -------------------------------------------------------- executar
     def executar(self, mt5, acoes, *, foto, agora_srv, simbolo, desvio,
-                 pode_entrar, envio, conta_id) -> None:
+                 pode_entrar, envio, conta_id, conectado_ha_s) -> None:
         agora = self._quando(agora_srv)
         self._sem_relogio = agora_srv is None
         self.diario(agora.date())
-        self._fechar_resolvidos(foto, agora)
+        self._fechar_resolvidos(foto, agora, conectado_ha_s >= GRACA_RECONEXAO_S)
+        self._fechar_operacoes_encerradas(agora_srv)
         ctx = dict(foto=foto, agora=agora, simbolo=simbolo, desvio=desvio,
                    pode_entrar=pode_entrar, envio=envio, conta_id=conta_id)
         erros = []
@@ -404,15 +429,29 @@ class Motor:
         # escrita adiantada: daqui em diante a ordem pode chegar à corretora
         dia.registrar("enviando", quando=agora,
                       tentativa=dia.tentativas(lig, d.entry_ts) + 1, **base)
-        info, tk = mt5.symbol_info(simbolo), mt5.symbol_info_tick(simbolo)
+        def antes_do_envio(f, *args):
+            # erro ANTES do order_send: nada saiu, então o desfecho é certo
+            # (recusada) — sem isto a tentativa ficaria "sem desfecho" e a
+            # perdida diria "automação fora do ar". Erro no próprio order_send
+            # não passa por aqui: a ordem pode ter saído (incerta).
+            try:
+                return f(*args)
+            except Exception as erro:
+                dia.registrar("recusada", quando=self._depois(agora), motivo=repr(erro),
+                              **op)
+                raise
+
+        info = antes_do_envio(mt5.symbol_info, simbolo)
+        tk = antes_do_envio(mt5.symbol_info_tick, simbolo)
         if info is None or tk is None:
             dia.registrar("recusada", quando=self._depois(agora),
                           motivo="sem cotação do contrato", **op)
             return
         preco = tk.ask if d.lado > 0 else tk.bid
-        for modo in K.modos_preenchimento(info.filling_mode, mt5):
-            req = pedido(preco, modo)
-            chk = mt5.order_check(req)
+        modos = antes_do_envio(K.modos_preenchimento, info.filling_mode, mt5)
+        for modo in modos:
+            req = antes_do_envio(pedido, preco, modo)
+            chk = antes_do_envio(mt5.order_check, req)
             if chk is None:
                 dia.registrar("recusada", quando=self._depois(agora),
                               motivo="sem resposta do MT5 na checagem", **op)
@@ -445,17 +484,25 @@ class Motor:
         quando = self._depois(agora)
         rc, texto = _retcode(res), K.texto(res)
         if classe in (K.OK, K.PARCIAL):
-            ticket = self._ticket_da_posicao(mt5, res, lig, d.lado)
+            ticket = self._ticket_da_posicao(mt5, res, lig, d.lado, dia)
             vol = float(res.volume) if getattr(res, "volume", 0) else float(d.contratos)
             atraso = int((quando - d.entry_ts).total_seconds() * 1000)
             dia.registrar("executada" if classe == K.OK else "parcial", quando=quando,
                           ticket=ticket, preco=float(res.price), atraso_ms=atraso,
                           retcode=rc, motivo=texto, **dict(base, contratos=vol))
+            # o que vem depois da resposta usa a hora de depois dela: o diário
+            # fica em ordem de tempo (e a proteção pendente conta daqui)
             if classe == K.PARCIAL:
                 # D3: resto de ordem nunca fica vivo
-                self._cancelar_resto(mt5, lig, agora)
+                self._cancelar_resto(mt5, lig, quando)
+                quando = self._depois(quando)
+            if ticket is None:
+                # sem o ticket não há SLTP possível: planejar adota a posição
+                # na próxima volta e a proteção sai por lá
+                log.warning("entrada da ligação %s executou sem ticket conhecido", lig)
+                return
             self._proteger_ticket(mt5, lig, ticket, simbolo, d.lado, base["stop_px"],
-                                  base["alvo_px"], vol, agora, desvio)
+                                  base["alvo_px"], vol, quando, desvio)
         elif classe == K.ACEITA:
             # PLACED: nunca reenvia; planejar espera a posição ou a janela
             dia.registrar("aceita", quando=quando, ordem=int(res.order or 0),
@@ -477,20 +524,25 @@ class Motor:
                          agora, ligacao_id=lig, entry_ts=d.entry_ts)
             dia.registrar("perdida", quando=quando, retcode=rc, motivo=texto, **op)
 
-    def _ticket_da_posicao(self, mt5, res, lig, lado) -> int:
-        """Em hedging o ticket da posição é o da ordem que a abriu; se a lista
-        não confirmar, a posição mais nova da ligação do mesmo lado."""
+    def _ticket_da_posicao(self, mt5, res, lig, lado, dia) -> int | None:
+        """Em hedging o identificador da posição é o ticket da ordem que a
+        abriu: com `order` na resposta, é ele (a lista de posições pode ainda
+        não ter a nova). Sem ele, a posição mais nova da ligação do mesmo lado
+        que o diário ainda não conhece — nunca o ticket de uma operação
+        anterior (caso 9: a antiga ainda saindo). Nada → None."""
         ordem = int(res.order or 0)
         if ordem:
-            lista = mt5.positions_get(ticket=ordem)
-            if any(int(p.ticket) == ordem for p in lista or ()):
-                return ordem
+            return ordem
+        conhecidos = {int(e["ticket"]) for e in dia.eventos
+                      if e.get("ligacao_id") == lig and e.get("ticket")
+                      and e["tipo"] in ("executada", "parcial", "adotada")}
         lado_mt5 = mt5.POSITION_TYPE_BUY if lado > 0 else mt5.POSITION_TYPE_SELL
         minhas = [p for p in mt5.positions_get() or ()
-                  if int(p.magic) == K.magic(lig) and int(p.type) == lado_mt5]
+                  if int(p.magic) == K.magic(lig) and int(p.type) == lado_mt5
+                  and int(p.ticket) not in conhecidos]
         if minhas:
             return int(max(minhas, key=lambda p: (int(p.time), int(p.ticket))).ticket)
-        return ordem
+        return None
 
     # -------------------------------------------------------- cancelar
     def _cancelar_resto(self, mt5, lig, agora):
@@ -553,7 +605,7 @@ class Motor:
             if classe == K.STOPS_INVALIDOS:
                 # o preço já passou do stop: posição sem stop não pode existir
                 self._sair_ticket(mt5, lig, ticket, simbolo, lado, contratos,
-                                  "preço além do stop", agora, desvio)
+                                  "preço além do stop", quando, desvio)
 
     # ------------------------------------------------------------ sair
     def _sair(self, mt5, a, *, agora, desvio, **_):
@@ -590,26 +642,33 @@ class Motor:
                 if classe != K.PREENCHIMENTO:
                     break
             quando, rc = self._depois(agora), _retcode(res)
-            if classe in (K.OK, K.PARCIAL):
+            # contratos = o que a corretora executou, não o pedido
+            feito = dict(campos, contratos=float(getattr(res, "volume", 0) or 0)) \
+                if res is not None else campos
+            if classe == K.OK:
                 dia.registrar("saida_executada", quando=quando, preco=float(res.price),
-                              retcode=rc, motivo=motivo, **campos)
+                              retcode=rc, motivo=motivo, **feito)
+            elif classe == K.PARCIAL:
+                # a posição segue viva com o resto: a saída continua pendente
+                dia.registrar("saida_parcial", quando=quando, preco=float(res.price),
+                              retcode=rc, motivo=motivo, **feito)
             elif classe == K.JA_SAIU:
                 dia.registrar("saida_executada", quando=quando, retcode=rc,
-                              motivo="já encerrada", **campos)
+                              motivo="já encerrada", **feito)
             elif classe in (K.SAIDA_EM_TRANSITO, K.VOLUME_FECHAMENTO):
                 pass          # a próxima volta relê a posição e as ordens
             elif classe == K.INCERTA:
                 # a próxima volta relê a corretora antes de mandar de novo
                 dia.registrar("saida_recusada", quando=quando, retcode=rc,
-                              motivo="sem resposta", **campos)
+                              motivo="sem resposta", **feito)
             else:
                 dia.registrar("saida_recusada", quando=quando, retcode=rc,
-                              motivo=K.texto(res), **campos)
+                              motivo=K.texto(res), **feito)
                 if classe in (K.USUARIO, K.DESCONHECIDO, K.PREENCHIMENTO):
                     self._chamar(f"saida_erro:{ticket}", "usuario",
                                  f"saída recusada: {K.texto(res)}", agora,
                                  ligacao_id=lig, ticket=ticket)
-        if classe in (K.OK, K.PARCIAL, K.JA_SAIU):
+        if classe in (K.OK, K.JA_SAIU):
             self._fechar(f"saida_pendente:{ticket}", agora)
             self._fechar(f"saida_erro:{ticket}", agora)
             return
@@ -637,7 +696,8 @@ class Motor:
                    getattr(mt5, "DEAL_REASON_TP", 5): "alvo na corretora"}
         motivo = motivos.get(n.motivo if n else None, "encerrada fora da automação")
         ts = a.desejado.entry_ts if a.desejado else None
-        extra = {"preco": n.preco} if n else {}
+        # contratos = o que saiu pelo servidor (o resto, depois de uma parcial)
+        extra = {"preco": n.preco, "contratos": n.volume} if n else {}
         self.diario(agora.date()).registrar(
             "saiu_antes", quando=agora, ligacao_id=a.ligacao_id, entry_ts=ts,
             ticket=a.ticket, motivo=motivo, **extra)
@@ -652,7 +712,10 @@ class Motor:
 
     def _chamado_do_plano(self, mt5, a, *, agora, **_):
         # planejar repete o "chamar" a cada volta: a chave deduplica
-        tipo = "sem_stop" if a.ticket is not None else "plano"
-        alvo = a.ticket if a.ticket is not None else a.ligacao_id
-        self._chamar(f"{tipo}:{alvo}:{a.motivo}", tipo, a.motivo, agora,
-                     ligacao_id=a.ligacao_id, ticket=a.ticket)
+        # mesma chave do "sem stop" do _proteger_ticket: um chamado só por posição
+        if a.ticket is not None:
+            chave, tipo = f"sem_stop:{a.ticket}", "sem_stop"
+        else:
+            chave, tipo = f"plano:{a.ligacao_id}:{a.motivo}", "plano"
+        self._chamar(chave, tipo, a.motivo, agora, ligacao_id=a.ligacao_id,
+                     ticket=a.ticket)

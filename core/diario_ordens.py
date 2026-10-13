@@ -30,6 +30,9 @@ TIPOS = frozenset({
     "enviando", "executada", "parcial", "aceita", "recusada", "perdida",
     "nao_entrou", "seria_enviada", "adotada", "saiu_antes",
     "saida_enviando", "saida_executada", "saida_recusada",
+    # saída executada em parte: a posição segue viva, então NÃO fecha o
+    # ticket (_abertos) nem a saída pendente (saida_desde)
+    "saida_parcial",
     "protecao_enviando", "protecao", "protecao_recusada", "cancelada",
     "incerta", "cancelar_enviando", "cancelar_recusada",
     "chamado", "chamado_fechado", "conta_travada", "rolagem", "comando",

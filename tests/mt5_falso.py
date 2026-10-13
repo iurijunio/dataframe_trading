@@ -144,20 +144,27 @@ class MT5Ordens:
                 self._registrar(o.ticket, o.req)
             return NS(retcode=10009, order=req["order"], deal=0, volume=0.0, price=0.0, comment="")
         if "position" in req:               # saída
-            p = self.posicoes.pop(req["position"], None)
+            p = self.posicoes.get(req["position"])
             if p is None:
                 return NS(retcode=10036, order=0, deal=0, volume=0.0, price=0.0, comment="")
+            # saída parcial: sai `parcial_volume`, a posição segue com o resto
+            vol = min(self.parcial_volume, p.volume) if parcial else p.volume
+            if vol >= p.volume:
+                self.posicoes.pop(req["position"])
+            else:
+                p.volume -= vol
             if registrar:
                 self._registrar(self._novo(), req)
             deal = self._novo()
             self.negocios.append(NS(ticket=deal, order=0,
                                     time=_epoch(self.agora), type=req["type"], entry=1,
                                     magic=p.magic, position_id=p.ticket, reason=3,
-                                    volume=p.volume, price=float(self.preco),
+                                    volume=vol, price=float(self.preco),
                                     commission=0.0, swap=0.0, fee=0.0,
                                     profit=p.profit, symbol=p.symbol))
-            return NS(retcode=10009, order=deal, deal=deal,
-                      volume=p.volume, price=float(self.preco), comment="")
+            return NS(retcode=10010 if parcial and vol < req["volume"] else 10009,
+                      order=deal, deal=deal, volume=vol, price=float(self.preco),
+                      comment="")
         vol = self.parcial_volume if parcial else req["volume"]
         t = self._novo()
         if registrar:

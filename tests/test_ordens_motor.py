@@ -5,6 +5,7 @@ Os testes rodam `planejar` + `Motor.executar` como a captura vai rodar
 na conta (`mt5.posicoes`/`mt5.ordens`) e o que o diário gravou.
 """
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace as NS
 
 import pytest
 
@@ -22,11 +23,11 @@ INST = {"tick_size": 5, "point_value": 0.2}
 
 
 def volta(m, mt5, desejados, agora=AG, envio=True, pode=lambda a: (True, None),
-          disponivel=True, simbolo="WINV26"):
+          disponivel=True, simbolo="WINV26", conectado=60.0):
     foto = K.fotografar(mt5, datetime(2026, 10, 9))
-    acoes = planejar(desejados, disponivel, foto, m.diario(DIA), agora, 5, 60.0)
+    acoes = planejar(desejados, disponivel, foto, m.diario(DIA), agora, 5, conectado)
     m.executar(mt5, acoes, foto=foto, agora_srv=agora, simbolo=simbolo, desvio=10,
-               pode_entrar=pode, envio=envio, conta_id=2)
+               pode_entrar=pode, envio=envio, conta_id=2, conectado_ha_s=conectado)
     return [e["tipo"] for e in m.diario(DIA).eventos]
 
 
@@ -406,7 +407,7 @@ def test_sem_relogio_nao_repete_protecao_antes_de_1_s(tmp_path):
         assert [a.tipo for a in acoes] == ["proteger"]
         m.executar(mt5, acoes, foto=foto, agora_srv=None, simbolo="WINV26",
                    desvio=10, pode_entrar=lambda a: (True, None), envio=True,
-                   conta_id=2)
+                   conta_id=2, conectado_ha_s=60.0)
     antes = len(acoes_de(mt5, 6))
     relogio_local[0] += 1.0
     sem_relogio()
@@ -437,5 +438,197 @@ def test_falha_numa_acao_nao_impede_as_outras(tmp_path):
     assert sorted(a.tipo for a in acoes) == ["entrar", "sair"]
     with pytest.raises(RuntimeError):
         m.executar(mt5, acoes, foto=foto, agora_srv=AG, simbolo="WINV26", desvio=10,
-                   pode_entrar=lambda a: (True, None), envio=True, conta_id=2)
+                   pode_entrar=lambda a: (True, None), envio=True, conta_id=2,
+                   conectado_ha_s=60.0)
     assert evs(m, "saida_enviando") and evs(m, "executada")
+
+
+# ======================================================== rodada de correção 1
+def _executar_direto(m, mt5, acoes, agora=AG, conectado=60.0):
+    foto = K.fotografar(mt5, datetime(2026, 10, 9))
+    m.executar(mt5, acoes, foto=foto, agora_srv=agora, simbolo="WINV26", desvio=10,
+               pode_entrar=lambda a: (True, None), envio=True, conta_id=2,
+               conectado_ha_s=conectado)
+
+
+def test_saida_parcial_nao_fecha_o_ticket_e_o_stop_do_servidor_registra_o_resto(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    t = evs(m, "executada")[0]["ticket"]
+    z = {4: Desejado(ZERADO)}
+    mt5.roteiro = [10010]                       # sai 1 dos 2 contratos
+    assert volta(m, mt5, z, agora=T + timedelta(seconds=10))[-1] == "saida_parcial"
+    assert mt5.posicoes[t].volume == 1 and evs(m, "saida_parcial")[0]["contratos"] == 1
+    dia = m.diario(DIA)
+    assert dia.saida_desde(t) == T + timedelta(seconds=10)     # segue pendente
+    assert (t, T) in dia.tickets_abertos(4)                    # ticket segue aberto
+    mt5.stopar(t)                               # o SL do servidor leva o resto
+    volta(m, mt5, z, agora=T + timedelta(seconds=11))
+    sa = evs(m, "saiu_antes")
+    assert [e["ticket"] for e in sa] == [t] and sa[0]["contratos"] == 1
+    assert sa[0]["motivo"] == "stop na corretora"
+    assert sum(e["contratos"] for e in evs(m, "saida_parcial") + sa) == 2
+
+
+def test_saida_parcial_e_depois_total_somam_os_contratos(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    t = evs(m, "executada")[0]["ticket"]
+    z = {4: Desejado(ZERADO)}
+    mt5.roteiro = [10010]
+    volta(m, mt5, z, agora=T + timedelta(seconds=10))
+    volta(m, mt5, z, agora=T + timedelta(seconds=12))
+    assert t not in mt5.posicoes
+    assert [e["contratos"] for e in evs(m, "saida_parcial") + evs(m, "saida_executada")] \
+        == [1, 1]
+    assert m.diario(DIA).saida_desde(t) is None
+
+
+def _esconde_a_nova(mt5, zerar_ordem):
+    """A lista de posições ainda não tem a entrada nova (e, se pedido, a
+    resposta vem sem `order`)."""
+    escondidas = set()
+    envia, lista = mt5.order_send, mt5.positions_get
+
+    def send(req):
+        r = envia(req)
+        if r is not None and req["action"] == 1 and "position" not in req \
+                and r.retcode == 10009:
+            escondidas.add(r.order)
+            if zerar_ordem:
+                return NS(retcode=r.retcode, order=0, deal=r.deal, volume=r.volume,
+                          price=r.price, comment="")
+        return r
+    mt5.order_send = send
+    mt5.positions_get = lambda **k: tuple(p for p in lista(**k)
+                                          if p.ticket not in escondidas)
+    return escondidas
+
+
+def _antiga_saindo(m, mt5):
+    # caso 9: a operação anterior (mesmo lado) ainda está saindo
+    t0 = T - timedelta(minutes=5)
+    agora, mt5.agora = mt5.agora, t0 + timedelta(seconds=1)
+    antiga = mt5.abrir_manual(1, volume=2, magic=K.magic(4))
+    mt5.agora = agora
+    m.diario(DIA).registrar("executada", quando=t0, ligacao_id=4, entry_ts=t0,
+                            ticket=antiga, lado=1, stop_px=188_000, alvo_px=None,
+                            contratos=2)
+    mt5.roteiro = [10018]                       # a saída da antiga não pega agora
+    return antiga
+
+
+def test_ticket_vem_da_ordem_mesmo_sem_a_posicao_na_lista(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    antiga = _antiga_saindo(m, mt5)
+    nova = _esconde_a_nova(mt5, zerar_ordem=False)
+    volta(m, mt5, {4: D})
+    ev = evs(m, "executada")[-1]
+    assert ev["entry_ts"] == T and ev["ticket"] in nova and ev["ticket"] != antiga
+
+
+def test_sem_ordem_na_resposta_nunca_pega_o_ticket_da_operacao_anterior(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    antiga = _antiga_saindo(m, mt5)
+    _esconde_a_nova(mt5, zerar_ordem=True)
+    volta(m, mt5, {4: D})
+    ev = evs(m, "executada")[-1]
+    assert ev["entry_ts"] == T and ev["ticket"] is None
+    # e o stop da operação nova nunca vai para a posição antiga
+    assert not [r for r in acoes_de(mt5, 6) if r["position"] == antiga]
+
+
+def test_chamado_de_entrada_cai_depois_da_janela_com_desfecho(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.margem_livre = 0
+    volta(m, mt5, {4: D})
+    assert len(m.chamados) == 1
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=20))
+    assert len(m.chamados) == 1                 # ainda na janela
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=31))
+    assert not m.chamados and len(evs(m, "chamado_fechado")) == 1
+
+
+def test_fechar_publico_e_virada_do_dia_limpam_os_chamados(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.margem_livre = 0
+    volta(m, mt5, {4: D})
+    chave = next(iter(m.chamados))
+    assert m.fechar(chave, AG) and not m.chamados
+    assert evs(m, "chamado_fechado")[0]["motivo"] == chave
+    assert not m.fechar(chave, AG)
+    d2 = Desejado(POSICAO, lado=1, entry_ts=T + timedelta(minutes=1), entry_px=189_000,
+                  stop_px=188_800, alvo_px=189_400, contratos=2)
+    volta(m, mt5, {4: d2}, agora=T + timedelta(minutes=1, seconds=1))
+    assert m.chamados
+    m.diario(DIA + timedelta(days=1))
+    assert m.chamados == {} and m.so_encerrar == {}
+
+
+def test_diario_fica_em_ordem_de_tempo_depois_das_respostas(tmp_path):
+    passos = iter(range(2, 100))
+    mt5 = MT5Ordens()
+    m = Motor(tmp_path, INST, relogio=lambda: T + timedelta(seconds=next(passos)))
+    mt5.roteiro = [10010, 10009, 10016]        # parcial; cancela; SLTP inválido -> sai
+    volta(m, mt5, {4: D})
+    eventos = m.diario(DIA).eventos
+    assert [e["tipo"] for e in eventos] == [
+        "enviando", "parcial", "cancelar_enviando", "cancelada", "protecao_enviando",
+        "protecao_recusada", "saida_enviando", "saida_executada"]
+    q = [e["quando"] for e in eventos]
+    assert q == sorted(q) and q[2] > q[0]
+
+
+def test_erro_antes_do_envio_registra_recusada_e_sobe(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+
+    def quebra(req):
+        raise RuntimeError("IPC")
+    mt5.order_check = quebra
+    with pytest.raises(RuntimeError):
+        volta(m, mt5, {4: D})
+    assert [e["tipo"] for e in m.diario(DIA).eventos] == ["enviando", "recusada"]
+    assert evs(m, "recusada")[0]["motivo"] == "RuntimeError('IPC')"
+    assert not mt5.enviados
+
+
+def test_erro_no_proprio_envio_fica_sem_desfecho(tmp_path):
+    # o order_send pode ter chegado à corretora: nunca "recusada"
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+
+    def quebra(req):
+        raise RuntimeError("IPC")
+    mt5.order_send = quebra
+    with pytest.raises(RuntimeError):
+        volta(m, mt5, {4: D})
+    assert [e["tipo"] for e in m.diario(DIA).eventos] == ["enviando"]
+    assert m.diario(DIA).tentativa_sem_desfecho(4, T) == AG
+
+
+def test_lista_instavel_nao_fecha_chamado_de_posicao(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.abrir_manual(1, magic=K.magic(4))       # sem stop e sem registro
+    volta(m, mt5, {}, disponivel=False)
+    assert len(m.chamados) == 1
+    mt5.vazio_uma_vez = True                    # logo após reconectar: lista vazia
+    volta(m, mt5, {}, agora=AG + timedelta(seconds=1), disponivel=False, conectado=2.0)
+    assert len(m.chamados) == 1
+    mt5.posicoes.clear()
+    volta(m, mt5, {}, agora=AG + timedelta(seconds=2), disponivel=False, conectado=2.0)
+    assert len(m.chamados) == 1                 # ainda instável: não confia
+    volta(m, mt5, {}, agora=AG + timedelta(seconds=8), disponivel=False)
+    assert not m.chamados
+
+
+def test_sem_stop_abre_um_chamado_so_pelos_dois_caminhos(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    t = mt5.abrir_manual(1, magic=K.magic(4))
+    p = K.fotografar(mt5, datetime(2026, 10, 9)).posicoes[0]
+    acoes = [Acao("chamar", 4, ticket=t, posicao=p,
+                  motivo="posição sem stop e papel indisponível"),
+             Acao("proteger", 4, ticket=t, posicao=p,
+                  desejado=Desejado(POSICAO, lado=1, entry_ts=T))]
+    _executar_direto(m, mt5, acoes)
+    _executar_direto(m, mt5, acoes, agora=AG + timedelta(seconds=2))
+    assert list(m.chamados) == [f"sem_stop:{t}"]
+    assert len(evs(m, "chamado")) == 1 and not mt5.enviados
