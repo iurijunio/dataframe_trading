@@ -31,7 +31,7 @@ TIPOS = frozenset({
     "nao_entrou", "seria_enviada", "adotada", "saiu_antes",
     "saida_enviando", "saida_executada", "saida_recusada",
     "protecao_enviando", "protecao", "protecao_recusada", "cancelada",
-    "incerta", "cancelar_enviando",
+    "incerta", "cancelar_enviando", "cancelar_recusada",
     "chamado", "chamado_fechado", "conta_travada", "rolagem", "comando",
 })
 # desfechos finais de uma tentativa de entrada: sem um deles depois do último
