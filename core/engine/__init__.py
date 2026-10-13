@@ -8,4 +8,4 @@
 # meses dão números diferentes e ninguém consegue dizer por quê.
 #
 # Formato: ano.mês.dia da mudança.
-VERSAO = "2026.09.18"
+VERSAO = "2026.10.09"

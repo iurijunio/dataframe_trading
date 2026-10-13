@@ -204,9 +204,8 @@ def com_barra_provisoria(barras: dict | None, ts: datetime,
     do minuto, ao preço de abertura — o mesmo do backtest. Nunca é gravada
     em bars_m1: o candle real a substitui no minuto seguinte.
 
-    Em M1 com stop/alvo por ATR, o stop_px/alvo_px da operação aberta usa a
-    faixa falsa da provisória até o candle real chegar (risco conhecido do
-    motor; esses planos ficam barrados na demo, Tarefa 12).
+    A faixa falsa dela não chega ao stop/alvo por ATR da entrada: o motor
+    tira o nível da vela fechada até o minuto ANTERIOR (`vela_do_nivel`).
     """
     if barras is None:
         return None
