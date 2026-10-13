@@ -178,7 +178,7 @@ class MT5Ordens:
             o = self._novo()
             self.ordens[o] = NS(ticket=o, magic=req["magic"], symbol=req["symbol"],
                                 volume_current=req["volume"] - vol,
-                                time_setup=_epoch(self.agora),
+                                time_setup=_epoch(self.agora), type=req["type"],
                                 req=dict(req, volume=req["volume"] - vol))
         return NS(retcode=10010 if parcial else 10009, order=t, deal=deal,
                   volume=vol, price=float(self.preco), comment="")

@@ -115,3 +115,26 @@ def test_ordem_pendente_traz_o_lado():
                                         preco=189_000, magic_=K.magic(4),
                                         comentario="x", desvio=10, preenchimento=2))
     assert sorted(o["lado"] for o in K.fotografar(mt5, DIA).ordens) == [-1, 1]
+
+
+def test_resto_de_parcial_aparece_na_foto_com_o_lado():
+    mt5 = MT5Ordens()
+    mt5.roteiro = [10010]
+    mt5.order_send(K.pedido_entrada(mt5, simbolo="WINV26", lado=-1, volume=3, preco=189_000,
+                                    magic_=K.magic(4), comentario="x", desvio=10,
+                                    preenchimento=2))
+    f = K.fotografar(mt5, DIA)
+    assert [o["lado"] for o in f.ordens] == [-1]
+
+
+def test_tipo_de_ordem_fora_de_compra_e_venda_tem_lado_zero():
+    mt5 = MT5Ordens()
+    mt5.roteiro = [10008] * 3
+    for _ in range(3):
+        mt5.order_send(K.pedido_entrada(mt5, simbolo="WINV26", lado=1, volume=1,
+                                        preco=189_000, magic_=K.magic(4),
+                                        comentario="x", desvio=10, preenchimento=2))
+    tipos_ = [8, 2, 5]                                  # CLOSE_BY, BUY_LIMIT, SELL_STOP
+    for o, t in zip(mt5.ordens.values(), tipos_):
+        o.type = t
+    assert sorted(o["lado"] for o in K.fotografar(mt5, DIA).ordens) == [-1, 0, 1]

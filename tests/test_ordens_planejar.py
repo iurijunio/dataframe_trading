@@ -287,8 +287,11 @@ def test_zerado_com_resto_pendente_cancela_e_sai_na_mesma_volta(tmp_path):
 
 def test_ordem_de_saida_em_transito_nao_e_cancelada_nem_repetida(tmp_path):
     # posição de compra + ordem de venda pendente = a saída a caminho
-    a = plan(tmp_path, {4: Desejado(ZERADO)}, foto([pos(10)], ordens=[ordem(lado=-1)]),
-             agora=T + timedelta(seconds=20))
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("saida_enviando", quando=T + timedelta(seconds=19), ligacao_id=4, ticket=10)
+    a = plan(tmp_path, {4: Desejado(ZERADO)}, foto([pos(10)], ordens=[
+        ordem(lado=-1, quando=T + timedelta(seconds=19))]), diario=d,
+        agora=T + timedelta(seconds=20))
     assert a == []
 
 
@@ -373,3 +376,43 @@ def test_posicao_registra_saiu_antes_de_ticket_antigo(tmp_path):
     assert tipos(a) == [("saiu_antes", 4, 8)]
     assert plan(tmp_path, {4: D}, foto([pos(10)], negocios=[neg]), diario=d,
                 conectado=1.0) == []
+
+
+def test_virada_resto_da_nova_venda_e_cancelado_e_a_compra_antiga_sai(tmp_path):
+    # papel virou BUY->SELL: a SELL nova entrou em parte, o resto está pendente
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("executada", quando=T, ligacao_id=4, entry_ts=T, ticket=10)
+    novo_ts = T + timedelta(minutes=1)
+    venda = Desejado(POSICAO, lado=-1, entry_ts=novo_ts, entry_px=189_000,
+                     stop_px=189_200, alvo_px=188_600, contratos=2)
+    d.registrar("parcial", quando=novo_ts, ligacao_id=4, entry_ts=novo_ts, ticket=11)
+    nova = pos(11, lado=-1, sl=189_200, tp=188_600, aberta=novo_ts)
+    for seg in (2, 20, 300):
+        a = plan(tmp_path, {4: venda}, foto([pos(10), nova],
+                 ordens=[ordem(lado=-1, quando=novo_ts)]), diario=d,
+                 agora=novo_ts + timedelta(seconds=seg))
+        t = tipos(a)
+        assert ("sair", 4, 10) in t
+        assert (("cancelar", 4, 99) in t) == (seg > 5)
+
+
+def test_saida_em_transito_aberta_no_diario_nao_cancela_nem_repete(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("saida_enviando", quando=T, ligacao_id=4, ticket=10)
+    f = foto([pos(10)], ordens=[ordem(lado=-1, quando=T)])
+    z = {4: Desejado(ZERADO)}
+    assert plan(tmp_path, z, f, diario=d, agora=T + timedelta(seconds=3)) == []
+    a = plan(tmp_path, z, f, diario=d, agora=T + timedelta(seconds=6))
+    assert tipos(a) == [("cancelar", 4, 99)]      # travou: cancela; sair vem na volta seguinte
+
+
+def test_ordem_de_tipo_desconhecido_nunca_e_tocada(tmp_path):
+    o = ordem(lado=0, quando=T)
+    assert plan(tmp_path, {4: Desejado(ZERADO)}, foto(ordens=[o]),
+                agora=T + timedelta(seconds=60)) == []
+
+
+def test_perdida_espera_a_lista_estabilizar_apos_reconectar(tmp_path):
+    f, ag = foto(), T + timedelta(seconds=40)
+    assert plan(tmp_path, {4: D}, f, agora=ag, conectado=1.0) == []
+    assert tipos(plan(tmp_path, {4: D}, f, agora=ag)) == [("perdida", 4, None)]

@@ -301,8 +301,10 @@ def fotografar(mt5, inicio_dia: datetime) -> Fotografia | None:
         f.ordens.append({"ticket": int(o.ticket), "magic": int(o.magic),
                          "ligacao_id": ligacao_do_magic(o.magic),
                          "simbolo": o.symbol, "volume": float(o.volume_current),
-                         # tipos pares do MT5 (BUY, BUY_LIMIT, BUY_STOP...) são compra
-                         "lado": 1 if int(o.type) % 2 == 0 else -1,
+                         # compra: BUY/BUY_LIMIT/BUY_STOP/BUY_STOP_LIMIT (0,2,4,6);
+                         # venda: 1,3,5,7; o resto (CLOSE_BY...) = 0, nunca tocado
+                         "lado": {0: 1, 2: 1, 4: 1, 6: 1,
+                                  1: -1, 3: -1, 5: -1, 7: -1}.get(int(o.type), 0),
                          "quando": _hora(o.time_setup)})
     for o in hist:
         f.historico_ordens.append({"ticket": int(o.ticket), "magic": int(o.magic),

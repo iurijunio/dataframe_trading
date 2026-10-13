@@ -103,21 +103,26 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
             continue
         pos = [p for p in foto.posicoes if p.ligacao_id == lig]
         pend = pendentes.get(lig, [])
-        # ordem contrária a uma posição da ligação = a saída em trânsito: não
-        # se cancela nem se pede outra saída para o mesmo ticket
+        # ordem contrária a uma posição cuja saída está aberta no diário = a
+        # saída em trânsito (não se repete a saída enquanto ela vive). Contrária
+        # sem saída aberta é resto de uma entrada nova: segue a regra de cancelar.
         em_saida: set = set()
+        ordem_de_saida: set = set()
         for o in pend:
             for p in pos:
-                if o.get("lado") and p.lado == -o["lado"]:
+                if o.get("lado") and p.lado == -o["lado"] and \
+                        diario.saida_desde(p.ticket) is not None:
                     em_saida.add(p.ticket)
+                    ordem_de_saida.add(o["ticket"])
         for o in pend:
-            if any(o.get("lado") and p.lado == -o["lado"] for p in pos):
-                continue
-            # resto de parcial / PLACED velho: cancela; papel zerado também
-            # (não pode prender a saída)
-            if (d.estado == ZERADO or _seg(agora_srv, o["quando"]) > ORDEM_VELHA_S) and _pode(
-                    diario.ultima_tentativa("cancelar_enviando", ticket=o["ticket"]),
-                    agora_srv):
+            if o.get("lado") == 0:
+                continue          # tipo desconhecido (ex.: CLOSE_BY): nunca tocada
+            velha = _seg(agora_srv, o["quando"]) > ORDEM_VELHA_S
+            # saída em trânsito só se cancela quando travou (> 5 s); o resto de
+            # entrada também quando o papel zerou (não pode prender a saída)
+            if (velha or (d.estado == ZERADO and o["ticket"] not in ordem_de_saida)) \
+                    and _pode(diario.ultima_tentativa("cancelar_enviando", ticket=o["ticket"]),
+                              agora_srv):
                 acoes.append(Acao("cancelar", lig, ticket=o["ticket"],
                                   motivo="ordem pendente"))
 
@@ -192,7 +197,10 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
             continue
         if _seg(agora_srv, ts) > JANELA_ENTRADA_S:
             # passou a janela sem posição nem negócio de entrada (mesmo com
-            # ordem no histórico ou "aceita": não houve execução)
+            # ordem no histórico ou "aceita": não houve execução); logo após
+            # reconectar a lista pode vir vazia: espera estabilizar
+            if not estavel:
+                continue
             acoes.append(Acao("perdida", lig, desejado=d,
                               motivo=diario.ultimo_motivo(lig, ts)
                               or "automação fora do ar"))
