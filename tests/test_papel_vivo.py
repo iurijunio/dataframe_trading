@@ -64,6 +64,7 @@ def _barras(dia: date, ate: datetime | None = None, base: int = 189_000):
 
 
 AQUEC = _barras(ONTEM)
+AQ2 = PV.Aquecimento(AQUEC, 2)       # 2 pregões: o da estratégia sem janela
 
 
 @pytest.fixture
@@ -114,7 +115,7 @@ def _retrato(agora=AGORA):
         return PV.ler_retrato(con, DIA, agora, {})
 
 
-def _desejados(ret, inst, *, hoje=None, prov=PROV, agora=AGORA, aquec=AQUEC):
+def _desejados(ret, inst, *, hoje=None, prov=PROV, agora=AGORA, aquec=AQ2):
     hoje = _barras(DIA, SINAL) if hoje is None else hoje
     return PV.desejados(ret, aquec, hoje, prov, inst, agora)
 
@@ -232,12 +233,14 @@ def test_indisponivel_sem_aquecimento_ou_sem_relogio(lig, inst):
     ret = _retrato()
     assert _desejados(ret, inst, aquec=None) == ({}, False)
     assert _desejados(ret, inst, agora=None) == ({}, False)
-    assert PV.desejados(ret, AQUEC, None, PROV, inst, AGORA) == ({}, False)
-    assert PV.desejados(None, AQUEC, _barras(DIA, SINAL), PROV, inst,
+    assert PV.desejados(ret, AQ2, None, PROV, inst, AGORA) == ({}, False)
+    assert PV.desejados(None, AQ2, _barras(DIA, SINAL), PROV, inst,
                         AGORA) == ({}, False)
     # retrato de ontem com o relógio de hoje (virada do dia): velho
     amanha = AGORA + timedelta(days=1)
-    assert _desejados(ret, inst, agora=amanha) == ({}, False)
+    hoje_amanha = _barras(amanha.date(), SINAL + timedelta(days=1))
+    assert _desejados(ret, inst, agora=amanha, hoje=hoje_amanha,
+                      prov=(ENTRADA + timedelta(days=1), 189_100)) == ({}, False)
     # e com tudo na mão, disponível
     assert _desejados(ret, inst)[1] is True
 
@@ -386,7 +389,8 @@ def test_igual_ao_papel_gravado(lig, inst):
             do_banco = papel.barras_do_dia(con, SIMB, DIA, 2)
         hoje = PV.barras_de_hoje(_df(hoje_b))
         # as barras da memória são as do banco
-        juntas = PV._juntar(aquec, hoje)
+        assert aquec.pregoes == 2
+        juntas = PV._juntar(aquec.barras, hoje)
         assert set(juntas) == set(do_banco)
         for c in do_banco:
             assert np.array_equal(juntas[c], do_banco[c]), c
@@ -422,7 +426,9 @@ def test_carregar_aquecimento_pega_os_pregoes_do_maior_aquecimento(base, mods):
                 d, datetime.min.time()) + timedelta(hours=9, minutes=4)))
     with db.connect(read_only=True) as con:
         ret = PV.ler_retrato(con, DIA, AGORA, {})
-        b = PV.carregar_aquecimento(con, SIMB, DIA, ret)
+        aq = PV.carregar_aquecimento(con, SIMB, DIA, ret)
+    assert aq.pregoes == 2
+    b = aq.barras
     # estratégia sem janela: 0 + 2 de folga = os 2 pregões antes do dia
     datas = sorted({d for d in b["ts"].astype("datetime64[D]").tolist()})
     assert datas == [date(2026, 10, 7), ONTEM]
@@ -464,3 +470,82 @@ def test_rodar_dia_com_provisoria_abre_no_minuto_em_formacao(dia_ate_o_sinal):
         ENTRADA, True, True, 1)
     assert o["entry_px"] == ENTRADA_PX
     assert o["stop_px"] == ENTRADA_PX - 200
+
+
+# ------------------------------------------------ revisão, rodada 1
+def _quebra_preparo(monkeypatch):
+    def quebra(*a, **k):
+        raise RuntimeError("disco ilegível")
+    monkeypatch.setattr(codigo, "hash_estrategia", quebra)
+
+
+def test_preparo_com_falha_e_desligada_e_zerado(lig, inst, monkeypatch):
+    """Estratégia quebrada não pode prender a posição: desligar sai sem
+    precisar de cálculo nenhum (spec §4/§5.1)."""
+    _quebra_preparo(monkeypatch)
+    ao_vivo.desligar_membro(lig.lig)
+    ret = _retrato()
+    assert ret.ligacoes[lig.lig].falha
+    des, ok = _desejados(ret, inst)
+    assert ok and des[lig.lig] == PV.Desejado(PV.ZERADO, motivo="desligada")
+
+
+def test_preparo_com_falha_e_fase_papel_e_zerado(lig, inst, monkeypatch):
+    _quebra_preparo(monkeypatch)
+    with db.connect_write() as con:
+        con.execute("UPDATE portfolio_membros SET fase = 'papel'")
+    ret = _retrato()
+    assert ret.ligacoes[lig.lig].falha
+    des, ok = _desejados(ret, inst)
+    assert ok and des[lig.lig] == PV.Desejado(PV.ZERADO, motivo="fase papel")
+
+
+def _as(hh, mm, ss=0):
+    return datetime(2026, 10, 9, hh, mm, ss)
+
+
+def test_barras_de_hoje_cortadas_deixam_indisponivel(lig, inst):
+    """Logo depois de reconectar o MT5 pode devolver o dia cortado: a
+    operação das 10:01 sumiria do cálculo e a posição seria encerrada."""
+    ret = _retrato(_as(10, 5, 1))
+
+    def rodar(ate, prov, agora=_as(10, 5, 1)):
+        hoje = _barras(DIA, ate) if ate else {
+            k: v[:0] for k, v in _barras(DIA, SINAL).items()}
+        return _desejados(ret, inst, hoje=hoje, prov=prov, agora=agora)
+    # normal: até 10:04, provisória 10:05 — posição
+    des, ok = rodar(_as(10, 4), (_as(10, 5), 189_000))
+    assert ok and des[lig.lig].estado == PV.POSICAO
+    assert des[lig.lig].entry_ts == ENTRADA
+    # cortado às 09:58 com a provisória das 10:05: não se sabe
+    assert rodar(_as(9, 58), (_as(10, 5), 189_000)) == ({}, False)
+    # vazio às 10:30
+    assert rodar(None, (_as(10, 30), 189_000), agora=_as(10, 30, 1)) == (
+        {}, False)
+    # um minuto atrasado é tolerado (sem provisória); dois, não
+    des, ok = rodar(_as(10, 3), None)
+    assert ok and des[lig.lig].estado == PV.POSICAO
+    assert rodar(_as(10, 2), None) == ({}, False)
+    # provisória que não cola (falta o 10:04): buraco, não se sabe
+    assert rodar(_as(10, 3), (_as(10, 5), 189_000)) == ({}, False)
+    # antes das 09:01 o dia vazio é normal
+    des, ok = rodar(None, (_as(9, 0), 189_000), agora=_as(9, 0, 30))
+    assert ok and des[lig.lig] == PV.Desejado(PV.ZERADO)
+
+
+def test_aquecimento_insuficiente_so_para_quem_precisa_de_mais(lig, mods, inst):
+    # declara 1695 barras: ⌈1695 / 565⌉ + 2 = 5 pregões
+    mods["reversao_rsi"] = SimpleNamespace(signals=_mod().signals,
+                                           aquecimento_barras=lambda p: 1695)
+    outra = _ligacao("vivo-longa", run_id=2, strategy="reversao_rsi")
+    ret = _retrato()
+    assert PV.pregoes_necessarios(ret) == 5
+    des, ok = _desejados(ret, inst, aquec=PV.Aquecimento(AQUEC, 2))
+    assert ok
+    assert des[outra.lig] == PV.Desejado(PV.INDISPONIVEL,
+                                         motivo="aquecimento insuficiente")
+    assert des[lig.lig].estado == PV.POSICAO
+    # relido com 5 pregões, as duas calculam
+    des, _ = _desejados(ret, inst, aquec=PV.Aquecimento(AQUEC, 5))
+    assert des[outra.lig].estado == PV.POSICAO
+    assert des[lig.lig].estado == PV.POSICAO

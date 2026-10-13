@@ -115,29 +115,56 @@ def ler_retrato(con, dia: date, agora: datetime, cache_codigo: dict, *,
                    portfolio_de={lig: v[0] for lig, v in meta.items()})
 
 
-def carregar_aquecimento(con, symbol: str, dia: date,
-                         retrato: Retrato) -> dict | None:
-    """Os pregões ANTES do dia, uma vez por pregão: o maior aquecimento entre
-    as ligações do retrato (mesma conta de `papel.pregoes_de_aquecimento`)."""
+@dataclass(frozen=True)
+class Aquecimento:
+    """As barras dos pregões antes do dia e QUANTOS pregões foram pedidos.
+
+    O número viaja junto porque o aquecimento é lido uma vez por pregão, e
+    uma ligação de janela mais longa promovida no meio do dia calcularia
+    com passado de menos — sinal diferente do papel gravado, sem aviso.
+    Com ele, `desejados` recusa essa ligação até o aquecimento ser relido.
+    """
+    barras: dict
+    pregoes: int
+
+
+def _pregoes(lv: LigacaoViva) -> int:
+    estrat, perfil = papel.perfil_do_plano(lv.plano)
+    return papel.pregoes_de_aquecimento(lv.modulo, estrat, perfil)
+
+
+def pregoes_necessarios(retrato: Retrato) -> int:
+    """O maior aquecimento entre as ligações do retrato (mesma conta de
+    `papel.pregoes_de_aquecimento`). Quem chama relê o aquecimento quando
+    isto passar do `Aquecimento.pregoes` carregado."""
     pregoes = 1
     for lv in retrato.ligacoes.values():
         if lv.plano is None or lv.modulo is None:
             continue
         try:       # um plano quebrado não derruba o aquecimento dos outros
-            estrat, perfil = papel.perfil_do_plano(lv.plano)
-            pregoes = max(pregoes, papel.pregoes_de_aquecimento(
-                lv.modulo, estrat, perfil))
+            pregoes = max(pregoes, _pregoes(lv))
         except Exception:
             continue
+    return pregoes
+
+
+def carregar_aquecimento(con, symbol: str, dia: date,
+                         retrato: Retrato) -> Aquecimento | None:
+    """Os pregões ANTES do dia, uma vez por pregão, para a ligação de maior
+    aquecimento do retrato. `pregoes` é o pedido, não o achado: com menos
+    histórico no banco o `papel.barras_do_dia` também usa o que há."""
+    pregoes = pregoes_necessarios(retrato)
     ini = datetime.combine(dia, time())
     datas = con.execute(
         "SELECT DISTINCT CAST(ts AS DATE) AS d FROM bars_m1 WHERE symbol = ? "
         "AND ts < ? ORDER BY d DESC LIMIT ?", [symbol, ini, pregoes]).fetchall()
     if not datas:
         return None
-    return prepare_bars(con, symbol,
-                        start=datetime.combine(min(r[0] for r in datas), time()),
-                        end=ini - timedelta(microseconds=1))
+    return Aquecimento(
+        barras=prepare_bars(con, symbol,
+                            start=datetime.combine(min(r[0] for r in datas), time()),
+                            end=ini - timedelta(microseconds=1)),
+        pregoes=pregoes)
 
 
 def barras_de_hoje(df: pl.DataFrame) -> dict:
@@ -155,13 +182,34 @@ def _juntar(a: dict, b: dict) -> dict:
     return {k: np.concatenate([a[k], b[k]]) for k in a}
 
 
-def desejados(retrato: Retrato | None, aquecimento: dict | None,
+# o pregão começa às 09:00; do minuto seguinte em diante tem de haver candle
+_ABERTURA = time(9, 1)
+# um minuto que fecha atrasado no MT5 não derruba o papel; dois, sim
+_ATRASO_MAX = timedelta(minutes=2)
+
+
+def _hoje_velho(hoje: dict, agora_srv: datetime) -> bool:
+    """As barras de hoje não chegam até agora: logo depois de (re)conectar o
+    `copy_rates_range` pode vir vazio ou cortado. Calculado assim, o papel
+    não acharia a operação aberta e o desejado seria ZERADO — a automação
+    encerraria a posição e não entraria de novo."""
+    if agora_srv.time() < _ABERTURA:
+        return False
+    if not len(hoje["ts"]):
+        return True
+    minuto = np.datetime64(agora_srv.replace(second=0, microsecond=0), "ns")
+    return hoje["ts"][-1] < minuto - np.timedelta64(_ATRASO_MAX)
+
+
+def desejados(retrato: Retrato | None, aquecimento: Aquecimento | None,
               hoje: dict | None, provisoria: tuple[datetime, int] | None,
               inst: dict, agora_srv: datetime | None) -> tuple[dict, bool]:
     """O desejado de cada ligação e se o papel está disponível.
 
     `({}, False)` sem retrato do dia, aquecimento, barras ou relógio do
-    servidor: nada se sabe e a automação só confere a proteção.
+    servidor, com as barras de hoje atrasadas (`_hoje_velho`) ou com a
+    provisória que não cola (buraco entre o último candle e o minuto em
+    formação): nada se sabe e a automação só confere a proteção.
 
     O stop/alvo é o que vale DURANTE o minuto em formação. O motor roda as
     proteções (breakeven, stop móvel, trailing) no fim de toda barra,
@@ -172,17 +220,31 @@ def desejados(retrato: Retrato | None, aquecimento: dict | None,
     de barra nenhum: vale o stop/alvo da entrada.
     """
     if (retrato is None or aquecimento is None or hoje is None
-            or agora_srv is None or retrato.dia != agora_srv.date()):
+            or agora_srv is None or retrato.dia != agora_srv.date()
+            or _hoje_velho(hoje, agora_srv)):
         return {}, False
-    barras = _juntar(aquecimento, hoje)
+    barras = _juntar(aquecimento.barras, hoje)
     com = barras
-    if provisoria is not None and provisoria[0].date() == retrato.dia:
+    prov_do_dia = provisoria is not None and provisoria[0].date() == retrato.dia
+    if prov_do_dia:
         com = papel.com_barra_provisoria(barras, *provisoria)
     usou = len(com["ts"]) > len(barras["ts"])
+    if prov_do_dia and not usou and len(hoje["ts"]):
+        # candle faltando antes do minuto em formação: sem a provisória a
+        # entrada deste minuto não apareceria e a posição pareceria zerada
+        return {}, False
     out: dict[int, Desejado] = {}
     # plano_id -> (operações decididas, {entry_ts: operação sem a provisória})
     calculados: dict[int, tuple[list, dict | None]] = {}
     for lig, lv in retrato.ligacoes.items():
+        # desligada ou fora da demo sai sem precisar de cálculo nenhum: vem
+        # antes da falha, senão uma estratégia quebrada prenderia a posição
+        if lv.fase != "demo":
+            out[lig] = Desejado(ZERADO, motivo="fase papel")
+            continue
+        if not lv.ligada:
+            out[lig] = Desejado(ZERADO, motivo="desligada")
+            continue
         if lv.falha:
             # falha no preparo (plano, hash do código): não se sabe — protege
             out[lig] = Desejado(INDISPONIVEL, motivo=lv.falha)
@@ -190,11 +252,14 @@ def desejados(retrato: Retrato | None, aquecimento: dict | None,
         if lv.status != "rodando" or lv.plano is None:
             out[lig] = Desejado(ZERADO, motivo=lv.motivo or lv.status)
             continue
-        if lv.fase != "demo":
-            out[lig] = Desejado(ZERADO, motivo="fase papel")
+        try:
+            precisa = _pregoes(lv)
+        except Exception as erro:
+            out[lig] = Desejado(INDISPONIVEL, motivo=f"falha no cálculo: {erro}")
             continue
-        if not lv.ligada:
-            out[lig] = Desejado(ZERADO, motivo="desligada")
+        if precisa > aquecimento.pregoes:
+            # passado de menos muda o sinal: até o aquecimento ser relido
+            out[lig] = Desejado(INDISPONIVEL, motivo="aquecimento insuficiente")
             continue
         pid = lv.plano["plano_id"]
         try:
