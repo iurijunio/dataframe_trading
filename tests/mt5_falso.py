@@ -123,7 +123,7 @@ class MT5Ordens:
             t = self._novo()
             self.ordens[t] = NS(ticket=t, magic=req.get("magic", 0),
                                 symbol=req["symbol"], volume_current=req["volume"],
-                                time_setup=_epoch(self.agora), req=dict(req))
+                                time_setup=_epoch(self.agora), type=req["type"], req=dict(req))
             # ativa: só está em orders_get; vai ao histórico ao sair de self.ordens
             return NS(retcode=10008, order=t, deal=0, volume=0.0, price=0.0, comment="")
         if r in (10009, 10010):

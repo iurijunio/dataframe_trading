@@ -195,7 +195,12 @@ def test_posicao_sem_protecao_ha_mais_de_2_s_e_encerrada(tmp_path):
     d.registrar("executada", quando=T, ligacao_id=4, entry_ts=T, ticket=10)
     nua = pos(10, sl=0.0, tp=0.0)
     assert tipos(plan(tmp_path, {4: D}, foto([nua]), diario=d)) == [("proteger", 4, 10)]
-    a = plan(tmp_path, {4: D}, foto([nua]), diario=d, agora=T + timedelta(seconds=3))
+    # a 1a tentativa de proteção abre o relógio dos 2 s
+    d.registrar("protecao_enviando", quando=T + timedelta(seconds=1), ticket=10,
+                ligacao_id=4)
+    a = plan(tmp_path, {4: D}, foto([nua]), diario=d, agora=T + timedelta(seconds=1.5))
+    assert a == []                       # 0,5 s depois da tentativa: nem proteger (1 s) nem sair
+    a = plan(tmp_path, {4: D}, foto([nua]), diario=d, agora=T + timedelta(seconds=3.5))
     assert tipos(a) == [("sair", 4, 10)]
 
 
@@ -220,3 +225,151 @@ def test_exatamente_30_s_ainda_entra(tmp_path):
     assert tipos(a) == [("entrar", 4, None)]
     a = plan(tmp_path, {4: D}, foto(), agora=T + timedelta(seconds=30, milliseconds=1))
     assert tipos(a) == [("perdida", 4, None)]
+
+
+def ordem(ticket=99, lado=1, quando=T, lig=4):
+    return {"ticket": ticket, "magic": K.magic(lig), "ligacao_id": lig,
+            "simbolo": "WINV26", "volume": 2.0, "lado": lado, "quando": quando}
+
+
+def exec_(d, ticket=10, **extra):
+    d.registrar("executada", quando=T, ligacao_id=4, entry_ts=T, ticket=ticket, **extra)
+
+
+def test_aceita_nunca_reenvia_e_vira_perdida_apos_30_s(tmp_path):
+    # PLACED: a ordem pode não estar em orders_get neste instante; reenviar duplica
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
+    d.registrar("aceita", quando=T, ligacao_id=4, entry_ts=T)
+    assert plan(tmp_path, {4: D}, foto(), diario=d, agora=T + timedelta(seconds=1.5)) == []
+    a = plan(tmp_path, {4: D}, foto(), diario=d, agora=T + timedelta(seconds=31))
+    assert tipos(a) == [("perdida", 4, None)]
+
+
+def test_tentativa_sem_desfecho_espera_como_incerta(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
+    assert plan(tmp_path, {4: D}, foto(), diario=d, agora=T + timedelta(seconds=1.5)) == []
+    d.registrar("chamado", quando=T, ligacao_id=4, entry_ts=T, motivo="x")
+    assert plan(tmp_path, {4: D}, foto(), diario=d, agora=T + timedelta(seconds=1.5)) == []
+    hist = {"ticket": 77, "magic": K.magic(4), "ligacao_id": 4,
+            "quando": T + timedelta(milliseconds=200)}
+    f = foto()
+    f.historico_ordens = [hist]
+    assert plan(tmp_path, {4: D}, f, diario=d, agora=T + timedelta(seconds=4)) == []
+    assert tipos(plan(tmp_path, {4: D}, foto(), diario=d,
+                      agora=T + timedelta(seconds=4))) == [("entrar", 4, None)]
+
+
+def test_janela_vence_mesmo_com_ordem_no_historico(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
+    d.registrar("incerta", quando=T, ligacao_id=4, entry_ts=T)
+    f = foto()
+    f.historico_ordens = [{"ticket": 77, "magic": K.magic(4), "ligacao_id": 4, "quando": T}]
+    a = plan(tmp_path, {4: D}, f, diario=d, agora=T + timedelta(seconds=40))
+    assert tipos(a) == [("perdida", 4, None)]
+
+
+def test_ordem_pendente_nao_trava_a_protecao(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    exec_(d)
+    nua = pos(10, sl=0.0, tp=0.0)
+    a = plan(tmp_path, {4: D}, foto([nua], ordens=[ordem()]), diario=d,
+             agora=T + timedelta(seconds=4))
+    assert ("proteger", 4, 10) in tipos(a)
+
+
+def test_zerado_com_resto_pendente_cancela_e_sai_na_mesma_volta(tmp_path):
+    a = plan(tmp_path, {4: Desejado(ZERADO)}, foto([pos(10)], ordens=[ordem(lado=1)]))
+    assert sorted(tipos(a)) == [("cancelar", 4, 99), ("sair", 4, 10)]
+
+
+def test_ordem_de_saida_em_transito_nao_e_cancelada_nem_repetida(tmp_path):
+    # posição de compra + ordem de venda pendente = a saída a caminho
+    a = plan(tmp_path, {4: Desejado(ZERADO)}, foto([pos(10)], ordens=[ordem(lado=-1)]),
+             agora=T + timedelta(seconds=20))
+    assert a == []
+
+
+def test_pendente_bloqueia_entrada(tmp_path):
+    assert plan(tmp_path, {4: D}, foto(ordens=[ordem()])) == []
+
+
+def test_resto_pendente_nao_faz_a_posicao_parcial_sair(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
+    a = plan(tmp_path, {4: D}, foto([pos(10)], ordens=[ordem()]), diario=d)
+    assert a == []
+
+
+def test_stop_zerado_com_alvo_e_protegido_e_depois_encerrado(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    exec_(d)
+    so_tp = pos(10, sl=0.0, tp=189_400)
+    assert tipos(plan(tmp_path, {4: D}, foto([so_tp]), diario=d)) == [("proteger", 4, 10)]
+    d.registrar("protecao_enviando", quando=T + timedelta(seconds=1), ticket=10,
+                ligacao_id=4)
+    a = plan(tmp_path, {4: D}, foto([so_tp]), diario=d, agora=T + timedelta(seconds=4))
+    assert tipos(a) == [("sair", 4, 10)]
+
+
+def test_stop_some_muito_depois_da_entrada_protege_antes_de_sair(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    exec_(d)
+    d.registrar("protecao", quando=T, ticket=10, ligacao_id=4)
+    a = plan(tmp_path, {4: D}, foto([pos(10, sl=0.0)]), diario=d,
+             agora=T + timedelta(minutes=30))
+    assert tipos(a) == [("proteger", 4, 10)]
+
+
+def test_indisponivel_repoe_o_stop_gravado_no_diario(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    exec_(d, lado=1, stop_px=188_800, alvo_px=189_400)
+    nua = pos(10, sl=0.0, tp=0.0)
+    for desej, disp in (({}, False), ({4: Desejado(INDISPONIVEL)}, True)):
+        a = plan(tmp_path, desej, foto([nua]), diario=d, disponivel=disp)
+        assert tipos(a) == [("proteger", 4, 10)]
+        assert (a[0].desejado.lado, a[0].desejado.stop_px, a[0].desejado.alvo_px) == (
+            1, 188_800, 189_400)
+    # sem relógio a proteção ainda vale
+    assert tipos(plan(tmp_path, {4: D}, foto([nua]), diario=d, agora=None)) == [
+        ("proteger", 4, 10)]
+
+
+def test_indisponivel_sem_stop_no_diario_pede_chamado(tmp_path):
+    a = plan(tmp_path, {}, foto([pos(10, sl=0.0, tp=0.0)]), disponivel=False)
+    assert tipos(a) == [("chamar", 4, 10)]
+    assert a[0].motivo == "posição sem stop e papel indisponível"
+
+
+def test_cancelar_respeita_o_intervalo_de_1_s(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("cancelar_enviando", quando=T + timedelta(seconds=7), ticket=99,
+                ligacao_id=4)
+    f = foto(ordens=[ordem()])
+    assert plan(tmp_path, {4: D}, f, diario=d, agora=T + timedelta(seconds=7.5)) == []
+    a = plan(tmp_path, {4: D}, f, diario=d, agora=T + timedelta(seconds=8.5))
+    assert tipos(a) == [("cancelar", 4, 99)]
+
+
+def test_ligacao_so_do_diario_registra_saiu_antes(tmp_path):
+    # ligação fora do retrato e sem posição: o ticket aberto no diário já saiu
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("executada", quando=T, ligacao_id=9, entry_ts=T, ticket=10)
+    a = plan(tmp_path, {}, foto(negocios=[saida(10)]), diario=d)
+    assert tipos(a) == [("saiu_antes", 9, 10)]
+
+
+def test_posicao_registra_saiu_antes_de_ticket_antigo(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    ant = T - timedelta(minutes=1)
+    d.registrar("executada", quando=ant, ligacao_id=4, entry_ts=ant, ticket=8)
+    exec_(d)
+    neg = K.Negocio(ticket=908, posicao=8, magic=K.magic(4), ligacao_id=4,
+                    simbolo="WINV26", entrada=False, lado=-1, volume=2, preco=1,
+                    resultado=0, motivo=4, quando=ant)
+    a = plan(tmp_path, {4: D}, foto([pos(10)], negocios=[neg]), diario=d)
+    assert tipos(a) == [("saiu_antes", 4, 8)]
+    assert plan(tmp_path, {4: D}, foto([pos(10)], negocios=[neg]), diario=d,
+                conectado=1.0) == []

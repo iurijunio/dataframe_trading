@@ -234,7 +234,7 @@ class Negocio:
 @dataclass
 class Fotografia:
     posicoes: list = field(default_factory=list)
-    ordens: list = field(default_factory=list)      # dicts: ticket, magic, ligacao_id, simbolo, volume, quando
+    ordens: list = field(default_factory=list)      # dicts: ticket, magic, ligacao_id, simbolo, volume, lado, quando
     negocios: list = field(default_factory=list)
     login: int | None = None
     servidor: str | None = None
@@ -301,6 +301,8 @@ def fotografar(mt5, inicio_dia: datetime) -> Fotografia | None:
         f.ordens.append({"ticket": int(o.ticket), "magic": int(o.magic),
                          "ligacao_id": ligacao_do_magic(o.magic),
                          "simbolo": o.symbol, "volume": float(o.volume_current),
+                         # tipos pares do MT5 (BUY, BUY_LIMIT, BUY_STOP...) são compra
+                         "lado": 1 if int(o.type) % 2 == 0 else -1,
                          "quando": _hora(o.time_setup)})
     for o in hist:
         f.historico_ordens.append({"ticket": int(o.ticket), "magic": int(o.magic),

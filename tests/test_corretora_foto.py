@@ -105,3 +105,13 @@ def test_resto_de_parcial_executa_so_o_que_faltava():
     resto = next(iter(mt5.ordens))
     mt5.executar_pendente(resto)
     assert sum(p.volume for p in mt5.posicoes.values()) == 2.0
+
+
+def test_ordem_pendente_traz_o_lado():
+    mt5 = MT5Ordens()
+    mt5.roteiro = [10008, 10008]
+    for lado in (1, -1):
+        mt5.order_send(K.pedido_entrada(mt5, simbolo="WINV26", lado=lado, volume=1,
+                                        preco=189_000, magic_=K.magic(4),
+                                        comentario="x", desvio=10, preenchimento=2))
+    assert sorted(o["lado"] for o in K.fotografar(mt5, DIA).ordens) == [-1, 1]

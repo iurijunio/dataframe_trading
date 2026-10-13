@@ -224,3 +224,35 @@ def test_linha_ruim_nao_impede_o_espelho_das_outras(tmp_path):
         tipos = [r[0] for r in con.execute(
             "SELECT tipo FROM ordens_eventos ORDER BY evento_id").fetchall()]
     assert tipos == ["enviando", "saida_enviando"]
+
+
+def test_desfecho_e_tentativa_sem_desfecho():
+    import tempfile
+    d = Diario(tempfile.mkdtemp(), DIA)
+    assert d.desfecho(4, T) is None and d.tentativa_sem_desfecho(4, T) is None
+    d.registrar("enviando", quando=Q, ligacao_id=4, entry_ts=T)
+    d.registrar("chamado", quando=Q + timedelta(seconds=1), ligacao_id=4, entry_ts=T)
+    assert d.tentativa_sem_desfecho(4, T) == Q and d.desfecho(4, T) is None
+    d.registrar("incerta", quando=Q + timedelta(seconds=2), ligacao_id=4, entry_ts=T)
+    assert d.tentativa_sem_desfecho(4, T) == Q + timedelta(seconds=2)
+    d.registrar("aceita", quando=Q + timedelta(seconds=3), ligacao_id=4, entry_ts=T)
+    assert d.desfecho(4, T) == "aceita" and d.tentativa_sem_desfecho(4, T) is None
+    d.registrar("enviando", quando=Q + timedelta(seconds=9), ligacao_id=4, entry_ts=T)
+    assert d.desfecho(4, T) is None     # nova tentativa: o desfecho antigo não vale
+
+
+def test_protecao_pendente_desde_e_registrada():
+    import tempfile
+    d = Diario(tempfile.mkdtemp(), DIA)
+    d.registrar("executada", quando=Q, ligacao_id=4, entry_ts=T, ticket=7, lado=-1,
+                stop_px=100, alvo_px=90)
+    assert d.protecao_registrada(7) == (-1, 100, 90) and d.protecao_registrada(8) is None
+    assert d.protecao_pendente_desde(7) is None
+    d.registrar("protecao_enviando", quando=Q, ticket=7, ligacao_id=4)
+    d.registrar("protecao_enviando", quando=Q + timedelta(seconds=1), ticket=7)
+    assert d.protecao_pendente_desde(7) == Q
+    d.registrar("protecao", quando=Q + timedelta(seconds=2), ticket=7, stop_px=99,
+                alvo_px=90)
+    assert d.protecao_pendente_desde(7) is None
+    assert d.protecao_registrada(7) == (-1, 99, 90)
+    assert d.ligacoes_abertas() == {4}

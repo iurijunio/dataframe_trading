@@ -31,9 +31,13 @@ TIPOS = frozenset({
     "nao_entrou", "seria_enviada", "adotada", "saiu_antes",
     "saida_enviando", "saida_executada", "saida_recusada",
     "protecao_enviando", "protecao", "protecao_recusada", "cancelada",
-    "incerta",
+    "incerta", "cancelar_enviando",
     "chamado", "chamado_fechado", "conta_travada", "rolagem", "comando",
 })
+# desfechos finais de uma tentativa de entrada: sem um deles depois do último
+# "enviando", a ordem pode ter chegado à corretora (spec §5.2)
+DESFECHOS_ENTRADA = frozenset({"recusada", "executada", "parcial", "adotada",
+                               "perdida", "nao_entrou", "aceita"})
 _COLUNAS = ("evento_id", "quando", "tipo", "conta_id", "ligacao_id", "entry_ts",
             "lado", "contratos", "simbolo", "ticket", "retcode", "preco_papel",
             "preco", "atraso_ms", "tentativa", "motivo")
@@ -139,6 +143,57 @@ class Diario:
                 desde = None
         return desde
 
+    def desfecho(self, lig, entry_ts) -> str | None:
+        """Tipo do desfecho final da ÚLTIMA tentativa de entrada (None = sem
+        tentativa, ou tentativa ainda sem desfecho)."""
+        res = None
+        for e in self._da(lig, entry_ts):
+            if e["tipo"] == "enviando":
+                res = None
+            elif e["tipo"] in DESFECHOS_ENTRADA:
+                res = e["tipo"]
+        return res
+
+    def tentativa_sem_desfecho(self, lig, entry_ts) -> datetime | None:
+        """Hora do último `enviando` (ou `incerta` depois dele) se a última
+        tentativa ficou sem desfecho final — a ordem pode ter executado.
+        Qualquer outro evento (ex.: chamado) não conta como desfecho."""
+        ref, aberta = None, False
+        for e in self._da(lig, entry_ts):
+            if e["tipo"] == "enviando":
+                ref, aberta = e["quando"], True
+            elif e["tipo"] in DESFECHOS_ENTRADA:
+                aberta = False
+            elif e["tipo"] == "incerta" and aberta:
+                ref = e["quando"]
+        return ref if aberta else None
+
+    def protecao_pendente_desde(self, ticket) -> datetime | None:
+        """Desde quando a proteção deste ticket está sendo pedida sem
+        sucesso: a 1ª `protecao_enviando` depois da última `protecao`."""
+        desde = None
+        for e in self.eventos:
+            if e.get("ticket") != ticket:
+                continue
+            if e["tipo"] == "protecao_enviando" and desde is None:
+                desde = e["quando"]
+            elif e["tipo"] == "protecao":
+                desde = None
+        return desde
+
+    def protecao_registrada(self, ticket):
+        """(lado, stop_px, alvo_px) gravados no diário para o ticket, ou None
+        — para conferir a proteção sem o papel (indisponível)."""
+        lado, res = None, None
+        for e in self.eventos:
+            if e.get("ticket") != ticket or e["tipo"] not in (
+                    "executada", "parcial", "adotada", "protecao"):
+                continue
+            lado = e.get("lado", lado)
+            if e.get("stop_px") is not None and lado is not None:
+                res = (lado, e["stop_px"], e.get("alvo_px"))
+        return res
+
     def travada(self, conta_id) -> dict | None:
         evs = [e for e in self.eventos
                if e["tipo"] == "conta_travada" and e.get("conta_id") == conta_id]
@@ -165,19 +220,26 @@ class Diario:
         evs = self._da(lig, entry_ts, "executada", "parcial", "adotada")
         return evs[0]["quando"] if evs else None
 
+    def _abertos(self) -> dict:
+        abertos, fechados = {}, set()
+        for e in self.eventos:
+            if not e.get("ticket"):
+                continue
+            if e["tipo"] in ("executada", "parcial", "adotada"):
+                abertos[int(e["ticket"])] = (e.get("ligacao_id"), e.get("entry_ts"))
+            elif e["tipo"] in ("saida_executada", "saiu_antes"):
+                fechados.add(int(e["ticket"]))
+        return {t: v for t, v in abertos.items() if t not in fechados}
+
     def tickets_abertos(self, lig) -> list[tuple[int, datetime]]:
         """(ticket, entry_ts) que a automação abriu nesta ligação e o diário
         ainda não viu sair — para registrar a saída pelo servidor mesmo com
         o papel já zerado."""
-        abertos, fechados = {}, set()
-        for e in self.eventos:
-            if e.get("ligacao_id") != lig or not e.get("ticket"):
-                continue
-            if e["tipo"] in ("executada", "parcial", "adotada"):
-                abertos[int(e["ticket"])] = e.get("entry_ts")
-            elif e["tipo"] in ("saida_executada", "saiu_antes"):
-                fechados.add(int(e["ticket"]))
-        return [(t, ts) for t, ts in abertos.items() if t not in fechados]
+        return [(t, ts) for t, (l, ts) in self._abertos().items() if l == lig]
+
+    def ligacoes_abertas(self) -> set:
+        """Ligações com algum ticket aberto no diário."""
+        return {l for l, _ in self._abertos().values() if l}
 
     def comandos_do_dia(self, tipo) -> list[dict]:
         return [e for e in self.eventos
