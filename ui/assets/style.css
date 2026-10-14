@@ -1272,6 +1272,30 @@ body{
 .captura-selo-verde .captura-selo-ponto{text-shadow:0 0 8px rgba(0,245,160,.6);}
 #btn-mt5-sync:disabled{opacity:.4;cursor:not-allowed;}
 
+/* ---- Ordens (parte 4): selo do Envio e "Zerar tudo" no topo ---- */
+.ord-selo{display:inline-flex;align-items:center;gap:6px;max-width:320px;
+  border-radius:999px;padding:4px 10px;font-family:var(--mono);font-weight:600;
+  font-size:.8em;white-space:nowrap;cursor:default;
+  background:var(--surface-2);color:var(--muted);}
+.ord-selo:empty{display:none;}
+.ord-selo-texto{overflow:hidden;text-overflow:ellipsis;}
+.ord-selo-ponto{font-size:.9em;line-height:1;}
+.ord-selo-enviando{background:rgba(34,228,255,.12);color:var(--accent);}
+.ord-selo-enviando .ord-selo-ponto{text-shadow:0 0 8px rgba(34,228,255,.6);}
+.ord-selo-travada{background:rgba(255,77,125,.18);color:var(--neg);}
+.ord-selo-chamados{margin-left:2px;padding:0 6px;border-radius:999px;
+  background:rgba(255,201,60,.22);color:var(--warn);}
+.ord-zerar{cursor:pointer;background:transparent;color:var(--neg);
+  border:1px solid rgba(255,77,125,.55);border-radius:var(--r);
+  padding:6px 12px;font-family:var(--sans);font-size:12.5px;font-weight:600;
+  white-space:nowrap;}
+.ord-zerar:hover{background:rgba(255,77,125,.1);box-shadow:0 0 14px rgba(255,77,125,.3);}
+.ord-zerar.ord-armado{color:var(--warn);border-color:var(--warn);
+  background:rgba(255,201,60,.1);}
+.ord-zerar-aviso{font-size:11px;line-height:1.25;color:var(--ink-2);
+  max-width:280px;}
+.ord-zerar-aviso:empty{display:none;}
+
 /* ---- Ao vivo › Pregão ----
    Seletor Estratégias | Pregão e o 1/5/15 min do gráfico: o mesmo desenho
    dos modos do topo, menor e sem o degradê (não competem com o topo).

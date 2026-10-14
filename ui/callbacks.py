@@ -2030,3 +2030,6 @@ def register(app):
 
     from ui import callbacks_operacao
     callbacks_operacao.register(app)
+
+    from ui import callbacks_ordens
+    callbacks_ordens.register(app)

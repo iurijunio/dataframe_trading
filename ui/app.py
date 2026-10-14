@@ -88,9 +88,21 @@ def topbar(simbolo):
                     # desliga, e o selo ao lado diz por quê
                     html.Span(id="captura-selo", className="captura-selo",
                               style={"display": "none"}),
+                    # parte 4: o Envio de ordens, ao lado da captura que o faz
+                    html.Span(id="ord-selo", className="ord-selo"),
                     html.Button("Sincronizar com MT5", id="btn-mt5-sync",
                                 n_clicks=0, className="btn-ghost"),
                     html.Span(id="mt5-sync-status", className="mt5-sync-status"),
+                    # o aviso antes do botão: o botão de pânico fica sempre
+                    # no mesmo lugar, no canto, e não anda quando o aviso muda
+                    html.Span(id="ord-zerar-aviso", className="ord-zerar-aviso"),
+                    html.Button(
+                        "⏻ Zerar tudo e desligar envio", id="ord-zerar",
+                        n_clicks=0, className="ord-zerar",
+                        title="Encerra todas as posições da automação e "
+                              "desliga o Envio de ordens de todas as contas. "
+                              "Posições abertas fora da automação não são "
+                              "tocadas. Clique duas vezes para confirmar."),
                 ],
                 className="mt5-sync-wrap",
             ),
@@ -295,6 +307,16 @@ def build() -> Dash:
             dcc.Interval(id="captura-intervalo", interval=30_000),
             # a última conferência do dia que o calendário já viu
             dcc.Store(id="captura-conferencia-vista"),
+            # parte 4: o selo das ordens e o alarme leem o estado.json a cada
+            # 2 s em QUALQUER aba — um chamado não pode esperar 30 s
+            dcc.Interval(id="ord-intervalo", interval=2000),
+            # o primeiro clique do "Zerar tudo" arma; o segundo, em 5 s, faz
+            dcc.Store(id="ord-armado", data=False),
+            # o alarme: `assets/alarme.js` observa estes atributos (bipe por
+            # chamado novo e título da aba piscando). Na raiz do layout para
+            # valer em qualquer aba.
+            html.Div(id="ord-alarme", style={"display": "none"},
+                     **{"data-alarme": "0", "data-chaves": ""}),
             topbar(simbolo),
             html.Div([sidebar(inicio, fim), painel(inicio, fim)], className="body"),
             modal(),
