@@ -7,10 +7,14 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from . import codigo
+import statistics
+
+from . import codigo, comandos, engine
 from . import db_manager as db
 from . import diario
 from . import optimizer as _optimizer
+from . import papel
+from . import papel_backtest as _pb
 from . import plano as _plano
 from . import variantes as V
 
@@ -104,6 +108,7 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
     for k in ("servidor", "terminal"):
         if k in novos:
             novos[k] = _texto_ou_none(novos[k])
+    desligou_envio = False
     with db.connect_write() as con, db.transacao(con):
         r = con.execute(f"SELECT {', '.join(_CAMPOS_EDITAVEIS)} FROM contas "
                         "WHERE conta_id = ?", [conta_id]).fetchone()
@@ -131,6 +136,21 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
             diario.registrar(con, "conta_editada", "usuario",
                              conta_id=conta_id, de=atual[campo], para=valor,
                              motivo=campo)
+        # sem limite de perda não há envio: o limite é o que segura a conta
+        if "limite_perda_dia" in novos and not novos["limite_perda_dia"]:
+            ligado = con.execute("SELECT coalesce(envio_ligado, false) FROM "
+                                 "contas WHERE conta_id = ?",
+                                 [conta_id]).fetchone()[0]
+            if ligado:
+                con.execute("UPDATE contas SET envio_ligado = false "
+                            "WHERE conta_id = ?", [conta_id])
+                diario.registrar(con, "envio_desligado", "usuario",
+                                 conta_id=conta_id, motivo="limite apagado")
+                desligou_envio = True
+    if desligou_envio:
+        # a captura não lê o banco para saber disso: vai por comando
+        comandos.escrever(comandos.PASTA, "envio", conta_id=conta_id,
+                          ligado=False)
 
 
 def arquivar_conta(conta_id) -> None:
@@ -538,3 +558,185 @@ def rastreio(ligacao_id: int, hoje: date | None = None) -> dict:
                    "confere": None if not gravado else gravado == atual},
         "planos": planos, "eventos": eventos,
     }
+
+
+# ------------------------------------- ordens: fase, contratos e envio
+_FASES_ESCOLHA = ("papel", "demo")
+
+
+def _plano_do_membro(con, variante_id):
+    vigor = V.plano_em_vigor(variante_id, con=con)
+    return _plano.detalhes(vigor["plano_id"], con=con) if vigor else None
+
+
+def _tem_stop(plano: dict) -> bool:
+    _, perfil = papel.perfil_do_plano(plano)
+    return perfil.stop_tipo == "atr" or (perfil.stop_pontos or 0) > 0
+
+
+def _falhas_da_conferencia(con, ligacao_id, estrategia):
+    """`(que valem hoje, mais antigas)`: dias com diferença entre papel e
+    backtest. Só falha do MESMO código e do MESMO motor de hoje barra a
+    promoção — a de uma versão antiga já foi tratada por quem mexeu."""
+    hash_atual = codigo.hash_estrategia(estrategia)
+    linhas = con.execute(
+        "SELECT pb.dia, pp.codigo_hash, pp.motor_versao FROM papel_backtest pb "
+        "LEFT JOIN papel_pregoes pp ON pp.ligacao_id = pb.ligacao_id "
+        "AND pp.dia = pb.dia WHERE pb.ligacao_id = ? AND NOT pb.ok "
+        "ORDER BY pb.dia", [ligacao_id]).fetchall()
+    atuais = [d for d, h, m in linhas
+              if h is not None and h == hash_atual and m == engine.VERSAO]
+    return atuais, [d for d, _h, _m in linhas if d not in atuais]
+
+
+def restricoes_para_demo(ligacao_id: int) -> dict:
+    """O que impede (`motivos`) ou merece atenção (`avisos`) na promoção
+    para a conta demo — a tela usa as mesmas frases que `mudar_fase`."""
+    with db.connect(read_only=True) as con:
+        return _restricoes(con, ligacao_id)
+
+
+def _restricoes(con, ligacao_id) -> dict:
+    pid, vid, *_ = _membro(con, ligacao_id)
+    motivos, avisos = [], []
+    conta = con.execute("SELECT c.conta_id FROM portfolios p JOIN contas c "
+                        "ON c.conta_id = p.conta_demo_id WHERE p.portfolio_id "
+                        "= ? AND c.arquivada_em IS NULL", [pid]).fetchone()
+    if conta is None:
+        motivos.append("escolha uma conta demo (não arquivada) para o "
+                       "portfólio antes de promover")
+    plano = _plano_do_membro(con, vid)
+    if plano is None:
+        motivos.append("a variante não tem plano em vigor")
+    elif not _tem_stop(plano):
+        motivos.append("o plano em vigor não tem stop: sem stop não há como "
+                       "limitar a perda de uma operação na conta")
+    est = con.execute("SELECT estrategia FROM estrategia_variantes WHERE "
+                      "variante_id = ?", [vid]).fetchone()[0]
+    atuais, antigas = _falhas_da_conferencia(con, ligacao_id, est)
+    if atuais:
+        motivos.append(
+            f"o papel diferiu do backtest em {len(atuais)} pregão(ões) com o "
+            "código e o motor de hoje (último: "
+            f"{atuais[-1]:%d/%m/%Y}): resolva a diferença antes de promover")
+    if antigas:
+        avisos.append(f"{len(antigas)} diferença(s) de antes da última mudança "
+                      "de código ou motor: já não valem, mas confira")
+    if not _pb.situacao(con, ligacao_id)["pregoes"]:
+        avisos.append("nenhum pregão conferido contra o backtest ainda")
+    return {"motivos": motivos, "avisos": avisos}
+
+
+def mudar_fase(ligacao_id: int, fase: str, *, quando=None) -> None:
+    if fase == "real":
+        raise ValueError("conta real ainda não disponível")
+    if fase not in _FASES_ESCOLHA:
+        raise ValueError("fase deve ser 'papel' ou 'demo'")
+    with db.connect_write() as con, db.transacao(con):
+        pid, vid, _lig, _rem, _por = _membro(con, ligacao_id)
+        atual = con.execute("SELECT fase FROM portfolio_membros WHERE "
+                            "ligacao_id = ?", [ligacao_id]).fetchone()[0]
+        if atual == fase:
+            return
+        if fase == "demo":
+            motivos = _restricoes(con, ligacao_id)["motivos"]
+            if motivos:
+                raise ValueError(motivos[0])
+        agora = quando or datetime.now()
+        # voltar ao papel não exige nada: a reconciliação encerra a posição
+        con.execute("UPDATE portfolio_membros SET fase = ?, fase_desde = ? "
+                    "WHERE ligacao_id = ?", [fase, agora, ligacao_id])
+        vigor = V.plano_em_vigor(vid, con=con)
+        diario.registrar(con, "fase_mudou", "usuario", portfolio_id=pid,
+                         ligacao_id=ligacao_id, variante_id=vid,
+                         plano_id=vigor and vigor["plano_id"], de=atual,
+                         para=fase, quando=quando)
+
+
+def definir_contratos(ligacao_id: int, contratos: int | None, *,
+                      tipo: str = "demo") -> None:
+    """Contratos na conta, no lugar dos do plano (`None` volta ao plano)."""
+    if tipo != "demo":
+        raise ValueError("contratos da conta real ainda não disponíveis")
+    if contratos is not None and (isinstance(contratos, bool)
+                                  or not isinstance(contratos, int)
+                                  or contratos < 1):
+        raise ValueError("contratos deve ser um inteiro de 1 em diante "
+                         "(ou vazio para usar os do plano)")
+    with db.connect_write() as con, db.transacao(con):
+        pid, vid, *_ = _membro(con, ligacao_id)
+        antes = con.execute("SELECT contratos_demo FROM portfolio_membros "
+                            "WHERE ligacao_id = ?", [ligacao_id]).fetchone()[0]
+        if antes == contratos:
+            return
+        con.execute("UPDATE portfolio_membros SET contratos_demo = ? "
+                    "WHERE ligacao_id = ?", [contratos, ligacao_id])
+        diario.registrar(con, "contratos_alterados", "usuario",
+                         portfolio_id=pid, ligacao_id=ligacao_id,
+                         variante_id=vid,
+                         de="plano" if antes is None else antes,
+                         para="plano" if contratos is None else contratos,
+                         motivo=tipo)
+
+
+def ligar_envio(conta_id: int, ligado: bool) -> None:
+    """Interruptor do envio de ordens da conta. Desligar escreve o comando
+    ANTES do banco: com ele ocupado (uma mineração), o desligar já vale."""
+    ligado = bool(ligado)
+    if not ligado:
+        comandos.escrever(comandos.PASTA, "envio", conta_id=conta_id,
+                          ligado=False)
+    with db.connect_write() as con, db.transacao(con):
+        r = con.execute("SELECT limite_perda_dia, coalesce(envio_ligado, "
+                        "false), arquivada_em FROM contas WHERE conta_id = ?",
+                        [conta_id]).fetchone()
+        if r is None:
+            raise ValueError(f"conta #{conta_id} não existe")
+        limite, atual, arquivada = r
+        if ligado and not (limite or 0) > 0:
+            raise ValueError("cadastre o limite de perda do dia da conta "
+                             "antes de ligar o envio")
+        if ligado and arquivada is not None:
+            raise ValueError("a conta está arquivada")
+        if bool(atual) != ligado:
+            con.execute("UPDATE contas SET envio_ligado = ? WHERE conta_id = ?",
+                        [ligado, conta_id])
+            diario.registrar(con, "envio_ligado" if ligado
+                             else "envio_desligado", "usuario",
+                             conta_id=conta_id)
+    if ligado:
+        # a captura usa o comando para soltar um desligamento forçado do dia
+        comandos.escrever(comandos.PASTA, "envio", conta_id=conta_id,
+                          ligado=True)
+
+
+def custo_de_um_stop(ligacao_id: int, contratos: int) -> dict:
+    """Quanto custa UM stop com `contratos`, em reais e em % do limite de
+    perda do dia da conta demo do portfólio. Sem distância de stop conhecida
+    (ATR sem operação no papel) ou sem limite, o campo vem `None`."""
+    with db.connect(read_only=True) as con:
+        pid, vid, *_ = _membro(con, ligacao_id)
+        plano = _plano_do_membro(con, vid)
+        if plano is None:
+            return {"reais": None, "pct_limite": None}
+        _, perfil = papel.perfil_do_plano(plano)
+        if perfil.stop_tipo == "atr":
+            dists = [r[0] for r in con.execute(
+                "SELECT abs(entry_px - stop_px) FROM papel_operacoes WHERE "
+                "ligacao_id = ? AND stop_px IS NOT NULL", [ligacao_id]
+            ).fetchall()]
+            pontos = statistics.median(dists) if dists else None
+        else:
+            pontos = perfil.stop_pontos or None
+        limite = con.execute(
+            "SELECT c.limite_perda_dia FROM portfolios p JOIN contas c ON "
+            "c.conta_id = p.conta_demo_id WHERE p.portfolio_id = ?",
+            [pid]).fetchone()
+    if pontos is None:
+        return {"reais": None, "pct_limite": None}
+    valor = float(db.load_instrument_yaml(
+        plano.get("symbol") or papel.SIMBOLO)["point_value"])
+    reais = float(pontos) * int(contratos) * valor
+    lim = limite[0] if limite else None
+    return {"reais": reais,
+            "pct_limite": reais / lim * 100 if lim and lim > 0 else None}
