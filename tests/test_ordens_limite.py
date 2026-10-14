@@ -12,7 +12,7 @@ from core import comandos
 from core import corretora as K
 from core.ordens import Motor, checar_entrada, perda_do_dia, risco_entrada
 from core.papel_vivo import INDISPONIVEL, POSICAO, ZERADO, Desejado, LigacaoViva, Retrato
-from tests.mt5_falso import MT5Ordens
+from tests.mt5_falso import MT5Ordens, _epoch
 
 DIA = date(2026, 10, 9)
 T = datetime(2026, 10, 9, 10, 1)
@@ -622,6 +622,126 @@ def test_entrada_sem_desfecho_soma_no_risco(tmp_path):
     assert evs(m, "nao_entrou")[0]["motivo"] == "passaria da trava do dia"
 
 
+def test_entrada_incerta_com_o_papel_zerado_deixa_de_somar(tmp_path):
+    # revisão X3: timeout na 4, o papel zera a 4; 5 min depois a 5 cabe
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    ret = retrato((4, 5), contas={2: conta(limite=100.0)})
+    mt5.roteiro = [None]
+    passo(m, mt5, {4: D}, ret=ret)
+    passo(m, mt5, {4: Desejado(ZERADO)}, ret=ret, agora=AG + timedelta(seconds=10))
+    t2 = T + timedelta(minutes=5)
+    passo(m, mt5, {4: Desejado(ZERADO), 5: replace(D, entry_ts=t2)}, ret=ret,
+          agora=t2 + timedelta(seconds=1))
+    assert len(entradas(mt5, K.magic(5))) == 1 and not evs(m, "nao_entrou")
+
+
+def test_entrada_aceita_cancelada_com_o_papel_zerado_deixa_de_somar(tmp_path):
+    # revisão X4: PLACED, papel zera, a ordem é cancelada (o cancelamento não
+    # tem entry_ts: não fecha a operação no diário)
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    ret = retrato((4, 5), contas={2: conta(limite=100.0)})
+    mt5.roteiro = [10008]
+    passo(m, mt5, {4: D}, ret=ret)
+    passo(m, mt5, {4: Desejado(ZERADO)}, ret=ret, agora=AG + timedelta(seconds=2))
+    assert not mt5.ordens and evs(m, "cancelada")
+    t2 = T + timedelta(minutes=5)
+    passo(m, mt5, {4: Desejado(ZERADO), 5: replace(D, entry_ts=t2)}, ret=ret,
+          agora=t2 + timedelta(seconds=1))
+    assert len(entradas(mt5, K.magic(5))) == 1 and not evs(m, "nao_entrou")
+
+
+def test_entrada_incerta_antes_de_um_zerar_deixa_de_somar(tmp_path):
+    # revisão X5: timeout na 4, zerar tudo, Envio religado: a 5 entra
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    ret = retrato((4, 5), contas={2: conta(limite=100.0)})
+    mt5.roteiro = [None]
+    passo(m, mt5, {4: D}, ret=ret)
+    passo(m, mt5, {4: D}, ret=ret, agora=AG + timedelta(seconds=2),
+          comandos=[{"tipo": "zerar_tudo", "id": "z"}])
+    t2 = T + timedelta(minutes=2)
+    passo(m, mt5, {4: D}, ret=retrato((4, 5), contas={2: conta(limite=100.0, envio=False)},
+                                      lido_em=t2), agora=t2)
+    t3 = T + timedelta(minutes=10)
+    est = passo(m, mt5, {5: replace(D, entry_ts=t3)},
+                ret=retrato((4, 5), contas={2: conta(limite=100.0)}, lido_em=t3),
+                agora=t3 + timedelta(seconds=1))
+    assert est["zerar"] is False
+    assert len(entradas(mt5, K.magic(5))) == 1 and not evs(m, "nao_entrou")
+
+
+def _regua_isolada(tmp_path, desejados, agora, limite=100.0, preparar=None, incerta_em=AG):
+    """A régua sozinha, com o diário montado à mão: separa as condições de
+    "entrada em trânsito viva" que o passo não deixa ver uma por uma (a
+    perdida das 30 s fecha a operação antes)."""
+    from core.ordens import Acao
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    dia = m.diario(DIA)
+    dia.registrar("enviando", quando=AG, ligacao_id=4, entry_ts=T, lado=1, contratos=2,
+                  simbolo="WINV26", preco_papel=189_000, stop_px=188_800, alvo_px=189_400)
+    dia.registrar("incerta", quando=incerta_em, ligacao_id=4, entry_ts=T,
+                  motivo="sem resposta")
+    if preparar:
+        preparar(mt5, dia)
+    foto = K.fotografar(mt5, datetime(2026, 10, 9))
+    ret = retrato((4, 5), contas={2: conta(limite=limite)})
+    perda = perda_do_dia(foto, ret.portfolio_de, None)
+    pode = m._regua(mt5, foto, ret, perda, limite, "WINV26", True, dia, desejados, agora)
+    return pode(Acao("entrar", 5, desejado=D))
+
+
+def test_entrada_em_transito_so_soma_enquanto_viva(tmp_path):
+    trava = (False, "passaria da trava do dia")
+    # viva: o papel quer esta operação e está na janela → 82 + 82 > 90
+    assert _regua_isolada(tmp_path / "a", {4: D}, AG + timedelta(seconds=1)) == trava
+    assert _regua_isolada(tmp_path / "b", {4: D}, AG + timedelta(seconds=35)) == trava
+    # passou da janela + 5 s
+    assert _regua_isolada(tmp_path / "c", {4: D}, AG + timedelta(seconds=36)) == (True, None)
+    # a janela conta do último evento da tentativa (a incerta chegou 10 s depois)
+    assert _regua_isolada(tmp_path / "g", {4: D}, AG + timedelta(seconds=40),
+                          incerta_em=AG + timedelta(seconds=10)) == trava
+    # zerado, mesmo carregando a chave da operação, não a mantém viva
+    assert _regua_isolada(tmp_path / "h", {4: Desejado(ZERADO, entry_ts=T)},
+                          AG + timedelta(seconds=1)) == (True, None)
+    # o papel zerou / já está em outra operação
+    assert _regua_isolada(tmp_path / "d", {4: Desejado(ZERADO)},
+                          AG + timedelta(seconds=1)) == (True, None)
+    assert _regua_isolada(tmp_path / "e", {4: replace(D, entry_ts=T + timedelta(minutes=1))},
+                          AG + timedelta(seconds=1)) == (True, None)
+    assert _regua_isolada(tmp_path / "f", {}, AG + timedelta(seconds=1)) == (True, None)
+
+
+def test_posicao_sem_sl_usa_o_stop_da_propria_operacao(tmp_path):
+    # a posição (aberta às 10:01:01) é da operação das 10:01 (stop 188.800:
+    # 200 × 1 × 0,2 = 40), não da das 10:05 (stop 188.500: seria 100).
+    # limite 150 → 135: 82 + 40 cabe; 82 + 100 não
+    t2 = T + timedelta(minutes=4)
+
+    def preparar(mt5, dia):
+        mt5.abrir_manual(1, magic=K.magic(4))          # sem SL e sem ticket no diário
+        dia.registrar("enviando", quando=t2, ligacao_id=4, entry_ts=t2, lado=1,
+                      contratos=1, simbolo="WINV26", stop_px=188_500)
+    assert _regua_isolada(tmp_path, {}, AG + timedelta(seconds=1), limite=150.0,
+                          preparar=preparar) == (True, None)
+
+
+def test_ordem_pendente_usa_o_stop_da_operacao_da_ordem(tmp_path):
+    # ordem 900 é da operação das 10:01 (aceita com ordem=900, stop 188.800):
+    # 205 × 2 × 0,2 = 82; com o stop da operação das 10:05 (188.500) seria
+    # 505 × 2 × 0,2 = 202. limite 200 → 180: 82 + 82 cabe; 82 + 202 não
+    from types import SimpleNamespace as NS
+    t2 = T + timedelta(minutes=4)
+
+    def preparar(mt5, dia):
+        dia.registrar("aceita", quando=AG, ligacao_id=4, entry_ts=T, ordem=900)
+        dia.registrar("enviando", quando=t2, ligacao_id=4, entry_ts=t2, lado=1,
+                      contratos=2, simbolo="WINV26", stop_px=188_500)
+        mt5.ordens[900] = NS(ticket=900, magic=K.magic(4), symbol="WINV26",
+                             volume_current=2.0, time_setup=_epoch(t2) + 60,
+                             type=0, req={})
+    assert _regua_isolada(tmp_path, {}, AG + timedelta(seconds=1), limite=200.0,
+                          preparar=preparar) == (True, None)
+
+
 def test_entrada_recusada_nao_soma_no_risco(tmp_path):
     # controle: a recusa não deixou ordem viva — a 5 cabe
     mt5, m = MT5Ordens(), Motor(tmp_path, INST)
@@ -638,7 +758,7 @@ def test_ordem_pendente_com_o_magic_soma_no_risco(tmp_path):
     from types import SimpleNamespace as NS
     mt5, m = MT5Ordens(), Motor(tmp_path, INST)
     mt5.ordens[900] = NS(ticket=900, magic=K.magic(7), symbol="WINV26", volume_current=2.0,
-                         time_setup=int(AG.timestamp()), type=0, req={})
+                         time_setup=_epoch(AG), type=0, req={})
     ret = retrato((4, 7), contas={2: conta(limite=100.0)})
     passo(m, mt5, {4: D, 7: replace(D, entry_ts=T - timedelta(minutes=5))}, ret=ret)
     assert not entradas(mt5, K.magic(4))

@@ -606,7 +606,7 @@ class Motor:
             seria = self._seria_enviadas(desejados, retrato, cid, dia, agora_srv,
                                          disponivel, conectado_ha_s)
         pode_entrar = self._regua(mt5, foto, retrato, perda, limite, simbolo, contrato_ok,
-                                  dia, desejados)
+                                  dia, desejados, agora)
 
         # 7. executar: saídas primeiro, entradas à parte — uma falha nas
         # entradas não impede as saídas desta volta (e vice-versa)
@@ -729,7 +729,7 @@ class Motor:
         return out
 
     def _regua(self, mt5, foto, retrato, perda, limite, simbolo, contrato_ok, dia,
-               desejados):
+               desejados, agora=None):
         """`pode_entrar` da volta (6a + D1). O que já está em risco soma: a
         perda do dia, o caminho até o stop de cada posição aberta da
         automação (sem SL na corretora: o stop da operação), cada entrada
@@ -749,13 +749,29 @@ class Motor:
             # saída de compra no bid, entrada de compra no ask (venda espelhada)
             return float(tk.bid if (lado > 0) == saida else tk.ask)
 
-        def stop_da_operacao(lig):
-            """O stop da última entrada da ligação (gravado já arredondado,
-            como foi à corretora), senão o do papel agora."""
-            for e in reversed(dia.eventos):
-                if e.get("ligacao_id") == lig and e["tipo"] == "enviando" \
-                        and e.get("stop_px") is not None:
-                    return float(e["stop_px"])
+        def stop_da_operacao(lig, ate=None, ordem=None):
+            """O stop enviado (já arredondado) da operação a que a posição ou
+            a ordem pertence: a da ordem pelo ticket gravado na `aceita`;
+            senão a última entrada da ligação que começou até `ate` (a
+            posição/ordem não nasce antes da operação); senão a última da
+            ligação; senão o do papel agora. Uma operação nova da mesma
+            ligação não pode emprestar o stop dela a uma posição antiga."""
+            envios = [e for e in dia.eventos
+                      if e.get("ligacao_id") == lig and e["tipo"] == "enviando"
+                      and e.get("stop_px") is not None]
+            if ordem is not None:
+                ts = next((e.get("entry_ts") for e in reversed(dia.eventos)
+                           if e["tipo"] == "aceita" and e.get("ligacao_id") == lig
+                           and e.get("ordem") == ordem), None)
+                da = [e for e in envios if ts is not None and e.get("entry_ts") == ts]
+                if da:
+                    return float(da[-1]["stop_px"])
+            if ate is not None:
+                antes = [e for e in envios if e.get("entry_ts") and e["entry_ts"] <= ate]
+                if antes:
+                    return float(antes[-1]["stop_px"])
+            if envios:
+                return float(envios[-1]["stop_px"])
             d = desejados.get(lig)
             if d is not None and d.estado == POSICAO and d.stop_px is not None:
                 return float(K.protecao(d.lado, d.stop_px, None, self.tick)[0])
@@ -768,7 +784,8 @@ class Motor:
                 stop = float(p.sl) if round(p.sl) != 0 else None
                 if stop is None:
                     reg = dia.protecao_registrada(p.ticket)
-                    stop = float(reg[1]) if reg else stop_da_operacao(p.ligacao_id)
+                    stop = float(reg[1]) if reg else stop_da_operacao(
+                        p.ligacao_id, ate=p.aberta_em)
                 if stop is None:
                     continue      # stop desconhecido: sem proteção, ela sai em 2 s
                 total += abs(preco(p.simbolo, p.lado, True, p.preco) - stop) \
@@ -784,6 +801,17 @@ class Motor:
                 if dia.tentativa_sem_desfecho(lig, ts) is None and \
                         dia.desfecho(lig, ts) not in ("aceita", "executada", "parcial"):
                     continue      # recusada / perdida / não entrou: não há ordem viva
+                # só enquanto viva: o papel ainda quer ESTA operação e ela está
+                # na janela. Papel zerado, operação nova, zerar ou trava antes
+                # da perdida deixariam o risco preso até a meia-noite; ordem
+                # ou posição que de fato existam seguem contadas pela foto
+                d_lig = desejados.get(lig)
+                if d_lig is None or d_lig.estado != POSICAO or d_lig.entry_ts != ts:
+                    continue
+                ultimo = max(x["quando"] for x in dia._da(lig, ts, "enviando", "incerta",
+                                                         "aceita"))
+                if agora is None or _seg(agora, ultimo) > JANELA_ENTRADA_S + 5:
+                    continue
                 if e.get("stop_px") is None:
                     continue
                 em_transito.add(lig)
@@ -799,7 +827,7 @@ class Motor:
                     continue
                 if any(p.ligacao_id == lig and p.lado == -o["lado"] for p in minhas):
                     continue
-                stop = stop_da_operacao(lig)
+                stop = stop_da_operacao(lig, ate=o.get("quando"), ordem=o.get("ticket"))
                 if stop is None:
                     continue
                 total += abs(preco(o.get("simbolo"), o["lado"], False, stop) - stop) \
