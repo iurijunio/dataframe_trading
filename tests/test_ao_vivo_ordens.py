@@ -284,7 +284,7 @@ def test_desligar_escreve_o_comando_antes_do_banco(banco, monkeypatch):
     for a in Path(comandos.PASTA).glob("*.json"):
         a.unlink()
 
-    def ocupado():
+    def ocupado(*a, **k):  # tentativas/espera do ligar_envio
         raise RuntimeError("banco ocupado")
     monkeypatch.setattr(db, "connect_write", ocupado)
     with pytest.raises(RuntimeError, match="ocupado"):
@@ -296,7 +296,7 @@ def test_desligar_escreve_o_comando_antes_do_banco(banco, monkeypatch):
 def test_ligar_envio_nao_escreve_comando_se_o_banco_falha(banco, monkeypatch):
     conta = AV.criar_conta("c", "demo", 500.0)
 
-    def ocupado():
+    def ocupado(*a, **k):  # tentativas/espera do ligar_envio
         raise RuntimeError("banco ocupado")
     monkeypatch.setattr(db, "connect_write", ocupado)
     with pytest.raises(RuntimeError):

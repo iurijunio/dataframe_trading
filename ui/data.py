@@ -97,16 +97,6 @@ def _posicoes_da_automacao(o: dict) -> int:
                for l in (o.get("ligacoes") or {}).values())
 
 
-def _tem_demo(o: dict) -> bool:
-    """Alguma ligação desta conta está na fase demo? O estado não traz a
-    fase; o passo marca as que estão no papel com o motivo "fase papel" (e
-    as de outra conta com "conta de outro portfólio"), e só a zera geral
-    (zerar tudo, trava) apaga esse motivo — e aí o selo já é outro."""
-    fora = ("fase papel", "conta de outro portfólio")
-    return any((l or {}).get("motivo") not in fora
-               for l in (o.get("ligacoes") or {}).values())
-
-
 def ordens_do_estado(e: dict | None, agora: datetime | None = None) -> dict:
     """O selo das ordens e o alarme, só a partir do `estado.json`.
 
@@ -133,9 +123,9 @@ def ordens_do_estado(e: dict | None, agora: datetime | None = None) -> dict:
         return r("sem_captura")
     o = e.get("ordens")
     if not isinstance(o, dict) or not o:
-        # captura sem o caminho das ordens (sem o YAML do ativo, ou ainda
-        # não deu a primeira volta)
-        return r("sem_demo")
+        # captura sem o caminho das ordens (sem o YAML do ativo) ou antes da
+        # primeira volta: não se sabe se há demo — não é "Sem demo"
+        return r("desligado", "Ordens ainda sem estado")
 
     chamados = [c for c in (o.get("chamados") or []) if isinstance(c, dict)]
     chaves = [f"{c.get('chave')}@{c.get('desde')}" for c in chamados]
@@ -147,31 +137,39 @@ def ordens_do_estado(e: dict | None, agora: datetime | None = None) -> dict:
 
     if o.get("erro"):
         # o captura.py abre o chamado `ordens_falhou`, mas este bloco curto
-        # não traz a lista: o alarme vem do próprio erro
+        # não traz a lista: o alarme vem do próprio erro. A chave é o TEXTO
+        # do erro — o mesmo erro repetido a cada volta bipa uma vez só.
         return com_alarme("desligado", "Demo · ordens com erro (veja a janela "
                           "da captura)", extra=True,
-                          chave_extra=f"erro@{o.get('vivo_em')}")
+                          chave_extra=f"erro@{o.get('erro')}")
+    # `n_demo` vem do retrato (core.ordens.n_demo): 0 é "nenhuma ligação na
+    # demo"; None/ausente é "não se sabe" e cai nas regras de baixo
+    if o.get("n_demo") == 0:
+        return com_alarme("sem_demo", "Sem demo · nenhuma variante na fase demo")
     trava = o.get("travada")
     if trava:
         return com_alarme("travada", extra=True,
                           chave_extra=f"travada@{(trava or {}).get('desde')}")
     if o.get("parado"):
-        # fora do pregão, MT5 fora do ar: nada sai agora, ligado ou não
-        return com_alarme("desligado", f"Demo · parado ({o['parado']})")
+        # fora do pregão, MT5 fora do ar: nada sai agora; o interruptor vem
+        # do último retrato
+        envio = o.get("envio")
+        texto = f"Demo · {o['parado']}" + (
+            "" if envio is None else
+            f" · envio {'ligado' if envio else 'desligado'}")
+        return com_alarme("desligado", texto)
     if o.get("foto") == "falhou":
         return com_alarme("desligado", "Demo · sem leitura da corretora agora")
     conta = o.get("conta") or {}
-    if conta.get("conta_id") is None:
-        # MT5 logado numa conta que não está cadastrada (ou nenhuma conta
-        # cadastrada): a automação não manda nada nela
+    if "conta" in o and conta.get("conta_id") is None:
+        # MT5 logado numa conta que não está cadastrada: a automação não
+        # manda nada nela (com demo ligada, o chamado `conta_errada` toca)
         login = conta.get("login")
-        texto = (f"Sem demo · MT5 na conta {login}, não cadastrada"
-                 if login else None)
-        return com_alarme("sem_demo", texto)
+        return com_alarme("desligado", f"Demo · MT5 na conta {login}, não "
+                          "cadastrada" if login else "Demo · MT5 em conta "
+                          "não cadastrada")
     if o.get("zerar"):
         return com_alarme("desligado", "Demo · zerando tudo")
-    if not _tem_demo(o):
-        return com_alarme("sem_demo", "Sem demo · nenhuma variante na fase demo")
     if o.get("envio"):
         return com_alarme("enviando")
     return com_alarme("desligado")

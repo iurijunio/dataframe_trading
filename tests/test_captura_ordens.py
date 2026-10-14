@@ -777,3 +777,27 @@ def test_falha_com_numeros_diferentes_e_a_mesma_no_log(cena, caplog):
             s._falha("ordens", e)
     tracebacks = [r for r in caplog.records if r.exc_info]
     assert len(tracebacks) == 2
+
+
+# ------------------------------------- topo da tela fora do pregão (tarefa 14)
+def test_fora_do_pregao_publica_envio_n_demo_e_trava(cena, mundo):
+    """Parado, nada sai — mas o selo do topo ainda diz o interruptor do
+    Envio (último retrato), se há demo e se a conta travou hoje."""
+    cena.ir(_as(10, 0, 30))
+    assert cena.estado()["ordens"]["n_demo"] == 1
+    cena.ir(_as(18, 40))
+    o = cena.estado()["ordens"]
+    assert o["parado"] and o["n_demo"] == 1 and o["envio"] is True
+    assert o["travada"] is None
+    cena.s.motor.diario(DIA).registrar("conta_travada", quando=_as(15, 0),
+                                       conta_id=mundo.conta, perda=900.0,
+                                       limite=1000.0)
+    cena.ir(_as(18, 41))
+    t = cena.estado()["ordens"]["travada"]
+    assert t["perda"] == 900.0 and t["desde"].startswith("2026-10-09T15:00")
+
+
+def test_fora_do_pregao_sem_retrato_nao_inventa(cena):
+    cena.ir(_as(18, 40))
+    o = cena.estado()["ordens"]
+    assert o["n_demo"] is None and o["envio"] is None

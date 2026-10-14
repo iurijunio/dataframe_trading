@@ -13,6 +13,9 @@
         g.gain.setValueAtTime(0.15, ctx.currentTime + t);
         o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.2);
       });
+      // cada bipe abre um contexto de áudio; o navegador limita quantos
+      // ficam abertos, então fecha depois dos 3 bipes (~0,9 s)
+      setTimeout(function () { ctx.close(); }, 1500);
     } catch (e) { /* navegador sem áudio: fica o título */ }
   }
   function aplicar(el) {

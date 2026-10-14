@@ -40,6 +40,7 @@ def _ordens(**mudar):
                                {"ticket": 11, "volume": 1.0},
                                {"ticket": 12, "volume": 2.0}]}},
         "comandos": [], "posicao_fora": [], "ordens_em": None, "chamados": [],
+        "n_demo": 1,
     }
     o.update(mudar)
     return o
@@ -94,30 +95,67 @@ def test_sem_estado_e_sem_captura():
     assert D.ordens_do_estado(None, AGORA)["selo"] == "sem_captura"
 
 
-def test_captura_sem_bloco_de_ordens_e_sem_demo():
+def test_captura_sem_bloco_de_ordens_nao_e_sem_demo():
+    """Sem bloco não se sabe se há demo: "Sem demo" seria afirmar demais."""
     r = D.ordens_do_estado(_estado(None), AGORA)
-    assert r["selo"] == "sem_demo"
+    assert r["selo"] != "sem_demo" and r["selo"] != "enviando"
 
 
-def test_mt5_em_conta_nao_cadastrada_e_sem_demo():
+def test_mt5_em_conta_nao_cadastrada_mostra_a_conta():
     conta = {"conta_id": None, "login": 999, "servidor": "X", "confere": False}
     r = D.ordens_do_estado(_estado(_ordens(conta=conta, envio=False)), AGORA)
-    assert r["selo"] == "sem_demo"
+    assert r["selo"] == "desligado" and "999" in r["texto"]
 
 
-def test_nenhuma_variante_na_fase_demo_e_sem_demo():
-    ligs = {"7": {"desejado": "zerado", "papel": "zerado",
-                  "motivo": "fase papel", "posicoes": []}}
-    r = D.ordens_do_estado(_estado(_ordens(ligacoes=ligs)), AGORA)
+def test_nenhuma_ligacao_na_demo_e_sem_demo():
+    r = D.ordens_do_estado(_estado(_ordens(n_demo=0, envio=False)), AGORA)
     assert r["selo"] == "sem_demo"
+    assert not r["texto"].startswith("Demo")
+
+
+def test_desejados_indisponiveis_com_demo_nao_e_sem_demo():
+    """Papel indisponível: `ligacoes` vem vazio, mas o retrato tem demo."""
+    r = D.ordens_do_estado(_estado(_ordens(ligacoes={}, n_demo=2)), AGORA)
+    assert r["selo"] == "enviando"
+
+
+def test_n_demo_desconhecido_cai_nas_outras_regras():
+    o = _ordens(ligacoes={}, envio=False)
+    del o["n_demo"]
+    assert D.ordens_do_estado(_estado(o), AGORA)["selo"] == "desligado"
+    o["n_demo"] = None
+    assert D.ordens_do_estado(_estado(o), AGORA)["selo"] == "desligado"
+
+
+def _parado(**mudar):
+    p = {"foto": None, "parado": "fora do pregão", "vivo_em": AGORA.isoformat(),
+         "chamados": [], "n_demo": 1, "envio": None, "travada": None}
+    p.update(mudar)
+    return p
 
 
 def test_fora_do_pregao_parado_nao_e_enviando():
-    parado = {"foto": None, "parado": "fora do pregão", "vivo_em": AGORA.isoformat(),
-              "chamados": []}
-    r = D.ordens_do_estado(_estado(parado), AGORA)
+    r = D.ordens_do_estado(_estado(_parado()), AGORA)
     assert r["selo"] == "desligado"
     assert "fora do pregão" in r["texto"]
+
+
+def test_fora_do_pregao_mostra_o_interruptor_do_envio():
+    r = D.ordens_do_estado(_estado(_parado(envio=True)), AGORA)
+    assert r["texto"] == "Demo · fora do pregão · envio ligado"
+    r = D.ordens_do_estado(_estado(_parado(envio=False)), AGORA)
+    assert r["texto"] == "Demo · fora do pregão · envio desligado"
+
+
+def test_fora_do_pregao_com_conta_travada():
+    trava = {"desde": AGORA.isoformat(), "perda": 460.0, "limite": 500.0}
+    r = D.ordens_do_estado(_estado(_parado(travada=trava, envio=True)), AGORA)
+    assert r["selo"] == "travada" and r["alarme"] is True
+
+
+def test_fora_do_pregao_sem_demo_sem_prefixo():
+    r = D.ordens_do_estado(_estado(_parado(n_demo=0, envio=True)), AGORA)
+    assert r["selo"] == "sem_demo" and not r["texto"].startswith("Demo")
 
 
 def test_chamado_aberto_liga_o_alarme_e_vai_na_lista():
@@ -146,6 +184,15 @@ def test_erro_no_caminho_das_ordens_liga_o_alarme():
     assert r["selo"] != "enviando"
 
 
+def test_o_mesmo_erro_repetido_bipa_uma_vez():
+    """A cada volta o `vivo_em` muda; a chave não pode mudar junto."""
+    def chaves(vivo, erro="boom"):
+        return D.ordens_do_estado(_estado({"erro": erro, "vivo_em": vivo}),
+                                  AGORA)["chaves"]
+    assert chaves("2026-10-14T10:29:58") == chaves("2026-10-14T10:29:59")
+    assert chaves("x", "boom") != chaves("x", "outro erro")
+
+
 def test_alarme_desligado_sem_captura_mesmo_com_chamado_velho():
     ch = [{"texto": "x", "chave": "a", "desde": "2026-10-14T09:00:00"}]
     r = D.ordens_do_estado(_estado(_ordens(chamados=ch), idade_s=600), AGORA)
@@ -162,7 +209,7 @@ def test_posicoes_da_automacao_contadas():
 def contas_falsas(monkeypatch):
     chamadas = []
 
-    def ligar_envio(cid, ligado):
+    def ligar_envio(cid, ligado, **k):
         # o comando "zerar_tudo" já tem de estar na pasta quando o banco é
         # tocado: banco ocupado não pode atrasar o zerar
         tipos = [json.loads(p.read_text(encoding="utf-8"))["tipo"]
@@ -180,8 +227,8 @@ def _comandos():
 
 
 def test_primeiro_clique_so_arma(contas_falsas):
-    armado, rotulo, aviso = CO.zerar(False, _estado(_ordens()), AGORA)
-    assert armado is True
+    armado, rotulo, aviso = CO.zerar(None, _estado(_ordens()), AGORA, agora_s=100.0)
+    assert armado == 100.0
     assert "Confirmar" in rotulo and "2 posições" in rotulo
     assert _comandos() == []
     assert contas_falsas == []
@@ -189,13 +236,14 @@ def test_primeiro_clique_so_arma(contas_falsas):
 
 def test_primeiro_clique_com_uma_posicao_no_singular(contas_falsas):
     ligs = {"7": {"motivo": None, "posicoes": [{"ticket": 1}]}}
-    _, rotulo, _ = CO.zerar(False, _estado(_ordens(ligacoes=ligs)), AGORA)
+    _, rotulo, _ = CO.zerar(None, _estado(_ordens(ligacoes=ligs)), AGORA,
+                            agora_s=100.0)
     assert "1 posição" in rotulo and "posições" not in rotulo
 
 
 def test_segundo_clique_escreve_o_comando_e_desliga_cada_conta(contas_falsas):
-    armado, rotulo, aviso = CO.zerar(True, _estado(_ordens()), AGORA)
-    assert armado is False
+    armado, rotulo, aviso = CO.zerar(98.0, _estado(_ordens()), AGORA, agora_s=100.0)
+    assert armado is None
     assert rotulo == CO.ROTULO
     assert [c["tipo"] for c in _comandos()] == ["zerar_tudo"]
     assert contas_falsas == [(1, False, True), (2, False, True)]
@@ -203,12 +251,12 @@ def test_segundo_clique_escreve_o_comando_e_desliga_cada_conta(contas_falsas):
 
 
 def test_banco_ocupado_avisa_que_o_comando_ja_vale(monkeypatch, contas_falsas):
-    def ocupado(cid, ligado):
+    def ocupado(cid, ligado, **k):
         contas_falsas.append((cid, ligado))
         if cid == 1:
             raise RuntimeError("banco ocupado")
     monkeypatch.setattr(AV, "ligar_envio", ocupado)
-    _, _, aviso = CO.zerar(True, _estado(_ordens()), AGORA)
+    _, _, aviso = CO.zerar(98.0, _estado(_ordens()), AGORA, agora_s=100.0)
     # a segunda conta é tentada mesmo com a primeira falhando
     assert contas_falsas == [(1, False), (2, False)]
     assert "o comando já vale pela captura" in aviso
@@ -219,15 +267,57 @@ def test_lista_de_contas_ilegivel_tambem_avisa(monkeypatch, contas_falsas):
     def ocupado():
         raise RuntimeError("banco ocupado")
     monkeypatch.setattr(CO, "_contas_ativas", ocupado)
-    _, _, aviso = CO.zerar(True, _estado(_ordens()), AGORA)
+    _, _, aviso = CO.zerar(98.0, _estado(_ordens()), AGORA, agora_s=100.0)
     assert "o comando já vale pela captura" in aviso
     assert [c["tipo"] for c in _comandos()] == ["zerar_tudo"]
 
 
 def test_captura_fora_do_ar_diz_que_o_comando_espera(contas_falsas):
-    _, _, aviso = CO.zerar(True, _estado(_ordens(), idade_s=600), AGORA)
+    _, _, aviso = CO.zerar(98.0, _estado(_ordens(), idade_s=600), AGORA, agora_s=100.0)
     assert "esperando a captura" in aviso
     assert "stop e alvo seguem na corretora" in aviso
+
+
+def test_confirmacao_vencida_so_rearma(contas_falsas):
+    """O servidor confere a idade do armado: o desarme de 5 s do navegador
+    pode não rodar, e um clique minutos depois não pode zerar."""
+    armado, rotulo, _ = CO.zerar(90.0, _estado(_ordens()), AGORA, agora_s=100.0)
+    assert armado == 100.0 and "Confirmar" in rotulo
+    assert _comandos() == [] and contas_falsas == []
+
+
+def _banco_que_espera(monkeypatch):
+    """Banco ocupado de verdade no tempo: cada tentativa dorme a espera e
+    nenhuma consegue — quem usar o padrão (40-60 tentativas) leva 10-15 s."""
+    import time as _t
+
+    def ocupado(*a, tentativas=40, espera=0.25, **k):
+        _t.sleep(tentativas * espera)
+        raise RuntimeError("banco ocupado")
+    monkeypatch.setattr(db, "connect_write", ocupado)
+    monkeypatch.setattr(db, "connect", ocupado)
+
+
+def test_banco_ocupado_nao_congela_a_tela(monkeypatch):
+    import time as _t
+    monkeypatch.setattr(CO, "_contas_ativas", lambda: [1, 2])
+    _banco_que_espera(monkeypatch)
+    t0 = _t.monotonic()
+    _, _, aviso = CO.zerar(98.0, _estado(_ordens()), AGORA, agora_s=100.0)
+    assert _t.monotonic() - t0 < 2
+    assert "o comando já vale pela captura" in aviso
+    tipos = [c["tipo"] for c in _comandos()]
+    assert tipos[0] == "zerar_tudo"
+
+
+def test_lista_de_contas_com_banco_ocupado_nao_congela(monkeypatch):
+    import time as _t
+    _banco_que_espera(monkeypatch)
+    t0 = _t.monotonic()
+    _, _, aviso = CO.zerar(98.0, _estado(_ordens()), AGORA, agora_s=100.0)
+    assert _t.monotonic() - t0 < 2
+    assert "o comando já vale pela captura" in aviso
+    assert [c["tipo"] for c in _comandos()] == ["zerar_tudo"]
 
 
 def test_contas_ativas_ignora_arquivada():
@@ -247,7 +337,7 @@ def test_segundo_clique_de_verdade_desliga_no_banco():
     AV.ligar_envio(cid, True)
     for p in Path(comandos.PASTA).glob("*.json"):
         p.unlink()
-    CO.zerar(True, _estado(_ordens()), AGORA)
+    CO.zerar(98.0, _estado(_ordens()), AGORA, agora_s=100.0)
     with db.connect(read_only=True) as con:
         assert con.execute("SELECT envio_ligado FROM contas WHERE conta_id = ?",
                            [cid]).fetchone()[0] is False

@@ -699,14 +699,17 @@ def definir_contratos(ligacao_id: int, contratos: int | None, *,
                          motivo=tipo)
 
 
-def ligar_envio(conta_id: int, ligado: bool) -> None:
+def ligar_envio(conta_id: int, ligado: bool, *, tentativas: int = 40,
+                espera: float = 0.25) -> None:
     """Interruptor do envio de ordens da conta. Desligar escreve o comando
-    ANTES do banco: com ele ocupado (uma mineração), o desligar já vale."""
+    ANTES do banco: com ele ocupado (uma mineração), o desligar já vale.
+    `tentativas`/`espera`: quem já garantiu o comando (o "Zerar tudo") não
+    precisa segurar a tela 10 s esperando o banco."""
     ligado = bool(ligado)
     if not ligado:
         comandos.escrever(comandos.PASTA, "envio", conta_id=conta_id,
                           ligado=False)
-    with db.connect_write() as con, db.transacao(con):
+    with db.connect_write(tentativas=tentativas, espera=espera) as con,             db.transacao(con):
         r = con.execute("SELECT limite_perda_dia, coalesce(envio_ligado, "
                         "false), arquivada_em FROM contas WHERE conta_id = ?",
                         [conta_id]).fetchone()

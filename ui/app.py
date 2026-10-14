@@ -311,7 +311,9 @@ def build() -> Dash:
             # 2 s em QUALQUER aba — um chamado não pode esperar 30 s
             dcc.Interval(id="ord-intervalo", interval=2000),
             # o primeiro clique do "Zerar tudo" arma; o segundo, em 5 s, faz
-            dcc.Store(id="ord-armado", data=False),
+            # (guarda a HORA do primeiro clique: o servidor recusa confirmar
+            # um armado de mais de 6 s)
+            dcc.Store(id="ord-armado", data=None),
             # o alarme: `assets/alarme.js` observa estes atributos (bipe por
             # chamado novo e título da aba piscando). Na raiz do layout para
             # valer em qualquer aba.

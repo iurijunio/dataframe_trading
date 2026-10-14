@@ -247,6 +247,10 @@ class Servico:
         self._guarda_bloqueada = False
         self.conectado_desde = None     # mono da última passagem a "conectado"
         self.ordens_estado = None       # bloco "ordens" do estado.json
+        # o último que o passo viu: com as ordens paradas (fora do pregão,
+        # MT5 fora) o selo do topo ainda diz se há demo e de que conta
+        self._n_demo = None
+        self._conta_logada = None
         # Os desejados só se recalculam quando o minuto em formação, as
         # barras fechadas de hoje ou as ligações do retrato mudam: a volta
         # de 0,1 s não pode refazer o papel dez vezes por segundo.
@@ -1050,6 +1054,10 @@ class Servico:
         # passos do banco desta virada podem seguir (`_banco_espera`)
         if self._provisoria_ts is not None:
             self._minuto_ordens = self._provisoria_ts
+        if est.get("n_demo") is not None:
+            self._n_demo = est["n_demo"]
+        if (est.get("conta") or {}).get("conta_id") is not None:
+            self._conta_logada = est["conta"]["conta_id"]
         self.ordens_estado = {**est, **self._ordens_extra()}
 
     def _virar_dia(self, dia) -> None:
@@ -1081,7 +1089,31 @@ class Servico:
                 or bool(diario.ligacoes_abertas()))
 
     def _ordens_paradas(self, motivo, quando) -> dict:
+        """Nada sai agora, mas o topo ainda mostra o interruptor do Envio
+        (do último retrato: o da conta logada por último, senão qualquer
+        conta ligada), a trava do dia e quantas ligações estão na demo —
+        o último valor conhecido quando não há retrato."""
+        r = self.retrato
+        n = ordens.n_demo(r) if r is not None else self._n_demo
+        envio = None
+        if r is not None:
+            contas = r.contas
+            cid = self._conta_logada
+            envio = (bool(contas[cid].get("envio")) if cid in contas
+                     else any(c.get("envio") for c in contas.values()))
+        trava = None
+        try:
+            evs = [e for e in self.motor.diario(quando.date()).eventos
+                   if e["tipo"] == "conta_travada"
+                   and (self._conta_logada is None
+                        or e.get("conta_id") == self._conta_logada)]
+        except Exception:
+            evs = []        # diário ilegível não pode derrubar o estado
+        if evs:
+            trava = {"desde": evs[-1]["quando"], "perda": evs[-1].get("perda"),
+                     "limite": evs[-1].get("limite")}
         return {"foto": None, "parado": motivo, "vivo_em": quando,
+                "n_demo": n, "envio": envio, "travada": trava,
                 "chamados": [dict(c, chave=k) for k, c in self.motor.chamados.items()],
                 **self._ordens_extra()}
 

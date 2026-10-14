@@ -337,6 +337,16 @@ def _custos(lv) -> dict:
             "emolumentos": perfil.emolumentos_por_contrato}
 
 
+def n_demo(retrato) -> int | None:
+    """Quantas ligações estão na fase demo no retrato; None sem retrato (não
+    se sabe). A tela decide o "Sem demo" por este número, e nunca por
+    `ligacoes` do estado: sem desejados (papel indisponível) aquela lista
+    vem vazia mesmo com demo ligada."""
+    if retrato is None:
+        return None
+    return sum(1 for lv in retrato.ligacoes.values() if lv.fase == "demo")
+
+
 def _conta_logada(retrato, foto):
     """(conta_id, conta) do retrato cujo login/servidor é o do MT5 agora."""
     for cid, c in (retrato.contas if retrato else {}).items():
@@ -518,7 +528,8 @@ class Motor:
             # sem foto confiável nada se decide (§5.1); nem comando se consome
             # foto que falha não é erro das ordens (o MT5 devolveu None):
             # `falhou` diz só se o passo estourou alguma exceção
-            return {"foto": "falhou", "vivo_em": agora, "falhou": False}
+            return {"foto": "falhou", "vivo_em": agora, "falhou": False,
+                    "n_demo": n_demo(retrato)}
 
         # papel parado: indisponível há mais de 3 min no pregão (§5.1)
         if disponivel or not no_pregao:
@@ -536,7 +547,7 @@ class Motor:
         # 2. a conta: nenhuma ordem (nem saída) fora da conta certa, hedging,
         # com o Algo Trading ligado
         cid, conta = _conta_logada(retrato, foto)
-        est = self._estado_base(foto, agora, cid, simbolo)
+        est = self._estado_base(foto, agora, cid, simbolo, retrato)
         if conta is None:
             demo = bool(retrato) and any(lv.fase == "demo"
                                          for lv in retrato.ligacoes.values())
@@ -860,8 +871,9 @@ class Motor:
             return ok, motivo
         return pode_entrar
 
-    def _estado_base(self, foto, agora, cid, simbolo) -> dict:
+    def _estado_base(self, foto, agora, cid, simbolo, retrato=None) -> dict:
         return {
+            "n_demo": n_demo(retrato),
             # o passo terminou sem exceção? Os retornos antecipados (conta
             # errada, sem hedging, Algo desligado) são limpos: quem chama
             # fecha o chamado `ordens_falhou` aberto fora do passo

@@ -895,3 +895,28 @@ def test_estado_da_volta(tmp_path):
     assert est["ligacoes"][7]["desejado"] == ZERADO
     assert [p["ticket"] for p in est["posicao_fora"]] == [mao]
     assert est["chamados"] == [] and est["comandos"] == []
+
+
+# ------------------------------------------- n_demo (selo do topo, tarefa 14)
+def test_n_demo_conta_as_ligacoes_na_fase_demo_em_toda_forma_do_estado(tmp_path):
+    """A tela decide o "Sem demo" por este número, nunca pela lista de
+    ligações (vazia quando o papel está indisponível)."""
+    ret = retrato([lig(4), lig(5), lig(6, fase="papel")])
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    assert passo(m, mt5, {}, ret=ret, disponivel=False)["n_demo"] == 2
+    # retornos antecipados: conta errada, sem hedging, foto que falha
+    mt5.login = 999
+    assert passo(m, mt5, {}, ret=ret)["n_demo"] == 2
+    mt5.login, mt5.hedging = LOGIN, False
+    assert passo(m, mt5, {}, ret=ret)["n_demo"] == 2
+    mt5.hedging, mt5.erro_leitura = True, True
+    est = passo(m, mt5, {}, ret=ret)
+    assert est["foto"] == "falhou" and est["n_demo"] == 2
+
+
+def test_n_demo_zero_e_sem_retrato_none(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    assert passo(m, mt5, {}, ret=retrato([lig(4, fase="papel")]))["n_demo"] == 0
+    est = m.passo(mt5, agora_srv=AG, retrato=None, desejados={}, disponivel=False,
+                  comandos=[], simbolo="WINV26", contrato_ok=True, conectado_ha_s=60.0)
+    assert est["n_demo"] is None

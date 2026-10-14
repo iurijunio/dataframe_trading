@@ -11,6 +11,7 @@ escreve — não há como fechar ciclo com o pulso.
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
 import duckdb
@@ -24,13 +25,20 @@ from core import db_manager as db
 from . import data as D
 
 ROTULO = "⏻ Zerar tudo e desligar envio"
+# a confirmação só vale até 6 s depois de armar, conferido no SERVIDOR: o
+# desarme de 5 s do navegador pode não rodar (aba em segundo plano, JS
+# atrasado) e um "Confirmar" esquecido viraria um zerar por engano
+ARMADO_VALE_S = 6.0
+# banco ocupado: duas tentativas e desiste — o comando por arquivo já vale,
+# e a tela não pode congelar ~10 s por conta esperando a mineração
+TENTATIVAS_BANCO = 2
 _CLASSE_SELO = "ord-selo"
 
 
 def _contas_ativas() -> list[int]:
     """Os ids das contas não arquivadas. Espera pouco: o comando por arquivo
     já foi escrito, e segurar a tela 15 s pelo banco não ajuda ninguém."""
-    with db.connect(read_only=True, tentativas=8) as con:
+    with db.connect(read_only=True, tentativas=TENTATIVAS_BANCO) as con:
         return [int(r[0]) for r in con.execute(
             "SELECT conta_id FROM contas WHERE arquivada_em IS NULL "
             "ORDER BY conta_id").fetchall()]
@@ -44,8 +52,10 @@ def _rotulo_armado(n: int | None) -> str:
     return f"Confirmar: encerra {n} {'posição' if n == 1 else 'posições'}"
 
 
-def zerar(armado: bool, estado: dict | None, agora: datetime) -> tuple:
-    """Um clique no botão. Devolve (armado, rótulo, aviso).
+def zerar(armado_em: float | None, estado: dict | None, agora: datetime,
+          agora_s: float | None = None) -> tuple:
+    """Um clique no botão. Devolve (armado_em, rótulo, aviso): `armado_em` é
+    a hora (time.time) em que o primeiro clique armou, ou None.
 
     Primeiro clique só arma. O segundo escreve o comando "zerar_tudo"
     ANTES de tocar o banco — com uma mineração gravando, o arquivo já vale
@@ -53,8 +63,10 @@ def zerar(armado: bool, estado: dict | None, agora: datetime) -> tuple:
     banco. Sem esse desligar no banco o zerar duraria o dia inteiro: a
     captura só o dá por cumprido quando o banco mostra o Envio desligado."""
     info = D.ordens_do_estado(estado, agora)
-    if not armado:
-        return (True, _rotulo_armado(info["posicoes"]),
+    agora_s = time.time() if agora_s is None else agora_s
+    if not armado_em or not 0 <= agora_s - float(armado_em) <= ARMADO_VALE_S:
+        # sem armar, ou armado há tempo demais: este clique só (re)arma
+        return (agora_s, _rotulo_armado(info["posicoes"]),
                 "clique de novo em 5 s para confirmar")
 
     comandos.escrever(comandos.PASTA, "zerar_tudo")
@@ -66,7 +78,7 @@ def zerar(armado: bool, estado: dict | None, agora: datetime) -> tuple:
     for cid in contas:
         # cada conta na sua tentativa: uma que falha não deixa a outra ligada
         try:
-            AV.ligar_envio(cid, False)
+            AV.ligar_envio(cid, False, tentativas=TENTATIVAS_BANCO)
         except ValueError:
             pass            # conta apagada entre a lista e aqui: nada a desligar
         except (duckdb.Error, RuntimeError):
@@ -80,7 +92,7 @@ def zerar(armado: bool, estado: dict | None, agora: datetime) -> tuple:
     if ocupado:
         aviso += (" · banco ocupado: o Envio não foi desligado no banco, mas "
                   "o comando já vale pela captura")
-    return False, ROTULO, aviso
+    return None, ROTULO, aviso
 
 
 def selo(info: dict) -> tuple:
@@ -128,7 +140,7 @@ def register(app):
     def zerar_clique(n, armado):
         if not n:
             raise PreventUpdate
-        armado, rotulo, aviso = zerar(bool(armado), D.estado_captura(),
+        armado, rotulo, aviso = zerar(armado, D.estado_captura(),
                                       datetime.now())
         classe = "ord-zerar" + (" ord-armado" if armado else "")
         return armado, rotulo, classe, aviso
@@ -137,13 +149,13 @@ def register(app):
     # "Confirmar" esquecido viraria um zerar por engano no próximo clique.
     app.clientside_callback(
         """function (armado) {
-            window._ordArmado = armado ? Date.now() : null;
+            window._ordArmado = armado || null;
             var marca = window._ordArmado;
             if (armado) {
                 setTimeout(function () {
                     if (window._ordArmado === marca) {
                         window._ordArmado = null;
-                        window.dash_clientside.set_props('ord-armado', {data: false});
+                        window.dash_clientside.set_props('ord-armado', {data: null});
                         window.dash_clientside.set_props('ord-zerar',
                             {children: '""" + ROTULO + """', className: 'ord-zerar'});
                         window.dash_clientside.set_props('ord-zerar-aviso', {children: ''});
