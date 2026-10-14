@@ -5,7 +5,13 @@
 Spec: docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md.
 Processo à parte da tela de propósito: a tela reinicia a cada mudança e
 trava em mineração; um laço contínuo dentro dela perderia candle (e, na
-parte 4, ordem). Toda decisão mora em core/captura.py; aqui só o laço.
+parte 4, ordem). Toda decisão mora em core/captura.py (candles) e em
+core/ordens.py (ordens); aqui só o laço.
+
+Parte 4 (spec 2026-10-08-ao-vivo-ordens-design.md §3): as ordens rodam no
+mesmo fio (o pacote MetaTrader5 não é seguro entre threads), em cada volta,
+ANTES de qualquer escrita no banco — gravar candle, papel, conferência e
+Parquet podem levar segundos, e uma saída não espera por eles.
 """
 from __future__ import annotations
 
@@ -16,16 +22,19 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as hora, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 
 from core import calendar as cal
 from core import captura as C
+from core import comandos, contrato_dia, diario_ordens, ordens, papel
+from core import corretora as K
 from core import db_manager as db
-from core import papel
+from core import papel_backtest, papel_vivo
 from core import rollovers as roll
 from core.mt5_source import barras_de_taxas
 
@@ -57,6 +66,22 @@ FALHAS_SIMBOLO = 3
 # O padrão do initialize() é 60 s: com o terminal travado, a volta inteira
 # (e o estado que a tela lê) pararia junto.
 TIMEOUT_INICIALIZAR_MS = 10_000
+
+# Perto da virada do minuto (servidor, no pregão) a volta roda a cada 0,1 s:
+# a entrada do backtest é na abertura do minuto, e cada segundo de atraso
+# é derrapagem que ele não tem (spec §3.1). Do segundo 58 ao 10.
+VOLTA_RAPIDA = 0.1
+RAPIDA_ANTES_S, RAPIDA_DEPOIS_S = 58, 10
+# O retrato da configuração (ligações, fases, contas, Envio) é relido a cada
+# 5 s, com UMA tentativa sem espera: o banco ocupado por uma mineração não
+# pode atrasar a volta das ordens; fica o retrato anterior.
+A_CADA_RETRATO = 5
+# A conferência papel × backtest roda o backtest do histórico inteiro
+# (segundos): só fora do pregão — antes das 08:59 ou depois do fechamento.
+BACKTEST_ATE = hora(8, 59)
+_HOJE_VAZIO = {"ts": np.array([], dtype="datetime64[ns]"),
+               **{k: np.array([], dtype=np.int64)
+                  for k in ("open", "high", "low", "close", "tick_volume", "volume")}}
 
 
 class ErroDeConfiguracao(RuntimeError):
@@ -184,7 +209,10 @@ class Servico:
         # processo inteiro: guarda o módulo de cada estratégia pelo hash do
         # arquivo, para recarregar só quando o código no disco muda.
         self.cache_codigo: dict = {}
-        self.papel_pendente = False     # banco ocupado: refazer sem esperar candle
+        # "Refazer o papel sem esperar candle": com o banco ocupado, e na
+        # subida — o processo pode ter caído no meio do pregão, e o papel
+        # gravado não pode ficar parado até o próximo candle (ordens §5.1).
+        self.papel_pendente = True
         self.papel_em = None
         # por origem: o cálculo de um minuto dar certo não apaga a falha da
         # conferência de ontem, e vice-versa
@@ -193,6 +221,42 @@ class Servico:
         self._papel_ok = True           # nenhuma falha do papel nesta janela
         self.papel_divergencias = 0
         self._schema_ok = False         # tabelas do papel criadas neste banco
+
+        # Ordens (spec 2026-10-08-ao-vivo-ordens §3, §5). O caminho da ordem
+        # não usa o banco: retrato, aquecimento e desejados vivem aqui, em
+        # memória. A pasta do diário é lida de `diario_ordens.PASTA` agora
+        # (nunca importada): o conftest a desvia nos testes. Sem o YAML não
+        # há tick nem valor do ponto — a primeira volta já sai com o erro.
+        self.motor = (ordens.Motor(diario_ordens.PASTA, self.inst,
+                                   relogio=lambda: self.relogio.agora(self.mono()),
+                                   mono=self.mono)
+                      if self.inst else None)
+        self.retrato = None             # papel_vivo.Retrato da configuração
+        self.retrato_em = None          # hora (servidor) do retrato em memória
+        self._retrato_tentado = None    # mono da última tentativa de leitura
+        self.aquecimento = None         # papel_vivo.Aquecimento do dia
+        self.aquecimento_chave = None   # plano_id das ligações quando carregou
+        # `self.contrato` (acima) é o texto publicado como contrato_vigente;
+        # o contrato que a automação opera hoje é o dict de contrato_dia
+        self.contrato_dia = None
+        self.guarda = contrato_dia.GuardaPreco(int(self.inst.get("tick_size", 5)))
+        self._guarda_bloqueada = False
+        self.conectado_desde = None     # mono da última passagem a "conectado"
+        self.ordens_estado = None       # bloco "ordens" do estado.json
+        # Os desejados só se recalculam quando o minuto em formação, as
+        # barras fechadas de hoje ou as ligações do retrato mudam: a volta
+        # de 0,1 s não pode refazer o papel dez vezes por segundo.
+        self._minuto_calculado = None
+        self._desejados: dict = {}
+        self._disponivel = False
+        self._versao_papel = 0          # sobe quando retrato/aquecimento mudam
+        self._ordens_dia = None
+        self._contrato_falha = None     # último motivo logado (sem repetir no log)
+        # O diário das ordens vai ao banco na escrita que a volta já abre;
+        # na subida e na virada do dia vão os arquivos dos últimos dias
+        # inteiros (eventos depois do último candle de ontem, queda antes
+        # do espelho).
+        self._espelhar_tudo = True
 
     # ------------------------------------------------------------- banco
     @contextlib.contextmanager
@@ -213,6 +277,25 @@ class Servico:
     def _gravou(self) -> None:
         self.banco_ocupado_desde = None
 
+    def _espelhar(self, con, agora, tudo: bool = False) -> None:
+        """Leva o diário das ordens ao banco (`ordens_eventos`) na conexão
+        de escrita que a volta JÁ abriu — nunca uma escrita só para isto, e
+        nunca dentro de `db.transacao` (cada evento entra sozinho; um que
+        falhe não leva os outros junto). O diário em arquivo é a verdade;
+        o banco é espelho e pode atrasar (spec ordens §7.2)."""
+        if self.motor is None:
+            return
+        try:
+            if tudo or self._espelhar_tudo:
+                diario_ordens.espelhar_pendentes(
+                    diario_ordens.PASTA, con, hoje=(self.agora_srv or agora).date())
+                self._espelhar_tudo = False
+            elif self.motor._diario is not None:
+                self.motor._diario.espelhar(con)
+        except Exception:
+            # o espelho não pode custar o candle que acabou de ser gravado
+            log.exception("não consegui espelhar o diário das ordens no banco")
+
     def _garantir_schema(self, agora) -> None:
         """As tabelas que a captura usa e o app cria na subida (papel_*).
 
@@ -225,6 +308,9 @@ class Servico:
         try:
             with self._banco(agora, escrita=True) as con:
                 db.init_schema(con)
+                # a primeira escrita da subida: o diário que ficou sem
+                # espelho (queda, banco ocupado) chega ao banco aqui
+                self._espelhar(con, agora)
         except _Ocupado:
             return
         except Exception:
@@ -282,7 +368,7 @@ class Servico:
         self.carregado = True
 
     # --------------------------------------------------------------- MT5
-    def _mt5(self, agora) -> bool:
+    def _mt5(self, agora, m=None) -> bool:
         mt5 = self.mt5
         if not self.conectado:
             if self.terminal_aberto():
@@ -316,6 +402,20 @@ class Servico:
             # na série contínua (WIN$N) a Clear devolve basis vazio: None, não ""
             self.contrato = getattr(mt5.symbol_info(self.simbolo), "basis", None) or None
             self.novo_login = False
+        else:
+            # a cada volta, não só no login: o usuário pode trocar de conta
+            # no terminal sem a conexão cair (spec ordens §4, item 6). A
+            # conferência que barra a ordem é a do Motor, pela fotografia.
+            conta = mt5.account_info()
+            if conta is not None:
+                self.conta = {"login": int(conta.login), "servidor": conta.server}
+        if self.mt5_estado != "conectado":
+            # toda volta ao "conectado" — initialize novo ou a corretora que
+            # caiu e voltou com o terminal aberto — reinicia a graça de 5 s
+            # sem entradas (a lista de posições pode vir vazia) e a escolha
+            # do contrato do dia
+            self.conectado_desde = self.mono() if m is None else m
+            self.contrato_dia = None
         self.mt5_estado, self.mt5_desde = "conectado", None
         return True
 
@@ -355,6 +455,8 @@ class Servico:
         try:
             with self._banco(agora, escrita=True) as con:
                 r = C.gravar(con, self.simbolo, prontos, self._origem(), self.price_decimals)
+                # o candle primeiro; o diário das ordens pega carona no escritor
+                self._espelhar(con, agora)
         except _Ocupado:
             # sem avançar `ultimo`: a volta seguinte pede os mesmos candles ao MT5
             return False
@@ -432,10 +534,16 @@ class Servico:
         """
         dia = agora.date()
         self.papel_pendente = False
+        # O minuto em formação vira barra provisória (spec ordens §3): sem
+        # ela a entrada do sinal das 10:00 só apareceria às 10:02 no papel
+        # gravado, um minuto depois da ordem da demo.
+        em = self.em_formacao
+        provisoria = ((em["ts"], int(round(em["open"])))
+                      if em and em["ts"].date() == dia else None)
         try:
             with self._banco(agora, escrita=False) as con:
                 res = papel.rodar_dia(con, dia, agora, self.cache_codigo,
-                                      symbol=self.simbolo)
+                                      symbol=self.simbolo, provisoria=provisoria)
             if res:
                 with self._banco(agora, escrita=True) as con:
                     papel.gravar(con, res, agora)
@@ -495,6 +603,7 @@ class Servico:
                     log.exception("não consegui listar o papel por conferir")
                     falha_papel = str(e)
                     papel_dias, reabrir = [], []
+                backtest = self._backtest_pendentes(con, agora)
                 self._divergencias(con)
         except _Ocupado:
             return      # a janela não conta: tenta de novo na volta seguinte
@@ -503,7 +612,7 @@ class Servico:
         elif not dias and not papel_dias:
             # nada do papel por conferir: uma falha antiga já não vale
             self.papel_erros["conferencia"] = None
-        if not (dias or rever or reabrir or self.reexportar or papel_dias):
+        if not (dias or rever or reabrir or self.reexportar or papel_dias or backtest):
             self._mono_conferencia = m
             return
         try:
@@ -513,6 +622,9 @@ class Servico:
             rebarras, reerros = self._barras_para_reconferir(rever, agora)
             with self._banco(agora, escrita=True) as con:
                 self._mono_conferencia = m
+                # os eventos das ordens depois do último candle do dia (a
+                # zeragem do fechamento) só chegam ao banco por esta escrita
+                self._espelhar(con, agora, tudo=True)
                 self._papel_ok = True
                 # antes dos candles: uma falha na conferência deles não pode
                 # adiar de novo o papel de um dia que já foi conferido
@@ -527,6 +639,9 @@ class Servico:
                 self._conferir_com(con, agora, barras)
                 if self._papel_ok and falha_papel is None:
                     self.papel_erros["conferencia"] = None
+                # por último: o papel tem de estar reaberto e conferido nos
+                # candles finais antes de ser comparado com o backtest
+                self._conferir_backtest(con, agora)
         except _Ocupado:
             return
         except ErroDeConfiguracao:
@@ -543,6 +658,34 @@ class Servico:
             else:
                 # janela só da reconferência: o cartão de hoje não é dela
                 self.reconferencia = {**self.reconferencia, "erro": str(e)}
+
+    def _pode_backtest(self, agora) -> bool:
+        """A conferência papel × backtest roda o backtest do histórico
+        inteiro (segundos com a trava do banco): só antes das 08:59 ou
+        depois do fechamento — nunca no meio de um pregão com ordens."""
+        srv = self.agora_srv or agora
+        if srv.weekday() >= 5 or srv.time() < BACKTEST_ATE:
+            return True
+        return self.fechamento is not None and self._fechou_hoje(agora)
+
+    def _backtest_pendentes(self, con, agora) -> list:
+        if not self._pode_backtest(agora):
+            return []
+        try:
+            return papel_backtest.pendentes(con, self.simbolo)
+        except Exception:
+            log.exception("não consegui listar a conferência papel × backtest")
+            return []
+
+    def _conferir_backtest(self, con, agora) -> None:
+        """Cada pregão pendente à parte: um plano que não roda não impede
+        a conferência dos outros, nem a dos candles (já gravada)."""
+        for lig, dia in self._backtest_pendentes(con, agora):
+            try:
+                papel_backtest.conferir(con, lig, dia, self.cache_codigo, agora,
+                                        symbol=self.simbolo)
+            except Exception:
+                log.exception("papel × backtest da ligação %s em %s falhou", lig, dia)
 
     def _conferir_papel(self, con, dia, agora) -> None:
         """A última volta do papel do dia, com os candles já conferidos —
@@ -761,6 +904,226 @@ class Servico:
             "SELECT 1 FROM ingest_log WHERE symbol = ? AND source_file = ?",
             [self.simbolo, f"{C.PREFIXO_CONFERENCIA}{hoje:%Y-%m-%d}"]).fetchone() is not None
 
+    # -------------------------------------------------------------- ordens
+    def _ordens(self, agora, m) -> None:
+        """A volta das ordens (spec ordens §3, §5). Qualquer erro aqui vai
+        para o log, para o estado e para um chamado — nunca para a volta: a
+        captura existe para gravar candles, e o papel e a conferência não
+        podem parar por causa das ordens."""
+        if self.motor is None:
+            return
+        try:
+            self._ordens_volta(agora, m)
+        except Exception as e:
+            log.exception("caminho das ordens falhou")
+            quando = (self.agora_srv if self.mt5_estado == "conectado" else None) or agora
+            self.ordens_estado = {"erro": str(e), "vivo_em": quando}
+            try:
+                self.motor._chamar("ordens_falhou", "ordens_falhou",
+                                   f"erro nas ordens: {e}", quando)
+            except Exception:
+                log.exception("não consegui abrir o chamado da falha das ordens")
+
+    def _ordens_volta(self, agora, m) -> None:
+        conectado = self.mt5_estado == "conectado"
+        srv = self.agora_srv if conectado else None
+        # tudo com o mesmo dia (o do servidor): planejar e executar não
+        # podem discordar sobre que diário vale (§5.1)
+        quando = srv or agora
+        dia = quando.date()
+        if self._ordens_dia != dia:
+            self._virar_dia(dia)
+        diario = self.motor.diario(dia)
+
+        if not conectado:
+            # sem MT5 nada pode; com posição da automação aberta, o usuário
+            # precisa saber (o stop e o alvo seguem no servidor)
+            self.motor._condicao(
+                "mt5_fora", bool(diario.ligacoes_abertas()),
+                "MT5 fora do ar com posição da automação aberta "
+                "(stop e alvo seguem na corretora)", agora)
+            self.ordens_estado = self._ordens_paradas("MT5 fora do ar", agora)
+            return
+        self.motor._fechar("mt5_fora", quando)
+
+        fechamento = self.fechamento or C.FECHAMENTO_PADRAO
+        no_pregao = srv is not None and (C.em_pregao(srv, fechamento) or self.pregao)
+        if not no_pregao and not self._automacao_posicionada(diario):
+            self.ordens_estado = self._ordens_paradas(
+                "fora do pregão" if srv is not None else "sem relógio do servidor",
+                quando)
+            return
+
+        self._ler_retrato(quando, m)
+        if no_pregao:
+            self._escolher_contrato(srv, diario)
+            self._vigiar_preco(srv)
+        self._calcular_desejados(srv)
+        simbolo = (self.contrato_dia or {}).get("simbolo")
+        est = self.motor.passo(
+            self.mt5, agora_srv=srv, retrato=self.retrato,
+            desejados=self._desejados, disponivel=self._disponivel,
+            # a pasta é lida agora (o conftest a desvia); cada comando vai ao
+            # diário antes de o arquivo sumir
+            comandos=comandos.PASTA, simbolo=simbolo,
+            contrato_ok=simbolo is not None and not self._guarda_bloqueada,
+            conectado_ha_s=(m - self.conectado_desde
+                            if self.conectado_desde is not None else 0.0),
+            no_pregao=no_pregao)
+        self.ordens_estado = {**est, **self._ordens_extra()}
+
+    def _virar_dia(self, dia) -> None:
+        """Nada atravessa a noite: retrato, aquecimento, contrato e
+        desejados do dia anterior não valem hoje (§3: aquecimento uma vez
+        por pregão; §5.6: contrato fixo no dia)."""
+        if self._ordens_dia is not None:
+            self._espelhar_tudo = True      # o fim de ontem ainda não foi ao banco
+        self._ordens_dia = dia
+        self.retrato = self.retrato_em = self._retrato_tentado = None
+        self.aquecimento = self.aquecimento_chave = None
+        self.contrato_dia = None
+        self.guarda = contrato_dia.GuardaPreco(self.motor.tick)
+        self._guarda_bloqueada = False
+        self._minuto_calculado, self._desejados, self._disponivel = None, {}, False
+
+    def _automacao_posicionada(self, diario) -> bool:
+        """Há posição com o magic da automação (na corretora ou aberta no
+        diário)? Fora do pregão é só ela que pede o motor. Leitura que falha
+        conta como "sim": na dúvida o motor roda (e ele mesmo não decide
+        nada sem fotografia confiável)."""
+        try:
+            pos = self.mt5.positions_get()
+        except Exception:
+            return True
+        if pos is None:
+            return True
+        return (any(K.ligacao_do_magic(p.magic) is not None for p in pos)
+                or bool(diario.ligacoes_abertas()))
+
+    def _ordens_paradas(self, motivo, quando) -> dict:
+        return {"foto": None, "parado": motivo, "vivo_em": quando,
+                "chamados": [dict(c, chave=k) for k, c in self.motor.chamados.items()],
+                **self._ordens_extra()}
+
+    def _ordens_extra(self) -> dict:
+        return {"retrato_em": self.retrato_em, "disponivel": self._disponivel,
+                "contrato_dia": self.contrato_dia,
+                "preco_contrato_bloqueado": self._guarda_bloqueada}
+
+    def _ler_retrato(self, quando, m) -> None:
+        """A configuração do banco, relida a cada 5 s numa tentativa só e
+        sem espera: banco ocupado = fica o retrato anterior (o estado mostra
+        a idade). A hora é a do servidor: o "zerar tudo" e o desligar do
+        Envio só terminam com um retrato lido DEPOIS do comando, e os dois
+        relógios têm de ser o mesmo. O aquecimento vem na mesma leitura."""
+        if self._retrato_tentado is not None and m - self._retrato_tentado < A_CADA_RETRATO:
+            return
+        self._retrato_tentado = m
+        try:
+            con = db.connect(read_only=True, tentativas=1, espera=0)
+        except RuntimeError:
+            return          # ocupado: o normal com uma mineração gravando
+        except Exception:
+            log.exception("não consegui abrir o banco para o retrato das ordens")
+            return
+        try:
+            with con:
+                novo = papel_vivo.ler_retrato(con, quando.date(), quando,
+                                              self.cache_codigo, symbol=self.simbolo)
+                chave = tuple(sorted(lv.plano["plano_id"] for lv in novo.ligacoes.values()
+                                     if lv.plano is not None))
+                if (self.aquecimento is None or chave != self.aquecimento_chave
+                        or papel_vivo.pregoes_necessarios(novo) > self.aquecimento.pregoes):
+                    self.aquecimento = papel_vivo.carregar_aquecimento(
+                        con, self.simbolo, quando.date(), novo)
+                    self.aquecimento_chave = chave
+                    self._versao_papel += 1
+        except Exception:
+            log.exception("não consegui ler o retrato da configuração das ordens")
+            return
+        antigo, self.retrato, self.retrato_em = self.retrato, novo, quando
+        # relido a cada 5 s, mas os desejados só mudam se as ligações mudaram
+        # (fase, ligada, plano, períodos): senão refaria o papel à toa
+        if antigo is None or antigo.dia != novo.dia or antigo.ligacoes != novo.ligacoes:
+            self._versao_papel += 1
+
+    def _escolher_contrato(self, srv, diario) -> None:
+        """Na primeira volta conectada do pregão (e a cada nova conexão).
+        Sem preço ainda (WIN$N com último 0 às 09:00) tenta de novo nas
+        voltas seguintes; o vencimento hoje fixa o dia sem entradas."""
+        c = self.contrato_dia
+        if c is not None and (c["simbolo"] or c.get("vence_em")):
+            return
+        try:
+            c = contrato_dia.escolher(self.mt5, srv.date(), base=self.simbolo)
+        except Exception as e:
+            c = {"simbolo": None, "motivo": f"falha ao escolher o contrato: {e}",
+                 "vence_em": None, "amanha": None}
+        self.contrato_dia = c
+        if c["simbolo"] is None:
+            if c["motivo"] != self._contrato_falha:
+                log.warning("contrato do dia: %s", c["motivo"])
+            self._contrato_falha = c["motivo"]
+            return
+        self._contrato_falha = None
+        rolagens = [e for e in diario.eventos if e["tipo"] == "rolagem"]
+        if not rolagens or rolagens[-1].get("simbolo") != c["simbolo"]:
+            diario.registrar("rolagem", quando=srv, simbolo=c["simbolo"],
+                             motivo=c["motivo"])
+
+    def _vigiar_preco(self, srv) -> None:
+        """Guarda de preço (§5.6): contrato e WIN$N afastados mais de 2
+        ticks por mais de 60 s param as entradas e chamam o usuário; o
+        chamado fecha quando a guarda solta. Sem preço válido (último 0,
+        sem tick) não observa — nem prende nem solta."""
+        simbolo = (self.contrato_dia or {}).get("simbolo")
+        if not simbolo:
+            return
+        tc, tb = self.mt5.symbol_info_tick(simbolo), self.mt5.symbol_info_tick(self.simbolo)
+        pc, pb = float(getattr(tc, "last", 0) or 0), float(getattr(tb, "last", 0) or 0)
+        if pc <= 0 or pb <= 0:
+            return
+        self._guarda_bloqueada = self.guarda.observar(srv, pc, pb)
+        self.motor._condicao(
+            "preco_contrato", self._guarda_bloqueada,
+            f"preço do contrato {simbolo} não bate com o {self.simbolo} "
+            "(entradas paradas)", srv)
+
+    def _barras_hoje(self, srv):
+        """As barras de hoje do MT5 (memória, não banco): só as fechadas, e
+        o minuto em formação como `provisoria = (ts, abertura)`."""
+        zero = datetime.combine(srv.date(), hora())
+        df = self._taxas(zero, srv + timedelta(days=1))
+        if df is None:
+            return _HOJE_VAZIO, None
+        df = df.filter(pl.col("ts").dt.date() == srv.date())
+        prontos = C.fechados(df, srv)
+        provisoria = None
+        if prontos.height < df.height:
+            u = df.sort("ts").row(-1, named=True)
+            provisoria = (u["ts"], int(round(u["open"])))
+        return papel_vivo.barras_de_hoje(prontos), provisoria
+
+    def _calcular_desejados(self, srv) -> None:
+        if srv is None:
+            # sem relógio do servidor nada se sabe: só a proteção (§5.1)
+            self._desejados, self._disponivel, self._minuto_calculado = {}, False, None
+            return
+        hoje, provisoria = self._barras_hoje(srv)
+        # o candle fechado que o MT5 revisa (caso 11) também refaz: a chave
+        # leva o conteúdo das barras, não só o minuto
+        chave = (self._versao_papel, provisoria, len(hoje["ts"]),
+                 hash(tuple(hoje[k].tobytes() for k in ("ts", "open", "high", "low", "close"))))
+        if chave == self._minuto_calculado:
+            return
+        try:
+            self._desejados, self._disponivel = papel_vivo.desejados(
+                self.retrato, self.aquecimento, hoje, provisoria, self.inst, srv)
+        except Exception:
+            log.exception("papel das ordens falhou")
+            self._desejados, self._disponivel = {}, False
+        self._minuto_calculado = chave
+
     # ---------------------------------------------------------------- volta
     def volta(self) -> float:
         """Uma volta; devolve quantos segundos esperar. Nenhum passo sai
@@ -774,11 +1137,16 @@ class Servico:
             with contextlib.suppress(_Ocupado):
                 self._carregar(agora)
 
-        conectado = self._mt5(agora)
+        conectado = self._mt5(agora, m)
         if conectado:
             self.relogio.observar(_hora_do_tick(self.mt5.symbol_info_tick(self.simbolo)), m)
             self.agora_srv = self.relogio.agora(m)
             self.desvio = self.relogio.desvio_s(agora, m)
+        # As ordens antes de qualquer escrita no banco (spec ordens §3): o
+        # candle, o papel gravado, a conferência e o Parquet esperam por
+        # elas, nunca o contrário. Sem MT5 só vigia (chamado `mt5_fora`).
+        self._ordens(agora, m)
+        if conectado:
             if self.carregado:
                 novo = self._buscar_e_gravar(agora, m)
                 novo = self._lacunas(agora, m) or novo
@@ -798,7 +1166,19 @@ class Servico:
         self.publicar(agora, erro=None)
         if not conectado:
             return ESPERA_SEM_MT5
+        if self.pregao and self._perto_da_virada():
+            return VOLTA_RAPIDA
         return ESPERA_PREGAO if self.pregao else ESPERA_FORA
+
+    def _perto_da_virada(self) -> bool:
+        """Do segundo 58 ao 10 do minuto, na hora do SERVIDOR (o PC pode
+        estar um minuto atrás): a ordem do minuto novo sai no primeiro
+        décimo de segundo em que a barra dele aparece (spec ordens §3.1)."""
+        srv = self.agora_srv
+        if srv is None:
+            return False
+        s = srv.second + srv.microsecond / 1e6
+        return s >= RAPIDA_ANTES_S or s <= RAPIDA_DEPOIS_S
 
     def publicar(self, agora, erro) -> None:
         fechamento = self.fechamento or C.FECHAMENTO_PADRAO
@@ -839,6 +1219,8 @@ class Servico:
                 "divergencias": self.papel_divergencias,
                 "erros": self.papel_erros,
             },
+            # spec ordens §7.3; a tela só relê o banco quando `ordens_em` muda
+            "ordens": self.ordens_estado,
             "erro": erro,
         }
         try:

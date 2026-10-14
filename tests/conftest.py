@@ -26,6 +26,12 @@ from core import diario_ordens  # noqa: E402
 from ui import data as ui_data  # noqa: E402
 
 
+def pytest_configure(config):
+    # medição de tempo (orçamento da ordem, spec ao-vivo-ordens §3.1): roda
+    # na suíte normal; a marca só permite separá-la (-m "not lento")
+    config.addinivalue_line("markers", "lento: teste que mede tempo de cálculo")
+
+
 @pytest.fixture(autouse=True)
 def _banco_isolado(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "isolado.duckdb")
