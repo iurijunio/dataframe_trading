@@ -22,6 +22,7 @@ from dash import dcc, html
 
 from .. import theme as T
 from ..data import to_epoch
+from . import ordens_panel as OR
 from . import pregao_panel as PP
 from .cartao import FASES, dica, etiqueta_mesmo_assim, inteiro, num, pct
 
@@ -243,7 +244,7 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
              "operações — quanto a execução de verdade custa. Bom: perto de "
              "zero (até 1 tick de derrapagem por ponta). Ruim: demo pior "
              "todo dia.",
-             "—", "a demo entra na parte 4"),
+             "—", "veja Avaliação › Papel × demo"),
     ]
 
 
@@ -264,6 +265,9 @@ _BOTOES = {
     "membro-ligar": ("Ligar", "btn-ghost btn-sm av-btn-principal op-var-botao"),
     "pf-desligar": ("Desligar portfólio", "btn-ghost av-btn-sec"),
     "pf-ligar": ("Ligar portfólio", "btn-ghost av-btn-principal"),
+    # o interruptor do Envio de ordens da conta demo (o rótulo diz o estado)
+    "envio-desligar": ("● Envio de ordens ligado", "btn-ghost ord-envio ord-envio-on"),
+    "envio-ligar": ("○ Envio de ordens desligado", "btn-ghost ord-envio"),
 }
 
 
@@ -279,6 +283,26 @@ def _botao(acao, alvo, armado, title=""):
     rotulo, classe = estado_botao(acao, alvo, armado)
     return html.Button(rotulo, n_clicks=0, title=title, className=classe,
                        id={"type": "av-op-acao", "acao": acao, "id": alvo})
+
+
+def _contratos_demo(v: dict) -> html.Span:
+    """"demo 2 ✎": os contratos na conta demo, com o lápis que abre o
+    editor. Sem número gravado a demo usa os do plano — na fase demo isso
+    se diz; no papel fica "—" (nada vai à conta)."""
+    proprio = v.get("contratos_demo")
+    if proprio is not None:
+        texto = f"demo {proprio}"
+    elif v.get("fase") == "demo" and v.get("contratos") is not None:
+        texto = f"demo {v['contratos']} (do plano)"
+    else:
+        texto = "demo —"
+    return html.Span([
+        html.B(texto, className="op-var-ctr"),
+        html.Button("✎", n_clicks=0, className="ord-ctr-editar",
+                    id={"type": "av-op-ord-ctr", "id": v["ligacao_id"]},
+                    title="Mudar os contratos desta variante na conta demo "
+                          "(o papel segue com os do plano)"),
+    ], className="ord-ctr")
 
 
 def cartao_variante(v: dict, armado) -> html.Div:
@@ -323,8 +347,9 @@ def cartao_variante(v: dict, armado) -> html.Div:
         tags.append(etiqueta_mesmo_assim(v.get("pendencias")))
     rodape = html.Div([
         html.Span(["contratos ",
-                   html.B(f"papel {'—' if ctr is None else ctr} · demo —",
-                          className="op-var-ctr")]),
+                   html.B(f"papel {'—' if ctr is None else ctr}",
+                          className="op-var-ctr"), " · ",
+                   _contratos_demo(v)]),
         html.Span(f"plano #{v['plano_id']}" if v.get("plano_id")
                   else "sem plano", className="op-var-plano"),
         html.Span(FASES.get(v.get("fase") or "papel", v.get("fase")),
@@ -520,7 +545,7 @@ def tabela_operacoes(ops: list[dict]):
     cab = html.Tr([
         th("Entrada"), th("Saída"), th("Variante"), th("Lado"),
         th("Contr. papel / demo", "Contratos da operação no papel (os do "
-           "plano) e na demo (parte 4). Bom: os dois iguais ao plano. Ruim: "
+           "plano) e na demo (a demo tem a tabela própria, acima). Bom: os dois iguais ao plano. Ruim: "
            "demo com mais contratos que o plano (risco maior que o medido).",
            True),
         th("Preço entrada", n=True), th("Preço saída", n=True),
@@ -532,7 +557,8 @@ def tabela_operacoes(ops: list[dict]):
            "média por operação do plano ou mais.", True),
         th("Saiu por"),
         th("Papel × demo", "Diferença por contrato entre o papel e a demo na "
-           "mesma operação (parte 4). Bom: perto de zero.", True),
+           "mesma operação. Bom: perto de zero. Os números da demo estão na "
+           "tabela da demo, acima.", True),
     ])
     # sem a caixa que rola: ela fica fixa no layout (`av-op-operacoes`),
     # senão cada releitura a recriava e a rolagem voltava ao topo
@@ -781,15 +807,16 @@ def tabela_comparativo(c: dict):
         ("Execução", None),
         ("Sinal no mesmo minuto", None, None,
          "Quantas ordens da conta saíram no mesmo minuto do sinal do papel. "
-         "Bom: 100%. Chega na parte 4, com a demo."),
+         "Bom: 100%. Os da demo estão em Avaliação › Papel × demo."),
         ("Derrapagem média", None, None,
          "Diferença entre o preço do papel e o preço executado, por ponta. "
-         "Bom: até 1 tick. Chega na parte 4."),
+         "Bom: até 1 tick. A da demo está em Avaliação › Papel × demo."),
         ("Atraso médio da ordem", None, None,
          "Tempo entre o sinal e a ordem chegar à corretora. Bom: menos de "
-         "1 s. Chega na parte 4."),
+         "1 s. O da demo está na faixa de saúde, no topo."),
         ("Ordens rejeitadas", None, None,
-         "Ordens que a corretora recusou. Bom: zero. Chega na parte 4."),
+         "Ordens que a corretora recusou. Bom: zero. As da demo estão "
+         "em Avaliação › Papel × demo."),
     ]
     corpo = []
     for linha in linhas:
@@ -811,7 +838,23 @@ def tabela_comparativo(c: dict):
 
 
 # --------------------------------------------------------------- cabeçalho
-def cabecalho(pf: dict, resumo: dict) -> list:
+def interruptor_envio(conta_id, envio: bool | None, armado):
+    """O Envio de ordens da conta demo, com a confirmação de dois cliques
+    (desligar encerra as posições da automação). Sem conta demo: nada."""
+    if conta_id is None or envio is None:
+        return None
+    if envio:
+        return _botao("envio-desligar", conta_id, armado,
+                      "Desliga o envio de ordens desta conta: a automação "
+                      "encerra as posições dela e para de mandar ordens (o "
+                      "papel continua). Clique duas vezes para confirmar.")
+    return _botao("envio-ligar", conta_id, armado,
+                  "Liga o envio de ordens desta conta: as variantes na fase "
+                  "demo passam a operar de verdade na conta demo. Precisa do "
+                  "limite de perda do dia cadastrado. Clique duas vezes.")
+
+
+def cabecalho(pf: dict, resumo: dict, *, contrato=None) -> list:
     contas = resumo.get("contas") or {}
     demo, real = contas.get("demo"), contas.get("real")
     cap = resumo.get("capital")
@@ -823,6 +866,11 @@ def cabecalho(pf: dict, resumo: dict) -> list:
         _etiqueta("ligado", "verde") if pf.get("ligado")
         else _etiqueta("desligado", "cinza"),
         html.Div([
+            html.Span(["opera ", html.B(contrato or "—", className="mono"),
+                       dica("O contrato do mês em que a demo manda as ordens "
+                            "hoje (o gráfico mostra o WIN$N, a série "
+                            "contínua). Troca sozinho na rolagem.")],
+                      className="op-meta-i"),
             item("Ativo", "WIN$N"),
             item("Conta demo", demo["nome"] if demo else "—"),
             item("Conta real", real["nome"] if real else "—"),
@@ -836,15 +884,17 @@ def cabecalho(pf: dict, resumo: dict) -> list:
     ]
 
 
-def botoes_portfolio(pf: dict, armado) -> list:
+def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None) -> list:
     pid = pf["portfolio_id"]
+    sw = interruptor_envio(conta_id, envio, armado)
+    antes = [sw] if sw is not None else []
     if pf.get("ligado"):
-        return [_botao("pf-desligar", pid, armado,
-                       "Para o portfólio inteiro: as operações deixam de "
-                       "contar a partir de agora. Clique duas vezes.")]
-    return [_botao("pf-ligar", pid, armado,
-                   "Libera as variantes ligadas do portfólio para o papel. "
-                   "Clique duas vezes.")]
+        return antes + [_botao("pf-desligar", pid, armado,
+                               "Para o portfólio inteiro: as operações deixam de "
+                               "contar a partir de agora. Clique duas vezes.")]
+    return antes + [_botao("pf-ligar", pid, armado,
+                           "Libera as variantes ligadas do portfólio para o papel. "
+                           "Clique duas vezes.")]
 
 
 # -------------------------------------------------------------------- bloco
@@ -856,13 +906,66 @@ def _sec_head(titulo, nota, *direita, classe=""):
     ], className=("av-sec-head op-head " + classe).strip())
 
 
+def _curva_papel_esperado():
+    """A curva Papel × esperado — mora dentro da Avaliação (rascunho v2)."""
+    return html.Section([
+        _sec_head("Papel × esperado", "Acumulado desde que o plano em "
+                  "vigor passou a valer, contra a faixa que a "
+                  "Candidata prometeu.",
+                  dcc.RadioItems(
+                      id="av-op-curva-modo", value="portfolio",
+                      className="pg-tf",
+                      options=[{"label": "Portfólio",
+                                "value": "portfolio"},
+                               {"label": "Por variante",
+                                "value": "variante"}]),
+                  dcc.Dropdown(id="av-op-curva-variante",
+                               clearable=False, disabled=True,
+                               className="dd op-dd-curva",
+                               placeholder="variante…"),
+                  classe="pg-grafico-head"),
+        html.P(id="av-op-curva-nota", className="op-curva-nota"),
+        html.Div(dash_tvlwc.Tvlwc(id="av-op-curva", series=[],
+                                  chartOptions=CHART_CURVA,
+                                  height="100%"),
+                 id="av-op-curva-caixa", className="op-curva"),
+        html.Div([
+            html.Span([html.I(className="op-traco",
+                              style={"borderColor": T.POS}), "papel"]),
+            html.Span([html.I(className="op-traco op-traco-ponto",
+                              style={"borderColor": "rgba(34,228,255,.55)"}),
+                       "faixa p10–p90 (por variante)"]),
+            html.Span([html.I(className="op-traco op-traco-tracejado",
+                              style={"borderColor": T.MUTED}),
+                       "mediana esperada"]),
+        ], className="op-curva-legenda"),
+    ], className="panel")
+
+
 def bloco():
-    """A sub-tela inteira; começa escondida."""
+    """A sub-tela inteira; começa escondida.
+
+    Ordem (spec ordens §8, rascunho v2): saúde, chamados, cabeçalho, os
+    três números da demo (e os do papel), Posições abertas, variantes |
+    gráfico, Operações do dia (demo e papel), Diário do dia, Avaliação."""
     return html.Div([
         # pulso de 2 s, só com a sub-tela na frente: lê o estado.json
         dcc.Interval(id="av-op-intervalo", interval=2000, disabled=True),
         # `papel.calculado_em` já desenhado: só ele muda manda reler o banco
         dcc.Store(id="av-op-versao"),
+        # `ordens.ordens_em` já desenhado: idem para o diário das ordens
+        dcc.Store(id="av-op-ord-versao"),
+        # o que o banco sabe da demo de hoje e o pulso usa nos números
+        # (realizado, papel das mesmas operações, atraso médio)
+        dcc.Store(id="av-op-ord-dados"),
+        # "Encerrar posição" pedindo confirmação ({chave, em})
+        dcc.Store(id="av-op-ord-armado", data=None),
+        # chamados escondidos ("Manter e acompanhar"), só nesta tela
+        dcc.Store(id="av-op-ord-escondidos", data=[], storage_type="local"),
+        # hora (epoch) dos comandos "Encerrar posição" enviados
+        dcc.Store(id="av-op-ord-enviados", data=[]),
+        # variante cujo editor de contratos está aberto
+        dcc.Store(id="av-op-ord-ctr-alvo"),
         # o último candle gravado já desenhado (série refeita só com novo)
         dcc.Store(id="av-op-ultimo"),
         # o último candle da série, para o pulso montar o 5/15 min sem banco
@@ -879,6 +982,8 @@ def bloco():
         # ganham largura (ver callbacks_operacao)
         dcc.Store(id="av-op-enquadrar"),
         dcc.Store(id="av-op-curva-enquadrar"),
+        html.Div(id="av-op-ord-saude", className="ord-saude-caixa"),
+        html.Div(id="av-op-ord-chamados", className="ord-chamados-caixa"),
         html.Section([
             html.Div([
                 html.Div([
@@ -904,8 +1009,23 @@ def bloco():
             html.Div(id="av-op-situacao", className="op-situacao"),
             html.Div(id="av-op-aviso", className="av-aviso"),
         ], className="panel op-topo"),
+        html.Div(id="av-op-ord-numeros", className="ord-numeros-caixa"),
         html.Div(id="av-op-kpis", className="op-kpis"),
+        html.Section([
+            _sec_head("Posições abertas", "O que está na corretora agora, "
+                      "conferido com o que o papel quer."),
+            html.Div(id="av-op-ord-posicoes", className="op-tabela-caixa ord-caixa"),
+        ], className="panel"),
         html.Div([
+            html.Section([
+                _sec_head("Variantes", "Posição aberta primeiro, depois o "
+                          "resultado do dia."),
+                html.Div([html.Div(id="av-op-var-cab"),
+                          html.Div(id="av-op-var-lista", className="op-var-lista"),
+                          html.Div(id="av-op-risco")],
+                         id="av-op-variantes", className="op-variantes"),
+                OR.editor_contratos(),
+            ], className="panel op-painel-var"),
             html.Section([
                 _sec_head("WIN$N ao vivo", "Entradas e saídas de cada "
                           "variante. Role para dar zoom; arraste para voltar "
@@ -933,18 +1053,15 @@ def bloco():
                                   className="op-legenda-in"),
                          id="av-op-legenda", className="op-legenda"),
             ], className="panel op-painel-grafico"),
-            html.Section([
-                _sec_head("Variantes", "Posição aberta primeiro, depois o "
-                          "resultado do dia."),
-                html.Div([html.Div(id="av-op-var-cab"),
-                          html.Div(id="av-op-var-lista", className="op-var-lista"),
-                          html.Div(id="av-op-risco")],
-                         id="av-op-variantes", className="op-variantes"),
-            ], className="panel op-painel-var"),
         ], className="op-grade"),
         html.Section([
-            _sec_head("Operações do dia", "Papel. Demo e real entram na parte "
-                      "4, na mesma linha.",
+            _sec_head("Operações do dia na demo", "Na conta demo · derrapagem = "
+                      "diferença para o preço do papel, por ponta."),
+            html.Div(id="av-op-ord-operacoes", className="op-tabela-caixa ord-caixa"),
+        ], className="panel"),
+        html.Section([
+            _sec_head("Operações do dia no papel", "Todas as variantes, ligadas "
+                      "ou não. A demo está na tabela de cima.",
                       dcc.Dropdown(id="av-op-filtro", value="todas",
                                    clearable=False, className="dd op-dd-filtro",
                                    options=[{"label": "Todas as variantes",
@@ -952,46 +1069,24 @@ def bloco():
                       classe="pg-grafico-head"),
             html.Div(id="av-op-operacoes", className="op-operacoes op-tabela-caixa"),
         ], className="panel"),
-        html.Div([
-            html.Section([
-                _sec_head("Papel × esperado", "Acumulado desde que o plano em "
-                          "vigor passou a valer, contra a faixa que a "
-                          "Candidata prometeu.",
-                          dcc.RadioItems(
-                              id="av-op-curva-modo", value="portfolio",
-                              className="pg-tf",
-                              options=[{"label": "Portfólio",
-                                        "value": "portfolio"},
-                                       {"label": "Por variante",
-                                        "value": "variante"}]),
-                          dcc.Dropdown(id="av-op-curva-variante",
-                                       clearable=False, disabled=True,
-                                       className="dd op-dd-curva",
-                                       placeholder="variante…"),
-                          classe="pg-grafico-head"),
-                html.P(id="av-op-curva-nota", className="op-curva-nota"),
-                html.Div(dash_tvlwc.Tvlwc(id="av-op-curva", series=[],
-                                          chartOptions=CHART_CURVA,
-                                          height="100%"),
-                         id="av-op-curva-caixa", className="op-curva"),
-                html.Div([
-                    html.Span([html.I(className="op-traco",
-                                      style={"borderColor": T.POS}), "papel"]),
-                    html.Span([html.I(className="op-traco op-traco-ponto",
-                                      style={"borderColor": "rgba(34,228,255,.55)"}),
-                               "faixa p10–p90 (por variante)"]),
-                    html.Span([html.I(className="op-traco op-traco-tracejado",
-                                      style={"borderColor": T.MUTED}),
-                               "mediana esperada"]),
-                ], className="op-curva-legenda"),
-            ], className="panel"),
-            html.Section([
-                _sec_head("Esperado (WFA) × Papel × Demo × Real", "Por "
-                          "contrato, para comparar mesmo com tamanhos "
-                          "diferentes. Só operações fechadas."),
-                html.Div(id="av-op-comparativo", className="op-cmp-caixa"),
-            ], className="panel"),
-        ], className="op-grade2"),
+        html.Section([
+            _sec_head("Diário do dia", "Tudo o que a automação fez, com hora.",
+                      dcc.RadioItems(
+                          id="av-op-ord-diario-filtro", value="tudo",
+                          className="pg-tf",
+                          options=[{"label": "Tudo", "value": "tudo"},
+                                   {"label": "Só problemas",
+                                    "value": "problemas"}]),
+                      classe="pg-grafico-head"),
+            html.Div(id="av-op-ord-diario", className="ord-diario"),
+        ], className="panel"),
+        OR.avaliacao(None, None, curva=_curva_papel_esperado()),
+        html.Section([
+            _sec_head("Esperado (WFA) × Papel × Demo × Real", "Por "
+                      "contrato, para comparar mesmo com tamanhos "
+                      "diferentes. Só operações fechadas."),
+            html.Div(id="av-op-comparativo", className="op-cmp-caixa"),
+        ], className="panel"),
         html.Section([
             _sec_head("Alertas", "O que pede atenção neste portfólio."),
             html.Div(id="av-op-alertas", className="av-corpo op-alertas"),

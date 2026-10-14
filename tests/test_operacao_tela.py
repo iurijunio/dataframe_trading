@@ -608,6 +608,8 @@ def test_curva_e_comparativo_usam_o_dia_da_tela(monkeypatch):
     monkeypatch.setattr(PL, "comparativo", anota("comparativo", {
         "esperado_wfa": vazio, "papel": vazio, "demo": None, "real": None}))
     monkeypatch.setattr(PL, "curva_vs_esperado", anota("curva", curva))
+    # parte 4: o interruptor do Envio lê a conta demo
+    monkeypatch.setattr(PL, "envio_da_conta", lambda con, cid: False)
     CO.montar(1, None, None, None)
     CO.ler_curva(1, None)
     CO.ler_curva(1, 1)

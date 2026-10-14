@@ -1408,11 +1408,11 @@ body{
 
 /* gráfico + variantes: a coluna de variantes não dá altura à linha
    (contain:size) — quem manda é o gráfico; ela estica e rola por dentro */
-.op-grade{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:12px;
+.op-grade{display:grid;grid-template-columns:420px minmax(0,1fr);gap:12px;
   align-items:stretch;flex-shrink:0;}
 .op-head{flex-direction:row;align-items:flex-end;justify-content:space-between;
   flex-wrap:wrap;gap:8px 16px;}
-.op-grafico{height:430px;}
+.op-grafico{height:340px;}
 .op-legenda{border-top:1px solid var(--line-soft);padding:7px 12px;}
 .op-legenda:empty{display:none;}
 .op-legenda-in{display:flex;flex-direction:column;gap:5px;min-width:0;}
@@ -1492,7 +1492,8 @@ body{
 .op-lado{font-family:var(--sans);font-weight:700;font-size:10.5px;padding:2px 7px;
   border-radius:4px;}
 .op-c{background:rgba(0,245,160,.12);color:var(--pos);}
-.op-v{background:rgba(255,77,125,.12);color:var(--neg);}
+/* venda em azul: rosa é problema, e vender não é problema */
+.op-v{background:rgba(122,162,255,.12);color:#7AA2FF;}
 .op-prov{font-family:var(--sans);font-size:10.5px;color:var(--muted);}
 .op-linha.op-aberta td{background:rgba(34,228,255,.05);}
 .op-linha.op-fora td,.op-linha.op-fora .op-nome-tab{color:var(--muted);}
@@ -1528,5 +1529,124 @@ body{
 .op-alerta-vazio{margin:0;font-size:12.5px;color:var(--muted);}
 
 @media (max-width:1500px){
-  .op-grade{grid-template-columns:minmax(0,1fr) 380px;}
+  .op-grade{grid-template-columns:380px minmax(0,1fr);}
+}
+
+/* ===================== Ao vivo › Operação com a demo (parte 4) ========= */
+/* faixa de saúde: sete itens numa linha; quebra em telas estreitas */
+.ord-saude{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;
+  background:var(--surface);overflow:hidden;}
+.ord-saude-i{flex:1 1 130px;display:flex;flex-direction:column;gap:2px;padding:8px 12px;
+  border-right:1px solid var(--line-soft);min-width:0;}
+.ord-saude-i:last-child{border-right:0;}
+.ord-saude-k{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap;}
+.ord-saude-k .dica-mark{margin-left:5px;width:12px;height:12px;font-size:8.5px;}
+.ord-saude-v{font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+.ord-saude-v.ok::before{content:"● ";color:var(--pos);}
+.ord-saude-v.ambar{color:var(--warn);}
+.ord-saude-v.rosa{color:var(--neg);}
+.ord-saude-v.cinza{color:var(--muted);}
+
+/* "precisa de você" */
+.ord-chamados-caixa:empty{display:none;}
+.ord-chamados{display:flex;flex-direction:column;gap:8px;}
+.ord-chamado{display:flex;align-items:center;gap:14px;padding:11px 15px;border-radius:6px;
+  border:1px solid rgba(255,77,125,.6);background:rgba(255,77,125,.07);flex-wrap:wrap;}
+.ord-chamado-espera{border-color:rgba(255,201,60,.4);background:rgba(255,201,60,.06);}
+.ord-chamado-txt{flex:1 1 320px;min-width:0;font-size:13px;line-height:1.5;color:var(--ink);}
+.ord-chamado-txt .mut{color:var(--muted);font-size:12px;}
+.ord-chamado-acoes{display:flex;gap:8px;flex-wrap:wrap;}
+#painel-aovivo .ord-chamado-acoes .btn-ghost{margin-left:0;}
+.ord-btn-perigo{color:var(--neg);border-color:rgba(255,77,125,.6);}
+.ord-btn-perigo:hover{background:rgba(255,77,125,.1);box-shadow:none;}
+
+/* lado da operação, em contorno: compra verde, venda azul (nunca rosa) */
+.ord-lado{font-family:var(--sans);font-weight:700;font-size:10.5px;padding:1px 7px;
+  border-radius:4px;border:1px solid;}
+.ord-lado-c{border-color:rgba(0,245,160,.45);color:var(--pos);}
+.ord-lado-v{border-color:rgba(122,162,255,.55);color:#7AA2FF;}
+.ord-prot{color:var(--pos);font-family:var(--sans);font-weight:700;}
+.ord-pend{color:var(--warn);font-family:var(--sans);font-weight:600;font-size:11.5px;}
+.ord-tabela td .av-tag{vertical-align:middle;}
+/* com muitas variantes as tabelas rolam por dentro (padrão 6.4) */
+.ord-caixa{max-height:320px;overflow:auto;scrollbar-width:thin;}
+
+/* três números da demo */
+.ord-numeros-caixa:empty{display:none;}
+.ord-numeros{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr);
+  gap:10px;}
+.ord-numeros .op-kpi-n{-webkit-line-clamp:3;}
+.ord-kpi-de{font-size:13px;color:var(--muted);}
+.ord-barra{position:relative;height:6px;background:var(--surface-3);border-radius:3px;
+  margin-top:6px;}
+.ord-barra-uso{display:block;height:100%;border-radius:3px;}
+.ord-barra-cinza{background:#5B6B86;}
+.ord-barra-ambar{background:var(--warn);}
+.ord-barra-rosa{background:var(--neg);}
+.ord-barra-marca{position:absolute;top:-3px;width:2px;height:12px;background:var(--neg);}
+
+/* contratos da demo no cartão da variante */
+.ord-ctr{display:inline-flex;align-items:center;gap:4px;}
+.ord-ctr-editar{cursor:pointer;background:var(--surface-2);color:var(--accent);
+  border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:11px;line-height:1.5;}
+.ord-ctr-editar:hover{border-color:var(--accent-dim);}
+
+/* editor de contratos: janela sobre a tela */
+.ord-pop{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:50;
+  width:min(420px,calc(100vw - 32px));flex-direction:column;gap:8px;padding:16px 18px;
+  background:#0F1520;border:1px solid #2B3648;border-radius:10px;
+  box-shadow:0 20px 60px rgba(0,0,0,.55);}
+.ord-pop-t{margin:0;font-size:14.5px;font-weight:600;color:var(--ink);}
+.ord-pop-linha{display:flex;align-items:center;gap:10px;font-size:12px;}
+.ord-pop-inp{width:72px;padding:5px 8px;text-align:center;font-family:var(--mono);
+  font-size:14px;background:var(--ground);color:var(--ink);border:1px solid var(--accent);
+  border-radius:6px;}
+.ord-pop-custo{padding:8px 12px;border:1px solid rgba(34,228,255,.35);border-radius:6px;
+  background:rgba(34,228,255,.05);font-size:12.5px;color:var(--ink-2);}
+.ord-pop-custo:empty{display:none;}
+.ord-pop-nota{margin:0;font-size:12px;color:var(--muted);}
+.ord-pop-erro{margin:0;font-size:12px;color:var(--warn);}
+.ord-pop-erro:empty{display:none;}
+.ord-pop-botoes{display:flex;justify-content:flex-end;gap:8px;}
+#painel-aovivo .ord-pop-botoes .btn-ghost{margin-left:0;}
+
+/* interruptor Envio de ordens no cabeçalho */
+#painel-aovivo .ord-envio{margin-left:0;color:var(--ink-2);border-color:var(--line);}
+#painel-aovivo .ord-envio-on{color:var(--pos);border-color:rgba(0,245,160,.45);}
+
+/* diário do dia */
+.ord-diario{max-height:240px;overflow:auto;scrollbar-width:thin;}
+.ord-ev{display:grid;grid-template-columns:72px minmax(0,240px) minmax(0,1fr);gap:10px;
+  padding:6px 16px;border-bottom:1px solid var(--line-soft);font-size:12px;}
+.ord-ev-h{font-family:var(--mono);color:var(--muted);}
+.ord-ev-quem{font-weight:600;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;}
+.ord-ev-t{color:var(--ink-2);min-width:0;}
+.ord-ev-t.ambar{color:var(--warn);}
+.ord-ev-t.rosa{color:var(--neg);}
+
+/* avaliação recolhível */
+.panel.ord-aval{display:block;}
+.ord-aval-sum{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;
+  flex-wrap:wrap;padding:11px 16px;}
+.ord-aval-sum::-webkit-details-marker{display:none;}
+.ord-aval-sum::before{content:"▸";color:var(--muted);}
+.ord-aval[open]>.ord-aval-sum::before{content:"▾";}
+.ord-selo-bt{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.ord-dif-lista{font-size:12px;color:var(--muted);}
+.ord-aval-corpo{padding:0 12px 12px;}
+.ord-aval-curva>.panel{height:100%;}
+
+@media (max-width:1100px){
+  .ord-numeros{grid-template-columns:minmax(0,1fr);}
+  .op-grade{grid-template-columns:minmax(0,1fr);}
+  .op-painel-var{contain:none;min-height:0;max-height:520px;}
+  .op-grade2{grid-template-columns:minmax(0,1fr);}
+}
+@media (max-width:640px){
+  .ord-saude-i{flex-basis:45%;}
+  .ord-ev{grid-template-columns:64px minmax(0,1fr);}
+  .ord-ev-t{grid-column:1/-1;}
 }
