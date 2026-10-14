@@ -516,7 +516,9 @@ class Motor:
         foto = K.fotografar(mt5, datetime.combine(agora.date(), datetime.min.time()))
         if foto is None:
             # sem foto confiável nada se decide (§5.1); nem comando se consome
-            return {"foto": "falhou", "vivo_em": agora}
+            # foto que falha não é erro das ordens (o MT5 devolveu None):
+            # `falhou` diz só se o passo estourou alguma exceção
+            return {"foto": "falhou", "vivo_em": agora, "falhou": False}
 
         # papel parado: indisponível há mais de 3 min no pregão (§5.1)
         if disponivel or not no_pregao:
@@ -629,6 +631,7 @@ class Motor:
 
         # 8. estado
         est.update(
+            falhou=falhou,
             envio=envio, zerar=self.zerar, perda=perda,
             limite=float(limite) if limite else None,
             travada=None if travada is None else {
@@ -859,6 +862,10 @@ class Motor:
 
     def _estado_base(self, foto, agora, cid, simbolo) -> dict:
         return {
+            # o passo terminou sem exceção? Os retornos antecipados (conta
+            # errada, sem hedging, Algo desligado) são limpos: quem chama
+            # fecha o chamado `ordens_falhou` aberto fora do passo
+            "falhou": False,
             "foto": "ok", "vivo_em": agora, "contrato": simbolo,
             "conta": {"conta_id": cid, "login": foto.login, "servidor": foto.servidor,
                       "confere": cid is not None, "hedging": foto.hedging,

@@ -148,6 +148,17 @@ class Cena:
         s.agora = lambda: quando
         return s.volta()
 
+    def seguir(self, espera, s=None):
+        """Como o `rodar()`: dorme o que a volta anterior pediu A PARTIR do
+        relógio de agora — o tempo que a volta gastou (um banco que dormiu)
+        já está no mono — e roda a próxima. Servidor e PC andam com o mono."""
+        s = s or self.s
+        self.mono.t += espera
+        quando = T0 + timedelta(seconds=self.mono.t - 1000.0)
+        self.mt5.agora = quando
+        s.agora = lambda: quando
+        return s.volta()
+
     def estado(self):
         return C.ler_estado(self.base / "ao_vivo" / "estado.json")
 
@@ -613,16 +624,21 @@ def test_banco_ocupado_na_virada_nao_atrasa_a_ordem(cena, monkeypatch):
     cena.ir(_as(10, 0, 30))
     chamadas, soltar = _banco_lento(cena, monkeypatch)
     cena.ir(_as(10, 0, 40))
-    # papel por gravar (o banco estava ocupado): há passo do banco a fazer
+    # há passos do banco por fazer na virada: o papel ficou por gravar e a
+    # janela da conferência venceu
     cena.s.papel_pendente = True
+    cena.s._mono_conferencia = None
     chamadas.clear()
-    cena.ir(_as(10, 0, 58))
-    cena.ir(_as(10, 0, 59))
-    # o minuto novo ainda não rodou as ordens: nenhum passo do banco
-    assert chamadas == []
-    cena.ir(datetime(2026, 10, 9, 10, 1, 0, 300_000))
+    # o laço de verdade a partir das 10:00:59,5: cada volta dorme o que a
+    # anterior pediu, depois de gastar o que gastou (o banco dormindo)
+    espera = cena.ir(datetime(2026, 10, 9, 10, 0, 59, 500_000))
+    antes_da_virada = list(chamadas)
+    while not _eventos("executada") and cena.mono.t < 1000.0 + 3665:
+        espera = cena.seguir(espera)
     [ex] = _eventos("executada")
     assert ex["atraso_ms"] < 1000
+    # o minuto novo ainda não tinha rodado as ordens: nenhum passo do banco
+    assert antes_da_virada == []
     # depois das ordens o banco é tentado, mas sem esperar (pregão)
     assert chamadas and all((k.get("tentativas"), k.get("espera")) == (1, 0)
                             for k in chamadas)
@@ -709,3 +725,55 @@ def test_falha_repetida_loga_o_traceback_uma_vez_e_depois_uma_linha_por_minuto(
     recs = [r for r in caplog.records if "caminho das ordens falhou" in r.getMessage()]
     assert [bool(r.exc_info) for r in recs] == [True, False]
     assert "segue falhando" in recs[1].getMessage()
+
+
+# ===================================================== rodada de correções 2
+def test_ordens_falhou_fecha_quando_o_passo_volta_cedo_sem_erro(base, mods, monkeypatch):
+    """O cenário do usuário hoje: nenhuma ligação em demo e a conta logada no
+    MT5 fora de qualquer portfólio — o passo volta cedo (conta não confere)
+    a cada volta, sem chegar ao fechamento do próprio passo."""
+    _ligacao("so-papel", fase="papel")
+    c = Cena(base)
+    real = P.Servico._barras_hoje
+    falhar = {"sim": True}
+
+    def barras(self, srv):
+        if falhar["sim"]:
+            raise OSError("terminal não respondeu")
+        return real(self, srv)
+    monkeypatch.setattr(P.Servico, "_barras_hoje", barras)
+    c.ir(_as(10, 0, 30))
+    assert [e["tipo"] for e in _chamados("ordens_falhou")] == ["chamado"]
+    falhar["sim"] = False
+    c.ir(_as(10, 0, 31))
+    c.ir(_as(10, 0, 32))
+    o = c.estado()["ordens"]
+    assert o["conta"]["confere"] is False and o["falhou"] is False
+    assert [e["tipo"] for e in _chamados("ordens_falhou")] == ["chamado", "chamado_fechado"]
+
+
+def test_passo_que_falha_mantem_o_chamado(cena, monkeypatch):
+    # falha DENTRO do passo (execução): o chamado é do passo e fica aberto
+    def quebra(self, *a, **k):
+        raise RuntimeError("terminal caiu no envio")
+    monkeypatch.setattr(ordens.Motor, "executar", quebra)
+    cena.ir(_as(10, 0, 30))
+    cena.ir(_as(10, 1, 1))
+    assert cena.estado()["ordens"]["falhou"] is True
+    assert [e["tipo"] for e in _chamados("ordens_falhou")] == ["chamado"]
+
+
+def test_falha_com_numeros_diferentes_e_a_mesma_no_log(cena, caplog):
+    s = cena.s
+    with caplog.at_level("INFO", logger="captura"):
+        for ticket in (1001, 1002, 1003):
+            try:
+                raise RuntimeError(f"saída do ticket {ticket} recusada (retcode 100{ticket % 10})")
+            except RuntimeError as e:
+                s._falha("ordens", e)
+        try:
+            raise RuntimeError("outra coisa")
+        except RuntimeError as e:
+            s._falha("ordens", e)
+    tracebacks = [r for r in caplog.records if r.exc_info]
+    assert len(tracebacks) == 2

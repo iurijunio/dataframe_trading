@@ -19,6 +19,7 @@ import argparse
 import contextlib
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -265,7 +266,6 @@ class Servico:
         # lá, perto da virada, nenhum passo do banco roda (ordens primeiro)
         self._minuto_ordens = None
         self._provisoria_ts = None
-        self._passo_rodou = False
         # (ligação, dia) cujo papel × backtest falhou neste processo: uma
         # falha que se repete não volta a cada janela de 5 min
         self._backtest_falhou: set = set()
@@ -306,15 +306,19 @@ class Servico:
         traceback uma vez por mensagem distinta, depois uma linha curta no
         máximo a cada minuto — senão o log rotativo giraria em minutos."""
         texto = f"{type(erro).__name__}: {erro}"
+        # a "mesma" falha com outro ticket, retcode ou hora não é distinta:
+        # tipo + primeira linha, com os números trocados por #
+        linha = (str(erro).splitlines() or [""])[0]
+        chave = f"{type(erro).__name__}: {re.sub(r'[0-9]+', '#', linha)}"
         m = self.mono()
         ultimo = self._falhas_log.get(onde)
-        if ultimo is None or ultimo[0] != texto:
+        if ultimo is None or ultimo[0] != chave:
             log.error("%s", onde, exc_info=erro)
         elif m - ultimo[1] >= LOG_REPETIDO_S:
             log.warning("%s (segue falhando): %s", onde, texto)
         else:
             return
-        self._falhas_log[onde] = (texto, m)
+        self._falhas_log[onde] = (chave, m)
 
     def _sem_falha(self, onde: str) -> None:
         # voltou a dar certo: a próxima falha merece o traceback de novo
@@ -972,7 +976,6 @@ class Servico:
         if self.motor is None:
             return
         quando = (self.agora_srv if self.mt5_estado == "conectado" else None) or agora
-        self._passo_rodou = False
         try:
             self._ordens_volta(agora, m)
         except Exception as e:
@@ -988,11 +991,11 @@ class Servico:
                 self._falha("não consegui abrir o chamado da falha das ordens", e2)
             return
         self._sem_falha("caminho das ordens falhou")
-        if not self._passo_rodou:
-            # volta limpa que não chegou ao passo (MT5 fora, fora do pregão):
-            # o passo é quem fecha o chamado quando roda; aqui, nós. Quando
-            # ele roda, não se mexe — pode ter acabado de abrir por uma
-            # falha dele mesmo (comandos, execução).
+        if not (self.ordens_estado or {}).get("falhou"):
+            # volta limpa: nada estourou aqui e o passo (se rodou) diz que
+            # também não — inclusive nos retornos antecipados dele (conta
+            # errada, Algo desligado), que nunca chegam ao fechamento do
+            # próprio passo. Se o passo falhou, o chamado é dele e fica.
             try:
                 self.motor._fechar("ordens_falhou", quando)
             except Exception as e:
@@ -1043,7 +1046,6 @@ class Servico:
             conectado_ha_s=(m - self.conectado_desde
                             if self.conectado_desde is not None else 0.0),
             no_pregao=no_pregao)
-        self._passo_rodou = True
         # as ordens do minuto em formação já rodaram com a barra dele: os
         # passos do banco desta virada podem seguir (`_banco_espera`)
         if self._provisoria_ts is not None:
