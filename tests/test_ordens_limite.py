@@ -125,6 +125,15 @@ def test_risco_entrada_soma_distancia_ao_stop_e_custos_de_ida_e_volta():
     assert risco_entrada(VENDA, 189_000, {}, 0.2) == 200 * 2 * 0.2
 
 
+def test_risco_entrada_usa_o_stop_arredondado_como_enviado():
+    # stop por ATR fora do tick: a compra manda 188.800 (para longe), a venda 189.205
+    atr = replace(D, stop_px=188_803)
+    assert risco_entrada(atr, 189_005, {}, 0.2, tick=5) == 205 * 2 * 0.2
+    assert risco_entrada(atr, 189_005, {}, 0.2) == 202 * 2 * 0.2
+    v = replace(VENDA, stop_px=189_201)
+    assert risco_entrada(v, 189_000, {}, 0.2, tick=5) == 205 * 2 * 0.2
+
+
 def test_checar_entrada_passa():
     assert checar_entrada(D, 189_005, 0.0, 500.0, 82.0) == (True, None)
     assert checar_entrada(VENDA, 189_000, 0.0, 500.0, 80.0) == (True, None)
@@ -477,6 +486,44 @@ def test_zerar_vale_ate_o_retrato_mostrar_envio_desligado(tmp_path):
     assert est["zerar"] is False and len(entradas(mt5)) == 1
 
 
+def test_comando_repetido_nao_roda_de_novo(tmp_path):
+    # o arquivo que não apagou (Windows) volta: o "zerar" já cumprido não zera de novo
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    z = {"tipo": "zerar_tudo", "id": "z1"}
+    passo(m, mt5, {}, comandos=[z])
+    t2 = T + timedelta(minutes=5)
+    passo(m, mt5, {}, ret=retrato(contas={2: conta(envio=False)}, lido_em=t2), agora=t2)
+    t3 = T + timedelta(minutes=10)
+    est = passo(m, mt5, {4: replace(D, entry_ts=t3)}, ret=retrato(lido_em=t3),
+                agora=t3 + timedelta(seconds=1), comandos=[dict(z)])
+    assert est["zerar"] is False and est["comandos"] == []
+    assert [e["motivo"] for e in evs(m, "comando")] == ["zerar_tudo", "zerar_tudo_cumprido"]
+    assert len(entradas(mt5)) == 1
+
+
+def test_comando_repetido_na_pasta_sai_sem_rodar(tmp_path):
+    pasta = tmp_path / "cmd"
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    comandos.escrever(pasta, "zerar_tudo")
+    arq = next(pasta.glob("*.json"))
+    conteudo = arq.read_text(encoding="utf-8")
+    passo(m, mt5, {}, comandos=pasta)
+    arq.write_text(conteudo, encoding="utf-8")          # o unlink "falhou"
+    est = passo(m, mt5, {}, comandos=pasta, agora=AG + timedelta(seconds=1))
+    assert est["comandos"] == [] and len(evs(m, "comando")) == 1
+    assert not list(pasta.glob("*.json"))
+
+
+def test_retorno_antecipado_mostra_o_zerar_desta_volta(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    assert passo(m, mt5, {}, comandos=[{"tipo": "zerar_tudo", "id": "z"}])["zerar"] is True
+    mt5.login = 999                                      # conta errada: retorno antecipado
+    t2 = T + timedelta(minutes=5)
+    est = passo(m, mt5, {}, ret=retrato(contas={2: conta(envio=False)}, lido_em=t2),
+                agora=t2)
+    assert est["zerar"] is False and est["conta"]["confere"] is False
+
+
 def test_encerrar_posicao_encerra_so_aquele_ticket_da_automacao(tmp_path):
     mt5, m = MT5Ordens(), Motor(tmp_path, INST)
     passo(m, mt5, {4: D})
@@ -521,6 +568,110 @@ def test_posicao_aberta_da_automacao_soma_o_risco_ate_o_stop(tmp_path):
     mt5b, mb = MT5Ordens(), Motor(tmp_path / "b", INST)
     passo(mb, mt5b, {4: D, 7: Desejado(INDISPONIVEL)}, ret=ret)
     assert len(entradas(mt5b)) == 1
+
+
+def test_posicao_sem_sl_na_corretora_soma_o_stop_da_operacao(tmp_path):
+    # revisão, cenário A: a proteção da 4 foi recusada (SL 0 na corretora);
+    # meio segundo depois a 5 quer entrar. Risco da 4 = 200 × 2 × 0,2 = 80
+    # (stop gravado na executada) + 82 da 5 > 90 (90% de 100)
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    ret = retrato((4, 5), contas={2: conta(limite=100.0)})
+    mt5.roteiro = [10009, 10004, 10004, 10004]
+    passo(m, mt5, {4: D}, ret=ret)
+    assert [p.sl for p in mt5.posicoes.values()] == [0.0]
+    passo(m, mt5, {4: D, 5: D}, ret=ret, agora=AG + timedelta(milliseconds=500))
+    assert not entradas(mt5, K.magic(5))
+    assert [(e["ligacao_id"], e["motivo"]) for e in evs(m, "nao_entrou")] == \
+        [(5, "passaria da trava do dia")]
+
+
+def test_entrada_aguardando_a_bolsa_soma_no_risco(tmp_path):
+    # revisão, cenário B: a 4 ficou PLACED (sem posição ainda): 205 × 2 × 0,2
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    ret = retrato((4, 5), contas={2: conta(limite=100.0)})
+    mt5.roteiro = [10008]
+    passo(m, mt5, {4: D}, ret=ret)
+    assert len(mt5.ordens) == 1
+    passo(m, mt5, {4: D, 5: D}, ret=ret, agora=AG + timedelta(milliseconds=500))
+    assert not entradas(mt5, K.magic(5))
+    assert [(e["ligacao_id"], e["motivo"]) for e in evs(m, "nao_entrou")] == \
+        [(5, "passaria da trava do dia")]
+
+
+def test_entrada_aceita_soma_mesmo_sem_a_ordem_na_lista(tmp_path):
+    # a lista de ordens atrasa (a PLACED ainda não aparece): o diário basta
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    ret = retrato((4, 5), contas={2: conta(limite=100.0)})
+    mt5.roteiro = [10008]
+    passo(m, mt5, {4: D}, ret=ret)
+    mt5.ordens.clear()
+    passo(m, mt5, {4: D, 5: D}, ret=ret, agora=AG + timedelta(milliseconds=500))
+    assert not entradas(mt5, K.magic(5))
+    assert evs(m, "nao_entrou")[0]["motivo"] == "passaria da trava do dia"
+
+
+def test_entrada_sem_desfecho_soma_no_risco(tmp_path):
+    # timeout: a ordem pode ter executado — conta como se estivesse aberta
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    ret = retrato((4, 5), contas={2: conta(limite=100.0)})
+    mt5.roteiro = [None]
+    passo(m, mt5, {4: D}, ret=ret)
+    assert evs(m, "incerta") and not mt5.posicoes
+    passo(m, mt5, {4: D, 5: D}, ret=ret, agora=AG + timedelta(milliseconds=500))
+    assert not entradas(mt5, K.magic(5))
+    assert evs(m, "nao_entrou")[0]["motivo"] == "passaria da trava do dia"
+
+
+def test_entrada_recusada_nao_soma_no_risco(tmp_path):
+    # controle: a recusa não deixou ordem viva — a 5 cabe
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    ret = retrato((4, 5), contas={2: conta(limite=100.0)})
+    mt5.roteiro = [10004]
+    passo(m, mt5, {4: D}, ret=ret)
+    passo(m, mt5, {5: D}, ret=ret, agora=AG + timedelta(milliseconds=500))
+    assert len(entradas(mt5, K.magic(5))) == 1
+
+
+def test_ordem_pendente_com_o_magic_soma_no_risco(tmp_path):
+    # uma ordem viva da ligação 7 (sem entrada no diário) com o stop do papel:
+    # 205 × 2 × 0,2 = 82; + 82 da 4 > 90
+    from types import SimpleNamespace as NS
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.ordens[900] = NS(ticket=900, magic=K.magic(7), symbol="WINV26", volume_current=2.0,
+                         time_setup=int(AG.timestamp()), type=0, req={})
+    ret = retrato((4, 7), contas={2: conta(limite=100.0)})
+    passo(m, mt5, {4: D, 7: replace(D, entry_ts=T - timedelta(minutes=5))}, ret=ret)
+    assert not entradas(mt5, K.magic(4))
+    assert evs(m, "nao_entrou")[0]["motivo"] == "passaria da trava do dia"
+
+
+def test_limite_apagado_no_meio_do_dia_desliga_o_envio(tmp_path):
+    # revisão, cenário C (§5.7): sem limite o Envio não liga; a posição aberta
+    # sai e a entrada nova não vai (a régua diz por quê)
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    passo(m, mt5, {4: D})
+    t = evs(m, "executada")[0]["ticket"]
+    sem = retrato(contas={2: conta(limite=None)})
+    est = passo(m, mt5, {4: D}, ret=sem, agora=AG + timedelta(seconds=2))
+    assert est["envio"] is False and t not in mt5.posicoes
+    assert evs(m, "saida_executada")[0]["motivo"] == "envio desligado"
+    t2 = T + timedelta(minutes=5)
+    passo(m, mt5, {4: replace(D, entry_ts=t2)}, ret=sem, agora=t2 + timedelta(seconds=1))
+    assert len(entradas(mt5)) == 1
+    assert evs(m, "nao_entrou")[0]["motivo"] == "conta sem limite de perda do dia"
+
+
+def test_sem_cotacao_e_passageira_e_tenta_de_novo(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.symbol_info_tick = lambda s: None
+    passo(m, mt5, {4: D})
+    passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=1))
+    assert mt5.enviados == [] and not evs(m, "nao_entrou")
+    rec = evs(m, "recusada")
+    assert len(rec) == 1 and rec[0]["motivo"] == "sem cotação do contrato"
+    del mt5.symbol_info_tick
+    passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=2))
+    assert len(entradas(mt5)) == 1 and evs(m, "executada")
 
 
 def test_sem_contrato_operavel_nao_entra(tmp_path):

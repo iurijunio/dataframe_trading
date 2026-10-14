@@ -69,8 +69,10 @@ def consumir(pasta, registrar=None) -> list[dict]:
             log.warning("comando ilegível descartado: %s (%s)", arq.name, erro)
             arq.unlink(missing_ok=True)
             continue
-        if registrar is not None:
-            registrar(cmd)
+        # registrar devolve False para um comando já conhecido (o arquivo que
+        # não apagou da outra vez): sai da pasta sem rodar de novo
+        novo = registrar is None or registrar(cmd) is not False
         arq.unlink(missing_ok=True)
-        out.append(cmd)
+        if novo:
+            out.append(cmd)
     return out

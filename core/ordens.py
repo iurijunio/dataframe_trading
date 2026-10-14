@@ -38,7 +38,9 @@ CLOSE_ONLY = 10044         # só encerramento: sem entradas no contrato no resto
 # perdida de uma entrada que a corretora deu por executada sem a posição
 # aparecer: pode haver posição que a automação não vê — chama o usuário
 SEM_CONFIRMACAO = "executada sem confirmação da posição"
-TRAVA = 0.9                # fração do limite do dia que trava a conta (§5.7)
+# entrada barrada só por instantes (sem tick): volta a tentar na janela
+SEM_COTACAO = "sem cotação do contrato"
+TRAVA = 0.9               # fração do limite do dia que trava a conta (§5.7)
 TETO_STOP = 1.5            # D1: distância ao stop até 1,5× a do plano
 PAPEL_PARADO_S = 180       # papel indisponível além disso no pregão chama
 
@@ -275,12 +277,17 @@ def perda_do_dia(foto, portfolio_de: dict, portfolio_id) -> dict:
     return out
 
 
-def risco_entrada(d: Desejado, preco: float, perfil_custos: dict, ponto: float) -> float:
-    """R$ que a entrada arrisca até o stop do papel a partir do preço
-    corrente, mais os custos de entrada e saída (6a)."""
+def risco_entrada(d: Desejado, preco: float, perfil_custos: dict, ponto: float, *,
+                  tick: int | None = None) -> float:
+    """R$ que a entrada arrisca até o stop a partir do preço corrente, mais
+    os custos de entrada e saída (6a). Com `tick`, o stop é o que vai à
+    corretora (arredondado para longe da entrada, `K.protecao`)."""
     custo = float(perfil_custos.get("corretagem") or 0) + float(
         perfil_custos.get("emolumentos") or 0)
-    distancia = 0.0 if d.stop_px is None else abs(float(preco) - float(d.stop_px))
+    stop = d.stop_px
+    if stop is not None and tick:
+        stop = K.protecao(d.lado, stop, None, tick)[0]
+    distancia = 0.0 if stop is None else abs(float(preco) - float(stop))
     return distancia * d.contratos * float(ponto) + 2 * d.contratos * custo
 
 
@@ -521,6 +528,9 @@ class Motor:
             self._chamar("papel_parado", "papel_parado",
                          "papel parado há mais de 3 min (só protege)", agora)
 
+        # os retornos antecipados também mostram o zerar desta volta
+        self.zerar = self._zerar_ativo(dia, retrato, agora)
+
         # 2. a conta: nenhuma ordem (nem saída) fora da conta certa, hedging,
         # com o Algo Trading ligado
         cid, conta = _conta_logada(retrato, foto)
@@ -564,7 +574,10 @@ class Motor:
                                     perda=perda["total"], limite=float(limite))
 
         # 5. Envio de ordens
-        envio = bool(conta.get("envio")) and not forcado and not travada and not self.zerar
+        # sem limite cadastrado o Envio não liga (§5.7) — nem com o limite
+        # apagado no meio do dia: a trava não teria como agir
+        envio = bool(conta.get("envio")) and bool(limite) and not forcado \
+            and not travada and not self.zerar
         geral = "zerar tudo" if self.zerar else ("conta travada" if travada else None)
         finais = {}
         for lig, d in desejados.items():
@@ -592,7 +605,8 @@ class Motor:
         if not envio and not geral:
             seria = self._seria_enviadas(desejados, retrato, cid, dia, agora_srv,
                                          disponivel, conectado_ha_s)
-        pode_entrar = self._regua(mt5, foto, retrato, perda, limite, simbolo, contrato_ok)
+        pode_entrar = self._regua(mt5, foto, retrato, perda, limite, simbolo, contrato_ok,
+                                  dia, desejados)
 
         # 7. executar: saídas primeiro, entradas à parte — uma falha nas
         # entradas não impede as saídas desta volta (e vice-versa)
@@ -625,7 +639,15 @@ class Motor:
 
     # ---------------------------------------------------- passo: partes
     def _consumir(self, comandos, dia, agora) -> list[dict]:
+        vistos = {e.get("comando_id") for e in dia.eventos
+                  if e["tipo"] == "comando" and e.get("comando_id")}
+
         def registrar(c):
+            # o unlink pode falhar no Windows e o arquivo voltar na volta
+            # seguinte: um "zerar" repetido depois de cumprido zeraria de novo
+            if c.get("id") and c["id"] in vistos:
+                return False
+            vistos.add(c.get("id"))
             campos = {k: v for k, v in c.items() if k not in ("tipo", "id", "quando")}
             dia.registrar("comando", quando=agora, motivo=c["tipo"],
                           comando_id=c.get("id"), **campos)
@@ -633,9 +655,7 @@ class Motor:
             return []
         if isinstance(comandos, (str, Path)):
             return comandos_mod.consumir(comandos, registrar=registrar)
-        for c in comandos:
-            registrar(c)
-        return list(comandos)
+        return [c for c in comandos if registrar(c) is not False]
 
     def _zerar_ativo(self, dia, retrato, agora) -> bool:
         """"Zerar tudo" vale até o retrato (lido DEPOIS do comando) mostrar o
@@ -708,38 +728,100 @@ class Motor:
             out.append(Acao("entrar", lig, desejado=d))
         return out
 
-    def _regua(self, mt5, foto, retrato, perda, limite, simbolo, contrato_ok):
+    def _regua(self, mt5, foto, retrato, perda, limite, simbolo, contrato_ok, dia,
+               desejados):
         """`pode_entrar` da volta (6a + D1). O que já está em risco soma: a
         perda do dia, o caminho até o stop de cada posição aberta da
-        automação e cada entrada aprovada nesta volta. Lê o MT5 só quando
-        uma entrada pede (dentro do executar, que isola o erro)."""
+        automação (sem SL na corretora: o stop da operação), cada entrada
+        ainda sem desfecho ou aguardando a bolsa, cada ordem pendente com o
+        magic e cada entrada aprovada nesta volta — senão duas ligações que
+        entram em voltas seguidas passariam juntas da trava. Lê o MT5 só
+        quando uma entrada pede (dentro do executar, que isola o erro)."""
         acumulado: list = []
+        ticks: dict = {}
 
-        def preco_saida(p):
-            tk = mt5.symbol_info_tick(p.simbolo)
+        def preco(sim, lado, saida, reserva):
+            if sim not in ticks:
+                ticks[sim] = mt5.symbol_info_tick(sim) if sim else None
+            tk = ticks[sim]
             if tk is None:
-                return p.preco
-            return float(tk.bid if p.lado > 0 else tk.ask)
+                return float(reserva)
+            # saída de compra no bid, entrada de compra no ask (venda espelhada)
+            return float(tk.bid if (lado > 0) == saida else tk.ask)
+
+        def stop_da_operacao(lig):
+            """O stop da última entrada da ligação (gravado já arredondado,
+            como foi à corretora), senão o do papel agora."""
+            for e in reversed(dia.eventos):
+                if e.get("ligacao_id") == lig and e["tipo"] == "enviando" \
+                        and e.get("stop_px") is not None:
+                    return float(e["stop_px"])
+            d = desejados.get(lig)
+            if d is not None and d.estado == POSICAO and d.stop_px is not None:
+                return float(K.protecao(d.lado, d.stop_px, None, self.tick)[0])
+            return None
+
+        def em_risco() -> float:
+            total = 0.0
+            minhas = [p for p in foto.posicoes if p.ligacao_id is not None]
+            for p in minhas:
+                stop = float(p.sl) if round(p.sl) != 0 else None
+                if stop is None:
+                    reg = dia.protecao_registrada(p.ticket)
+                    stop = float(reg[1]) if reg else stop_da_operacao(p.ligacao_id)
+                if stop is None:
+                    continue      # stop desconhecido: sem proteção, ela sai em 2 s
+                total += abs(preco(p.simbolo, p.lado, True, p.preco) - stop) \
+                    * p.volume * self.ponto
+            # entradas em trânsito: enviadas, ainda sem posição
+            em_transito = set()
+            ops = {(e["ligacao_id"], e["entry_ts"]): e for e in dia.eventos
+                   if e["tipo"] == "enviando" and e.get("ligacao_id") is not None}
+            for (lig, ts), e in ops.items():
+                if dia.ticket(lig, ts) is not None or any(
+                        p.ligacao_id == lig and p.aberta_em >= ts for p in minhas):
+                    continue      # virou posição (contada acima) ou já saiu
+                if dia.tentativa_sem_desfecho(lig, ts) is None and \
+                        dia.desfecho(lig, ts) not in ("aceita", "executada", "parcial"):
+                    continue      # recusada / perdida / não entrou: não há ordem viva
+                if e.get("stop_px") is None:
+                    continue
+                em_transito.add(lig)
+                total += abs(preco(e.get("simbolo"), e.get("lado") or 1, False,
+                                   e.get("preco_papel") or e["stop_px"])
+                             - float(e["stop_px"])) * float(e.get("contratos") or 0) \
+                    * self.ponto
+            # ordem pendente com o magic que não é a entrada já contada nem a
+            # saída em trânsito de uma posição (ex.: resto de parcial)
+            for o in foto.ordens:
+                lig = o.get("ligacao_id")
+                if lig is None or lig in em_transito or not o.get("lado"):
+                    continue
+                if any(p.ligacao_id == lig and p.lado == -o["lado"] for p in minhas):
+                    continue
+                stop = stop_da_operacao(lig)
+                if stop is None:
+                    continue
+                total += abs(preco(o.get("simbolo"), o["lado"], False, stop) - stop) \
+                    * float(o.get("volume") or 0) * self.ponto
+            return total
 
         def pode_entrar(a):
             if not contrato_ok or not simbolo:
                 return False, "sem contrato operável hoje"
             if not acumulado:
-                aberto = sum(abs(preco_saida(p) - p.sl) * p.volume * self.ponto
-                             for p in foto.posicoes
-                             if p.ligacao_id is not None and round(p.sl) != 0)
                 info = mt5.symbol_info(simbolo)
                 stops = 0.0 if info is None else float(info.trade_stops_level or 0) * float(
                     getattr(info, "point", 1.0) or 1.0)
-                acumulado[:] = [perda["total"] + aberto, stops]
+                acumulado[:] = [perda["total"] + em_risco(), stops]
             d = a.desejado
             tk = mt5.symbol_info_tick(simbolo)
             if tk is None:
-                return False, "sem cotação do contrato"
-            preco = float(tk.ask if d.lado > 0 else tk.bid)
-            risco = risco_entrada(d, preco, _custos(retrato.ligacoes.get(a.ligacao_id)),
-                                  self.ponto)
-            ok, motivo = checar_entrada(d, preco, acumulado[0], limite, risco,
+                return False, SEM_COTACAO
+            preco_ = float(tk.ask if d.lado > 0 else tk.bid)
+            risco = risco_entrada(d, preco_, _custos(retrato.ligacoes.get(a.ligacao_id)),
+                                  self.ponto, tick=self.tick)
+            ok, motivo = checar_entrada(d, preco_, acumulado[0], limite, risco,
                                         stops_level=acumulado[1],
                                         so_encerrar=bool(self.so_encerrar.get(simbolo)))
             if ok:
@@ -827,6 +909,14 @@ class Motor:
             ok, motivo = False, K.TEXTOS[CLOSE_ONLY]
         else:
             ok, motivo = pode_entrar(a)
+        if not ok and motivo == SEM_COTACAO:
+            # passageira: "recusada" (desfecho que deixa tentar de novo), uma
+            # vez seguida — a volta de 0,1 s não enche o diário
+            ult = dia.ultimo(lig, d.entry_ts)
+            if not (ult and ult["tipo"] == "recusada" and ult.get("motivo") == motivo):
+                dia.registrar("recusada", quando=agora, motivo=motivo, simbolo=simbolo,
+                              conta_id=conta_id, **op)
+            return
         if not ok:
             if not dia.registrado(lig, d.entry_ts, "nao_entrou"):
                 dia.registrar("nao_entrou", quando=agora, motivo=motivo or "entrada barrada",
