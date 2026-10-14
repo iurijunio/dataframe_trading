@@ -587,3 +587,125 @@ def test_desejados_cabe_em_300_ms_com_o_aquecimento_da_maior_estrategia():
           f"({pregoes} pregões), mediana {medido * 1000:.0f} ms, "
           f"tempos {[round(x * 1000) for x in tempos]} ms")
     assert medido < 0.300
+
+
+# ===================================================== rodada de correções 1
+def _banco_lento(cena, monkeypatch):
+    """Banco ocupado que DORME como o de verdade: cada conexão pedida avança
+    o relógio pelas tentativas × espera pedidas. Devolve (chamadas, soltar)."""
+    chamadas = []
+    reais = (db.connect_write, db.connect)
+
+    def lento(*a, **k):
+        chamadas.append(dict(k))
+        cena.mono.t += k.get("tentativas", 60) * k.get("espera", 0.25)
+        raise RuntimeError("banco ocupado")
+    monkeypatch.setattr(db, "connect_write", lento)
+    monkeypatch.setattr(db, "connect", lento)
+
+    def soltar():
+        monkeypatch.setattr(db, "connect_write", reais[0])
+        monkeypatch.setattr(db, "connect", reais[1])
+    return chamadas, soltar
+
+
+def test_banco_ocupado_na_virada_nao_atrasa_a_ordem(cena, monkeypatch):
+    cena.ir(_as(10, 0, 30))
+    chamadas, soltar = _banco_lento(cena, monkeypatch)
+    cena.ir(_as(10, 0, 40))
+    # papel por gravar (o banco estava ocupado): há passo do banco a fazer
+    cena.s.papel_pendente = True
+    chamadas.clear()
+    cena.ir(_as(10, 0, 58))
+    cena.ir(_as(10, 0, 59))
+    # o minuto novo ainda não rodou as ordens: nenhum passo do banco
+    assert chamadas == []
+    cena.ir(datetime(2026, 10, 9, 10, 1, 0, 300_000))
+    [ex] = _eventos("executada")
+    assert ex["atraso_ms"] < 1000
+    # depois das ordens o banco é tentado, mas sem esperar (pregão)
+    assert chamadas and all((k.get("tentativas"), k.get("espera")) == (1, 0)
+                            for k in chamadas)
+    soltar()
+    cena.ir(_as(10, 1, 2))            # o candle das 10:00 vem numa volta seguinte
+    assert cena.estado()["gravados_hoje"] == 61
+
+
+def test_papel_backtest_para_no_corte_das_08_57(cena, mundo, monkeypatch):
+    todos = [(mundo.lig, date(2026, 10, d)) for d in (6, 7, 8)]
+    feitos = []
+    monkeypatch.setattr(papel_backtest, "pendentes",
+                        lambda con, symbol="WIN$N": [p for p in todos if p not in feitos])
+
+    def conferir(con, lig, dia, cache, agora, symbol="WIN$N"):
+        feitos.append((lig, dia))
+        cena.mono.t += 70             # o backtest do histórico inteiro custa
+        return {}
+    monkeypatch.setattr(papel_backtest, "conferir", conferir)
+    cena.ir(_as(8, 56, 20))
+    # 08:56:20 → o primeiro; depois dele o relógio passou das 08:57: para
+    assert feitos == todos[:1]
+    cena.ir(_as(18, 40))              # depois do fechamento: o resto
+    assert feitos == todos
+
+
+def test_papel_backtest_que_falha_nao_volta_a_cada_janela(cena, mundo, monkeypatch):
+    monkeypatch.setattr(papel_backtest, "pendentes",
+                        lambda con, symbol="WIN$N": [(mundo.lig, date(2026, 10, 8))])
+    chamadas = []
+
+    def conferir(*a, **k):
+        chamadas.append(a)
+        raise RuntimeError("plano não roda")
+    monkeypatch.setattr(papel_backtest, "conferir", conferir)
+    cena.ir(_as(18, 40))
+    cena.ir(_as(18, 46))              # a janela seguinte (5 min)
+    cena.ir(_as(18, 52))
+    assert len(chamadas) == 1
+
+
+def test_chamado_ordens_falhou_fecha_numa_volta_limpa_sem_passo(cena, monkeypatch):
+    quebrado = {"sim": True}
+    real = ordens.Motor.passo
+
+    def passo(self, *a, **k):
+        if quebrado["sim"]:
+            raise RuntimeError("motor quebrou")
+        return real(self, *a, **k)
+    monkeypatch.setattr(ordens.Motor, "passo", passo)
+    cena.ir(_as(10, 0, 30))
+    assert [c["tipo"] for c in _chamados("ordens_falhou")] == ["chamado"]
+    quebrado["sim"] = False
+    cena.mt5.tick_ok = False          # sem relógio e sem posição: não chega ao passo
+    cena.ir(_as(10, 0, 40))
+    assert [c["tipo"] for c in _chamados("ordens_falhou")] == ["chamado", "chamado_fechado"]
+
+
+def test_retrato_nao_e_relido_perto_da_virada(cena, monkeypatch):
+    real = PV.ler_retrato
+    lidos = []
+
+    def ler(*a, **k):
+        lidos.append(a[2])
+        return real(*a, **k)
+    monkeypatch.setattr(PV, "ler_retrato", ler)
+    cena.ir(_as(10, 0, 30))
+    cena.ir(_as(10, 0, 58))
+    cena.ir(_as(10, 1, 5))
+    assert len(lidos) == 1
+    cena.ir(_as(10, 1, 20))
+    assert len(lidos) == 2
+
+
+def test_falha_repetida_loga_o_traceback_uma_vez_e_depois_uma_linha_por_minuto(
+        cena, monkeypatch, caplog):
+    def quebra(*a, **k):
+        raise RuntimeError("motor quebrou")
+    monkeypatch.setattr(ordens.Motor, "passo", quebra)
+    with caplog.at_level("INFO", logger="captura"):
+        for t in (_as(10, 0, 30), _as(10, 0, 31), _as(10, 0, 32), _as(10, 0, 50)):
+            cena.ir(t)
+        cena.ir(_as(10, 1, 40))       # mais de um minuto depois
+    recs = [r for r in caplog.records if "caminho das ordens falhou" in r.getMessage()]
+    assert [bool(r.exc_info) for r in recs] == [True, False]
+    assert "segue falhando" in recs[1].getMessage()

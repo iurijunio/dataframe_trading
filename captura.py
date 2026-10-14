@@ -76,9 +76,12 @@ RAPIDA_ANTES_S, RAPIDA_DEPOIS_S = 58, 10
 # 5 s, com UMA tentativa sem espera: o banco ocupado por uma mineração não
 # pode atrasar a volta das ordens; fica o retrato anterior.
 A_CADA_RETRATO = 5
+# Falha que se repete a cada volta: traceback uma vez, depois uma linha por minuto.
+LOG_REPETIDO_S = 60
 # A conferência papel × backtest roda o backtest do histórico inteiro
-# (segundos): só fora do pregão — antes das 08:59 ou depois do fechamento.
-BACKTEST_ATE = hora(8, 59)
+# (segundos): só fora do pregão — antes das 08:57 (folga para a fila não
+# atravessar a abertura das 09:00) ou depois do fechamento.
+BACKTEST_ATE = hora(8, 57)
 _HOJE_VAZIO = {"ts": np.array([], dtype="datetime64[ns]"),
                **{k: np.array([], dtype=np.int64)
                   for k in ("open", "high", "low", "close", "tick_volume", "volume")}}
@@ -257,15 +260,27 @@ class Servico:
         # inteiros (eventos depois do último candle de ontem, queda antes
         # do espelho).
         self._espelhar_tudo = True
+        self._falhas_log: dict = {}     # onde -> (mensagem, mono do último log)
+        # o minuto (servidor) cujas ordens já rodaram com a barra dele: até
+        # lá, perto da virada, nenhum passo do banco roda (ordens primeiro)
+        self._minuto_ordens = None
+        self._provisoria_ts = None
+        self._passo_rodou = False
+        # (ligação, dia) cujo papel × backtest falhou neste processo: uma
+        # falha que se repete não volta a cada janela de 5 min
+        self._backtest_falhou: set = set()
 
     # ------------------------------------------------------------- banco
     @contextlib.contextmanager
     def _banco(self, agora, escrita: bool):
-        """No máximo ~1 s de espera: a volta não pode travar atrás de uma
-        mineração. Ocupado vira `_Ocupado`, que o passo trata como "pula"."""
+        """No máximo ~1 s de espera fora do pregão; NENHUMA no pregão: a
+        volta da virada do minuto (0,1 s) não pode dormir atrás de uma
+        mineração gravando ou da tela lendo — a próxima volta tenta de novo.
+        Ocupado vira `_Ocupado`, que o passo trata como "pula"."""
+        tentativas, espera = (1, 0) if self._no_pregao(agora) else (4, 0.25)
         try:
-            con = (db.connect_write(tentativas=4, espera=0.25) if escrita
-                   else db.connect(read_only=True, tentativas=4))
+            con = (db.connect_write(tentativas=tentativas, espera=espera) if escrita
+                   else db.connect(read_only=True, tentativas=tentativas, espera=espera))
         except RuntimeError:
             self.banco_ocupado_desde = self.banco_ocupado_desde or agora
             raise _Ocupado from None
@@ -276,6 +291,34 @@ class Servico:
 
     def _gravou(self) -> None:
         self.banco_ocupado_desde = None
+
+    def _no_pregao(self, agora) -> bool:
+        """Pregão AGORA, pela hora do servidor desta volta (do PC sem ela):
+        horário do pregão ou mercado vivo depois do fechamento esperado — a
+        mesma régua do `self.pregao`, que só é atualizado no fim da volta."""
+        srv = (self.agora_srv if self.mt5_estado == "conectado" else None) or agora
+        novo = self.candle_mais_novo
+        return C.em_pregao(srv, self.fechamento or C.FECHAMENTO_PADRAO) or (
+            novo is not None and novo.date() == srv.date() and srv - novo < MERCADO_VIVO)
+
+    def _falha(self, onde: str, erro: Exception) -> None:
+        """Log de uma falha que pode se repetir a cada volta (0,1 s): o
+        traceback uma vez por mensagem distinta, depois uma linha curta no
+        máximo a cada minuto — senão o log rotativo giraria em minutos."""
+        texto = f"{type(erro).__name__}: {erro}"
+        m = self.mono()
+        ultimo = self._falhas_log.get(onde)
+        if ultimo is None or ultimo[0] != texto:
+            log.error("%s", onde, exc_info=erro)
+        elif m - ultimo[1] >= LOG_REPETIDO_S:
+            log.warning("%s (segue falhando): %s", onde, texto)
+        else:
+            return
+        self._falhas_log[onde] = (texto, m)
+
+    def _sem_falha(self, onde: str) -> None:
+        # voltou a dar certo: a próxima falha merece o traceback de novo
+        self._falhas_log.pop(onde, None)
 
     def _espelhar(self, con, agora, tudo: bool = False) -> None:
         """Leva o diário das ordens ao banco (`ordens_eventos`) na conexão
@@ -292,9 +335,11 @@ class Servico:
                 self._espelhar_tudo = False
             elif self.motor._diario is not None:
                 self.motor._diario.espelhar(con)
-        except Exception:
+        except Exception as e:
             # o espelho não pode custar o candle que acabou de ser gravado
-            log.exception("não consegui espelhar o diário das ordens no banco")
+            self._falha("não consegui espelhar o diário das ordens no banco", e)
+        else:
+            self._sem_falha("não consegui espelhar o diário das ordens no banco")
 
     def _garantir_schema(self, agora) -> None:
         """As tabelas que a captura usa e o app cria na subida (papel_*).
@@ -661,9 +706,13 @@ class Servico:
 
     def _pode_backtest(self, agora) -> bool:
         """A conferência papel × backtest roda o backtest do histórico
-        inteiro (segundos com a trava do banco): só antes das 08:59 ou
-        depois do fechamento — nunca no meio de um pregão com ordens."""
-        srv = self.agora_srv or agora
+        inteiro (segundos com a trava do banco): só antes das 08:57 ou
+        depois do fechamento — nunca no meio de um pregão com ordens.
+
+        Pela hora do servidor AGORA (não a do começo da volta): cada pregão
+        conferido custa segundos, e a fila da manhã não pode atravessar a
+        abertura. Sem relógio do servidor, o do PC agora."""
+        srv = self.relogio.agora(self.mono()) or self.agora()
         if srv.weekday() >= 5 or srv.time() < BACKTEST_ATE:
             return True
         return self.fechamento is not None and self._fechou_hoje(agora)
@@ -672,20 +721,30 @@ class Servico:
         if not self._pode_backtest(agora):
             return []
         try:
-            return papel_backtest.pendentes(con, self.simbolo)
+            return [p for p in papel_backtest.pendentes(con, self.simbolo)
+                    if p not in self._backtest_falhou]
         except Exception:
             log.exception("não consegui listar a conferência papel × backtest")
             return []
 
     def _conferir_backtest(self, con, agora) -> None:
         """Cada pregão pendente à parte: um plano que não roda não impede
-        a conferência dos outros, nem a dos candles (já gravada)."""
-        for lig, dia in self._backtest_pendentes(con, agora):
+        a conferência dos outros, nem a dos candles (já gravada). O relógio
+        é conferido antes de cada um; passou do corte, o resto fica para a
+        próxima janela. Pregão que falha não volta neste processo (o mesmo
+        erro a cada 5 min só encheria o log e seguraria o escritor)."""
+        for p in self._backtest_pendentes(con, agora):
+            if not self._pode_backtest(agora):
+                log.info("papel × backtest: corte da manhã; o resto fica para depois")
+                break
+            lig, dia = p
             try:
                 papel_backtest.conferir(con, lig, dia, self.cache_codigo, agora,
                                         symbol=self.simbolo)
             except Exception:
-                log.exception("papel × backtest da ligação %s em %s falhou", lig, dia)
+                log.exception("papel × backtest da ligação %s em %s falhou "
+                              "(não tento de novo até reabrir a captura)", lig, dia)
+                self._backtest_falhou.add(p)
 
     def _conferir_papel(self, con, dia, agora) -> None:
         """A última volta do papel do dia, com os candles já conferidos —
@@ -912,17 +971,32 @@ class Servico:
         podem parar por causa das ordens."""
         if self.motor is None:
             return
+        quando = (self.agora_srv if self.mt5_estado == "conectado" else None) or agora
+        self._passo_rodou = False
         try:
             self._ordens_volta(agora, m)
         except Exception as e:
-            log.exception("caminho das ordens falhou")
-            quando = (self.agora_srv if self.mt5_estado == "conectado" else None) or agora
+            self._falha("caminho das ordens falhou", e)
+            # as ordens deste minuto foram tentadas: um caminho quebrado não
+            # segura os candles até o segundo 10 de cada minuto
+            self._minuto_ordens = quando.replace(second=0, microsecond=0)
             self.ordens_estado = {"erro": str(e), "vivo_em": quando}
             try:
                 self.motor._chamar("ordens_falhou", "ordens_falhou",
                                    f"erro nas ordens: {e}", quando)
-            except Exception:
-                log.exception("não consegui abrir o chamado da falha das ordens")
+            except Exception as e2:
+                self._falha("não consegui abrir o chamado da falha das ordens", e2)
+            return
+        self._sem_falha("caminho das ordens falhou")
+        if not self._passo_rodou:
+            # volta limpa que não chegou ao passo (MT5 fora, fora do pregão):
+            # o passo é quem fecha o chamado quando roda; aqui, nós. Quando
+            # ele roda, não se mexe — pode ter acabado de abrir por uma
+            # falha dele mesmo (comandos, execução).
+            try:
+                self.motor._fechar("ordens_falhou", quando)
+            except Exception as e:
+                self._falha("não consegui fechar o chamado da falha das ordens", e)
 
     def _ordens_volta(self, agora, m) -> None:
         conectado = self.mt5_estado == "conectado"
@@ -946,8 +1020,7 @@ class Servico:
             return
         self.motor._fechar("mt5_fora", quando)
 
-        fechamento = self.fechamento or C.FECHAMENTO_PADRAO
-        no_pregao = srv is not None and (C.em_pregao(srv, fechamento) or self.pregao)
+        no_pregao = srv is not None and self._no_pregao(srv)
         if not no_pregao and not self._automacao_posicionada(diario):
             self.ordens_estado = self._ordens_paradas(
                 "fora do pregão" if srv is not None else "sem relógio do servidor",
@@ -970,6 +1043,11 @@ class Servico:
             conectado_ha_s=(m - self.conectado_desde
                             if self.conectado_desde is not None else 0.0),
             no_pregao=no_pregao)
+        self._passo_rodou = True
+        # as ordens do minuto em formação já rodaram com a barra dele: os
+        # passos do banco desta virada podem seguir (`_banco_espera`)
+        if self._provisoria_ts is not None:
+            self._minuto_ordens = self._provisoria_ts
         self.ordens_estado = {**est, **self._ordens_extra()}
 
     def _virar_dia(self, dia) -> None:
@@ -1016,6 +1094,10 @@ class Servico:
         a idade). A hora é a do servidor: o "zerar tudo" e o desligar do
         Envio só terminam com um retrato lido DEPOIS do comando, e os dois
         relógios têm de ser o mesmo. O aquecimento vem na mesma leitura."""
+        if self.retrato is not None and self._janela_da_virada():
+            # perto da virada a volta é das ordens: o retrato de segundos
+            # atrás serve; reler (preparar o dia, ler o banco) atrasaria a entrada
+            return
         if self._retrato_tentado is not None and m - self._retrato_tentado < A_CADA_RETRATO:
             return
         self._retrato_tentado = m
@@ -1023,8 +1105,8 @@ class Servico:
             con = db.connect(read_only=True, tentativas=1, espera=0)
         except RuntimeError:
             return          # ocupado: o normal com uma mineração gravando
-        except Exception:
-            log.exception("não consegui abrir o banco para o retrato das ordens")
+        except Exception as e:
+            self._falha("não consegui abrir o banco para o retrato das ordens", e)
             return
         try:
             with con:
@@ -1038,9 +1120,10 @@ class Servico:
                         con, self.simbolo, quando.date(), novo)
                     self.aquecimento_chave = chave
                     self._versao_papel += 1
-        except Exception:
-            log.exception("não consegui ler o retrato da configuração das ordens")
+        except Exception as e:
+            self._falha("não consegui ler o retrato da configuração das ordens", e)
             return
+        self._sem_falha("não consegui ler o retrato da configuração das ordens")
         antigo, self.retrato, self.retrato_em = self.retrato, novo, quando
         # relido a cada 5 s, mas os desejados só mudam se as ligações mudaram
         # (fase, ligada, plano, períodos): senão refaria o papel à toa
@@ -1108,8 +1191,10 @@ class Servico:
         if srv is None:
             # sem relógio do servidor nada se sabe: só a proteção (§5.1)
             self._desejados, self._disponivel, self._minuto_calculado = {}, False, None
+            self._provisoria_ts = None
             return
         hoje, provisoria = self._barras_hoje(srv)
+        self._provisoria_ts = provisoria[0] if provisoria else None
         # o candle fechado que o MT5 revisa (caso 11) também refaz: a chave
         # leva o conteúdo das barras, não só o minuto
         chave = (self._versao_papel, provisoria, len(hoje["ts"]),
@@ -1119,9 +1204,11 @@ class Servico:
         try:
             self._desejados, self._disponivel = papel_vivo.desejados(
                 self.retrato, self.aquecimento, hoje, provisoria, self.inst, srv)
-        except Exception:
-            log.exception("papel das ordens falhou")
+        except Exception as e:
+            self._falha("papel das ordens falhou", e)
             self._desejados, self._disponivel = {}, False
+        else:
+            self._sem_falha("papel das ordens falhou")
         self._minuto_calculado = chave
 
     # ---------------------------------------------------------------- volta
@@ -1146,7 +1233,7 @@ class Servico:
         # candle, o papel gravado, a conferência e o Parquet esperam por
         # elas, nunca o contrário. Sem MT5 só vigia (chamado `mt5_fora`).
         self._ordens(agora, m)
-        if conectado:
+        if conectado and not self._banco_espera():
             if self.carregado:
                 novo = self._buscar_e_gravar(agora, m)
                 novo = self._lacunas(agora, m) or novo
@@ -1169,6 +1256,25 @@ class Servico:
         if self.pregao and self._perto_da_virada():
             return VOLTA_RAPIDA
         return ESPERA_PREGAO if self.pregao else ESPERA_FORA
+
+    def _janela_da_virada(self) -> bool:
+        return (self.agora_srv is not None and self._perto_da_virada()
+                and self._no_pregao(self.agora_srv))
+
+    def _banco_espera(self) -> bool:
+        """Perto da virada, no pregão, os passos do banco (candle, lacuna,
+        papel, conferência) esperam as ordens do minuto novo: do segundo 58
+        até a volta em que o motor rodou com a barra desse minuto (ou até o
+        segundo 10). Sem isto, uma gravação ou o Parquet no segundo 59
+        seguraria a primeira volta do minuto. O candle não se perde: a
+        volta seguinte o pede de novo ao MT5."""
+        if not self._janela_da_virada():
+            return False
+        srv = self.agora_srv
+        minuto = srv.replace(second=0, microsecond=0)
+        if srv.second >= RAPIDA_ANTES_S:
+            return True                  # o minuto que vem ainda nem começou
+        return self._minuto_ordens != minuto
 
     def _perto_da_virada(self) -> bool:
         """Do segundo 58 ao 10 do minuto, na hora do SERVIDOR (o PC pode
