@@ -47,6 +47,7 @@ class MT5Ordens:
         self.erro_leitura = False          # positions_get/orders_get/... -> None
         self.filling = 3                   # máscara FOK|IOC
         self.parcial_volume = 1.0
+        self.stops_level = 0               # SYMBOL_TRADE_STOPS_LEVEL, em pontos
         self.precos = {"WIN$N": preco, "WINV26": preco, "WINZ26": preco + 1500}
         self.vencimentos = {"WINV26": datetime(2026, 10, 14, 18, 30),
                             "WINZ26": datetime(2026, 12, 16, 18, 30)}
@@ -83,7 +84,8 @@ class MT5Ordens:
 
     def symbol_info(self, s):
         venc = self.vencimentos.get(s)
-        return NS(name=s, filling_mode=self.filling, trade_stops_level=0,
+        return NS(name=s, filling_mode=self.filling,
+                  trade_stops_level=self.stops_level, point=1.0,
                   trade_tick_size=5.0, trade_mode=4, basis="",
                   expiration_time=_epoch(venc) if venc else 0)
 
