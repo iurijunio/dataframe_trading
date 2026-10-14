@@ -307,12 +307,15 @@ def test_saida_nunca_desiste(tmp_path):
     assert t not in mt5.posicoes and evs(m, "saida_executada")
 
 
-def test_saida_ja_encerrada_so_registra(tmp_path):
+def test_saida_ja_encerrada_nao_vira_saida_executada(tmp_path):
+    # 10036: a saída real (preço, motivo, volume) vem do saiu_antes depois
     mt5, m = MT5Ordens(), Motor(tmp_path, INST)
     mt5.abrir_manual(1, magic=K.magic(4))
     mt5.roteiro = [10036]
     volta(m, mt5, {4: Desejado(ZERADO)})
-    assert evs(m, "saida_executada")[0]["motivo"] == "já encerrada"
+    assert not evs(m, "saida_executada")
+    ev = evs(m, "saida_recusada")[0]
+    assert ev["motivo"] == "já encerrada na corretora" and ev["retcode"] == 10036
 
 
 def test_saida_sem_resposta_registra_e_nao_repete_na_volta(tmp_path):
@@ -632,3 +635,108 @@ def test_sem_stop_abre_um_chamado_so_pelos_dois_caminhos(tmp_path):
     _executar_direto(m, mt5, acoes, agora=AG + timedelta(seconds=2))
     assert list(m.chamados) == [f"sem_stop:{t}"]
     assert len(evs(m, "chamado")) == 1 and not mt5.enviados
+
+
+# ======================================================== rodada de correção 2
+class _ListasAtrasadas:
+    """Entrada que volta 10009 com `order` = 0, e positions_get /
+    history_deals_get que ainda não mostram a posição nova (caso A)."""
+
+    def __init__(self, mt5):
+        self.escondidas, self.ativo = set(), True
+        envia, pos, neg = mt5.order_send, mt5.positions_get, mt5.history_deals_get
+
+        def send(req):
+            r = envia(req)
+            if r is not None and req["action"] == 1 and "position" not in req \
+                    and r.retcode == 10009:
+                self.escondidas.add(r.order)
+                return NS(retcode=r.retcode, order=0, deal=r.deal, volume=r.volume,
+                          price=r.price, comment="")
+            return r
+        mt5.order_send = send
+        mt5.positions_get = lambda **k: tuple(
+            p for p in pos(**k) if not (self.ativo and p.ticket in self.escondidas))
+        mt5.history_deals_get = lambda de, ate, **k: tuple(
+            n for n in neg(de, ate, **k)
+            if not (self.ativo and n.position_id in self.escondidas))
+
+
+def test_executada_sem_ticket_com_listas_atrasadas_nao_duplica(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    lag = _ListasAtrasadas(mt5)
+    volta(m, mt5, {4: D})
+    assert evs(m, "executada")[0]["ticket"] is None
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=3))     # listas ainda atrasadas
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=5))
+    assert len(acoes_de(mt5, 1)) == 1                          # nenhum 2º DEAL
+    lag.ativo = False
+    tipos = volta(m, mt5, {4: D}, agora=T + timedelta(seconds=6))
+    assert "adotada" in tipos and len(mt5.posicoes) == 1
+    assert len(acoes_de(mt5, 1)) == 1
+
+
+def test_executada_sem_confirmacao_vira_perdida_com_chamado_que_fica(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    _ListasAtrasadas(mt5)
+    volta(m, mt5, {4: D})
+    tipos = volta(m, mt5, {4: D}, agora=T + timedelta(seconds=31))
+    assert tipos[-2:] == ["perdida", "chamado"]
+    assert evs(m, "perdida")[0]["motivo"] == "executada sem confirmação da posição"
+    assert len(acoes_de(mt5, 1)) == 1
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=40))
+    assert [c["texto"] for c in m.chamados.values()] == \
+        ["executada sem confirmação da posição"]
+
+
+def test_ja_encerrada_depois_de_parcial_o_saiu_antes_registra_o_resto(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    t = evs(m, "executada")[0]["ticket"]
+    z = {4: Desejado(ZERADO)}
+    mt5.roteiro = [10010]
+    volta(m, mt5, z, agora=T + timedelta(seconds=10))          # sai 1 de 2
+    mt5.roteiro = [10036]                                      # o SL do servidor já levou
+    volta(m, mt5, z, agora=T + timedelta(seconds=12))
+    mt5.stopar(t)                                              # ... e aparece agora
+    volta(m, mt5, z, agora=T + timedelta(seconds=13))
+    assert not evs(m, "saida_executada")
+    sa = evs(m, "saiu_antes")
+    assert [e["ticket"] for e in sa] == [t] and sa[0]["contratos"] == 1
+    assert sa[0]["motivo"] == "stop na corretora"
+    assert sum(e["contratos"] for e in evs(m, "saida_parcial") + sa) == 2
+
+
+def test_chamados_da_saida_usam_a_hora_de_depois_da_resposta(tmp_path):
+    base = [T]
+    mt5 = MT5Ordens()
+    m = Motor(tmp_path, INST, relogio=lambda: base[0] + timedelta(milliseconds=500))
+    mt5.abrir_manual(1, magic=K.magic(4))
+    mt5.roteiro = [10018, 10018, 10013]
+    z = {4: Desejado(ZERADO)}
+    for seg in (1, 125, 127, 129):
+        base[0] = T + timedelta(seconds=seg)
+        volta(m, mt5, z, agora=base[0])
+    eventos = m.diario(DIA).eventos
+    tipos = [e["tipo"] for e in eventos]
+    assert tipos.count("chamado") == 2 and tipos.count("chamado_fechado") == 2
+    q = [e["quando"] for e in eventos]
+    assert q == sorted(q)
+    for e in eventos:
+        if e["tipo"] in ("chamado", "chamado_fechado"):
+            assert e["quando"].microsecond == 500_000     # depois da resposta
+
+
+def test_ticket_sem_ordem_nao_pega_posicao_herdada_mais_antiga(tmp_path):
+    # posição do mesmo lado e magic aberta antes desta operação, que o diário
+    # de hoje não conhece (ex.: ficou de outra sessão)
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    agora, mt5.agora = mt5.agora, T - timedelta(hours=1)
+    herdada = mt5.abrir_manual(1, volume=2, magic=K.magic(4))
+    mt5.agora = agora
+    _ListasAtrasadas(mt5)
+    mt5.roteiro = [10018]                     # a saída da herdada não pega agora
+    volta(m, mt5, {4: D})
+    ev = evs(m, "executada")[-1]
+    assert ev["entry_ts"] == T and ev["ticket"] is None
+    assert not [r for r in acoes_de(mt5, 6) if r["position"] == herdada]

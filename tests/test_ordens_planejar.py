@@ -416,3 +416,16 @@ def test_perdida_espera_a_lista_estabilizar_apos_reconectar(tmp_path):
     f, ag = foto(), T + timedelta(seconds=40)
     assert plan(tmp_path, {4: D}, f, agora=ag, conectado=1.0) == []
     assert tipos(plan(tmp_path, {4: D}, f, agora=ag)) == [("perdida", 4, None)]
+
+
+def test_executada_sem_ticket_nunca_reentra_e_vira_perdida_sem_confirmacao(tmp_path):
+    # a corretora disse "executada" sem order; as listas ainda não mostram nada
+    for tipo in ("executada", "parcial"):
+        d = Diario(tmp_path / tipo, date(2026, 10, 9))
+        d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
+        d.registrar(tipo, quando=T, ligacao_id=4, entry_ts=T, ticket=None)
+        assert plan(tmp_path, {4: D}, foto(), agora=T + timedelta(seconds=5),
+                    diario=d) == []
+        a = plan(tmp_path, {4: D}, foto(), agora=T + timedelta(seconds=31), diario=d)
+        assert tipos(a) == [("perdida", 4, None)]
+        assert a[0].motivo == "executada sem confirmação da posição"
