@@ -19,7 +19,8 @@ from core import portfolio as P  # noqa: E402
 from core.engine import kernel as K  # noqa: E402
 from core.engine.execution import ExecutionProfile, run_strategy  # noqa: E402
 from tests._cadeia import banco, campos_plano, mineracao, wfa  # noqa: E402,F401
-from tests.fabrica_ao_vivo import inserir_barras, ligacao_com_plano  # noqa: E402
+from tests.fabrica_ao_vivo import (barras_sinteticas as _barras_sinteticas,  # noqa: E402
+                                   inserir_barras, ligacao_com_plano)
 
 SIMB = "WIN$N"
 ESTRAT = "rompimento_canal"
@@ -34,43 +35,6 @@ CONTRATOS = 2
 
 
 # ------------------------------------------------------------- dados
-def _dias_uteis(n, inicio=date(2026, 1, 5)):
-    out, d = [], inicio
-    while len(out) < n:
-        if d.weekday() < 5:
-            out.append(d)
-        d += timedelta(days=1)
-    return out
-
-
-def _barras_sinteticas(n_dias=40, seed=11):
-    """Pregões de 09:00 a 18:24 (565 minutos), tendência do dia + ruído, de
-    5 em 5 pontos como o WIN."""
-    rng = np.random.default_rng(seed)
-    dias = _dias_uteis(n_dias)
-    ts, o, h, l, c = [], [], [], [], []
-    preco = 120_000
-    for dia in dias:
-        tendencia = rng.normal(0, 6)
-        preco += int(rng.normal(0, 150)) // 5 * 5
-        inicio = np.datetime64(dia) + np.timedelta64(9 * 60, "m")
-        for m in range(565):
-            ab = preco
-            fe = ab + int(round((tendencia + rng.normal(0, 30)) / 5)) * 5
-            ts.append(inicio + np.timedelta64(m, "m"))
-            o.append(ab)
-            c.append(fe)
-            h.append(max(ab, fe) + int(abs(rng.normal(0, 15))) // 5 * 5)
-            l.append(min(ab, fe) - int(abs(rng.normal(0, 15))) // 5 * 5)
-            preco = fe
-    n = len(ts)
-    b = {"ts": np.array(ts, dtype="datetime64[ns]"),
-         "open": np.array(o, np.int64), "high": np.array(h, np.int64),
-         "low": np.array(l, np.int64), "close": np.array(c, np.int64),
-         "tick_volume": np.ones(n, np.int64), "volume": np.ones(n, np.int64)}
-    return b, dias
-
-
 def _inserir(con, b, sl=slice(None)):
     inserir_barras(con, b, sl, SIMB)
 

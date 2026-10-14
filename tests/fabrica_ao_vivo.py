@@ -9,9 +9,11 @@ mudança de schema.
 from __future__ import annotations
 
 import tempfile
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+
+import numpy as np
 
 from core import codigo, plano, variantes
 from core import db_manager as db
@@ -72,3 +74,40 @@ def inserir_barras(con, b: dict, sl=slice(None), symbol: str = "WIN$N") -> None:
             "'high': 'BIGINT', 'low': 'BIGINT', 'close': 'BIGINT'})", [symbol])
     finally:
         Path(caminho).unlink()
+
+
+def dias_uteis(n, inicio=date(2026, 1, 5)):
+    out, d = [], inicio
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def barras_sinteticas(n_dias=40, seed=11):
+    """Pregões de 09:00 a 18:24 (565 minutos), tendência do dia + ruído, de
+    5 em 5 pontos como o WIN."""
+    rng = np.random.default_rng(seed)
+    dias = dias_uteis(n_dias)
+    ts, o, h, l, c = [], [], [], [], []
+    preco = 120_000
+    for dia in dias:
+        tendencia = rng.normal(0, 6)
+        preco += int(rng.normal(0, 150)) // 5 * 5
+        inicio = np.datetime64(dia) + np.timedelta64(9 * 60, "m")
+        for m in range(565):
+            ab = preco
+            fe = ab + int(round((tendencia + rng.normal(0, 30)) / 5)) * 5
+            ts.append(inicio + np.timedelta64(m, "m"))
+            o.append(ab)
+            c.append(fe)
+            h.append(max(ab, fe) + int(abs(rng.normal(0, 15))) // 5 * 5)
+            l.append(min(ab, fe) - int(abs(rng.normal(0, 15))) // 5 * 5)
+            preco = fe
+    n = len(ts)
+    b = {"ts": np.array(ts, dtype="datetime64[ns]"),
+         "open": np.array(o, np.int64), "high": np.array(h, np.int64),
+         "low": np.array(l, np.int64), "close": np.array(c, np.int64),
+         "tick_volume": np.ones(n, np.int64), "volume": np.ones(n, np.int64)}
+    return b, dias

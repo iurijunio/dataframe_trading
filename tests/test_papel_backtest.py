@@ -22,11 +22,17 @@ from core import papel_backtest as PB  # noqa: E402
 from core import portfolio as P  # noqa: E402
 from core.captura import PREFIXO_RECONFERENCIA  # noqa: E402
 from tests._cadeia import banco  # noqa: E402,F401
-from tests.fabrica_ao_vivo import inserir_barras, ligacao_com_plano  # noqa: E402
-from tests.test_papel_motor import (CONTRATOS, PARAMS, PERFIL,  # noqa: E402
-                                    _barras_sinteticas)
+from core.engine.execution import ExecutionProfile  # noqa: E402
+from tests.fabrica_ao_vivo import (barras_sinteticas, inserir_barras,  # noqa: E402
+                                   ligacao_com_plano)
 
 SIMB = "WIN$N"
+PARAMS = {"periodo_canal": 20, "folga_ticks": 0, "filtro_amplitude": 0,
+          "stop_pontos": 123}
+PERFIL = ExecutionProfile(timeframe="M5", stop_pontos=300, alvo_pontos=400,
+                          corretagem_por_contrato=0.5,
+                          emolumentos_por_contrato=0.25).to_config()
+CONTRATOS = 2
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +44,7 @@ def sem_recarga(monkeypatch):
 
 @pytest.fixture
 def mundo(banco):
-    b, dias = _barras_sinteticas()
+    b, dias = barras_sinteticas()
     with db.connect() as con:
         inserir_barras(con, b, symbol=SIMB)
     f = ligacao_com_plano("romp-pb", params=PARAMS, profile=PERFIL,
@@ -86,6 +92,18 @@ def _gravado(con, lig, dia):
             "diferencas": json.loads(r[3]), "conferido_em": r[4]}
 
 
+def _resultado(**campos):
+    """O formato de `conferir`: sempre as mesmas chaves."""
+    return {"ok": None, "n_papel": 0, "n_backtest": 0, "diferencas": [],
+            "checksum_mudou": False, "outra_versao": False,
+            "outro_codigo": False, **campos}
+
+
+def _situacao(**campos):
+    return {"pregoes": 0, "operacoes": 0, "diferencas": 0, "ok": None,
+            "outra_versao": 0, "outro_codigo": 0, **campos}
+
+
 def _operacao_extra(con, m, dia, entry_ts, conta=True):
     con.execute(
         "INSERT INTO papel_operacoes (op_id, ligacao_id, plano_id, dia, "
@@ -106,9 +124,9 @@ def test_papel_igual_ao_backtest(mundo):
         r = PB.conferir(con, mundo.lig, dia, {}, _as(dia, 23))
         g = _gravado(con, mundo.lig, dia)
     assert n_ops > 0, "o dia escolhido precisa ter operação"
-    assert r == {"ok": True, "n_papel": n_ops, "n_backtest": n_ops,
-                 "diferencas": []}
-    assert g["ok"] is True and g["diferencas"] == []
+    assert r == _resultado(ok=True, n_papel=n_ops, n_backtest=n_ops)
+    assert g["ok"] is True
+    assert g["diferencas"] == {"checksum_mudou": False, "operacoes": []}
     assert (g["n_papel"], g["n_backtest"]) == (n_ops, n_ops)
 
 
@@ -128,8 +146,8 @@ def test_operacao_a_mais_no_papel_vira_diferenca(mundo):
         "entry_ts": extra,
         "papel": (extra, 1, 120000, _as(dia, 18, 10), 120100, 2),
         "backtest": None}]
-    assert g["ok"] is False and len(g["diferencas"]) == 1
-    assert g["diferencas"][0]["backtest"] is None
+    assert g["ok"] is False and len(g["diferencas"]["operacoes"]) == 1
+    assert g["diferencas"]["operacoes"][0]["backtest"] is None
 
 
 def test_operacao_que_nao_conta_fica_fora_da_comparacao(mundo):
@@ -170,8 +188,7 @@ def test_backtest_usa_os_mesmos_periodos_ligados(mundo):
         r = PB.conferir(con, mundo.lig, dia, {}, _as(dia, 23))
     contam = sum(1 for o in ops if o[3])
     assert 0 < contam < len(ops), "precisa de operação dos dois lados das 11h"
-    assert r == {"ok": True, "n_papel": contam, "n_backtest": contam,
-                 "diferencas": []}
+    assert r == _resultado(ok=True, n_papel=contam, n_backtest=contam)
 
 
 def test_conferir_de_novo_atualiza_a_linha(mundo):
@@ -194,8 +211,39 @@ def test_pregao_nao_conferido_nao_se_confere(mundo):
     with db.connect() as con:
         papel.gravar(con, papel.rodar_dia(con, dia, _as(dia, 12), {}),
                      _as(dia, 12))
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="não está conferido"):
             PB.conferir(con, mundo.lig, dia, {}, _as(dia, 23))
+
+
+def test_ligacao_que_nao_existe_diz_isso(mundo):
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        with pytest.raises(ValueError, match=f"ligação #{mundo.lig + 99} "
+                                             "não existe"):
+            PB.conferir(con, mundo.lig + 99, dia, {}, _as(dia, 23))
+
+
+def test_plano_sem_estrategia_usa_a_da_variante(mundo):
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        _conferir_papel(con, dia)
+        con.execute("UPDATE planos_operacao SET strategy = NULL")
+        _marca_reconferencia(con, dia, _as(mundo.dias[31], 8))
+        assert PB.pendentes(con, SIMB) == [(mundo.lig, dia)]
+        r = PB.conferir(con, mundo.lig, dia, {}, _as(mundo.dias[31], 9))
+    assert r["ok"] is True and r["n_papel"] > 0
+
+
+def test_candles_mudados_depois_do_papel_ficam_marcados(mundo):
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        _conferir_papel(con, dia)
+        con.execute("UPDATE bars_m1 SET close = close + 5 WHERE ts = ?",
+                    [_as(dia, 9, 30)])
+        r = PB.conferir(con, mundo.lig, dia, {}, _as(dia, 23))
+        g = _gravado(con, mundo.lig, dia)
+    assert r["checksum_mudou"] is True
+    assert g["diferencas"]["checksum_mudou"] is True
 
 
 # ------------------------------------------------------------- versão do motor
@@ -210,11 +258,27 @@ def test_papel_de_outra_versao_do_motor_nao_e_falha(mundo):
         _marca_reconferencia(con, dia, _as(seguinte, 8))
         assert PB.pendentes(con, SIMB) == []
         r = PB.conferir(con, mundo.lig, dia, {}, _as(seguinte, 9))
-        assert r["ok"] is None and r["outra_versao"] is True
+        assert r == _resultado(n_papel=r["n_papel"], outra_versao=True)
         assert _gravado(con, mundo.lig, dia) is None
         s = PB.situacao(con, mundo.lig)
-    assert s == {"pregoes": 0, "operacoes": 0, "diferencas": 0, "ok": None,
-                 "outra_versao": 1}
+    assert s == _situacao(outra_versao=1)
+
+
+def test_papel_de_outro_codigo_nao_e_falha(mundo):
+    # o código da estratégia mudou depois do pregão: o backtest rodaria o
+    # código novo contra o papel do antigo (e `papel.reabriveis` não reabre)
+    dia = mundo.dias[30]
+    seguinte = mundo.dias[31]
+    with db.connect() as con:
+        _conferir_papel(con, dia)
+        con.execute("UPDATE papel_pregoes SET codigo_hash = 'antigo'")
+        _marca_reconferencia(con, dia, _as(seguinte, 8))
+        assert PB.pendentes(con, SIMB) == []
+        r = PB.conferir(con, mundo.lig, dia, {}, _as(seguinte, 9))
+        assert r == _resultado(n_papel=r["n_papel"], outro_codigo=True)
+        assert _gravado(con, mundo.lig, dia) is None
+        s = PB.situacao(con, mundo.lig)
+    assert s == _situacao(outro_codigo=1)
 
 
 # ------------------------------------------------------------- pendentes
@@ -245,13 +309,28 @@ def test_pendentes_so_depois_da_reconferencia(mundo):
         assert PB.pendentes(con, SIMB) == [(mundo.lig, dia)]
 
 
+def test_pendentes_volta_quando_o_papel_e_refeito_depois_da_checagem(mundo):
+    # a checagem rodou depois da marca mas ANTES de reabrir + conferir o
+    # papel: a linha gravada fala de um papel que não existe mais
+    dia = mundo.dias[30]
+    seguinte = mundo.dias[31]
+    with db.connect() as con:
+        _conferir_papel(con, dia)
+        _marca_reconferencia(con, dia, _as(seguinte, 8))
+        PB.conferir(con, mundo.lig, dia, {}, _as(seguinte, 8, 1))
+        assert PB.pendentes(con, SIMB) == []
+        con.execute("UPDATE papel_pregoes SET calculado_em = ?",
+                    [_as(seguinte, 8, 2)])
+        assert PB.pendentes(con, SIMB) == [(mundo.lig, dia)]
+        PB.conferir(con, mundo.lig, dia, {}, _as(seguinte, 8, 3))
+        assert PB.pendentes(con, SIMB) == []
+
+
 # ------------------------------------------------------------- situação
 def test_situacao_agrega(mundo):
     d1, d2 = mundo.dias[30], mundo.dias[31]
     with db.connect() as con:
-        assert PB.situacao(con, mundo.lig) == {
-            "pregoes": 0, "operacoes": 0, "diferencas": 0, "ok": None,
-            "outra_versao": 0}
+        assert PB.situacao(con, mundo.lig) == _situacao()
         _conferir_papel(con, d1)
         papel.conferir(con, d2, _as(d2, 19), {})
         r1 = PB.conferir(con, mundo.lig, d1, {}, _as(d2, 9))
@@ -260,5 +339,5 @@ def test_situacao_agrega(mundo):
         r2 = PB.conferir(con, mundo.lig, d2, {}, _as(d2, 23))
         s = PB.situacao(con, mundo.lig)
         assert PB.situacao(con, mundo.lig + 99)["ok"] is None
-    assert s == {"pregoes": 2, "operacoes": r1["n_papel"] + r2["n_papel"],
-                 "diferencas": 1, "ok": False, "outra_versao": 0}
+    assert s == _situacao(pregoes=2, operacoes=r1["n_papel"] + r2["n_papel"],
+                          diferencas=1, ok=False)
