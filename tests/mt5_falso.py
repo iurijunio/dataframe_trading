@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace as NS
 
+import numpy as np
+
 
 def _epoch(d: datetime) -> int:
     return int(d.replace(tzinfo=timezone.utc).timestamp())
@@ -26,6 +28,7 @@ class MT5Ordens:
     ACCOUNT_MARGIN_MODE_RETAIL_HEDGING = 2
     SYMBOL_TRADE_MODE_FULL = 4
     TIMEFRAME_M1 = 1
+    TIMEFRAME_D1 = 16408
 
     def __init__(self, *, login=1193398927, servidor="ClearInvestimentos-DEMO",
                  preco=189_000, agora=datetime(2026, 10, 9, 10, 1, 1)):
@@ -51,6 +54,8 @@ class MT5Ordens:
         self.precos = {"WIN$N": preco, "WINV26": preco, "WINZ26": preco + 1500}
         self.vencimentos = {"WINV26": datetime(2026, 10, 14, 18, 30),
                             "WINZ26": datetime(2026, 12, 16, 18, 30)}
+        self.volumes = {}                  # simbolo -> real_volume do pregão anterior
+        self.sem_barras = False            # copy_rates_from_pos -> None
         self._ticket = 1000
 
     # ---------------------------------------------------------- leitura
@@ -95,7 +100,18 @@ class MT5Ordens:
                   ask=float(p + 5))
 
     def symbols_get(self, group=None):
-        return tuple(self.symbol_info(s) for s in self.precos)
+        # grupo "WIN*": só o prefixo importa nos testes
+        pref = (group or "").rstrip("*")
+        return tuple(self.symbol_info(s) for s in self.precos if s.startswith(pref))
+
+    def copy_rates_from_pos(self, simbolo, timeframe, inicio, quantidade):
+        if self.sem_barras or simbolo not in self.volumes:
+            return None
+        # como o pacote real: array numpy estruturado, a barra mais antiga primeiro
+        return np.array([(0, 0.0, 0.0, 0.0, 0.0, 0, 0, self.volumes[simbolo])] * quantidade,
+                        dtype=[("time", "i8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
+                               ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"),
+                               ("real_volume", "i8")])
 
     def order_check(self, req):
         self.checados.append(dict(req))
