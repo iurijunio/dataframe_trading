@@ -434,6 +434,9 @@ CREATE TABLE IF NOT EXISTS papel_pregoes (
 -- código") — e a tela não pode tratar um aviso como posição congelada.
 -- NULL de novo assim que um cálculo dá certo.
 ALTER TABLE papel_pregoes ADD COLUMN IF NOT EXISTS falha VARCHAR;
+-- stop da ENTRADA (stop_px anda com breakeven/trailing): a distância de stop
+-- que vale para o custo de um stop ao promover para a conta demo
+ALTER TABLE papel_operacoes ADD COLUMN IF NOT EXISTS stop_ini_px BIGINT;
 
 -- parte 4 (ordens): spec 2026-10-08-ao-vivo-ordens-design.md §7.1.
 -- Envio de ordens por conta, começa DESLIGADO: desligado, a automação

@@ -312,6 +312,27 @@ def test_rodar_dia_usa_stop_do_plano_e_nunca_from_config(mundo, monkeypatch):
     assert all(abs(o["entry_px"] - o["stop_px"]) == 123 for o in ops)
 
 
+def test_papel_grava_e_atualiza_o_stop_da_entrada(mundo):
+    # stop_px anda com breakeven/trailing; o custo de um stop precisa do da
+    # entrada, e uma operação recalculada tem de corrigir o valor gravado
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        res = papel.rodar_dia(con, dia, _as(dia, 19), {})
+        papel.gravar(con, res, _as(dia, 19))
+        ini = con.execute(
+            "SELECT abs(entry_px - stop_ini_px) FROM papel_operacoes "
+            "WHERE ligacao_id = ? AND dia = ?", [mundo.lig, dia]).fetchall()
+        assert ini and all(r[0] == 123 for r in ini)
+        con.execute("UPDATE papel_operacoes SET stop_ini_px = 1 "
+                    "WHERE ligacao_id = ?", [mundo.lig])
+        res = papel.rodar_dia(con, dia, _as(dia, 19, 1), {})
+        papel.gravar(con, res, _as(dia, 19, 1))
+        ini = con.execute(
+            "SELECT abs(entry_px - stop_ini_px) FROM papel_operacoes "
+            "WHERE ligacao_id = ? AND dia = ?", [mundo.lig, dia]).fetchall()
+    assert all(r[0] == 123 for r in ini)
+
+
 # ------------------------------------------------------------- aberta
 def _operacao_longa(mundo):
     """Um dia e uma operação que dura vários minutos e NÃO sai por fechamento

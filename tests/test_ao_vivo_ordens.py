@@ -374,18 +374,19 @@ def test_custo_de_um_stop_sem_limite_nao_tem_percentual(banco):
     assert AV.custo_de_um_stop(f.lig, 1)["pct_limite"] is None
 
 
-def _op_papel(lig, plano_id, n, entry, stop):
+def _op_papel(lig, plano_id, n, entry, stop_ini, stop_fim=None):
     with db.connect_write() as con:
         con.execute(
             "INSERT INTO papel_operacoes (op_id, ligacao_id, plano_id, dia, "
-            "entry_ts, side, contratos, entry_px, stop_px, aberta, conta, "
-            "calculado_em) VALUES (nextval('seq_papel_op'), ?, ?, ?, ?, 1, 1, "
-            "?, ?, false, true, ?)",
-            [lig, plano_id, DIA, datetime(2026, 10, 5, 10, n), entry, stop,
+            "entry_ts, side, contratos, entry_px, stop_px, stop_ini_px, "
+            "aberta, conta, calculado_em) VALUES (nextval('seq_papel_op'), "
+            "?, ?, ?, ?, 1, 1, ?, ?, ?, false, true, ?)",
+            [lig, plano_id, DIA, datetime(2026, 10, 5, 10, n), entry,
+             stop_fim if stop_fim is not None else stop_ini, stop_ini,
              datetime(2026, 10, 5, 19)])
 
 
-def test_custo_de_um_stop_atr_usa_a_mediana_das_operacoes_do_papel(banco):
+def test_custo_de_um_stop_atr_usa_a_mediana_do_stop_da_entrada(banco):
     f, _ = _montar(stop_tipo="atr", stop_pontos=0)
     for n, dist in enumerate((100, 200, 900)):
         _op_papel(f.lig, f.plano_id, n, 120_000, 120_000 - dist)
@@ -394,6 +395,75 @@ def test_custo_de_um_stop_atr_usa_a_mediana_das_operacoes_do_papel(banco):
     assert r["pct_limite"] == pytest.approx(16.0)
 
 
+def test_custo_atr_ignora_o_stop_que_andou_para_o_breakeven(banco):
+    f, _ = _montar(stop_tipo="atr", stop_pontos=0)
+    # stop final no preço de entrada (breakeven): distância 0 não vale
+    for n in range(3):
+        _op_papel(f.lig, f.plano_id, n, 120_000, 119_800, stop_fim=120_000)
+    assert AV.custo_de_um_stop(f.lig, 2)["reais"] == pytest.approx(80.0)
+
+
+def test_custo_atr_ignora_operacoes_de_outro_plano(banco):
+    f, _ = _montar(stop_tipo="atr", stop_pontos=0)
+    _op_papel(f.lig, f.plano_id, 0, 120_000, 119_800)
+    for n in (1, 2, 3):
+        _op_papel(f.lig, f.plano_id + 99, n, 120_000, 118_000)
+    assert AV.custo_de_um_stop(f.lig, 2)["reais"] == pytest.approx(80.0)
+
+
 def test_custo_de_um_stop_atr_sem_operacao_no_papel_e_none(banco):
     f, _ = _montar(stop_tipo="atr", stop_pontos=0)
     assert AV.custo_de_um_stop(f.lig, 2) == {"reais": None, "pct_limite": None}
+
+
+def test_custo_atr_operacao_sem_stop_inicial_nao_conta(banco):
+    f, _ = _montar(stop_tipo="atr", stop_pontos=0)
+    with db.connect_write() as con:
+        con.execute(
+            "INSERT INTO papel_operacoes (op_id, ligacao_id, plano_id, dia, "
+            "entry_ts, side, contratos, entry_px, stop_px, aberta, conta, "
+            "calculado_em) VALUES (nextval('seq_papel_op'), ?, ?, ?, ?, 1, 1, "
+            "120000, 119000, false, true, ?)",
+            [f.lig, f.plano_id, DIA, datetime(2026, 10, 5, 10, 1),
+             datetime(2026, 10, 5, 19)])
+    assert AV.custo_de_um_stop(f.lig, 2)["reais"] is None
+
+
+@pytest.mark.parametrize("invalido", [0, -1, 1.5, True, "2"])
+def test_custo_de_um_stop_contratos_invalido_recusa(banco, invalido):
+    f, _ = _montar()
+    with pytest.raises(ValueError, match="contratos"):
+        AV.custo_de_um_stop(f.lig, invalido)
+
+
+def test_custo_de_um_stop_ignora_conta_demo_arquivada(banco):
+    f, conta = _montar()
+    AV.arquivar_conta(conta)
+    r = AV.custo_de_um_stop(f.lig, 3)
+    assert r["reais"] == pytest.approx(180.0) and r["pct_limite"] is None
+
+
+# --------------------------------------------- stop ATR vazio, limite < 0
+def test_atr_com_multiplicador_zero_nao_conta_como_stop(banco):
+    perfil = ExecutionProfile(timeframe="M5", stop_tipo="atr", stop_pontos=0,
+                              stop_atr_mult=0.0).to_config()
+    f = ligacao_com_plano("atr0", params=PARAMS, profile=perfil, contratos=1)
+    AV.definir_contas(f.pf, AV.criar_conta("d", "demo", 500.0), None)
+    with pytest.raises(ValueError, match="stop"):
+        AV.mudar_fase(f.lig, "demo")
+
+
+def test_limite_negativo_recusa_ao_criar_e_ao_editar(banco):
+    with pytest.raises(ValueError, match="negativo"):
+        AV.criar_conta("neg", "demo", -100.0)
+    conta = AV.criar_conta("c", "demo", 500.0)
+    with pytest.raises(ValueError, match="negativo"):
+        AV.editar_conta(conta, limite_perda_dia=-1)
+    assert AV.listar_contas()[0]["limite_perda_dia"] == 500.0
+
+
+def test_ligar_envio_conta_arquivada_sem_limite_diz_arquivada(banco):
+    conta = AV.criar_conta("c", "demo")
+    AV.arquivar_conta(conta)
+    with pytest.raises(ValueError, match="arquivada"):
+        AV.ligar_envio(conta, True)

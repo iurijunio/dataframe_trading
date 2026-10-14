@@ -662,7 +662,7 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
 
 _CAMPOS_OP = ("exit_ts", "side", "contratos", "entry_px", "exit_px", "points",
               "bruto", "custo", "liquido", "reason", "mae", "mfe", "stop_px",
-              "alvo_px", "aberta", "conta")
+              "alvo_px", "stop_ini_px", "aberta", "conta")
 
 
 def _gravar(con, resultados: list[dict], agora: datetime) -> None:

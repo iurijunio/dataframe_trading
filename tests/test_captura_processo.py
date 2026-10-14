@@ -1010,7 +1010,8 @@ def _uma_operacao(monkeypatch):
     op = {"entry_ts": datetime(2026, 10, 1, 9, 1), "exit_ts": datetime(2026, 10, 1, 9, 2),
           "side": 1, "contratos": 1, "entry_px": 100000, "exit_px": 100010,
           "points": 10, "bruto": 2.0, "custo": 1.0, "liquido": 1.0, "reason": 1,
-          "mae": 0, "mfe": 10, "stop_px": None, "alvo_px": None, "aberta": False}
+          "mae": 0, "mfe": 10, "stop_px": None, "alvo_px": None,
+          "stop_ini_px": None, "aberta": False}
     monkeypatch.setattr(papel, "calcular", lambda *a, **k: [dict(op)])
 
 

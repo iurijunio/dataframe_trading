@@ -38,6 +38,18 @@ def _texto_ou_none(v):
     return (v or "").strip() or None
 
 
+def _limite_valido(v):
+    """Limite de perda do dia: vazio/0 = sem limite (`None`), senão > 0.
+    Negativo ligaria o envio com um limite que nunca é atingido."""
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
+        raise ValueError("o limite de perda do dia deve ser um número")
+    if v < 0:
+        raise ValueError("o limite de perda do dia não pode ser negativo")
+    return float(v) if v else None
+
+
 def _login_valido(v):
     if v is None:
         return None
@@ -69,6 +81,7 @@ def criar_conta(nome, tipo, limite_perda_dia=None, *, login=None,
     if tipo not in _TIPOS_CONTA:
         raise ValueError("tipo de conta deve ser 'demo' ou 'real'")
     login = _login_valido(login)
+    limite_perda_dia = _limite_valido(limite_perda_dia)
     servidor = _texto_ou_none(servidor)
     terminal = _texto_ou_none(terminal)
     with db.connect_write() as con, db.transacao(con):
@@ -105,6 +118,8 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
         raise ValueError("tipo de conta deve ser 'demo' ou 'real'")
     if "login" in novos:
         novos["login"] = _login_valido(novos["login"])
+    if "limite_perda_dia" in novos:
+        novos["limite_perda_dia"] = _limite_valido(novos["limite_perda_dia"])
     for k in ("servidor", "terminal"):
         if k in novos:
             novos[k] = _texto_ou_none(novos[k])
@@ -137,7 +152,8 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
                              conta_id=conta_id, de=atual[campo], para=valor,
                              motivo=campo)
         # sem limite de perda não há envio: o limite é o que segura a conta
-        if "limite_perda_dia" in novos and not novos["limite_perda_dia"]:
+        if ("limite_perda_dia" in novos
+                and not (novos["limite_perda_dia"] or 0) > 0):
             ligado = con.execute("SELECT coalesce(envio_ligado, false) FROM "
                                  "contas WHERE conta_id = ?",
                                  [conta_id]).fetchone()[0]
@@ -571,7 +587,11 @@ def _plano_do_membro(con, variante_id):
 
 def _tem_stop(plano: dict) -> bool:
     _, perfil = papel.perfil_do_plano(plano)
-    return perfil.stop_tipo == "atr" or (perfil.stop_pontos or 0) > 0
+    if perfil.stop_tipo == "atr":
+        # ATR com multiplicador ou período zero não coloca stop nenhum
+        return ((perfil.stop_atr_mult or 0) > 0
+                and (perfil.stop_atr_periodo or 0) > 0)
+    return (perfil.stop_pontos or 0) > 0
 
 
 def _falhas_da_conferencia(con, ligacao_id, estrategia):
@@ -693,11 +713,11 @@ def ligar_envio(conta_id: int, ligado: bool) -> None:
         if r is None:
             raise ValueError(f"conta #{conta_id} não existe")
         limite, atual, arquivada = r
+        if ligado and arquivada is not None:
+            raise ValueError("a conta está arquivada")
         if ligado and not (limite or 0) > 0:
             raise ValueError("cadastre o limite de perda do dia da conta "
                              "antes de ligar o envio")
-        if ligado and arquivada is not None:
-            raise ValueError("a conta está arquivada")
         if bool(atual) != ligado:
             con.execute("UPDATE contas SET envio_ligado = ? WHERE conta_id = ?",
                         [ligado, conta_id])
@@ -714,6 +734,9 @@ def custo_de_um_stop(ligacao_id: int, contratos: int) -> dict:
     """Quanto custa UM stop com `contratos`, em reais e em % do limite de
     perda do dia da conta demo do portfólio. Sem distância de stop conhecida
     (ATR sem operação no papel) ou sem limite, o campo vem `None`."""
+    if (isinstance(contratos, bool) or not isinstance(contratos, int)
+            or contratos < 1):
+        raise ValueError("contratos deve ser um inteiro de 1 em diante")
     with db.connect(read_only=True) as con:
         pid, vid, *_ = _membro(con, ligacao_id)
         plano = _plano_do_membro(con, vid)
@@ -722,16 +745,17 @@ def custo_de_um_stop(ligacao_id: int, contratos: int) -> dict:
         _, perfil = papel.perfil_do_plano(plano)
         if perfil.stop_tipo == "atr":
             dists = [r[0] for r in con.execute(
-                "SELECT abs(entry_px - stop_px) FROM papel_operacoes WHERE "
-                "ligacao_id = ? AND stop_px IS NOT NULL", [ligacao_id]
-            ).fetchall()]
+                "SELECT abs(entry_px - stop_ini_px) FROM papel_operacoes "
+                "WHERE ligacao_id = ? AND plano_id = ? "
+                "AND stop_ini_px IS NOT NULL",
+                [ligacao_id, plano["plano_id"]]).fetchall()]
             pontos = statistics.median(dists) if dists else None
         else:
             pontos = perfil.stop_pontos or None
         limite = con.execute(
             "SELECT c.limite_perda_dia FROM portfolios p JOIN contas c ON "
-            "c.conta_id = p.conta_demo_id WHERE p.portfolio_id = ?",
-            [pid]).fetchone()
+            "c.conta_id = p.conta_demo_id WHERE p.portfolio_id = ? "
+            "AND c.arquivada_em IS NULL", [pid]).fetchone()
     if pontos is None:
         return {"reais": None, "pct_limite": None}
     valor = float(db.load_instrument_yaml(
