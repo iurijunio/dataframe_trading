@@ -116,6 +116,10 @@ def texto(resultado) -> str:
 # ---------------------------------------------------------------- magic
 MAGIC_BASE = 7_000_000
 _MAGIC_FIM = 7_999_999
+# a "Ordem de teste": o próprio MAGIC_BASE, que fica FORA da faixa das
+# ligações (`ligacao_do_magic` devolve None) — planejar, adoção, zerar e
+# Encerrar posição nunca tocam nela; só a sequência do teste a encerra
+MAGIC_TESTE = MAGIC_BASE
 
 
 def magic(ligacao_id: int) -> int:

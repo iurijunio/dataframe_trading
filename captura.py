@@ -1031,12 +1031,15 @@ class Servico:
                 "mt5_fora", bool(diario.ligacoes_abertas()),
                 "MT5 fora do ar com posição da automação aberta "
                 "(stop e alvo seguem na corretora)", agora)
+            self.motor.recusar_testes(comandos.PASTA, diario, agora, "MT5 fora do ar")
             self.ordens_estado = self._ordens_paradas("MT5 fora do ar", agora)
             return
         self.motor._fechar("mt5_fora", quando)
 
         no_pregao = srv is not None and self._no_pregao(srv)
         if not no_pregao and not self._automacao_posicionada(diario):
+            self.motor.recusar_testes(comandos.PASTA, diario, quando, "fora do pregão"
+                                      if srv is not None else "sem relógio do servidor")
             self.ordens_estado = self._ordens_paradas(
                 "fora do pregão" if srv is not None else "sem relógio do servidor",
                 quando)
@@ -1107,7 +1110,10 @@ class Servico:
             return True
         if pos is None:
             return True
-        return (any(K.ligacao_do_magic(p.magic) is not None for p in pos)
+        # a posição da "Ordem de teste" também: sobrou de antes, é o motor
+        # que a encerra
+        return (any(K.ligacao_do_magic(p.magic) is not None
+                    or int(p.magic or 0) == K.MAGIC_TESTE for p in pos)
                 or bool(diario.ligacoes_abertas()))
 
     def _ordens_paradas(self, motivo, quando) -> dict:
@@ -1137,6 +1143,7 @@ class Servico:
         return {"foto": None, "parado": motivo, "vivo_em": quando,
                 "n_demo": n, "envio": envio, "travada": trava,
                 "chamados": [dict(c, chave=k) for k, c in self.motor.chamados.items()],
+                "teste": self.motor.teste.estado(),
                 **self._ordens_extra()}
 
     def _ordens_extra(self) -> dict:

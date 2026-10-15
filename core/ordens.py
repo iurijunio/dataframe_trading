@@ -25,6 +25,7 @@ from . import comandos as comandos_mod
 from . import corretora as K
 from . import papel
 from .diario_ordens import Diario
+from .ordem_teste import OrdemTeste
 from .papel_vivo import INDISPONIVEL, POSICAO, ZERADO, Desejado
 
 JANELA_ENTRADA_S = 30
@@ -530,6 +531,9 @@ class Motor:
         # numa foto completa: (login, servidor, hedging, algo, margem, mono)
         self._incompleta_desde: datetime | None = None
         self._conta_vista: tuple | None = None
+        # a "Ordem de teste" (core/ordem_teste.py): anda uma etapa por volta,
+        # depois das ações das estratégias
+        self.teste = OrdemTeste(self)
 
     # ---------------------------------------------------------- diário
     def diario(self, dia) -> Diario:
@@ -665,8 +669,10 @@ class Motor:
             # sem posições/ordens nada se decide (§5.1); nem comando se consome
             # foto que falha não é erro das ordens (o MT5 devolveu None):
             # `falhou` diz só se o passo estourou alguma exceção
+            self.recusar_testes(comandos, dia, agora, "corretora sem leitura")
             return {"foto": "falhou", "vivo_em": agora, "falhou": False,
                     "n_demo": n_demo(retrato), "falhas": falhas,
+                    "teste": self.teste.estado(),
                     "chamados": [dict(c, chave=k) for k, c in self.chamados.items()]}
         antigo = bool(getattr(retrato, "antigo", False))
 
@@ -696,12 +702,15 @@ class Motor:
                 # conta ilegível (foto parcial sem a conta de antes): não se
                 # sabe em que conta o MT5 está — nada sai, e não é "conta
                 # errada": o chamado `sem_leitura` já diz o que falha
+                self.recusar_testes(comandos, dia, agora, "conta do MT5 ilegível")
                 return self._estado_fim(est, dia)
             demo = bool(retrato) and any(lv.fase == "demo"
                                          for lv in retrato.ligacoes.values())
             self._condicao("conta_errada", demo,
                            f"MT5 logado em outra conta ({foto.login} · {foto.servidor})",
                            agora)
+            self.recusar_testes(comandos, dia, agora,
+                                "o MT5 não está logado numa conta cadastrada")
             return self._estado_fim(est, dia)
         self._fechar("conta_errada", agora)
         nao_hedging = self._condicao("nao_hedging", not foto.hedging,
@@ -709,6 +718,8 @@ class Motor:
         sem_algo = self._condicao("algo_desligado", not foto.algo_ligado,
                                   "Algo Trading desligado no MT5", agora)
         if nao_hedging or sem_algo:
+            self.recusar_testes(comandos, dia, agora, "conta não é hedging"
+                                if nao_hedging else "Algo Trading desligado no MT5")
             return self._estado_fim(est, dia)
 
         # 3. comandos: primeiro no diário, depois apagados; zerar e o
@@ -796,10 +807,21 @@ class Motor:
                 self._chamar("ordens_falhou", "ordens_falhou", f"erro nas ordens: {erro}",
                              agora)
                 falhou = True
+        # 8. a "Ordem de teste": DEPOIS das ações das estratégias, uma etapa
+        # por volta — nunca atrasa uma entrada nem uma saída delas
+        pedidos = [c for c in est.get("comandos") or [] if c.get("tipo") == "ordem_teste"]
+        try:
+            self.teste.volta(mt5, foto=foto, dia=dia, agora=agora, pedidos=pedidos,
+                             cid=cid, conta=conta, no_pregao=no_pregao,
+                             simbolo=simbolo, contrato_ok=contrato_ok,
+                             travada=travada is not None, zerar=self.zerar)
+        except Exception as erro:
+            log.exception("ordem de teste falhou")
+            self.teste.erro(dia, agora, erro)
         if not falhou:
             self._fechar("ordens_falhou", agora)
 
-        # 8. estado
+        # 9. estado
         est.update(
             falhou=falhou,
             envio=ligado, zerar=self.zerar, perda=perda,
@@ -864,7 +886,19 @@ class Motor:
                 "de uma, ou sem stop gravado: chamado de posição sem stop); "
                 "nada entra"), agora)
 
-    def _consumir(self, comandos, dia, agora) -> list[dict]:
+    def recusar_testes(self, comandos, dia, agora, motivo) -> None:
+        """Volta que não chega à "Ordem de teste" (MT5 fora, fora do pregão,
+        conta errada, Algo desligado): consome só os pedidos de teste e os
+        recusa com o motivo — o clique nunca fica esperando calado nem roda
+        minutos depois. Os outros comandos ficam para a volta que os cumpre."""
+        try:
+            pedidos = self._consumir(comandos, dia, agora, tipos={"ordem_teste"})
+            if pedidos:
+                self.teste.recusar(pedidos, dia, agora, motivo)
+        except Exception:
+            log.exception("recusa da ordem de teste falhou")
+
+    def _consumir(self, comandos, dia, agora, tipos=None) -> list[dict]:
         vistos = {e.get("comando_id") for e in dia.eventos
                   if e["tipo"] == "comando" and e.get("comando_id")}
 
@@ -887,8 +921,9 @@ class Motor:
         if comandos is None:
             return []
         if isinstance(comandos, (str, Path)):
-            return comandos_mod.consumir(comandos, registrar=registrar)
-        return [c for c in comandos if registrar(c) is not False]
+            return comandos_mod.consumir(comandos, registrar=registrar, tipos=tipos)
+        return [c for c in comandos if (tipos is None or c.get("tipo") in tipos)
+                and registrar(c) is not False]
 
     def _zerar_ativo(self, dia, retrato, agora) -> bool:
         """"Zerar tudo" vale até o retrato (lido DEPOIS do comando) mostrar o
@@ -1113,7 +1148,9 @@ class Motor:
             # §6.3: aviso, não chamado — a automação nunca toca nelas
             "posicao_fora": [{"ticket": p.ticket, "simbolo": p.simbolo, "lado": p.lado,
                               "volume": p.volume, "resultado": p.resultado}
-                             for p in foto.posicoes if p.ligacao_id is None],
+                             # a de teste não é "fora": a sequência dela a encerra
+                             for p in foto.posicoes
+                             if p.ligacao_id is None and p.magic != K.MAGIC_TESTE],
         }
 
     def _estado_fim(self, est, dia) -> dict:
@@ -1121,6 +1158,7 @@ class Motor:
         # evento do diário, não a da volta (essa é o `vivo_em`)
         est["ordens_em"] = dia.eventos[-1]["quando"] if dia.eventos else None
         est["chamados"] = [dict(c, chave=k) for k, c in self.chamados.items()]
+        est["teste"] = self.teste.estado()
         return est
 
     def _estado_ligacoes(self, foto, dia, desejados, finais) -> dict:

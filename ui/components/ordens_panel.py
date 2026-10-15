@@ -20,6 +20,8 @@ from datetime import date, datetime
 
 from dash import dcc, html
 
+from core.ordem_teste import ETAPAS as ETAPAS_TESTE
+from core.ordem_teste import texto_falhou as texto_teste_falhou
 from core.ordens import ZERAR_DESCARTADO
 from core.papel_leitura import checagem_ensaio
 
@@ -37,7 +39,7 @@ SEM_VIDA_S = 10
 # Os eventos que o "Só problemas" mostra (controller).
 PROBLEMAS = frozenset({"recusada", "perdida", "nao_entrou", "chamado",
                        "saida_recusada", "protecao_recusada", "incerta",
-                       "conta_travada"})
+                       "conta_travada", "teste_falhou"})
 # Passos internos do motor: a escrita adiantada (`*_enviando`) e o
 # cancelamento de resto de ordem são o "como", não o "o quê" — o diário da
 # tela mostra problemas e desfechos.
@@ -257,6 +259,8 @@ _SUBTEXTO = {
     "conta_errada": "Nada é enviado enquanto o MT5 estiver em outra conta.",
     "algo_desligado": "Ligue o Algo Trading no MT5; nada sai até lá.",
     "mt5_fora": "O stop e o alvo seguem na corretora.",
+    "teste_preso": "Posição da Ordem de teste (magic 7000000). A captura segue "
+                   "tentando encerrar a cada 1 s.",
 }
 
 
@@ -657,6 +661,39 @@ def operacoes_demo(linhas: list[dict]):
 
 
 # ============================================================ diário do dia
+def _texto_teste(e: dict) -> tuple[str, str]:
+    """A "Ordem de teste" no diário: cada etapa, com preço e tempo do envio,
+    e o desfecho. Só textos (str): nada de dicionário como filho."""
+    tipo, motivo = e.get("tipo"), str(e.get("motivo") or "")
+    if tipo == "teste_ok":
+        return motivo or "Teste ok", ""
+    etapa = e.get("etapa")
+    if tipo == "teste_falhou":
+        try:
+            n = int(etapa or 0)
+        except (TypeError, ValueError):
+            n = 0
+        return texto_teste_falhou(n, motivo), "ambar"
+    if etapa == "encerrar":
+        return f"Ordem de teste · encerramento: {motivo}", ""
+    try:
+        n = int(etapa or 0)
+    except (TypeError, ValueError):
+        n = 0
+    if not n:
+        return f"Ordem de teste: {motivo}", ""
+    extra = []
+    if e.get("preco"):
+        extra.append(f"a {_preco(e.get('preco'))}")
+    if e.get("stop_px") is not None and e.get("alvo_px") is not None:
+        extra.append(f"stop {_preco(e.get('stop_px'))} · alvo {_preco(e.get('alvo_px'))}")
+    if e.get("atraso_ms") is not None:
+        extra.append(f"{e['atraso_ms']} ms")
+    nome = ETAPAS_TESTE.get(n, "")
+    return (f"Ordem de teste · etapa {n} ({nome}): {motivo}"
+            + (f" · {' · '.join(extra)}" if extra else "")), ""
+
+
 def _texto_evento(e: dict) -> tuple[str, str] | None:
     """(texto, tom) de um evento do diário; None = interno, não aparece."""
     tipo = e.get("tipo")
@@ -680,7 +717,11 @@ def _texto_evento(e: dict) -> tuple[str, str] | None:
         if motivo == "envio":
             return ("Envio de ordens " + ("ligado" if e.get("ligado")
                                           else "desligado") + " na tela"), ""
+        if motivo == "ordem_teste":
+            return "Ordem de teste pedida na tela", ""
         return f"comando da tela: {motivo}", ""
+    if tipo in ("teste", "teste_ok", "teste_falhou"):
+        return _texto_teste(e)
     if tipo in ("executada", "parcial"):
         atraso = e.get("atraso_ms")
         em = f" em {num(atraso / 1000, 1)} s" if atraso is not None else ""

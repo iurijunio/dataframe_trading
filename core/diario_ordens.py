@@ -36,6 +36,11 @@ TIPOS = frozenset({
     "protecao_enviando", "protecao", "protecao_recusada", "cancelada",
     "incerta", "cancelar_enviando", "cancelar_recusada",
     "chamado", "chamado_fechado", "conta_travada", "rolagem", "comando",
+    # "Ordem de teste" (core/ordem_teste.py): cada etapa e o desfecho. Tipos
+    # próprios de propósito — nenhuma conta derivada acima (ticket aberto,
+    # saída pendente, proteção) pode confundir a posição de teste com a de
+    # uma ligação
+    "teste", "teste_ok", "teste_falhou",
 })
 # desfechos finais de uma tentativa de entrada: sem um deles depois do último
 # "enviando", a ordem pode ter chegado à corretora (spec §5.2)

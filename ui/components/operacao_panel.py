@@ -914,10 +914,35 @@ def cabecalho(pf: dict, resumo: dict, *, contrato=None) -> list:
     ]
 
 
+def estado_teste(conta_id, armado) -> tuple[str, str]:
+    """(rótulo, classe) do botão "Ordem de teste"; `armado` é a chave
+    armada que ainda vale (ou None)."""
+    if armado == f"teste:{conta_id}":
+        return "Confirmar?", "btn-ghost ord-teste av-armado"
+    return "Ordem de teste", "btn-ghost ord-teste"
+
+
+def botao_teste(conta_id, armado=None):
+    """Ao lado do Envio: prova o caminho real de ordem na conta demo (compra
+    1, stop e alvo a 100 pontos, confere, 10 s, encerra). Dois cliques. Sem
+    conta demo: nada."""
+    if conta_id is None:
+        return None
+    rotulo, classe = estado_teste(conta_id, armado)
+    return html.Button(
+        rotulo, n_clicks=0, className=classe,
+        title="Manda uma ordem de verdade na conta DEMO para provar o caminho: "
+              "compra 1 contrato a mercado, põe stop e alvo a 100 pontos, "
+              "confere na corretora, espera 10 s e encerra. Roda mesmo com o "
+              "Envio desligado. Clique duas vezes para confirmar.",
+        id={"type": "av-op-teste", "id": conta_id})
+
+
 def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None) -> list:
     pid = pf["portfolio_id"]
     sw = interruptor_envio(conta_id, envio, armado)
-    antes = [sw] if sw is not None else []
+    teste = botao_teste(conta_id)
+    antes = [b for b in (sw, teste) if b is not None]
     if pf.get("ligado"):
         return antes + [_botao("pf-desligar", pid, armado,
                                "Para o portfólio inteiro: as operações deixam de "
@@ -1002,6 +1027,10 @@ def bloco():
         dcc.Store(id="av-op-base"),
         # ação pedindo confirmação (segundo clique executa)
         dcc.Store(id="av-op-armado", data=None),
+        # "Ordem de teste" pedindo confirmação ({chave, em}) e o último
+        # pedido escrito ({id, em}), para o texto ao lado do botão
+        dcc.Store(id="av-op-teste-armado", data=None),
+        dcc.Store(id="av-op-teste-enviado", data=None),
         # sobe a cada ação: redesenha cabeçalho e variantes
         dcc.Store(id="av-op-acao-versao", data=0),
         # variantes escondidas no gráfico pela legenda
@@ -1029,6 +1058,8 @@ def bloco():
                 ], className="op-cab-esq"),
                 html.Div([
                     html.Div(id="av-op-botoes", className="op-botoes"),
+                    # o resultado da Ordem de teste (texto puro, do estado.json)
+                    html.Span(id="av-op-teste-res", className="op-teste-res"),
                     html.Button("Abrir em Estratégias", id="av-op-ficha",
                                 n_clicks=0, className="btn-ghost av-btn-sec",
                                 title="Abre Ao vivo › Estratégias, onde ficam "

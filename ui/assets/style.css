@@ -1620,6 +1620,8 @@ body{
 /* interruptor Envio de ordens no cabeçalho */
 #painel-aovivo .ord-envio{margin-left:0;color:var(--ink-2);border-color:var(--line);}
 #painel-aovivo .ord-envio-on{color:var(--pos);border-color:rgba(0,245,160,.45);}
+#painel-aovivo .ord-teste{margin-left:0;color:var(--ink-2);border-color:var(--line);}
+.op-teste-res{font-size:12px;color:var(--ink-2);max-width:340px;}
 
 /* diário do dia */
 .ord-diario{max-height:240px;overflow:auto;scrollbar-width:thin;}

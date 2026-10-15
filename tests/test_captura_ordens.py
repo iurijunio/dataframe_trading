@@ -947,3 +947,50 @@ def test_zerar_clicado_ontem_fora_do_pregao_nao_trava_hoje(cena, mundo):
     assert [e["motivo"] for e in _eventos("comando") if e["motivo"] != "envio"] == \
         [ordens.ZERAR_DESCARTADO]
     assert len(cena.entradas()) == 1 and cena.estado()["ordens"]["zerar"] is False
+
+
+# ================================================ Ordem de teste (15/10/2026)
+def test_ordem_teste_pelo_arquivo_roda_na_captura_com_o_envio_desligado(base, mundo):
+    from core import comandos
+    from core import corretora as K
+    c = Cena(base)                    # o Envio segue desligado (como no app)
+    c.ir(_as(10, 0, 30))
+    comandos.escrever(comandos.PASTA, "ordem_teste", conta_id=mundo.conta)
+    c.ir(_as(10, 0, 31))
+    teste = [r for r in c.mt5.enviados if r.get("magic") == K.MAGIC_TESTE]
+    assert len(teste) == 1 and teste[0]["symbol"] == "WINV26"
+    assert not list(Path(comandos.PASTA).glob("*.json"))
+    o = c.estado()["ordens"]
+    assert o["teste"]["situacao"] == "andamento"
+
+
+def test_ordem_teste_fora_do_pregao_e_recusada_na_hora(cena, mundo):
+    from core import comandos
+    comandos.escrever(comandos.PASTA, "ordem_teste", conta_id=mundo.conta)
+    cena.ir(_as(18, 40))
+    assert cena.mt5.enviados == []
+    # só o pedido de teste sai da pasta (o do Envio fica para o pregão)
+    assert [c["tipo"] for c in comandos.consumir(comandos.PASTA)] == ["envio"]
+    f = _eventos("teste_falhou")
+    assert len(f) == 1 and f[0]["motivo"] == "fora do pregão"
+    assert cena.estado()["ordens"]["teste"]["texto"] == "Teste recusado: fora do pregão"
+
+
+def test_ordem_teste_com_mt5_fora_e_recusada_e_nao_roda_depois(cena, mundo):
+    from core import comandos
+    cena.mt5.conectado = False
+    comandos.escrever(comandos.PASTA, "zerar_tudo")
+    comandos.escrever(comandos.PASTA, "ordem_teste", conta_id=mundo.conta)
+    cena.s.mt5_estado = "desconectado"
+    cena.s._ordens(_as(10, 0, 30), cena.mono.t)
+    f = _eventos("teste_falhou")
+    assert len(f) == 1 and f[0]["motivo"] == "MT5 fora do ar"
+    # o Zerar tudo fica para a volta que pode cumpri-lo
+    assert [c["tipo"] for c in comandos.consumir(comandos.PASTA)] == ["envio", "zerar_tudo"]
+
+
+def test_posicao_de_teste_que_sobrou_fora_do_pregao_e_encerrada(cena):
+    from core import corretora as K
+    t = cena.mt5.abrir_manual(1, magic=K.MAGIC_TESTE)
+    cena.ir(_as(18, 40))
+    assert t not in cena.mt5.posicoes

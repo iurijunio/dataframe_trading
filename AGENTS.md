@@ -220,6 +220,16 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - **Retrato salvo** (`data/ao_vivo/ordens/retrato.json`, escrita atômica):
     subida com o banco preso usa o último retrato, marcado antigo — protege e
     sai por comando/trava, nada entra.
+  - **Ordem de teste** (botão na Operação, dois cliques; `core/ordem_teste.py`):
+    comando `ordem_teste` que a captura executa depois das ações das
+    estratégias, uma etapa por volta, sem `sleep` (compra 1 · SL/TP a 100 pts
+    · confere · 10 s no monotônico · sai pelo ticket). Magic `MAGIC_TESTE` =
+    7.000.000, fora da faixa das ligações: planejar/adoção/zerar/Encerrar
+    nunca a tocam; só ela encerra a sua (inclusive a que sobrou de um
+    reinício). Recusa sem `account_info().trade_mode` ==
+    `ACCOUNT_TRADE_MODE_DEMO`, conta cadastrada demo, pregão, Algo, trava,
+    contrato/guarda, Zerar ou pedido > 60 s; independe do Envio. Saída
+    recusada > 10 s → chamado `teste_preso`.
   - "Saiu antes" só para ticket que a própria automação não encerrou; a
     entrada sem resposta só casa com negócio depois do 1º envio da operação
     e nunca com ticket de outra operação.

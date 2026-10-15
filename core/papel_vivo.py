@@ -144,11 +144,12 @@ def ler_retrato(con, dia: date, agora: datetime, cache_codigo: dict, *,
             fase=fase, conta_id=conta,
             contratos_conta=int(contratos) if contratos else None,
             ligada=bool(ligada), falha=falha, desvio=desvio)
+    # `tipo` (demo/real): a "Ordem de teste" só roda na conta cadastrada demo
     contas = {int(r[0]): {"login": r[1], "servidor": r[2], "limite": r[3],
-                          "envio": bool(r[4])}
+                          "envio": bool(r[4]), "tipo": r[5]}
               for r in con.execute(
                   "SELECT conta_id, login, servidor, limite_perda_dia, "
-                  "coalesce(envio_ligado, false) FROM contas "
+                  "coalesce(envio_ligado, false), tipo FROM contas "
                   "WHERE arquivada_em IS NULL").fetchall()}
     return Retrato(dia=dia, lido_em=agora, ligacoes=ligs, contas=contas,
                    portfolio_de={lig: v[0] for lig, v in meta.items()})

@@ -17,7 +17,9 @@ from . import db_manager as db
 
 log = logging.getLogger(__name__)
 
-TIPOS = frozenset({"zerar_tudo", "encerrar_posicao", "envio"})
+# "ordem_teste": o botão "Ordem de teste" — quem executa é a captura (o
+# Motor), nunca a tela; o comando só leva a conta demo do clique
+TIPOS = frozenset({"zerar_tudo", "encerrar_posicao", "envio", "ordem_teste"})
 # constante de módulo: o conftest a desvia — um teste não pode deixar um
 # comando para a captura real do usuário consumir. Quem usa lê
 # `comandos.PASTA` na hora (nunca `from ... import PASTA`).
@@ -42,8 +44,12 @@ def escrever(pasta, tipo: str, **dados) -> str:
     return cid
 
 
-def consumir(pasta, registrar=None) -> list[dict]:
+def consumir(pasta, registrar=None, tipos=None) -> list[dict]:
     """Os comandos em ordem, cada um apagado depois de lido.
+
+    `tipos` (opcional): só estes tipos são consumidos; os outros ficam na
+    pasta para a volta que os executa (a captura recusa a "Ordem de teste"
+    sem tocar no "Zerar tudo" que ainda não pode cumprir).
 
     `registrar(comando)` roda ANTES de apagar o arquivo (a captura grava o
     comando no diário do dia): se ele falhar, o arquivo fica para a volta
@@ -68,6 +74,8 @@ def consumir(pasta, registrar=None) -> list[dict]:
             # lixo nunca vira comando, e não pode travar os de trás
             log.warning("comando ilegível descartado: %s (%s)", arq.name, erro)
             arq.unlink(missing_ok=True)
+            continue
+        if tipos is not None and cmd["tipo"] not in tipos:
             continue
         # registrar devolve False para um comando já conhecido (o arquivo que
         # não apagou da outra vez): sai da pasta sem rodar de novo

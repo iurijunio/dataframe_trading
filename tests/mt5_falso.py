@@ -26,6 +26,7 @@ class MT5Ordens:
     DEAL_ENTRY_IN, DEAL_ENTRY_OUT = 0, 1
     DEAL_REASON_CLIENT, DEAL_REASON_EXPERT, DEAL_REASON_SL, DEAL_REASON_TP = 0, 3, 4, 5
     ACCOUNT_MARGIN_MODE_RETAIL_HEDGING = 2
+    ACCOUNT_TRADE_MODE_DEMO, ACCOUNT_TRADE_MODE_CONTEST, ACCOUNT_TRADE_MODE_REAL = 0, 1, 2
     SYMBOL_TRADE_MODE_FULL = 4
     TIMEFRAME_M1 = 1
     TIMEFRAME_D1 = 16408
@@ -46,6 +47,7 @@ class MT5Ordens:
         self.algo = True
         self.conectado = True
         self.hedging = True
+        self.trade_mode = 0                # ACCOUNT_TRADE_MODE_DEMO
         self.vazio_uma_vez = False         # lista vazia logo após reconectar
         self.erro_leitura = False          # positions_get/orders_get/... -> None
         # só estas leituras falham (nomes dos métodos): a corretora meio
@@ -93,7 +95,7 @@ class MT5Ordens:
     def account_info(self):
         if "account_info" in self.falhar:
             return None
-        return NS(login=self.login, server=self.servidor,
+        return NS(login=self.login, server=self.servidor, trade_mode=self.trade_mode,
                   margin_mode=2 if self.hedging else 0,
                   margin_free=self.margem_livre)
 

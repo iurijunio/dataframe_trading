@@ -134,7 +134,7 @@ def test_posicao_quando_o_papel_tem_aberta_e_a_ligacao_opera(lig, inst):
     assert lv.desvio == 15        # 1 tick de derrapagem do plano + 2 ticks
     assert ret.portfolio_de == {lig.lig: lig.pf}
     assert ret.contas == {cid: {"login": 4321, "servidor": "Corretora-DEMO",
-                                "limite": 500.0, "envio": False}}
+                                "limite": 500.0, "envio": False, "tipo": "demo"}}
     assert (ret.dia, ret.lido_em) == (DIA, AGORA)
 
     des, ok = _desejados(ret, inst)
