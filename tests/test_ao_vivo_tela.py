@@ -48,34 +48,11 @@ def test_painel_tem_as_pecas():
                  "av-btn-mt5-puxar", "av-mt5-aviso"}
     assert esperados <= ids(p)
     assert {"av-subtela", "av-bloco-estrategias", "av-bloco-pregao"} <= ids(p)
+    # `textos` não lê as `options` de um RadioItems: procura o seletor
     seletor = _achar(p, "av-subtela")
-    assert [t.label for t in seletor.children] == ["Estratégias", "Pregão",
-                                                   "Operação"]
+    assert [o["label"] for o in seletor.options] == ["Estratégias", "Pregão",
+                                                     "Operação"]
     assert seletor.value == "estrategias"
-
-
-def test_menus_sao_tabs_e_nao_radioitems(monkeypatch):
-    """O RadioItems do Dash 4 reenviava o valor antigo e o menu voltava
-    sozinho; os dois menus têm de ser dcc.Tabs com a mesma id e os mesmos
-    valores, e sem área de conteúdo visível."""
-    from dash import dcc
-    from ui import app as A
-    from ui.components import operacao_panel as OP
-
-    monkeypatch.setattr(A.D, "instrumentos", lambda: [{"symbol": "WIN$N"}])
-    modo = _achar(A.topbar("WIN$N"), "modo")
-    sub = _achar(AP.painel(), "av-subtela")
-    for menu in (modo, sub):
-        assert isinstance(menu, dcc.Tabs)
-        assert menu.content_style == {"display": "none"}
-        assert all(isinstance(t, dcc.Tab) for t in menu.children)
-    assert modo.value == "backtest"
-    assert [t.value for t in modo.children] == [
-        "backtest", "mineracao", "wfa", "candidata", "estrategias",
-        "portfolio", "aovivo"]
-    assert sub.persistence is True and sub.persistence_type == "local"
-    assert [t.value for t in sub.children] == ["estrategias", "pregao",
-                                               OP.SUBTELA]
 
 
 def _achar(c, alvo):

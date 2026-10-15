@@ -55,22 +55,15 @@ def topbar(simbolo):
                     # Duas atividades diferentes, nao duas abas do mesmo:
                     # backtest e conferir se a estrategia faz o que voce
                     # desenhou; mineracao e procurar regiao boa no espaco.
-                    # dcc.Tabs, nao RadioItems: o RadioItems do Dash 4
-                    # reenviava o valor antigo e o menu voltava sozinho.
-                    dcc.Tabs(
+                    dcc.RadioItems(
                         id="modo", value="backtest", className="modo",
-                        parent_className="modo-pai",
-                        content_style={"display": "none"},
-                        children=[
-                            dcc.Tab(label=r, value=v, className="modo-aba",
-                                    selected_className="modo-aba-sel")
-                            for r, v in [("Backtest", "backtest"),
-                                         ("Mineração", "mineracao"),
-                                         ("Walk-Forward", "wfa"),
-                                         ("Candidata", "candidata"),
-                                         ("Estratégias", "estrategias"),
-                                         ("Portfólio", "portfolio"),
-                                         ("Ao vivo", "aovivo")]],
+                        options=[{"label": "Backtest", "value": "backtest"},
+                                 {"label": "Mineração", "value": "mineracao"},
+                                 {"label": "Walk-Forward", "value": "wfa"},
+                                 {"label": "Candidata", "value": "candidata"},
+                                 {"label": "Estratégias", "value": "estrategias"},
+                                 {"label": "Portfólio", "value": "portfolio"},
+                                 {"label": "Ao vivo", "value": "aovivo"}],
                     ),
                 ],
                 className="brand-wrap",

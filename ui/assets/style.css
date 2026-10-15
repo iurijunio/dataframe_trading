@@ -1655,32 +1655,3 @@ body{
   .ord-ev{grid-template-columns:64px minmax(0,1fr);}
   .ord-ev-t{grid-column:1/-1;}
 }
-
-/* Menus em dcc.Tabs (o RadioItems do Dash 4 voltava sozinho para a aba
-   anterior). O Dash põe borda, 20px de respiro e fundo próprios nas abas,
-   inclusive em tela estreita (empilha em coluna); aqui tudo é refeito com
-   !important para ficar como os antigos botões em pílula. O corpo da aba
-   fica oculto (content_style) e o pai não ocupa altura além da barra. */
-.modo-pai,.av-subtelas-pai{display:block !important;overflow:visible !important;
-  width:auto;height:auto;}
-.modo-pai .tab-content,.av-subtelas-pai .tab-content{display:none !important;}
-.modo.tab-container,.av-subtelas.tab-container{display:flex !important;
-  flex-direction:row !important;gap:0;background:var(--ground);
-  border:1px solid var(--line);border-radius:6px;padding:3px;}
-.modo.tab-container{margin-left:10px;}
-.av-subtelas.tab-container{margin-left:12px;}
-.modo .tab.modo-aba,.av-subtelas .tab.av-aba{
-  flex:0 0 auto !important;width:auto !important;cursor:pointer;
-  background:transparent !important;border:0 !important;
-  border-radius:4px;color:var(--muted);font-family:var(--sans);
-  font-weight:600;white-space:nowrap;text-align:center;
-  transition:color .15s,background .15s,box-shadow .15s;}
-.modo .tab.modo-aba{padding:6px 16px !important;font-size:13px;}
-.av-subtelas .tab.av-aba{padding:5px 14px !important;font-size:12.5px;}
-.modo .tab.modo-aba:hover,.av-subtelas .tab.av-aba:hover{color:var(--ink-2);}
-.modo .tab.modo-aba.modo-aba-sel,.modo .tab.modo-aba.modo-aba-sel:hover{
-  color:#04121A;background:linear-gradient(180deg,#2FF0FF,#0FB6D8) !important;
-  box-shadow:0 0 16px rgba(34,228,255,.4);}
-.av-subtelas .tab.av-aba.av-aba-sel,.av-subtelas .tab.av-aba.av-aba-sel:hover{
-  color:var(--accent);background:var(--surface-3) !important;
-  box-shadow:inset 0 0 0 1px var(--accent-dim);}
