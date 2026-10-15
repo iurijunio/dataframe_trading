@@ -204,6 +204,21 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - **Limite de perda vazio não se grava com Envio ligado**, e limite vazio
     não desliga o envio sozinho.
   - Envio nasce **desligado** (`contas.envio_ligado`) e registra "seria enviada".
+    O ensaio passa o MESMO pedido pelo `order_check` (nunca envia; retcode 0
+    = passou) e grava `retcode`/`comment` (ou `last_error`); a tela mostra
+    "seria recusada: …".
+  - **Foto parcial:** posições e ordens lidas, mas histórico/negócios/conta
+    falharam → só sair e proteger (nada de entrar, adotar, perdida nem
+    "saiu antes"). Sem conta legível vale a da mesma conexão. Foto incompleta
+    > 30 s no pregão (ou ilegível com posição aberta) → chamado `sem_leitura`.
+  - **"Zerar tudo" de outro dia** (clicado fora do pregão sem posição, lido na
+    manhã seguinte) é descartado no diário — não desliga o envio de hoje.
+  - **Retrato salvo** (`data/ao_vivo/ordens/retrato.json`, escrita atômica):
+    subida com o banco preso usa o último retrato, marcado antigo — protege e
+    sai por comando/trava, nada entra.
+  - "Saiu antes" só para ticket que a própria automação não encerrou; a
+    entrada sem resposta só casa com negócio depois do 1º envio da operação
+    e nunca com ticket de outra operação.
 - **Mineração sem cópias:** campo de um tipo não escolhido (ATR com alvo
   em pontos, DI no rango) e as variações do ADX desligado dão resultado
   idêntico — `optimizer.espaco_util` / `combinacoes_uteis` podam antes de
