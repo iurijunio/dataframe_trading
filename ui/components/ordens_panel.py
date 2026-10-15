@@ -895,6 +895,14 @@ def ler_contratos(texto) -> int | None:
     return int(t)
 
 
+def contratos_antes(proprio, plano) -> str:
+    """"antes: 2 · papel segue com 3 (plano)": o que vale hoje na demo e no
+    papel, para quem vai mexer no campo (o editor da Operação e a ficha)."""
+    if proprio is not None:
+        return f"antes: {proprio} · papel segue com {plano or '—'} (plano)"
+    return f"hoje: os do plano ({plano or '—'}) · o papel segue com eles"
+
+
 def custo_stop_texto(contratos, custo: dict | None):
     """"Um stop com 3 contratos = R$ 180 = 36% do limite do dia." —
     `custo` é o de `core.ao_vivo.custo_de_um_stop`."""

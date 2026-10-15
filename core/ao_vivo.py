@@ -104,7 +104,8 @@ _CAMPOS_EDITAVEIS = ("nome", "tipo", "limite_perda_dia", "login", "servidor",
 
 
 def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
-                 login=_NADA, servidor=_NADA, terminal=_NADA) -> None:
+                 login=_NADA, servidor=_NADA, terminal=_NADA,
+                 tentativas: int = 40) -> None:
     novos = {k: v for k, v in (("nome", nome), ("tipo", tipo),
                                ("limite_perda_dia", limite_perda_dia),
                                ("login", login), ("servidor", servidor),
@@ -124,7 +125,7 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
         if k in novos:
             novos[k] = _texto_ou_none(novos[k])
     desligou_envio = False
-    with db.connect_write() as con, db.transacao(con):
+    with db.connect_write(tentativas=tentativas) as con, db.transacao(con):
         r = con.execute(f"SELECT {', '.join(_CAMPOS_EDITAVEIS)} FROM contas "
                         "WHERE conta_id = ?", [conta_id]).fetchone()
         if r is None:
@@ -647,12 +648,13 @@ def _restricoes(con, ligacao_id) -> dict:
     return {"motivos": motivos, "avisos": avisos}
 
 
-def mudar_fase(ligacao_id: int, fase: str, *, quando=None) -> None:
+def mudar_fase(ligacao_id: int, fase: str, *, quando=None,
+               tentativas: int = 40) -> None:
     if fase == "real":
         raise ValueError("conta real ainda não disponível")
     if fase not in _FASES_ESCOLHA:
         raise ValueError("fase deve ser 'papel' ou 'demo'")
-    with db.connect_write() as con, db.transacao(con):
+    with db.connect_write(tentativas=tentativas) as con, db.transacao(con):
         pid, vid, _lig, _rem, _por = _membro(con, ligacao_id)
         atual = con.execute("SELECT fase FROM portfolio_membros WHERE "
                             "ligacao_id = ?", [ligacao_id]).fetchone()[0]

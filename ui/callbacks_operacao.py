@@ -239,11 +239,9 @@ def abrir_editor(lig, vars_) -> tuple:
         raise PreventUpdate
     proprio = v.get("contratos_demo")
     plano = v.get("contratos")
-    antes = (f"antes: {proprio} · papel segue com {plano or '—'} (plano)"
-             if proprio is not None else
-             f"hoje: os do plano ({plano or '—'}) · o papel segue com eles")
     return ({"display": "flex"}, lig, "" if proprio is None else str(proprio),
-            f"Contratos na demo · {v.get('nome')}", antes)
+            f"Contratos na demo · {v.get('nome')}",
+            OR.contratos_antes(proprio, plano))
 
 
 def custo_editor(lig, valor):
