@@ -35,6 +35,10 @@ LISTA_S = 5.0              # a lista de posições pode atrasar até isto
 PRESO_S = 10.0             # saída recusada além disto chama o usuário
 INTERVALO_S = 1.0          # entre saídas, como nas da automação (10024)
 PEDIDO_VALE_S = 60.0       # clique mais velho que isto não roda
+REPETIR_S = 5.0            # retorno passageiro na proteção/saída: tenta até isto
+# retornos que não são falha da etapa: a mesma ordem vale de novo em 1 s
+# (a tabela única de corretora.py diz quais; INCERTA: confere antes)
+_DE_NOVO = (K.PASSAGEIRA, K.INCERTA)
 CHAMADO = "teste_preso"
 TEXTO_PRESO = "posição de teste não fecha — encerre no MT5"
 
@@ -68,6 +72,7 @@ class OrdemTeste:
         self.agora_pc = agora_pc
         self.atual: dict | None = None
         self.ultimo: dict | None = None
+        self._no_pregao = True
         # os últimos pedidos já tratados (começou ou recusado): a tela sabe
         # que o clique dela chegou à captura mesmo quando o texto mostrado é
         # o do teste que segue em andamento
@@ -146,6 +151,8 @@ class OrdemTeste:
             return "leitura parcial da corretora"
         if any(p.magic == MAGIC for p in foto.posicoes):
             return "ainda há posição de teste aberta"
+        if any(o.get("magic") == MAGIC for o in foto.ordens):
+            return "ainda há ordem de teste pendente"
         return None
 
     # ------------------------------------------------------------ volta
@@ -153,6 +160,7 @@ class OrdemTeste:
               simbolo, contrato_ok, travada, zerar) -> None:
         """Uma etapa por chamada. Pedido novo começa pela compra (etapa 1)
         nesta mesma volta — as ações das estratégias já foram."""
+        self._no_pregao = no_pregao
         for c in pedidos:
             motivo = self._pre_condicao(mt5, c, foto=foto, cid=cid, conta=conta,
                                         no_pregao=no_pregao, simbolo=simbolo,
@@ -169,7 +177,7 @@ class OrdemTeste:
             self._publicar("andamento", 1, "Teste em andamento — etapa 1: "
                            + ETAPAS[1], agora, c.get("id"))
         if self.atual is None:
-            self._sobra(foto, dia, agora)
+            self._sobra(mt5, foto, dia, agora)
             if self.atual is None:
                 return
         t = self.atual
@@ -197,8 +205,11 @@ class OrdemTeste:
             self._publicar("andamento", etapa + 1, f"Teste em andamento — etapa "
                            f"{etapa + 1}: {ETAPAS[etapa + 1]}", agora, t["id"])
 
-    def _falhou(self, dia, agora, etapa, motivo, res=None):
-        """Desfecho de falha; a posição que houver é encerrada a seguir."""
+    def _falhou(self, dia, agora, etapa, motivo, res=None, min_s=LISTA_S):
+        """Desfecho de falha; a posição que houver é encerrada a seguir.
+        `min_s`: o encerramento só se dá por limpo depois disto sem nada
+        com o magic (entrada sem resposta: a posição pode aparecer depois —
+        um clique novo antes abriria uma segunda)."""
         t = self.atual
         extra = {}
         if res is not None:
@@ -211,7 +222,7 @@ class OrdemTeste:
         self.atual = {"id": t["id"], "conta_id": t.get("conta_id"),
                       "simbolo": t.get("simbolo"), "fase": "encerrando",
                       "desde": self.m.mono(), "ultimo_envio": None,
-                      "recusa_desde": None}
+                      "recusa_desde": None, "min_s": min_s}
 
     def _da_foto(self, foto):
         tk = self.atual.get("ticket")
@@ -219,6 +230,27 @@ class OrdemTeste:
 
     def _passou(self, segundos) -> bool:
         return self.m.mono() - self.atual["desde"] > segundos
+
+    def _de_novo(self, chave) -> str:
+        """Depois de um retorno passageiro: "agora" (tenta de novo), "espera"
+        (menos de 1 s da última) ou "desiste" (passou de REPETIR_S)."""
+        t, m = self.atual, self.m.mono()
+        if m - t[chave + "_desde"] > REPETIR_S:
+            return "desiste"
+        if m - t[chave + "_ult"] < INTERVALO_S:
+            return "espera"
+        return "agora"
+
+    def _demo(self, mt5) -> bool:
+        """A conta do MT5 é DEMO agora? Só nela a sequência encerra uma
+        posição com o magic do teste (numa conta real o mesmo número pode ser
+        de outra coisa)."""
+        try:
+            info = mt5.account_info()
+        except Exception:
+            return False
+        return info is not None and int(getattr(info, "trade_mode", -1)) == int(
+            mt5.ACCOUNT_TRADE_MODE_DEMO)
 
     def _enviar_com_preenchimento(self, mt5, montar, info):
         """O fallback de preenchimento do caminho real: modo recusado com
@@ -285,8 +317,10 @@ class OrdemTeste:
             t["fase"], t["desde"] = "aguarda", self.m.mono()
         else:
             # INCERTA pode ter executado: o encerramento procura a posição
-            # pelo magic e a fecha se ela aparecer
-            self._falhou(dia, agora, 1, K.texto(res), res)
+            # pelo magic e a fecha se ela aparecer — e segura um teste novo
+            # por ESPERA_S, para um clique não abrir uma segunda
+            self._falhou(dia, agora, 1, K.texto(res), res,
+                         min_s=ESPERA_S if classe == K.INCERTA else LISTA_S)
 
     def _aguarda(self, mt5, foto, dia, agora):
         p = next((p for p in foto.posicoes if p.magic == MAGIC), None)
@@ -316,12 +350,35 @@ class OrdemTeste:
         t["preco"] = entrada
         sl, tp = K.protecao(1, entrada - DISTANCIA, entrada + DISTANCIA, self.m.tick)
         t["sl"], t["tp"] = sl, tp
+        if t.get("prot_ult") is not None:
+            if round(p.sl) == sl and round(p.tp) == tp:
+                # a tentativa anterior (sem resposta) chegou: não reenvia
+                t["ms"]["protecao"] = t.get("prot_ms")
+                self._ev(dia, agora, 2, preco=entrada, stop_px=sl, alvo_px=tp,
+                         atraso_ms=t.get("prot_ms"), motivo="stop e alvo já na posição")
+                t["fase"], t["desde"] = "confere", self.m.mono()
+                return
+            quando = self._de_novo("prot")
+            if quando == "espera":
+                return
+            if quando == "desiste":
+                return self._falhou(dia, agora, 2, t["prot_motivo"], t.get("prot_res"))
         req = K.pedido_protecao(mt5, simbolo=p.simbolo, ticket=p.ticket, sl=sl, tp=tp,
                                 magic_=MAGIC)
         t0 = self.m.mono()
         res = mt5.order_send(req)
         ms = _ms(self.m.mono() - t0)
-        if K.classificar(res) not in (K.OK, K.SEM_MUDANCA):
+        classe = K.classificar(res)
+        if classe in _DE_NOVO:
+            # passageira (requote, preço mudou, sem cotação, travado...) ou
+            # sem resposta: não é falha da etapa — de novo em 1 s, até 5 s
+            t.setdefault("prot_desde", t0)
+            t["prot_ult"], t["prot_ms"] = self.m.mono(), ms
+            t["prot_motivo"], t["prot_res"] = K.texto(res), res
+            if self.m.mono() - t["prot_desde"] > REPETIR_S:
+                return self._falhou(dia, agora, 2, K.texto(res), res)
+            return
+        if classe not in (K.OK, K.SEM_MUDANCA):
             return self._falhou(dia, agora, 2, K.texto(res), res)
         t["ms"]["protecao"] = ms
         self._ev(dia, agora, 2, retcode=int(res.retcode),
@@ -357,10 +414,29 @@ class OrdemTeste:
         t = self.atual
         p = self._da_foto(foto)
         if p is None:
+            if t.get("saida_ult") is not None:
+                # a tentativa anterior (sem resposta) saiu: confere e fecha
+                t["ms"]["saida"] = t.get("saida_ms")
+                t["fase"], t["desde"] = "saida_confere", self.m.mono()
+                return self._saida_confere(mt5, foto, dia, agora)
             return self._falhou(dia, agora, 5, "a posição saiu na corretora antes da "
                                 "saída (stop ou alvo)")
+        if t.get("saida_ult") is not None:
+            quando = self._de_novo("saida")
+            if quando == "espera":
+                return
+            if quando == "desiste":
+                desde, ult = t["saida_desde"], t["saida_ult"]
+                self._falhou(dia, agora, 5, t["saida_motivo"], t.get("saida_res"))
+                self.atual["recusa_desde"], self.atual["ultimo_envio"] = desde, ult
+                return
+        t0 = self.m.mono()
         res, classe, ms = self._sair(mt5, p)
-        if classe == K.OK:
+        if classe in (K.OK, K.ACEITA, K.JA_SAIU):
+            # executada; aceita pela bolsa (o negócio vem depois); ou já
+            # encerrada: a volta seguinte confere que a posição sumiu
+            # (aceita: a posição pode levar mais que a lista para sumir)
+            t["confere_s"] = ESPERA_S if classe == K.ACEITA else LISTA_S
             t["ms"]["saida"] = ms
             dia.registrar("teste", quando=agora, etapa=5, teste_id=t["id"],
                           conta_id=t.get("conta_id"), ticket=p.ticket,
@@ -370,6 +446,12 @@ class OrdemTeste:
                           atraso_ms=ms, motivo=K.texto(res))
             t["fase"], t["desde"] = "saida_confere", self.m.mono()
             return
+        if classe in _DE_NOVO:
+            t.setdefault("saida_desde", t0)
+            t["saida_ult"], t["saida_ms"] = self.m.mono(), ms
+            t["saida_motivo"], t["saida_res"] = K.texto(res), res
+            if self.m.mono() - t["saida_desde"] <= REPETIR_S:
+                return
         self._falhou(dia, agora, 5, "sem cotação do contrato" if res is None
                      else K.texto(res), None if res is None else res)
         # a saída acabou de ser recusada: o prazo do chamado conta daqui
@@ -378,7 +460,7 @@ class OrdemTeste:
     def _saida_confere(self, mt5, foto, dia, agora):
         t = self.atual
         if self._da_foto(foto) is not None:
-            if self._passou(LISTA_S):
+            if self._passou(t.get("confere_s", LISTA_S)):
                 self._falhou(dia, agora, 5, "a saída executou, mas a posição continua "
                              "na corretora")
             return
@@ -407,19 +489,22 @@ class OrdemTeste:
         return self._enviar_com_preenchimento(mt5, montar, info)
 
     # ------------------------------------------------ encerrar o que sobrou
-    def _sobra(self, foto, dia, agora):
+    def _sobra(self, mt5, foto, dia, agora):
         """Sem teste em andamento, posição ou ordem com o magic do teste é
         resto (reinício no meio, entrada sem resposta que executou depois):
         encerra."""
         if not any(p.magic == MAGIC for p in foto.posicoes) and \
                 not any(o.get("magic") == MAGIC for o in foto.ordens):
             return
+        if not self._demo(mt5):
+            return            # conta não DEMO: o magic não é necessariamente nosso
         tickets = [p.ticket for p in foto.posicoes if p.magic == MAGIC]
         dia.registrar("teste", quando=agora, etapa=0, ticket=tickets[0] if tickets else None,
                       motivo="posição de teste que sobrou: encerrando")
         self.atual = {"id": None, "conta_id": None, "simbolo": None,
                       "fase": "encerrando", "desde": self.m.mono(),
-                      "ultimo_envio": None, "recusa_desde": None}
+                      "ultimo_envio": None, "recusa_desde": None,
+                      "min_s": LISTA_S}
 
     def _encerrando(self, mt5, foto, dia, agora):
         t = self.atual
@@ -428,28 +513,43 @@ class OrdemTeste:
         if not pos and not ords:
             # a lista pode atrasar logo depois de uma entrada sem resposta:
             # só se dá por limpo depois de LISTA_S sem nada
-            if self._passou(LISTA_S):
+            if self._passou(t.get("min_s", LISTA_S)):
                 self.m._fechar(CHAMADO, agora)
                 self.atual = None
             return
         m = self.m.mono()
+        if t["recusa_desde"] is not None and m - t["recusa_desde"] > PRESO_S:
+            # o chamado fica aberto enquanto houver o que encerrar, mesmo sem
+            # reenviar (fora do pregão)
+            self.m._chamar(CHAMADO, CHAMADO, TEXTO_PRESO, agora)
         if t["ultimo_envio"] is not None and m - t["ultimo_envio"] < INTERVALO_S:
             return
+        if t["ultimo_envio"] is not None and not self._no_pregao:
+            return            # mercado fechado: só a 1ª tentativa; o resto no pregão
+        if not self._demo(mt5):
+            return            # nunca mexe no magic do teste fora da conta DEMO
         t["ultimo_envio"] = m
+        recusou = False
         for o in ords:
             res = mt5.order_send(K.pedido_cancelar(mt5, ordem=o["ticket"]))
-            dia.registrar("teste", quando=agora, etapa="encerrar", ticket=o["ticket"],
-                          retcode=None if res is None else int(res.retcode),
-                          motivo="ordem de teste pendente cancelada"
-                          if K.classificar(res) == K.OK else K.texto(res))
-        recusou = False
+            ok = K.classificar(res) == K.OK
+            recusou = recusou or not ok
+            if ok or t["recusa_desde"] is None:
+                dia.registrar("teste", quando=agora, etapa="encerrar", ticket=o["ticket"],
+                              retcode=None if res is None else int(res.retcode),
+                              motivo="ordem de teste pendente cancelada" if ok
+                              else "cancelamento da ordem de teste recusado: "
+                              + K.texto(res))
         for p in pos:
             res, classe, _ = self._sair(mt5, p)
-            if classe in (K.OK, K.JA_SAIU):
+            if classe in (K.OK, K.JA_SAIU, K.ACEITA):
+                # aceita pela bolsa: o negócio vem depois (a próxima foto diz)
                 dia.registrar("teste", quando=agora, etapa="encerrar", ticket=p.ticket,
                               retcode=int(res.retcode),
                               preco=float(getattr(res, "price", 0) or 0) or None,
-                              motivo="posição de teste encerrada")
+                              motivo="saída da posição de teste aceita, aguardando a "
+                              "bolsa" if classe == K.ACEITA
+                              else "posição de teste encerrada")
                 continue
             recusou = True
             if t["recusa_desde"] is None:
@@ -463,8 +563,11 @@ class OrdemTeste:
                                   else K.texto(res)))
         if not recusou:
             t["recusa_desde"] = None
-        elif m - t["recusa_desde"] > PRESO_S:
-            self.m._chamar(CHAMADO, CHAMADO, TEXTO_PRESO, agora)
+        else:
+            if t["recusa_desde"] is None:
+                t["recusa_desde"] = m
+            if m - t["recusa_desde"] > PRESO_S:
+                self.m._chamar(CHAMADO, CHAMADO, TEXTO_PRESO, agora)
 
 
 # em que etapa está quem é interrompido pelo Zerar tudo

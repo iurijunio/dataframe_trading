@@ -152,3 +152,10 @@ def test_chamado_teste_preso_sem_botao_encerrar():
     botoes = [b for b in f.children[0].children[2].children
               if isinstance(b, html.Button)]
     assert [b.id["acao"] for b in botoes] == ["manter"]
+
+
+def test_redesenho_mantem_o_botao_armado():
+    pf = {"portfolio_id": 1, "ligado": True}
+    b = OP.botoes_portfolio(pf, None, conta_id=2, envio=False, teste_armado="teste:2")
+    assert b[1].children == "Confirmar?" and "av-armado" in b[1].className
+

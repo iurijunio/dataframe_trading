@@ -642,3 +642,12 @@ def test_cabecalho_mostra_o_simbolo_mesmo_com_o_contrato_do_dia_inteiro():
     cab = OP.cabecalho({"ligado": True}, {}, contrato="WINZ26")
     assert "WINZ26" in json.dumps([c.to_plotly_json() for c in cab],
                                   default=lambda o: o.to_plotly_json())
+
+
+def test_redesenho_le_o_armado_do_teste_como_state(app):
+    """Um redesenho no meio da confirmação mantém "Confirmar?" na Ordem de
+    teste — sem que armar releia o banco (State, não Input)."""
+    pesado = next(cb for cb in app.callback_map.values()
+                  if getattr(cb.get("callback"), "__name__", "") == "desenhar_op")
+    assert "av-op-teste-armado.data" not in _entradas(pesado)
+    assert any(st["id"] == "av-op-teste-armado" for st in pesado["state"])

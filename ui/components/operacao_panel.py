@@ -938,10 +938,13 @@ def botao_teste(conta_id, armado=None):
         id={"type": "av-op-teste", "id": conta_id})
 
 
-def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None) -> list:
+def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None,
+                     teste_armado=None) -> list:
+    """`teste_armado`: a chave armada do "Ordem de teste" que ainda vale —
+    um redesenho no meio da confirmação continua mostrando "Confirmar?"."""
     pid = pf["portfolio_id"]
     sw = interruptor_envio(conta_id, envio, armado)
-    teste = botao_teste(conta_id)
+    teste = botao_teste(conta_id, teste_armado)
     antes = [b for b in (sw, teste) if b is not None]
     if pf.get("ligado"):
         return antes + [_botao("pf-desligar", pid, armado,

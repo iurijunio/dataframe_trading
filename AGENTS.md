@@ -229,7 +229,9 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
     reinício). Recusa sem `account_info().trade_mode` ==
     `ACCOUNT_TRADE_MODE_DEMO`, conta cadastrada demo, pregão, Algo, trava,
     contrato/guarda, Zerar ou pedido > 60 s; independe do Envio. Saída
-    recusada > 10 s → chamado `teste_preso`.
+    recusada > 10 s → chamado `teste_preso`. 10008 e passageiras não são
+    falha (passageira: de novo a cada 1 s, até 5 s); fora do pregão e fora da
+    conta DEMO o encerramento não reenvia.
   - "Saiu antes" só para ticket que a própria automação não encerrou; a
     entrada sem resposta só casa com negócio depois do 1º envio da operação
     e nunca com ticket de outra operação.

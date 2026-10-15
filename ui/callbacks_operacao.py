@@ -358,7 +358,7 @@ def _ler(fn):
         return fn(con)
 
 
-def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
+def montar(pid, armado, filtro_atual, curva_atual, teste_armado=None) -> tuple:
     """As partes da tela que leem o banco por portfólio. Treze saídas, na
     ordem do callback `desenhar_op`."""
     estado = D.estado_captura()
@@ -398,6 +398,7 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
                        or ordens.get("contrato"))
     demo = (res.get("contas") or {}).get("demo")
     botoes = OP.botoes_portfolio(pf, armado, conta_id=demo and demo["conta_id"],
+                                 teste_armado=_armado_valido(teste_armado, time.time()),
                                  envio=envio)
     nomes = {v["ligacao_id"]: v["nome"] for v in vs}
     # contratos e fase vão junto: o editor do ✎ abre sem reler o banco
@@ -556,12 +557,15 @@ def register(app):
         State("av-op-armado", "data"),
         State("av-op-filtro", "value"),
         State("av-op-curva-variante", "value"),
+        # idem para a Ordem de teste (State: armar não relê o banco)
+        State("av-op-teste-armado", "data"),
     )
-    def desenhar_op(_versao, pid, _acoes, qual, modo, armado, filtro, curva):
+    def desenhar_op(_versao, pid, _acoes, qual, modo, armado, filtro, curva,
+                    teste_armado):
         if not _visivel(qual, modo):
             raise PreventUpdate
         try:
-            return montar(pid, armado, filtro, curva)
+            return montar(pid, armado, filtro, curva, teste_armado)
         except (duckdb.Error, RuntimeError) as e:
             motivo = ("banco ocupado" if isinstance(e, RuntimeError)
                       else "erro ao ler o banco")

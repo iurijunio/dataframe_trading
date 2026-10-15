@@ -4,6 +4,9 @@ captura roda; o relógio monotônico do motor é controlado pelo teste (a
 espera de 10 s é contada nele, nunca com sleep).
 """
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace as NS
+
+import pytest
 
 from core import comandos
 from core import corretora as K
@@ -271,11 +274,11 @@ def test_sltp_recusado_falha_na_etapa_2_e_encerra(tmp_path):
     c = Cena(tmp_path)
     c.passo(comandos_=[pedido()])
     ticket = c.evs("teste")[-1]["ticket"]
-    c.mt5.roteiro = [10006]                         # a SLTP recusada
+    c.mt5.roteiro = [10016]                         # SLTP recusada (não passageira)
     est = c.passo(0.5)
     f = c.evs("teste_falhou")
-    assert len(f) == 1 and f[0]["etapa"] == 2 and f[0]["retcode"] == 10006
-    assert est["teste"]["texto"] == "Teste falhou na etapa 2: recusada pela corretora"
+    assert len(f) == 1 and f[0]["etapa"] == 2 and f[0]["retcode"] == 10016
+    assert est["teste"]["texto"] == "Teste falhou na etapa 2: stop ou alvo inválido"
     assert ticket in c.mt5.posicoes                 # o encerramento vem na volta seguinte
     c.passo(0.5)
     sai = c.do_teste()[-1]
@@ -296,7 +299,7 @@ def test_saida_recusada_chama_depois_de_10_s_e_fecha_quando_some(tmp_path):
     c.passo(0.5)
     c.passo(0.5)
     c.passo(10.0)                                   # etapa 4 concluída
-    c.mt5.roteiro = [10006] * 40                    # saída recusada sempre
+    c.mt5.roteiro = [10017] * 40                    # saída recusada sempre (não passageira)
     est = c.passo(0.1)
     assert c.evs("teste_falhou")[0]["etapa"] == 5
     assert est["teste"]["texto"].startswith("Teste falhou na etapa 5: ")
@@ -496,3 +499,233 @@ def test_textos_da_tela():
         "Teste ok — entrada 85 ms, proteção 40 ms, saída 90 ms"
     assert OT.texto_falhou(3, "x") == "Teste falhou na etapa 3: x"
     assert OT.texto_falhou(0, "fora do pregão") == "Teste recusado: fora do pregão"
+
+
+# ============================================ rodada 1: 10008 e passageiras
+def _ate_a_saida(c):
+    c.passo(comandos_=[pedido()])
+    ticket = c.evs("teste")[-1]["ticket"]
+    c.passo(0.5)
+    c.passo(0.5)
+    c.passo(10.0)                                   # etapa 4 concluída
+    return ticket
+
+
+def test_entrada_aceita_10008_e_a_posicao_aparece_completa(tmp_path):
+    c = Cena(tmp_path)
+    c.mt5.roteiro = [10008]
+    c.passo(comandos_=[pedido()])
+    assert not c.evs("teste_falhou") and c.m.teste.atual["fase"] == "aguarda"
+    ordem = next(iter(c.mt5.ordens))
+    c.passo(1.0)                                    # ainda não executou: espera
+    assert not c.evs("teste_falhou")
+    c.mt5.executar_pendente(ordem)                  # a bolsa executou
+    c.passo(1.0)
+    assert c.m.teste.atual["fase"] == "protecao"
+    for s in (0.5, 0.5, 10.0, 0.1, 0.1):
+        c.passo(s)
+    assert c.evs("teste_ok") and not c.evs("teste_falhou")
+    assert not c.posicoes_teste()
+
+
+def test_entrada_aceita_sem_posicao_em_10_s_cancela_a_ordem_e_falha_limpo(tmp_path):
+    c = Cena(tmp_path)
+    c.mt5.roteiro = [10008]
+    c.passo(comandos_=[pedido()])
+    ordem = next(iter(c.mt5.ordens))
+    c.passo(9.0)
+    assert not c.evs("teste_falhou")
+    est = c.passo(1.5)                              # passou dos 10 s
+    f = c.evs("teste_falhou")
+    assert len(f) == 1 and f[0]["etapa"] == 1 and "10 s" in f[0]["motivo"]
+    assert est["teste"]["texto"].startswith("Teste falhou na etapa 1: ")
+    c.passo(0.5)
+    cancel = [r for r in c.mt5.enviados if r["action"] == c.mt5.TRADE_ACTION_REMOVE]
+    assert [r["order"] for r in cancel] == [ordem] and not c.mt5.ordens
+    assert not c.posicoes_teste()
+    c.passo(6.0)
+    assert c.m.teste.atual is None and not c.evs("teste_ok")
+
+
+def test_saida_aceita_10008_e_a_posicao_some_teste_ok(tmp_path):
+    c = Cena(tmp_path)
+    ticket = _ate_a_saida(c)
+    c.mt5.roteiro = [10008]
+    c.passo(0.1)                                    # saída aceita pela bolsa
+    assert not c.evs("teste_falhou") and ticket in c.mt5.posicoes
+    assert c.m.teste.atual["fase"] == "saida_confere"
+    ordem = next(iter(c.mt5.ordens))
+    c.passo(1.0)
+    c.passo(5.5)                                    # aceita: espera além dos 5 s da lista
+    assert not c.evs("teste_falhou")
+    c.mt5.executar_pendente(ordem)
+    est = c.passo(0.5)
+    assert c.evs("teste_ok") and not c.evs("teste_falhou")
+    assert est["teste"]["situacao"] == "ok"
+
+
+def test_saida_ja_encerrada_10036_vai_conferir_e_nao_falha(tmp_path):
+    c = Cena(tmp_path)
+    ticket = _ate_a_saida(c)
+    c.mt5.roteiro = [10036]
+    c.passo(0.1)
+    assert not c.evs("teste_falhou")
+    c.mt5.stopar(ticket)
+    c.passo(0.5)
+    assert c.evs("teste_ok")
+
+
+@pytest.mark.parametrize("rc", [10004, 10020, 10021, 10028, 10029])
+def test_sltp_passageira_tenta_de_novo_e_completa(tmp_path, rc):
+    c = Cena(tmp_path)
+    c.passo(comandos_=[pedido()])
+    c.mt5.roteiro = [rc, rc]
+    c.passo(0.5)                                    # 1ª: passageira
+    assert not c.evs("teste_falhou")
+    n = len(c.do_teste())
+    c.passo(0.5)                                    # < 1 s: não reenvia
+    assert len(c.do_teste()) == n
+    c.passo(0.6)                                    # 2ª: passageira de novo
+    c.passo(1.0)                                    # 3ª: aceita
+    assert [e["etapa"] for e in c.evs("teste")][-1] == 2
+    for s in (0.5, 10.0, 0.1, 0.1):
+        c.passo(s)
+    assert c.evs("teste_ok") and not c.evs("teste_falhou")
+
+
+def test_sltp_passageira_por_mais_de_5_s_falha_e_encerra(tmp_path):
+    c = Cena(tmp_path)
+    c.passo(comandos_=[pedido()])
+    ticket = c.evs("teste")[-1]["ticket"]
+    c.mt5.roteiro = [10020] * 10
+    c.passo(0.5)
+    for _ in range(5):
+        c.passo(1.0)
+    assert not c.evs("teste_falhou")
+    c.passo(1.0)                                    # 6 s desde a 1ª
+    f = c.evs("teste_falhou")
+    assert len(f) == 1 and f[0]["etapa"] == 2 and "preço mudou" in f[0]["motivo"]
+    c.mt5.roteiro = []
+    c.passo(1.0)
+    assert ticket not in c.mt5.posicoes
+
+
+def test_sltp_sem_resposta_que_chegou_nao_reenvia(tmp_path):
+    c = Cena(tmp_path)
+    c.passo(comandos_=[pedido()])
+    c.mt5.roteiro = ["executou_sem_resposta"]
+    c.passo(0.5)
+    n = len(c.do_teste())
+    c.passo(1.0)
+    assert len(c.do_teste()) == n                   # já estava na posição
+    assert c.evs("teste")[-1]["etapa"] == 2
+
+
+def test_saida_passageira_tenta_de_novo_e_completa(tmp_path):
+    c = Cena(tmp_path)
+    ticket = _ate_a_saida(c)
+    c.mt5.roteiro = [10004]
+    c.passo(0.1)
+    assert not c.evs("teste_falhou") and ticket in c.mt5.posicoes
+    c.passo(1.0)                                    # de novo: executa
+    assert ticket not in c.mt5.posicoes
+    c.passo(0.1)
+    assert c.evs("teste_ok") and not c.evs("teste_falhou")
+
+
+def test_saida_passageira_por_mais_de_5_s_falha_e_segue_encerrando(tmp_path):
+    c = Cena(tmp_path)
+    ticket = _ate_a_saida(c)
+    c.mt5.roteiro = [10004] * 20
+    c.passo(0.1)
+    for _ in range(5):
+        c.passo(1.0)
+    assert not c.evs("teste_falhou")
+    c.passo(1.0)
+    assert c.evs("teste_falhou")[0]["etapa"] == 5
+    c.mt5.roteiro = []
+    c.passo(1.0)
+    assert ticket not in c.mt5.posicoes
+
+
+# ------------------------------------------------------ rodada 1: pequenos
+def _pendente(mt5):
+    mt5.ordens[555] = NS(ticket=555, magic=K.MAGIC_TESTE, symbol="WINV26",
+                         volume_current=1.0, time_setup=0, type=0, req={})
+
+
+def test_recusa_com_ordem_de_teste_pendente(tmp_path):
+    c = Cena(tmp_path)
+    _pendente(c.mt5)
+    est = c.passo(comandos_=[pedido()])
+    f = c.evs("teste_falhou")
+    assert len(f) == 1 and "ordem de teste pendente" in f[0]["motivo"]
+    assert not [r for r in c.do_teste() if r["action"] == 1]
+    assert est["teste"]["situacao"] == "recusado"
+
+
+def test_entrada_sem_resposta_segura_um_teste_novo_por_10_s(tmp_path):
+    c = Cena(tmp_path)
+    c.mt5.roteiro = [None]                          # sem resposta, não executou
+    c.passo(comandos_=[pedido()])
+    assert c.evs("teste_falhou")[0]["etapa"] == 1
+    c.passo(6.0, comandos_=[pedido(n=2, criado=PC + timedelta(seconds=6))])
+    assert "em andamento" in c.evs("teste_falhou")[-1]["motivo"]
+    c.passo(5.0)                                    # 11 s sem nada: limpo
+    assert c.m.teste.atual is None
+    c.passo(0.1, comandos_=[pedido(n=3, criado=PC + timedelta(seconds=11))])
+    entradas = [r for r in c.do_teste() if r["action"] == 1 and "position" not in r]
+    assert len(entradas) == 2
+
+
+def test_fora_do_pregao_nao_reenvia_a_cada_1_s_e_o_chamado_fica(tmp_path):
+    mt5 = MT5Ordens()
+    t = mt5.abrir_manual(1, magic=K.MAGIC_TESTE)
+    c = Cena(tmp_path, mt5=mt5)
+    mt5.roteiro = [10018] * 50                      # mercado fechado
+    c.passo(no_pregao=False)
+    assert len(c.do_teste()) == 1
+    for _ in range(12):
+        est = c.passo(1.0, no_pregao=False)
+    assert len(c.do_teste()) == 1                   # nada de reenviar fechado
+    assert any(ch["tipo"] == "teste_preso" for ch in est["chamados"])
+    est = c.passo(30.0, no_pregao=False)
+    assert any(ch["tipo"] == "teste_preso" for ch in est["chamados"])
+    mt5.roteiro = []
+    c.passo(1.0)                                    # no pregão: tenta de novo
+    assert t not in mt5.posicoes
+
+
+def test_ordem_pendente_que_nao_cancela_chama_depois_de_10_s(tmp_path):
+    mt5 = MT5Ordens()
+    _pendente(mt5)
+    c = Cena(tmp_path, mt5=mt5)
+    mt5.roteiro = [10017] * 30
+    c.passo()
+    for _ in range(10):
+        est = c.passo(1.0)
+        assert not any(ch["tipo"] == "teste_preso" for ch in est["chamados"])
+    est = c.passo(1.0)
+    assert any(ch["tipo"] == "teste_preso" for ch in est["chamados"])
+
+
+def test_sobra_em_conta_nao_demo_nunca_e_tocada(tmp_path):
+    mt5 = MT5Ordens()
+    t = mt5.abrir_manual(1, magic=K.MAGIC_TESTE)
+    mt5.trade_mode = mt5.ACCOUNT_TRADE_MODE_REAL
+    c = Cena(tmp_path, mt5=mt5)
+    c.passo()
+    c.passo(2.0)
+    assert t in mt5.posicoes and not c.do_teste()
+
+
+def test_encerramento_para_se_a_conta_deixa_de_ser_demo(tmp_path):
+    c = Cena(tmp_path)
+    c.passo(comandos_=[pedido()])
+    ticket = c.evs("teste")[-1]["ticket"]
+    c.mt5.roteiro = [10016]
+    c.passo(0.5)                                    # falha na etapa 2
+    c.mt5.trade_mode = c.mt5.ACCOUNT_TRADE_MODE_REAL
+    n = len(c.do_teste())
+    c.passo(1.0)
+    assert len(c.do_teste()) == n and ticket in c.mt5.posicoes
