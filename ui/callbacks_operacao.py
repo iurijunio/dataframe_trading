@@ -46,7 +46,7 @@ SAIDAS_DO_PULSO = ("av-op-situacao.children", "av-op-versao.data",
                    "av-op-ultimo.data", "av-op-grafico.tick",
                    "av-op-ord-saude.children", "av-op-ord-chamados.children",
                    "av-op-ord-posicoes.children", "av-op-ord-numeros.children",
-                   "av-op-ord-versao.data", "av-op-teste-res.children")
+                   "av-op-ord-versao.data")
 # a confirmação do "Encerrar posição" vale até 6 s depois de armar,
 # conferida no SERVIDOR (o desarme de 5 s do navegador pode não rodar)
 ARMADO_VALE_S = 6.0
@@ -232,51 +232,6 @@ def acao_chamado(nome, alvo, armado, escondidos, enviados,
             "stop e o alvo seguem na corretora até lá")
 
 
-# o pedido de teste sem resposta da captura além disto: ela não está rodando
-# (a captura recusa sozinha um pedido com mais de 60 s)
-TESTE_SEM_RESPOSTA_S = 70.0
-
-
-def acao_teste(conta_id, armado, agora_s: float) -> tuple:
-    """Um clique em "Ordem de teste". Devolve (armado, enviado, aviso).
-
-    O primeiro clique arma; o segundo (até 6 s, conferido aqui no servidor)
-    escreve o comando `ordem_teste` — quem manda a ordem é a captura, nunca
-    a tela. Nada de banco: o clique não pode esperar uma mineração."""
-    chave = f"teste:{conta_id}"
-    if _armado_valido(armado, agora_s) != chave:
-        return ({"chave": chave, "em": agora_s}, no_update,
-                "confirme: clique de novo em 5 s para mandar a ORDEM DE TESTE na "
-                "conta demo — compra 1 contrato, põe stop e alvo a 100 pontos e "
-                "encerra em uns 10 s")
-    try:
-        cid = comandos.escrever(comandos.PASTA, "ordem_teste", conta_id=int(conta_id))
-    except (OSError, ValueError) as e:
-        return None, no_update, f"não consegui escrever o pedido de teste: {e}"
-    return (None, {"id": cid, "em": agora_s},
-            "Ordem de teste pedida: a captura manda na próxima volta — o "
-            "resultado aparece ao lado do botão e no Diário do dia")
-
-
-def texto_teste(ordens, enviado, agora_s: float) -> str:
-    """O texto ao lado do botão: o último teste que a captura publicou, ou
-    que o pedido desta tela ainda espera por ela. Sempre str."""
-    t = (ordens or {}).get("teste") if isinstance(ordens, dict) else None
-    t = t if isinstance(t, dict) else {}
-    env = enviado if isinstance(enviado, dict) else {}
-    if env.get("id") and env["id"] not in (t.get("pedidos") or []):
-        try:
-            idade = agora_s - float(env.get("em"))
-        except (TypeError, ValueError):
-            idade = None
-        if idade is not None and 0 <= idade <= TESTE_SEM_RESPOSTA_S:
-            return "Ordem de teste pedida — esperando a captura…"
-        return ("a captura não respondeu ao pedido de teste — ela está aberta? "
-                "(clique de novo depois de abrir)")
-    texto = t.get("texto")
-    return texto if isinstance(texto, str) else ""
-
-
 def abrir_editor(lig, vars_) -> tuple:
     """(estilo, alvo, valor, título, antes) do editor de contratos."""
     v = next((x for x in vars_ or [] if x.get("ligacao_id") == lig), None)
@@ -358,7 +313,7 @@ def _ler(fn):
         return fn(con)
 
 
-def montar(pid, armado, filtro_atual, curva_atual, teste_armado=None) -> tuple:
+def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
     """As partes da tela que leem o banco por portfólio. Treze saídas, na
     ordem do callback `desenhar_op`."""
     estado = D.estado_captura()
@@ -398,7 +353,6 @@ def montar(pid, armado, filtro_atual, curva_atual, teste_armado=None) -> tuple:
                        or ordens.get("contrato"))
     demo = (res.get("contas") or {}).get("demo")
     botoes = OP.botoes_portfolio(pf, armado, conta_id=demo and demo["conta_id"],
-                                 teste_armado=_armado_valido(teste_armado, time.time()),
                                  envio=envio)
     nomes = {v["ligacao_id"]: v["nome"] for v in vs}
     # contratos e fase vão junto: o editor do ✎ abre sem reler o banco
@@ -482,7 +436,6 @@ def register(app):
         Output("av-op-ord-posicoes", "children"),
         Output("av-op-ord-numeros", "children"),
         Output("av-op-ord-versao", "data"),
-        Output("av-op-teste-res", "children"),
         Input("av-op-intervalo", "n_intervals"),
         State("av-op-versao", "data"),
         State("av-op-ultimo", "data"),
@@ -495,19 +448,16 @@ def register(app):
         State("av-op-ord-escondidos", "data"),
         State("av-op-ord-enviados", "data"),
         State("av-op-ord-armado", "data"),
-        State("av-op-teste-enviado", "data"),
     )
     def pulso_op(_n, versao, ultimo, tf, base, ordens_em, vars_, pid, dados,
-                 escondidos, enviados, armado, teste_enviado):
+                 escondidos, enviados, armado):
         # um pulso só (o teste exige um único ouvinte do intervalo): o
         # papel e as ordens saem da MESMA leitura do estado.json
         estado = D.estado_captura()
         agora = datetime.now()
-        agora_s = time.time()
         return (*pulso(estado, versao, ultimo, tf, base, agora),
                 *pulso_ordens(estado, ordens_em, vars_, pid, dados, escondidos,
-                              enviados, armado, agora, agora_s),
-                texto_teste((estado or {}).get("ordens"), teste_enviado, agora_s))
+                              enviados, armado, agora, time.time()))
 
     @app.callback(
         Output("av-op-portfolio", "options"),
@@ -557,15 +507,12 @@ def register(app):
         State("av-op-armado", "data"),
         State("av-op-filtro", "value"),
         State("av-op-curva-variante", "value"),
-        # idem para a Ordem de teste (State: armar não relê o banco)
-        State("av-op-teste-armado", "data"),
     )
-    def desenhar_op(_versao, pid, _acoes, qual, modo, armado, filtro, curva,
-                    teste_armado):
+    def desenhar_op(_versao, pid, _acoes, qual, modo, armado, filtro, curva):
         if not _visivel(qual, modo):
             raise PreventUpdate
         try:
-            return montar(pid, armado, filtro, curva, teste_armado)
+            return montar(pid, armado, filtro, curva)
         except (duckdb.Error, RuntimeError) as e:
             motivo = ("banco ocupado" if isinstance(e, RuntimeError)
                       else "erro ao ler o banco")
@@ -892,54 +839,6 @@ def register(app):
         }""",
         Output("av-op-ord-chamados", "role"),
         Input("av-op-ord-armado", "data"),
-        prevent_initial_call=True,
-    )
-
-    # ------------------------------------------------- Ordem de teste
-    @app.callback(
-        Output("av-op-teste-armado", "data"),
-        Output("av-op-teste-enviado", "data"),
-        Output("av-op-aviso", "children", allow_duplicate=True),
-        Input({"type": "av-op-teste", "id": ALL}, "n_clicks"),
-        State("av-op-teste-armado", "data"),
-        prevent_initial_call=True,
-    )
-    def teste_op(_cliques, armado):
-        # botão redesenhado chega com n_clicks=0: só clique de verdade
-        gat = ctx.triggered_id
-        valor = ctx.triggered[0]["value"] if ctx.triggered else None
-        if not gat or not valor:
-            raise PreventUpdate
-        return acao_teste(gat["id"], armado, time.time())
-
-    @app.callback(
-        Output({"type": "av-op-teste", "id": ALL}, "children"),
-        Output({"type": "av-op-teste", "id": ALL}, "className"),
-        Input("av-op-teste-armado", "data"),
-        prevent_initial_call=True,
-    )
-    def rotulos_teste(armado):
-        chave = _armado_valido(armado, time.time())
-        estados = [OP.estado_teste(o["id"]["id"], chave) for o in ctx.outputs_list[0]]
-        return [e[0] for e in estados], [e[1] for e in estados]
-
-    # desarma sozinho depois de 5 s, como os outros botões de dois cliques
-    app.clientside_callback(
-        """function (armado) {
-            window._avOpTesteArmado = armado || null;
-            var marca = window._avOpTesteArmado;
-            if (armado) {
-                setTimeout(function () {
-                    if (window._avOpTesteArmado === marca) {
-                        window._avOpTesteArmado = null;
-                        window.dash_clientside.set_props('av-op-teste-armado', {data: null});
-                    }
-                }, 5000);
-            }
-            return window.dash_clientside.no_update;
-        }""",
-        Output("av-op-teste-res", "role"),
-        Input("av-op-teste-armado", "data"),
         prevent_initial_call=True,
     )
 

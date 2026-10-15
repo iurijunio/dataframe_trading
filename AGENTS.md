@@ -220,7 +220,9 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - **Retrato salvo** (`data/ao_vivo/ordens/retrato.json`, escrita atômica):
     subida com o banco preso usa o último retrato, marcado antigo — protege e
     sai por comando/trava, nada entra.
-  - **Ordem de teste** (botão na Operação, dois cliques; `core/ordem_teste.py`):
+  - **Ordem de teste** (`core/ordem_teste.py`; **o botão está fora da tela**, o
+    motor, o comando e o Diário continuam — dá para religar depois; ver
+    `git diff 421cc4f..be5ba7f -- ui/`):
     comando `ordem_teste` que a captura executa depois das ações das
     estratégias, uma etapa por volta, sem `sleep` (compra 1 · SL/TP a 100 pts
     · confere · 10 s no monotônico · sai pelo ticket). Magic `MAGIC_TESTE` =
