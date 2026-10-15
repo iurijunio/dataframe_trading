@@ -136,8 +136,14 @@ def _executar(nome, alvo, campos) -> str:
         if conta is None:
             raise ValueError("escolha a conta demo do portfólio antes de "
                              "definir o limite")
+        limite = _numero(c("pf-limite"))
+        if limite is None and conta["envio"]:
+            # tirar o limite desliga o envio no core, e isso encerra posições
+            # sem os dois cliques: aqui o caminho é o botão Desligar envio
+            raise ValueError("para tirar o limite, desligue o envio de "
+                             "ordens antes")
         AV.editar_conta(conta["conta_id"], tentativas=TENTATIVAS_BANCO,
-                        limite_perda_dia=_numero(c("pf-limite")))
+                        limite_perda_dia=limite)
         return "limite de perda do dia salvo"
     if nome == "pf-ligar":
         AV.ligar_portfolio(alvo)
@@ -190,19 +196,23 @@ def _executar(nome, alvo, campos) -> str:
     raise ValueError(f"ação desconhecida: {nome}")
 
 
-def _envio(nome, pid, armado, posicoes) -> tuple[str | None, str]:
+def _envio(nome, alvo, armado, posicoes) -> tuple[str | None, str]:
     """Ligar/desligar o Envio da conta demo do portfólio `pid`. O texto dos
     dois cliques e as recusas são os da tela Operação (`OPC.acao`): um aviso
     só, em qualquer das duas telas. Devolve (armado, aviso)."""
-    conta = _conta_demo(pid)
-    if conta is None:
-        return None, ("escolha a conta demo do portfólio antes de mexer no "
-                      "envio")
-    if nome == "envio-ligar" and not (conta["limite"] or 0) > 0:
-        # antes de armar: não adianta pedir confirmação de algo que o core recusa
-        return None, "cadastre o limite antes de ligar o envio de ordens"
-    chave = f"{nome}:{pid}"
-    cid = conta["conta_id"]
+    pid, cid = (int(x) for x in str(alvo).split(":"))
+    if nome == "envio-ligar":
+        # ligar precisa do banco de qualquer jeito; desligar NÃO lê nada
+        # antes de escrever o comando (o banco ocupado é justo quando importa)
+        conta = _conta_demo(pid)
+        if conta is None or conta["conta_id"] != cid:
+            return None, ("escolha a conta demo do portfólio antes de mexer "
+                          "no envio")
+        if not (conta["limite"] or 0) > 0:
+            # antes de armar: não adianta pedir confirmação de algo que o
+            # core recusa
+            return None, "cadastre o limite antes de ligar o envio de ordens"
+    chave = f"{nome}:{alvo}"
     novo, aviso, _ = OPC.acao(nome, cid, f"{nome}:{cid}" if armado == chave
                               else None, posicoes)
     return (chave if novo else None), aviso
@@ -247,7 +257,7 @@ def ordens_da_ficha(lig) -> dict | None:
             r = con.execute("SELECT contratos_demo FROM portfolio_membros "
                             "WHERE ligacao_id = ?", [lig]).fetchone()
             situacao = PB.situacao(con, lig)
-        restricoes = AV.restricoes_para_demo(lig)
+        restricoes = AV.restricoes_para_demo(lig, tentativas=TENTATIVAS_BANCO)
     except (duckdb.Error, RuntimeError):
         return None
     return {"contratos_demo": None if r is None or r[0] is None else int(r[0]),

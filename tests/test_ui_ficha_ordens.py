@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import ao_vivo as AV  # noqa: E402
 from core import comandos  # noqa: E402
+from core import portfolio as P  # noqa: E402
 from core import db_manager as db  # noqa: E402
 from core.engine.execution import ExecutionProfile  # noqa: E402
 from tests._cadeia import banco  # noqa: E402,F401
@@ -180,23 +181,26 @@ def test_limite_sem_conta_demo_diz_o_que_fazer(banco):
 # --------------------------------------------------------------------- envio
 def test_ligar_envio_sem_limite_nao_arma_e_manda_cadastrar(banco):
     f, conta = _montar(limite=None)
-    armado, _, aviso = CA.acao("envio-ligar", f.pf, {}, None, None)
+    alvo = f"{f.pf}:{conta}"
+    armado, _, aviso = CA.acao("envio-ligar", alvo, {}, None, None)
     assert armado is None and "cadastre o limite antes" in aviso
     assert _envio(conta) is False
 
 
 def test_ligar_envio_dois_cliques(banco):
     f, conta = _montar()
-    armado, _, aviso = CA.acao("envio-ligar", f.pf, {}, None, None)
-    assert armado == f"envio-ligar:{f.pf}" and "confirme" in aviso
+    alvo = f"{f.pf}:{conta}"
+    armado, _, aviso = CA.acao("envio-ligar", alvo, {}, None, None)
+    assert armado == f"envio-ligar:{alvo}" and "confirme" in aviso
     assert _envio(conta) is False
-    armado, _, aviso = CA.acao("envio-ligar", f.pf, {}, armado, None)
+    armado, _, aviso = CA.acao("envio-ligar", alvo, {}, armado, None)
     assert armado is None and _envio(conta) is True and "ligado" in aviso
 
 
 def test_ligar_envio_sem_conta_demo(banco):
     f, _ = _montar(com_conta=False)
-    armado, _, aviso = CA.acao("envio-ligar", f.pf, {}, None, None)
+    alvo = f"{f.pf}:1"
+    armado, _, aviso = CA.acao("envio-ligar", alvo, {}, None, None)
     assert armado is None and "conta demo" in aviso
 
 
@@ -205,24 +209,100 @@ def test_ligar_envio_sem_conta_demo(banco):
     (0, "nenhuma posição aberta")])
 def test_desligar_envio_conta_as_posicoes_abertas(banco, n, trecho):
     f, conta = _montar()
+    alvo = f"{f.pf}:{conta}"
     AV.ligar_envio(conta, True)
-    armado, _, aviso = CA.acao("envio-desligar", f.pf, {}, None, None,
+    armado, _, aviso = CA.acao("envio-desligar", alvo, {}, None, None,
                                posicoes=n)
-    assert armado == f"envio-desligar:{f.pf}" and trecho in aviso
+    assert armado == f"envio-desligar:{alvo}" and trecho in aviso
     assert _envio(conta) is True                       # só armou
-    armado, _, _ = CA.acao("envio-desligar", f.pf, {}, armado, None,
+    armado, _, _ = CA.acao("envio-desligar", alvo, {}, armado, None,
                            posicoes=n)
     assert armado is None and _envio(conta) is False
 
 
 def test_desligar_envio_escreve_o_comando(banco):
     f, conta = _montar()
+    alvo = f"{f.pf}:{conta}"
     AV.ligar_envio(conta, True)
-    chave = f"envio-desligar:{f.pf}"
-    CA.acao("envio-desligar", f.pf, {}, chave, None, posicoes=0)
+    chave = f"envio-desligar:{alvo}"
     pasta = Path(comandos.PASTA)
+    antes = set(pasta.glob("*.json")) if pasta.exists() else set()
+    CA.acao("envio-desligar", alvo, {}, chave, None, posicoes=0)
+    novos = set(pasta.glob("*.json")) - antes     # só o que ESTA chamada escreveu
     assert any('"ligado": false' in a.read_text(encoding="utf-8")
-               for a in pasta.glob("*.json"))
+               for a in novos)
+
+
+def _banco_ocupado(monkeypatch):
+    def ocupado(*a, **k):
+        raise RuntimeError("banco ocupado")
+    monkeypatch.setattr(db, "connect", ocupado)
+    monkeypatch.setattr(db, "connect_write", ocupado)
+
+
+def test_desligar_envio_com_banco_ocupado_ainda_escreve_o_comando(
+        banco, monkeypatch):
+    f, conta = _montar()
+    AV.ligar_envio(conta, True)
+    alvo = f"{f.pf}:{conta}"
+    pasta = Path(comandos.PASTA)
+    antes = set(pasta.glob("*.json"))
+    _banco_ocupado(monkeypatch)             # nem leitura nem escrita
+    armado, _, aviso = CA.acao("envio-desligar", alvo, {},
+                               f"envio-desligar:{alvo}", None, posicoes=1)
+    novos = set(pasta.glob("*.json")) - antes
+    assert any('"ligado": false' in a.read_text(encoding="utf-8")
+               for a in novos)
+    assert armado is None and "comando enviado" in aviso
+
+
+def test_limite_vazio_com_envio_ligado_e_recusado(banco):
+    f, conta = _montar()
+    AV.ligar_envio(conta, True)
+    pasta = Path(comandos.PASTA)
+    antes = set(pasta.glob("*.json"))
+    for vazio in ("", None, "  "):
+        _, _, aviso = CA.acao("pf-limite", f.pf, {("pf-limite", f.pf): vazio},
+                              None, None)
+        assert aviso == "para tirar o limite, desligue o envio de ordens antes"
+    assert _envio(conta) is True and _limite(conta) == 500.0
+    assert set(pasta.glob("*.json")) == antes       # nenhum "desligar"
+
+
+def test_limite_vazio_com_envio_desligado_tira_o_limite(banco):
+    f, conta = _montar()
+    CA.acao("pf-limite", f.pf, {("pf-limite", f.pf): ""}, None, None)
+    assert _limite(conta) is None
+
+
+def test_pf_ligar_ainda_executa_no_segundo_clique_dentro_de_6s(banco):
+    pf = P.criar("p")
+    chave = f"pf-ligar:{pf}"
+    armado, _, _ = CA.acao("pf-ligar", pf, {}, None, None)
+    assert armado == chave
+    armado, _, aviso = CA.acao("pf-ligar", pf, {}, chave, None,
+                               armado_em=100.0, agora_s=105.5)
+    assert armado is None and P.listar()[0]["ligado"] is True
+    # vencido: só rearma
+    P.listar()
+    armado, _, _ = CA.acao("pf-ligar", pf, {}, chave, None,
+                           armado_em=100.0, agora_s=107.0)
+    assert armado == chave
+
+
+def test_ordens_da_ficha_espera_pouco_pelo_banco(banco, monkeypatch):
+    f, _ = _montar()
+    vistos = []
+    real = AV.restricoes_para_demo
+
+    def espia(lig, **k):
+        vistos.append(k)
+        return real(lig, **k)
+    monkeypatch.setattr(AV, "restricoes_para_demo", espia)
+    assert CA.ordens_da_ficha(f.lig) is not None
+    assert vistos == [{"tentativas": CA.TENTATIVAS_BANCO}]
+    _banco_ocupado(monkeypatch)
+    assert CA.ordens_da_ficha(f.lig) is None        # a ficha avisa e desenha
 
 
 # ---------------------------------------------------------------------- leitura

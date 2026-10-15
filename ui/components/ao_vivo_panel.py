@@ -395,9 +395,12 @@ def _conta_do_portfolio(p: dict, contas: list[dict], armado) -> html.Div:
             "Escolha a conta demo acima e salve: o limite e o interruptor "
             "são dela.", className="av-texto")], className="av-sub")
     ligado = bool(conta.get("envio_ligado"))
-    botao = (_botao("Desligar envio", "envio-desligar", pid, armado,
+    # o alvo leva a CONTA junto ("portfólio:conta"): desligar não pode
+    # depender de uma leitura do banco antes de escrever o comando
+    alvo = f"{pid}:{conta['conta_id']}"
+    botao = (_botao("Desligar envio", "envio-desligar", alvo, armado,
                     "btn-ghost btn-sm av-btn-sec") if ligado else
-             _botao("Ligar envio", "envio-ligar", pid, armado,
+             _botao("Ligar envio", "envio-ligar", alvo, armado,
                     "btn-ghost btn-sm av-btn-principal"))
     return html.Div([
         titulo,

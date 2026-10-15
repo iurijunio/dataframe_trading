@@ -610,10 +610,10 @@ def _falhas_da_conferencia(con, ligacao_id, estrategia):
     return atuais, [d for d, _h, _m in linhas if d not in atuais]
 
 
-def restricoes_para_demo(ligacao_id: int) -> dict:
+def restricoes_para_demo(ligacao_id: int, *, tentativas: int = 40) -> dict:
     """O que impede (`motivos`) ou merece atenção (`avisos`) na promoção
     para a conta demo — a tela usa as mesmas frases que `mudar_fase`."""
-    with db.connect(read_only=True) as con:
+    with db.connect(read_only=True, tentativas=tentativas) as con:
         return _restricoes(con, ligacao_id)
 
 
