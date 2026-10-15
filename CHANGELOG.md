@@ -8,6 +8,42 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Ao vivo, parte 4: ordens na conta demo** (`core/corretora.py`,
+  `core/ordens.py`, `core/papel_vivo.py`, `core/diario_ordens.py`,
+  `core/comandos.py`, `core/contrato_dia.py`, `core/papel_backtest.py`,
+  `captura.py`, `ui/components/ordens_panel.py`; desenho em
+  [docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md](docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md)).
+  Suíte: 1.977 testes. O serviço de captura agora manda as ordens do papel
+  para a demo. **O Envio de ordens nasce desligado** e só registra "seria
+  enviada"; o próximo passo é o ensaio de um pregão inteiro nesse modo.
+  - **Reconciliação desejado × corretora.** A cada volta o serviço compara a
+    posição que o papel quer com a que a corretora tem e envia só a diferença
+    (entrada, saída, stop/alvo, stop móvel). Erro do MT5 é classificado por
+    uma tabela única de códigos de retorno; resposta incerta (timeout, `None`)
+    é conferida na corretora antes de reenviar. Desejado "indisponível" (dado
+    velho) não faz nada, em vez de zerar.
+  - **A ordem não espera o banco.** O papel vivo calcula em memória e cada
+    evento vai primeiro a um diário em arquivo (`data/ao_vivo/ordens/*.jsonl`,
+    com `fsync`) e depois à tabela `ordens_eventos`. Na subida a captura relê
+    o arquivo e não reenvia o que já enviou.
+  - **Barra provisória.** O minuto em formação vale para o sinal, mas stop e
+    alvo da entrada saem da vela fechada até o minuto anterior. Isso corrigiu
+    um look-ahead do M1 com stop/alvo ATR (`engine.VERSAO` 2026.10.09): os
+    planos ativos 5 e 6 dão operações idênticas no histórico inteiro.
+  - **Proteções.** Contrato do dia e vencimento (rolagem), guarda de preço,
+    teto do stop, preenchimento escolhido pela máscara do ativo e limite de
+    perda do dia por conta: a 90% do limite zera e trava até o próximo
+    pregão, sem destravar. Limite vazio não grava com o Envio ligado.
+  - **Comandos da tela** (zerar tudo, desligar envio) vão por arquivo para a
+    captura, que os grava antes de tocar no banco.
+  - **Conferência diária papel × backtest** (tabela `papel_backtest`).
+  - **Tela.** Selo das ordens e botão "Zerar tudo" no topo, alarme sonoro nos
+    chamados, ficha da variante com fase demo, contratos e Envio de ordens, e
+    Operação com a demo (saúde, chamados, posições, diário, avaliação com
+    derrapagem entre papel e demo).
+  - **Banco:** tabelas novas `ordens_eventos` e `papel_backtest` (não se
+    recriam: backup antes de migrar), `contas.envio_ligado`, contratos demo e
+    real por membro; fase `real_minimo` migra para `real`.
 - **Ao vivo, parte 3: incubação em papel** (`core/papel.py`,
   `core/papel_leitura.py`, `ui/callbacks_operacao.py`,
   `ui/components/operacao_panel.py`; desenho em

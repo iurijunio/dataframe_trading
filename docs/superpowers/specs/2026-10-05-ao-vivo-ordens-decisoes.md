@@ -1,8 +1,10 @@
 # Projeto C/E, parte 4: ordens — decisões do brainstorming (rascunho)
 
-> Decisões tomadas com o usuário em 02–05/10/2026. **Ainda não é a spec**:
-> falta o rascunho visual das mudanças de tela (oferecido e adiado por
-> limite de uso), escrever a spec completa, revisão por agente e plano.
+> **Implementado** (outubro/2026, branch `live-trading`). Estas decisões
+> viraram a spec `2026-10-08-ao-vivo-ordens-design.md`, que é a fonte do que
+> foi feito; onde divergirem, vale a spec e o código.
+>
+> Decisões tomadas com o usuário em 02–05/10/2026.
 > Herda da seção 1 §10, da parte 2 (captura) e da parte 3 (papel).
 
 ## Fatos levantados no MT5 (02/10/2026, só leitura)

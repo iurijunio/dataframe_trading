@@ -20,7 +20,7 @@ de o usuário juntar o `candidata` nele (remoto `origin` no GitHub).
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~1.300 testes, <1 min de coleta)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~1.980 testes, <1 min de coleta)
 ```
 
 - Para ver o app: rode `ui/app.py` e abra http://127.0.0.1:8050. Quem tiver
@@ -82,8 +82,8 @@ campo numérico altera dado real — anote o valor antes e restaure depois.
   disjuntor). Uma variante tem **um plano ativo por vez**.
 - **Fase** — onde a variante está no caminho até o dinheiro real, por
   portfólio: papel → demo → real. (Nunca "degrau". O "real mínimo" foi
-  eliminado nas decisões da parte 4 — o código ainda tem `real_minimo`
-  até a migração da parte 4.)
+  eliminado nas decisões da parte 4; o `real_minimo` do banco migra para
+  `real`.)
 - **Serviço de captura** — o processo à parte (aberto pelo `iniciar.bat`) que
   grava os candles ao vivo; na parte 4 passa a ser a automação que opera.
   Nunca "robô". Vocabulário profissional, de mesa de operações.
@@ -110,7 +110,7 @@ Os sete modos do topo (`ui/app.py`) e onde vivem:
 | Candidata | `candidata.py`, `candidata_runner.py`, `aleatorio.py`, `spa.py`, `tamanho.py`, `plano.py` | `callbacks_candidata.py`, `components/candidata_panel.py` |
 | Estratégias | `variantes.py` | `callbacks_estrategias.py`, `components/estrategias_panel.py` |
 | Portfólio | `portfolio.py` | `callbacks_portfolio.py`, `components/portfolio_panel.py` |
-| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`), `papel.py`, `papel_leitura.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py`, `callbacks_operacao.py`, `components/operacao_panel.py` |
+| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`), `papel.py`, `papel_leitura.py`, `papel_vivo.py`, `papel_backtest.py`, `corretora.py`, `ordens.py`, `diario_ordens.py`, `comandos.py`, `contrato_dia.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py`, `callbacks_operacao.py`, `components/operacao_panel.py`, `components/ordens_panel.py` |
 
 Outros: `core/mt5_source.py` + `ui/callbacks_mt5.py` (botão "Sincronizar com
 MT5"); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
@@ -140,8 +140,11 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - Risco de ruína e simulador de crescimento usam **o mesmo modelo**: aposta de
     fração fixa, em múltiplos de R (R = perda média histórica). Não divergir.
 - **O `.duckdb` deixou de ser só cache:** `contas`, `portfolio_membros`,
-  `ao_vivo_eventos`, `planos`, `papel_operacoes` e `papel_pregoes` não se recriam — backup antes de qualquer
-  migração; nunca apagar o banco.
+  `ao_vivo_eventos`, `planos`, `papel_operacoes`, `papel_pregoes`,
+  `ordens_eventos` e `papel_backtest` não se recriam — backup antes de qualquer
+  migração; nunca apagar o banco. Também nunca se apaga o diário de escrita
+  adiantada `data/ao_vivo/ordens/*.jsonl`: é dele (não do banco) que a captura
+  relê "já enviei a entrada X" e "conta travada hoje".
 - **Hora do MT5:** o `time` das barras que o MT5 devolve **já é hora de
   Brasília** — não somar offset. A sincronização de 23/09/2026 subtraiu 3 h
   e corrompeu 16/03→23/09 (corrigida em 01/10/2026; backup do banco antigo em
@@ -175,6 +178,32 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
     papel na janela seguinte se ela falhar.
   - A tela Operação lê o `estado.json` a cada 2 s e só abre o banco quando
     `papel.calculado_em` muda.
+- **Ordens na demo (parte 4; `core/corretora.py`, `ordens.py`, `papel_vivo.py`):**
+  - **Barra provisória:** o minuto em formação vale para sinal, nunca para
+    stop/alvo/indicador; stop e alvo da entrada vêm da vela fechada até o minuto
+    anterior (`0dfa0db`, `engine.VERSAO` 2026.10.09 — fecha o look-ahead do
+    M1+ATR). Saída forçada na provisória fica aberta.
+  - **O caminho da ordem nunca espera o banco:** papel vivo e decisão saem da
+    memória e do `estado.json`; o evento vai primeiro ao `.jsonl` (`fsync`) e
+    ao banco só quando ele estiver livre.
+  - **Desejado "indisponível" = não fazer nada, não zerar:** dado velho ou
+    cálculo faltando não fecha posição aberta.
+  - **Retornos do MT5: tabela única** em `core/corretora.py`, testada linha a
+    linha. INCERTA (10012, e `None`) pode ter executado: adotar/conferir antes
+    de reenviar. ACEITA (10008, PLACED) é recebida, o negócio vem depois.
+    10036 é "já saiu", não falha.
+  - **Filling por máscara:** `SYMBOL_FILLING_MODE` é máscara (FOK=1, IOC=2), não
+    o valor de `ORDER_FILLING_*` (FOK 0, IOC 1, RETURN 2); em bolsa, RETURN vale
+    como último recurso.
+  - **`None` do MT5 só se entende com `last_error()`:** sem erro (1) é "nenhuma
+    resposta", não falha de configuração.
+  - **Conta travada pelo limite de perda vale até o próximo pregão, sem botão
+    de destravar** (evento `conta_travada`, sobrevive a reinício).
+  - **"Desligar envio" grava o comando antes de tocar no banco** (e o envio
+    vai junto no comando); banco ocupado não pode segurar o desligamento.
+  - **Limite de perda vazio não se grava com Envio ligado**, e limite vazio
+    não desliga o envio sozinho.
+  - Envio nasce **desligado** (`contas.envio_ligado`) e registra "seria enviada".
 - **Mineração sem cópias:** campo de um tipo não escolhido (ATR com alvo
   em pontos, DI no rango) e as variações do ADX desligado dão resultado
   idêntico — `optimizer.espaco_util` / `combinacoes_uteis` podam antes de
@@ -192,7 +221,8 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
-| `CHANGELOG.md` | atualizado até a parte 3 do Ao vivo (papel/Operação); **não cobre variantes, portfólio nem gatilho** |
+| `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
+| `CHANGELOG.md` | atualizado até a parte 4 do Ao vivo (ordens na demo); **não cobre variantes, portfólio nem gatilho** |
 | `README.md` | **desatualizado**: descreve o MVP (4 modos, "759 testes") |
 | `docs/METODOLOGIA.md` "Estado da plataforma" | **desatualizado**: marca Portfólio como ❌ |
 
@@ -214,12 +244,16 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    `docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md`.
 3. Incubação em papel (**o papel roda sempre**, em qualquer fase) + sub-tela
    Operação ✅. Spec: `docs/superpowers/specs/2026-10-02-ao-vivo-papel-design.md`.
-4. Ordens pelo próprio Dataframe (demo primeiro) + comparativo backtest ×
-   papel × demo/real (sinal no mesmo minuto, preço, derrapagem).
-   **Em brainstorming:** 12 decisões já tomadas em
-   `docs/superpowers/specs/2026-10-05-ao-vivo-ordens-decisoes.md` (retomar
-   dali: rascunho visual → spec → revisão → plano). Pausar com posição
-   aberta encerra na hora.
+4. Ordens pelo próprio Dataframe na conta demo + comparativo backtest ×
+   papel × demo (sinal no mesmo minuto, preço, derrapagem) ✅ **implementada**
+   (branch `live-trading`, 16 tarefas). Spec:
+   `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md`; decisões em
+   `...-ordens-decisoes.md`. O **Envio de ordens nasce desligado** e registra
+   "seria enviada". **Próximo passo: o ensaio** — um pregão inteiro com o
+   portfólio em fase demo e Envio desligado; no fim do dia, cada operação do
+   papel deve ter um "seria enviada" no mesmo minuto, com lado, volume e
+   stop/alvo certos. Só então o usuário liga o Envio com 1 contrato. Conta
+   real fica fora desta parte. Pausar com posição aberta encerra na hora.
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
 
 Entrega futura: aba **Conta** no topo (nome escolhido pelo usuário; nunca
