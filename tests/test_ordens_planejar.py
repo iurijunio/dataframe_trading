@@ -554,3 +554,31 @@ def test_foto_parcial_orfa_de_outra_operacao_nao_usa_este_enviando(tmp_path):
     d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
     a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d)
     assert tipos(a) == [("chamar", 4, 10)]
+
+
+def test_foto_parcial_orfa_ignora_enviando_do_outro_lado(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T, lado=-1,
+                stop_px=189_200, alvo_px=188_600)
+    a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d)
+    assert tipos(a) == [("chamar", 4, 10)]
+    # lado do envio desconhecido (None) vale
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T, stop_px=188_750)
+    a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d)
+    assert tipos(a) == [("proteger", 4, 10)] and a[0].desejado.stop_px == 188_750
+
+
+def test_foto_parcial_orfa_prefere_o_envio_ate_a_abertura(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T, lado=1, stop_px=188_800)
+    d.registrar("enviando", quando=T + timedelta(seconds=5), ligacao_id=4, entry_ts=T,
+                lado=1, stop_px=188_700)
+    aberta = T + timedelta(seconds=1)
+    a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0, aberta=aberta)])),
+             diario=d, agora=T + timedelta(seconds=6))
+    assert a[0].desejado.stop_px == 188_800
+    # aberta depois das duas: a mais recente
+    a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0,
+                                                   aberta=T + timedelta(seconds=6))])),
+             diario=d, agora=T + timedelta(seconds=7))
+    assert a[0].desejado.stop_px == 188_700

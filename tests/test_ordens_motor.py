@@ -851,3 +851,57 @@ def test_foto_completa_com_duas_candidatas_segue_sem_chamado(tmp_path):
 
 def entradas_(mt5):
     return [r for r in mt5.enviados if r["action"] == 1 and "position" not in r]
+
+
+# ------------------------- rodada 1: órfã com o stop recusado (parcial)
+def test_parcial_orfa_com_stop_recusado_encerra_depois_de_2_s_e_nunca_antes(tmp_path):
+    from core.ordens import SEM_PROTECAO_S
+    mt5, m, t = _orfa(tmp_path)
+    mt5.falhar = set(HIST)
+    mt5.roteiro = [10006] * 10                 # a corretora recusa o SLTP sempre
+    inicio = AG2
+    passos = [0, 1, 1.5, 2, SEM_PROTECAO_S]   # até SEM_PROTECAO_S: só tenta proteger
+    for s in passos:
+        volta(m, mt5, {4: D}, agora=inicio + timedelta(seconds=s))
+        assert not evs(m, "saida_enviando") and t in mt5.posicoes, s
+    assert len(acoes_de(mt5, 6)) >= 2
+    assert evs(m, "protecao_recusada")
+    mt5.roteiro = []                           # a saída pega
+    volta(m, mt5, {4: D}, agora=inicio + timedelta(seconds=SEM_PROTECAO_S + 0.5))
+    [s] = evs(m, "saida_enviando")
+    assert s["ticket"] == t and s["motivo"] == "posição sem proteção na corretora"
+    assert t not in mt5.posicoes and evs(m, "saida_executada")
+    assert not evs(m, "adotada") and len(entradas_(mt5)) == 1
+
+
+def test_parcial_orfa_com_stop_e_saida_recusados_chama_sem_stop(tmp_path):
+    mt5, m, t = _orfa(tmp_path)
+    mt5.falhar = set(HIST)
+    mt5.roteiro = [10006] * 20                 # recusa o SLTP e a saída
+    for s in (0, 1, 2, 3):
+        volta(m, mt5, {4: D}, agora=AG2 + timedelta(seconds=s))
+    assert evs(m, "saida_recusada") and f"sem_stop:{t}" not in m.chamados
+    volta(m, mt5, {4: D}, agora=AG2 + timedelta(seconds=4))
+    assert m.chamados[f"sem_stop:{t}"]["tipo"] == "sem_stop"
+    # e segue tentando sair (nunca desiste), sem voltar ao SLTP
+    n_prot = len(acoes_de(mt5, 6))
+    assert len(evs(m, "saida_enviando")) == 2
+    volta(m, mt5, {4: D}, agora=AG2 + timedelta(seconds=5))
+    assert len(acoes_de(mt5, 6)) == n_prot and len(evs(m, "saida_enviando")) == 3
+
+
+def test_parcial_orfa_usa_o_stop_da_tentativa_que_abriu_a_posicao(tmp_path):
+    # tentativa 1 executou (10:01:01) sem resposta; a 2 saiu com outro stop
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    dia = m.diario(DIA)
+    dia.registrar("enviando", quando=AG, ligacao_id=4, entry_ts=T, lado=1,
+                  stop_px=188_800, alvo_px=189_400, tentativa=1)
+    dia.registrar("incerta", quando=AG, ligacao_id=4, entry_ts=T)
+    t = mt5.abrir_manual(1, volume=2.0, magic=K.magic(4))   # aberta 10:01:01
+    dia.registrar("enviando", quando=T + timedelta(seconds=5), ligacao_id=4,
+                  entry_ts=T, lado=1, stop_px=188_700, alvo_px=189_500, tentativa=2)
+    dia.registrar("recusada", quando=T + timedelta(seconds=5), ligacao_id=4, entry_ts=T)
+    mt5.falhar = set(HIST)
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=7))
+    [prot] = acoes_de(mt5, 6)
+    assert (prot["position"], prot["sl"], prot["tp"]) == (t, 188_800.0, 189_400.0)

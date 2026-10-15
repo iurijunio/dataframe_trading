@@ -135,31 +135,69 @@ def _so_protecao(foto, diario, lig, agora) -> list[Acao]:
     return acoes
 
 
-def _orfa_na_parcial(candidatas, d, diario, lig, agora) -> list[Acao]:
+def _envio_da_orfa(diario, lig, entry_ts, p):
+    """O `enviando` desta operação que abriu a posição `p`: só do lado dela
+    (ou sem lado gravado) e com stop; o mais recente até a abertura — uma
+    tentativa posterior pode ter saído com outro stop. O `time` da posição
+    vem em segundos inteiros: compara com a hora do envio truncada. Sem
+    nenhum até a abertura (relógio estimado adiantado): o último com stop."""
+    envios = [e for e in diario._da(lig, entry_ts, "enviando")
+              if e.get("stop_px") is not None and e.get("lado") in (None, p.lado)]
+    antes = [e for e in envios if e["quando"].replace(microsecond=0) <= p.aberta_em]
+    return (antes or envios or [None])[-1]
+
+
+def _saida_recusada(diario, ticket) -> bool:
+    """A última tentativa de saída deste ticket foi recusada?"""
+    ult = None
+    for e in diario.eventos:
+        if e.get("ticket") == ticket and e["tipo"] in (
+                "saida_enviando", "saida_recusada", "saida_executada", "saida_parcial"):
+            ult = e["tipo"]
+    return ult == "saida_recusada"
+
+
+def _orfa_na_parcial(candidatas, d, diario, lig, agora, sair) -> list[Acao]:
     """Foto parcial com a entrada que executou sem resposta: a candidata não
     se adota (a adoção confere o histórico), mas também não pode ficar sem
     stop enquanto a leitura seguir parcial. Uma só: recebe o stop/alvo do
-    `enviando` desta operação (o que de fato foi à corretora, já
-    arredondado; nunca o do papel agora). Mais de uma, ou nada gravado no
-    envio: não se sabe qual é nem qual stop — chamado, como no
-    `_so_protecao`."""
+    `enviando` que a abriu (o que de fato foi à corretora, já arredondado;
+    nunca o do papel agora). Mais de uma, ou nada gravado no envio: não se
+    sabe qual é nem qual stop — chamado, como no `_so_protecao`.
+
+    Como na foto completa: proteção pedida sem sucesso há mais de
+    SEM_PROTECAO_S encerra a posição (sair não depende do histórico); se a
+    própria saída é recusada, chama também — ela segue sem stop."""
+    acoes: list[Acao] = []
     sem_sl = [p for p in candidatas if round(p.sl) == 0]
-    if not sem_sl:
-        return []
-    envio = next((e for e in reversed(diario._da(lig, d.entry_ts, "enviando"))
-                  if e.get("stop_px") is not None), None)
-    if len(candidatas) == 1 and envio is not None:
-        p = sem_sl[0]
-        if not _pode(diario.ultima_tentativa("protecao_enviando", ticket=p.ticket), agora):
-            return []
-        return [Acao("proteger", lig, ticket=p.ticket, posicao=p,
-                     desejado=Desejado(POSICAO, lado=d.lado, stop_px=envio["stop_px"],
-                                       alvo_px=envio.get("alvo_px")))]
+    restantes = []
+    for p in sem_sl:
+        desde = diario.protecao_pendente_desde(p.ticket)
+        if desde is not None and _seg(agora, desde) > SEM_PROTECAO_S:
+            if _saida_recusada(diario, p.ticket):
+                acoes.append(Acao("chamar", lig, ticket=p.ticket, posicao=p,
+                                  motivo="posição sem stop: a corretora recusou o "
+                                         "stop e a saída (leitura parcial)"))
+            sair(p, "posição sem proteção na corretora")
+        else:
+            restantes.append(p)
+    if not restantes:
+        return acoes
+    envio = None if len(candidatas) > 1 else _envio_da_orfa(
+        diario, lig, d.entry_ts, restantes[0])
+    if envio is not None:
+        p = restantes[0]
+        if _pode(diario.ultima_tentativa("protecao_enviando", ticket=p.ticket), agora):
+            acoes.append(Acao("proteger", lig, ticket=p.ticket, posicao=p,
+                              desejado=Desejado(POSICAO, lado=p.lado,
+                                                stop_px=envio["stop_px"],
+                                                alvo_px=envio.get("alvo_px"))))
+        return acoes
     motivo = ("posição sem stop e leitura parcial: mais de uma candidata à entrada "
               "sem resposta" if len(candidatas) > 1 else
               "posição sem stop e leitura parcial: entrada sem resposta sem stop gravado")
-    return [Acao("chamar", lig, ticket=p.ticket, posicao=p, motivo=motivo)
-            for p in sem_sl]
+    return acoes + [Acao("chamar", lig, ticket=p.ticket, posicao=p, motivo=motivo)
+                    for p in restantes]
 
 
 def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
@@ -168,7 +206,8 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
     proteção: entrar, adotar, "perdida" e "saiu antes" dependem do
     histórico, e decidir sem ele duplicaria uma entrada ou daria por saída
     uma posição que só não apareceu na lista. A candidata da entrada sem
-    resposta não é adotada, mas recebe o stop do envio (`_orfa_na_parcial`)."""
+    resposta não é adotada, mas recebe o stop do envio — e, recusado,
+    encerra como na foto completa (`_orfa_na_parcial`)."""
     acoes: list[Acao] = []
     parcial = bool(getattr(foto, "parcial", False))
     if not disponivel or agora_srv is None:
@@ -272,7 +311,7 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
                                   posicao=minha))
             continue
         if parcial and candidatas:
-            acoes += _orfa_na_parcial(candidatas, d, diario, lig, agora_srv)
+            acoes += _orfa_na_parcial(candidatas, d, diario, lig, agora_srv, sair)
         if pend or parcial:
             continue          # ordem em trânsito / sem histórico: nada de entrar
 
@@ -820,9 +859,10 @@ class Motor:
                 f"corretora sem leitura ({oque}) há mais de 30 s: nada entra nem sai"
                 if foto is None else
                 f"corretora com leitura parcial ({oque}) há mais de 30 s: só sai "
-                "e protege; a posição de uma entrada sem resposta recebe o stop "
-                "enviado, sem ser adotada (mais de uma, ou sem stop gravado: "
-                "chamado de posição sem stop); nada entra"), agora)
+                "e protege; na posição de uma entrada sem resposta (sem adotá-la) "
+                "tenta pôr o stop enviado; se a corretora recusar, encerra (mais "
+                "de uma, ou sem stop gravado: chamado de posição sem stop); "
+                "nada entra"), agora)
 
     def _consumir(self, comandos, dia, agora) -> list[dict]:
         vistos = {e.get("comando_id") for e in dia.eventos

@@ -1139,7 +1139,8 @@ def test_chamado_sem_leitura_parcial_diz_o_que_a_automacao_faz(tmp_path):
     passo(m, mt5, {}, agora=AG)
     passo(m, mt5, {}, agora=AG + timedelta(seconds=31))
     texto = m.chamados["sem_leitura"]["texto"]
-    assert "sem ser adotada" in texto and "stop enviado" in texto
+    assert "tenta pôr o stop enviado; se a corretora recusar, encerra" in texto
+    assert "sem adotá-la" in texto
     assert "nada entra" in texto
 
 
