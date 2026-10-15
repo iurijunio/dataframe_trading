@@ -40,6 +40,14 @@ CLOSE_ONLY = 10044         # só encerramento: sem entradas no contrato no resto
 SEM_CONFIRMACAO = "executada sem confirmação da posição"
 # entrada barrada só por instantes (sem tick): volta a tentar na janela
 SEM_COTACAO = "sem cotação do contrato"
+# o contrato do dia ainda não foi escolhido (WIN$N com último 0 às 09:00):
+# passageira como a de cima — a volta seguinte escolhe e a entrada sai
+SEM_CONTRATO = "contrato do dia ainda não escolhido"
+SEM_CONTRATO_HOJE = "sem contrato operável hoje"
+GUARDA_PRECO = "preço do contrato não confere com o WIN$N"
+PASSAGEIRAS = (SEM_COTACAO, SEM_CONTRATO)
+SEM_LEITURA_S = 30         # foto incompleta além disso no pregão chama
+ZERAR_DESCARTADO = "zerar de outro dia, descartado"
 TRAVA = 0.9               # fração do limite do dia que trava a conta (§5.7)
 TETO_STOP = 1.5            # D1: distância ao stop até 1,5× a do plano
 PAPEL_PARADO_S = 180       # papel indisponível além disso no pregão chama
@@ -57,6 +65,18 @@ class Acao:
     motivo: str | None = None
 
 
+def _de_outro_dia(criado_em, hoje) -> bool:
+    """O comando foi escrito num dia anterior a `hoje` (o do servidor)?
+    `criado_em` é a hora do PC em ISO; ilegível ou ausente = vale (na dúvida
+    o zerar segue valendo, que é o lado seguro)."""
+    if not criado_em:
+        return False
+    try:
+        return datetime.fromisoformat(str(criado_em)).date() < hoje
+    except ValueError:
+        return False
+
+
 def _seg(a: datetime, b: datetime) -> float:
     return (a - b).total_seconds()
 
@@ -65,11 +85,27 @@ def _pode(ultima, agora) -> bool:
     return ultima is None or _seg(agora, ultima) >= INTERVALO_S
 
 
-def _executou(foto, lig, entry_ts) -> int | None:
+def _executou(foto, diario, lig, entry_ts) -> int | None:
     """Ticket da posição se o histórico do dia tem a entrada dela depois do
-    início da operação (executou sem a resposta ter chegado)."""
+    PRIMEIRO envio desta operação (executou sem a resposta ter chegado).
+
+    Nunca o ticket que o diário já deu a OUTRA operação da ligação: a
+    entrada de uma operação antiga (que pode ter executado depois do
+    `entry_ts` da nova, no mesmo minuto ou numa entrada tardia) não é esta.
+    Sem envio desta operação no diário, nada dela pode ter executado. O
+    `time` do negócio vem em segundos inteiros e a hora do envio é a
+    estimativa do relógio do servidor: 1 s de folga, depois de truncar."""
+    envios = diario._da(lig, entry_ts, "enviando")
+    if not envios:
+        return None
+    desde = max(entry_ts, min(e["quando"] for e in envios).replace(microsecond=0)
+                - timedelta(seconds=1))
+    de_outras = {int(e["ticket"]) for e in diario.eventos
+                 if e["tipo"] in ("executada", "parcial", "adotada") and e.get("ticket")
+                 and (e.get("ligacao_id"), e.get("entry_ts")) != (lig, entry_ts)}
     for n in foto.negocios:
-        if n.entrada and n.ligacao_id == lig and n.quando >= entry_ts:
+        if n.entrada and n.ligacao_id == lig and n.quando >= desde \
+                and n.posicao not in de_outras:
             return n.posicao
     return None
 
@@ -101,7 +137,12 @@ def _so_protecao(foto, diario, lig, agora) -> list[Acao]:
 
 def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
              tick: int, conectado_ha_s: float) -> list[Acao]:
+    """Com a foto PARCIAL (histórico/negócios/conta ilegíveis) só saídas e
+    proteção: entrar, adotar, "perdida" e "saiu antes" dependem do
+    histórico, e decidir sem ele duplicaria uma entrada ou daria por saída
+    uma posição que só não apareceu na lista."""
     acoes: list[Acao] = []
+    parcial = bool(getattr(foto, "parcial", False))
     if not disponivel or agora_srv is None:
         # não dá para saber o que o papel quer: só a proteção (não precisa de relógio)
         for lig in sorted({p.ligacao_id for p in foto.posicoes if p.ligacao_id}):
@@ -154,7 +195,7 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
         if d.estado == ZERADO:
             for p in pos:
                 sair(p, d.motivo or "papel zerado")
-            if estavel:
+            if estavel and not parcial:
                 for t, ts in diario.tickets_abertos(lig):
                     if t not in vivos and _saiu(foto, t):
                         acoes.append(Acao("saiu_antes", lig, ticket=t,
@@ -168,16 +209,19 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
         candidatas = []
         if minha is None and ticket is None and diario.enviada(lig, ts):
             candidatas = [p for p in pos if p.lado == d.lado and p.aberta_em >= ts]
-            # com ordem em trânsito não se adota: espera ela se resolver
-            if len(candidatas) == 1 and not pend:
+            # com ordem em trânsito não se adota: espera ela se resolver;
+            # com a foto parcial também não (a adoção confere o histórico)
+            if len(candidatas) == 1 and not pend and not parcial:
                 minha = candidatas[0]
                 acoes.append(Acao("adotar", lig, desejado=d, ticket=minha.ticket,
                                   posicao=minha))
         for p in pos:
+            # candidata não adotada (ordem em trânsito, foto parcial) pode
+            # ser a própria operação: nunca sai por "não é a atual"
             if (minha is None or p.ticket != minha.ticket) and not (
-                    pend and p in candidatas):
+                    (pend or parcial) and p in candidatas):
                 sair(p, "posição que não é a operação atual")
-        if estavel:
+        if estavel and not parcial:
             for t, ts_t in diario.tickets_abertos(lig):
                 if t != ticket and t not in vivos and _saiu(foto, t):
                     acoes.append(Acao("saiu_antes", lig, ticket=t,
@@ -199,15 +243,26 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
                 acoes.append(Acao("proteger", lig, desejado=d, ticket=minha.ticket,
                                   posicao=minha))
             continue
-        if pend:
-            continue          # ordem em trânsito bloqueia nova entrada
+        if pend or parcial:
+            continue          # ordem em trânsito / sem histórico: nada de entrar
 
         # a corretora não tem a posição desta operação
-        ja = ticket or _executou(foto, lig, ts)
+        ja = ticket or _executou(foto, diario, lig, ts)
         if ja is not None:
             # executou: só registra a saída com o negócio de saída na mão e a
-            # lista estável — logo após reconectar ela vem vazia por engano
-            if estavel and _saiu(foto, ja) and not diario.registrado(lig, ts, "saiu_antes"):
+            # lista estável — logo após reconectar ela vem vazia por engano.
+            # E só se o diário não a viu sair: a saída da própria automação
+            # ("Encerrar posição", posição sem proteção) já fechou o ticket,
+            # e o negócio de saída dela não é "saiu antes". Ticket do
+            # diário: só se ainda aberto. Ticket que o diário nunca teve
+            # (executou sem resposta e saiu antes da adoção): só se nenhuma
+            # saída da automação o tocou.
+            abertos = {t for t, _ in diario.tickets_abertos(lig)}
+            conhecido = any(e.get("ticket") == ja and e["tipo"] in (
+                "executada", "parcial", "adotada", "saida_executada", "saiu_antes")
+                for e in diario.eventos)
+            if estavel and (ja in abertos or not conhecido) and _saiu(foto, ja) \
+                    and not diario.registrado(lig, ts, "saiu_antes"):
                 acoes.append(Acao("saiu_antes", lig, desejado=d, ticket=ja))
             continue
         if any(diario.registrado(lig, ts, t)
@@ -402,6 +457,10 @@ class Motor:
         self.zerar = False
         self.envio_forcado: dict[int, bool] = {}
         self._parado_desde: datetime | None = None
+        # desde quando a foto não vem completa (I2b) e a última conta lida
+        # numa foto completa: (login, servidor, hedging, algo, margem, mono)
+        self._incompleta_desde: datetime | None = None
+        self._conta_vista: tuple | None = None
 
     # ---------------------------------------------------------- diário
     def diario(self, dia) -> Diario:
@@ -515,21 +574,32 @@ class Motor:
 
     # ------------------------------------------------------------ passo
     def passo(self, mt5, *, agora_srv, retrato, desejados, disponivel, comandos,
-              simbolo, contrato_ok, conectado_ha_s, no_pregao: bool = True) -> dict:
+              simbolo, contrato_ok, conectado_ha_s, no_pregao: bool = True,
+              contrato_motivo: str | None = None) -> dict:
         """A volta inteira das ordens; devolve o bloco `ordens` do estado.json.
 
         `comandos`: a pasta dos comandos da tela (consumidos aqui, cada um
         gravado no diário ANTES de o arquivo sumir) ou a lista já lida.
-        `no_pregao`: papel indisponível fora do pregão não é alarme."""
+        `no_pregao`: papel indisponível fora do pregão não é alarme.
+        `contrato_motivo`: por que o contrato não opera agora (None = o texto
+        padrão); SEM_CONTRATO é passageiro (a entrada tenta de novo).
+        Retrato com `antigo=True` (lido do arquivo, banco ocupado na
+        subida): nada entra, a proteção e as saídas por comando seguem."""
         agora = self._quando(agora_srv)
         dia = self.diario(agora.date())
-        foto = K.fotografar(mt5, datetime.combine(agora.date(), datetime.min.time()))
+        falhas: list = []
+        foto = K.fotografar(mt5, datetime.combine(agora.date(), datetime.min.time()),
+                            falhas)
+        foto = self._completar_conta(foto, conectado_ha_s)
+        self._vigiar_leitura(foto, falhas, dia, agora, no_pregao)
         if foto is None:
-            # sem foto confiável nada se decide (§5.1); nem comando se consome
+            # sem posições/ordens nada se decide (§5.1); nem comando se consome
             # foto que falha não é erro das ordens (o MT5 devolveu None):
             # `falhou` diz só se o passo estourou alguma exceção
             return {"foto": "falhou", "vivo_em": agora, "falhou": False,
-                    "n_demo": n_demo(retrato)}
+                    "n_demo": n_demo(retrato), "falhas": falhas,
+                    "chamados": [dict(c, chave=k) for k, c in self.chamados.items()]}
+        antigo = bool(getattr(retrato, "antigo", False))
 
         # papel parado: indisponível há mais de 3 min no pregão (§5.1)
         if disponivel or not no_pregao:
@@ -538,8 +608,12 @@ class Motor:
         elif self._parado_desde is None:
             self._parado_desde = agora
         elif _seg(agora, self._parado_desde) > PAPEL_PARADO_S:
-            self._chamar("papel_parado", "papel_parado",
-                         "papel parado há mais de 3 min (só protege)", agora)
+            self._chamar("papel_parado", "papel_parado", (
+                "papel parado há mais de 3 min: banco ocupado desde a subida, "
+                "com a configuração salva (só protege e sai por comando; nada entra)"
+                if antigo else
+                "papel parado há mais de 3 min (só protege e sai por comando; "
+                "nada entra)"), agora)
 
         # os retornos antecipados também mostram o zerar desta volta
         self.zerar = self._zerar_ativo(dia, retrato, agora)
@@ -549,6 +623,11 @@ class Motor:
         cid, conta = _conta_logada(retrato, foto)
         est = self._estado_base(foto, agora, cid, simbolo, retrato)
         if conta is None:
+            if foto.login is None:
+                # conta ilegível (foto parcial sem a conta de antes): não se
+                # sabe em que conta o MT5 está — nada sai, e não é "conta
+                # errada": o chamado `sem_leitura` já diz o que falha
+                return self._estado_fim(est, dia)
             demo = bool(retrato) and any(lv.fase == "demo"
                                          for lv in retrato.ligacoes.values())
             self._condicao("conta_errada", demo,
@@ -589,21 +668,32 @@ class Motor:
         # 5. Envio de ordens
         # sem limite cadastrado o Envio não liga (§5.7) — nem com o limite
         # apagado no meio do dia: a trava não teria como agir
-        envio = bool(conta.get("envio")) and bool(limite) and not forcado \
+        ligado = bool(conta.get("envio")) and bool(limite) and not forcado \
             and not travada and not self.zerar
+        # entra só com a foto completa e a configuração lida agora
+        envio = ligado and not antigo and not foto.parcial
         geral = "zerar tudo" if self.zerar else ("conta travada" if travada else None)
+        if antigo and not geral and forcado:
+            geral = "envio desligado"
         finais = {}
         for lig, d in desejados.items():
             lv = retrato.ligacoes.get(lig)
             if geral:
                 d = Desejado(ZERADO, motivo=geral)
+            elif antigo:
+                continue
             elif lv is None or lv.conta_id != cid:
                 # C4: nunca uma ordem de um portfólio na conta de outro
                 d = Desejado(ZERADO, motivo="conta de outro portfólio")
-            elif not envio and d.estado != ZERADO:
+            elif not ligado and d.estado != ZERADO:
                 d = Desejado(ZERADO, motivo="envio desligado")
             finais[lig] = d
-        zera_tudo = bool(geral) or not envio
+        # retrato antigo (banco ocupado desde a subida): fase, ligada e Envio
+        # dele podem ter mudado depois — só zerar, trava e o desligar por
+        # comando (todos do diário) encerram; o resto fica indisponível (só
+        # protege). Foto parcial: o Envio decide a saída como sempre; a
+        # entrada é o planejar que barra.
+        zera_tudo = bool(geral) or (not ligado and not antigo)
         if zera_tudo:
             # o papel nem precisa estar disponível: tudo da automação sai
             for lig in ({p.ligacao_id for p in foto.posicoes if p.ligacao_id}
@@ -611,15 +701,15 @@ class Motor:
                 finais[lig] = Desejado(ZERADO, motivo=geral or "envio desligado")
 
         # 6. planejar e a régua de cada entrada
-        acoes = planejar(finais, disponivel or zera_tudo, foto, dia, agora_srv,
-                         self.tick, conectado_ha_s)
+        acoes = planejar(finais, (disponivel and not antigo) or zera_tudo, foto, dia,
+                         agora_srv, self.tick, conectado_ha_s)
         acoes = self._encerrar_pedidos(acoes, foto, encerrar, dia, agora_srv)
         seria = []
-        if not envio and not geral:
+        if not envio and not geral and not antigo and not foto.parcial:
             seria = self._seria_enviadas(desejados, retrato, cid, dia, agora_srv,
                                          disponivel, conectado_ha_s)
         pode_entrar = self._regua(mt5, foto, retrato, perda, limite, simbolo, contrato_ok,
-                                  dia, desejados, agora)
+                                  dia, desejados, agora, contrato_motivo)
 
         # 7. executar: saídas primeiro, entradas à parte — uma falha nas
         # entradas não impede as saídas desta volta (e vice-versa)
@@ -643,7 +733,7 @@ class Motor:
         # 8. estado
         est.update(
             falhou=falhou,
-            envio=envio, zerar=self.zerar, perda=perda,
+            envio=ligado, zerar=self.zerar, perda=perda,
             limite=float(limite) if limite else None,
             travada=None if travada is None else {
                 "desde": travada["quando"], "perda": travada.get("perda"),
@@ -652,6 +742,56 @@ class Motor:
         return self._estado_fim(est, dia)
 
     # ---------------------------------------------------- passo: partes
+    def _completar_conta(self, foto, conectado_ha_s):
+        """Foto parcial sem a conta (ou o terminal): vale a última lida numa
+        foto completa SE a conexão não caiu desde então (trocar de conta no
+        MT5 derruba a conexão). Sem isso a conta fica desconhecida e nada
+        sai — nunca uma ordem numa conta que não se sabe qual é."""
+        if foto is None:
+            return None
+        m = self.mono()
+        if not foto.parcial:
+            self._conta_vista = (foto.login, foto.servidor, foto.hedging,
+                                 foto.algo_ligado, foto.margem_livre, m)
+            return foto
+        v = self._conta_vista
+        mesma_conexao = v is not None and conectado_ha_s >= m - v[5]
+        if foto.login is None and mesma_conexao:
+            foto.login, foto.servidor, foto.hedging, foto.margem_livre = \
+                v[0], v[1], v[2], v[4]
+        if "dados do terminal" in foto.falhas:
+            # Algo Trading desconhecido: o último visto na mesma conexão; sem
+            # ele, tenta — Algo desligado volta 10027 e vira chamado, e sair
+            # é justamente o que se quer da foto parcial
+            foto.algo_ligado = v[3] if mesma_conexao else True
+        return foto
+
+    def _vigiar_leitura(self, foto, falhas, dia, agora, no_pregao):
+        """Chamado `sem_leitura` (I2b): no pregão, a foto incompleta por mais
+        de 30 s chama; sem nem a foto parcial e com posição da automação
+        aberta no diário, chama na hora (nada sai). Fecha sozinho na
+        primeira foto completa. Fora do pregão não abre."""
+        if foto is not None and not foto.parcial:
+            self._incompleta_desde = None
+            self._fechar("sem_leitura", agora)
+            return
+        if self._incompleta_desde is None:
+            self._incompleta_desde = agora
+        if not no_pregao:
+            return
+        oque = ", ".join(falhas) or "leitura da corretora"
+        if foto is None and dia.ligacoes_abertas():
+            self._chamar("sem_leitura", "sem_leitura",
+                         f"corretora sem leitura ({oque}) com posição da automação "
+                         "aberta: nada sai até voltar (stop e alvo seguem na corretora)",
+                         agora)
+        elif _seg(agora, self._incompleta_desde) > SEM_LEITURA_S:
+            self._chamar("sem_leitura", "sem_leitura", (
+                f"corretora sem leitura ({oque}) há mais de 30 s: nada entra nem sai"
+                if foto is None else
+                f"corretora com leitura parcial ({oque}) há mais de 30 s: só sai "
+                "e protege, nada entra"), agora)
+
     def _consumir(self, comandos, dia, agora) -> list[dict]:
         vistos = {e.get("comando_id") for e in dia.eventos
                   if e["tipo"] == "comando" and e.get("comando_id")}
@@ -663,6 +803,13 @@ class Motor:
                 return False
             vistos.add(c.get("id"))
             campos = {k: v for k, v in c.items() if k not in ("tipo", "id", "quando")}
+            if c.get("tipo") == "zerar_tudo" and _de_outro_dia(c.get("criado_em"), dia.dia):
+                # clicado fora do pregão sem posição, o arquivo só é lido na
+                # manhã seguinte: valendo, desligaria o Envio o dia inteiro.
+                # O desligar no banco o clique já fez; aqui só se registra.
+                dia.registrar("comando", quando=agora, motivo=ZERAR_DESCARTADO,
+                              comando="zerar_tudo", comando_id=c.get("id"), **campos)
+                return False
             dia.registrar("comando", quando=agora, motivo=c["tipo"],
                           comando_id=c.get("id"), **campos)
         if comandos is None:
@@ -681,7 +828,10 @@ class Motor:
                 ativo = e
             elif e["tipo"] == "comando" and e.get("motivo") == "zerar_tudo_cumprido":
                 ativo = None
+        # o retrato antigo (do arquivo) nunca dá o zerar por cumprido: ele
+        # não viu o desligar no banco que o clique fez
         if ativo is not None and retrato is not None \
+                and not getattr(retrato, "antigo", False) \
                 and retrato.lido_em >= ativo["quando"] \
                 and not any(c.get("envio") for c in retrato.contas.values()):
             dia.registrar("comando", quando=agora, motivo="zerar_tudo_cumprido")
@@ -701,8 +851,8 @@ class Motor:
                 ativo = None if e.get("ligado") else e
             elif e.get("motivo") == "envio_cumprido":
                 ativo = None
-        if ativo is not None and retrato.lido_em >= ativo["quando"] \
-                and not conta.get("envio"):
+        if ativo is not None and not getattr(retrato, "antigo", False) \
+                and retrato.lido_em >= ativo["quando"] and not conta.get("envio"):
             dia.registrar("comando", quando=agora, motivo="envio_cumprido", conta_id=cid)
             ativo = None
         return ativo is not None
@@ -743,7 +893,7 @@ class Motor:
         return out
 
     def _regua(self, mt5, foto, retrato, perda, limite, simbolo, contrato_ok, dia,
-               desejados, agora=None):
+               desejados, agora=None, contrato_motivo=None):
         """`pode_entrar` da volta (6a + D1). O que já está em risco soma: a
         perda do dia, o caminho até o stop de cada posição aberta da
         automação (sem SL na corretora: o stop da operação), cada entrada
@@ -850,7 +1000,9 @@ class Motor:
 
         def pode_entrar(a):
             if not contrato_ok or not simbolo:
-                return False, "sem contrato operável hoje"
+                # SEM_CONTRATO (ainda não escolhido) é passageiro; vencimento
+                # hoje e a guarda de preço trazem o próprio texto
+                return False, contrato_motivo or SEM_CONTRATO_HOJE
             if not acumulado:
                 info = mt5.symbol_info(simbolo)
                 stops = 0.0 if info is None else float(info.trade_stops_level or 0) * float(
@@ -878,7 +1030,9 @@ class Motor:
             # errada, sem hedging, Algo desligado) são limpos: quem chama
             # fecha o chamado `ordens_falhou` aberto fora do passo
             "falhou": False,
-            "foto": "ok", "vivo_em": agora, "contrato": simbolo,
+            "foto": "parcial" if foto.parcial else "ok", "falhas": list(foto.falhas),
+            "retrato_antigo": bool(getattr(retrato, "antigo", False)),
+            "vivo_em": agora, "contrato": simbolo,
             "conta": {"conta_id": cid, "login": foto.login, "servidor": foto.servidor,
                       "confere": cid is not None, "hedging": foto.hedging,
                       "algo": foto.algo_ligado, "margem_livre": foto.margem_livre},
@@ -956,7 +1110,7 @@ class Motor:
             ok, motivo = False, K.TEXTOS[CLOSE_ONLY]
         else:
             ok, motivo = pode_entrar(a)
-        if not ok and motivo == SEM_COTACAO:
+        if not ok and motivo in PASSAGEIRAS:
             # passageira: "recusada" (desfecho que deixa tentar de novo), uma
             # vez seguida — a volta de 0,1 s não enche o diário
             ult = dia.ultimo(lig, d.entry_ts)
@@ -981,11 +1135,7 @@ class Motor:
 
         if not envio:
             if not dia.registrado(lig, d.entry_ts, "seria_enviada"):
-                info, tk = mt5.symbol_info(simbolo), mt5.symbol_info_tick(simbolo)
-                modo = K.modos_preenchimento(info.filling_mode if info else 0, mt5)[0]
-                preco = 0.0 if tk is None else (tk.ask if d.lado > 0 else tk.bid)
-                dia.registrar("seria_enviada", quando=agora, pedido=pedido(preco, modo),
-                              **base)
+                self._ensaio(mt5, pedido, d, simbolo, dia, agora, base)
             return
 
         # escrita adiantada: daqui em diante a ordem pode chegar à corretora
@@ -1039,6 +1189,46 @@ class Motor:
                      ligacao_id=lig, entry_ts=d.entry_ts)
         dia.registrar("perdida", quando=self._depois(agora), retcode=10030,
                       motivo=texto, **op)
+
+    def _ensaio(self, mt5, pedido, d, simbolo, dia, agora, base):
+        """Envio desligado: o pedido que iria passa pelo `order_check` — o
+        mesmo request, no mesmo modo de preenchimento que o caminho real
+        acabaria usando (o modo recusado com 10030 passa ao seguinte) — e
+        vira "seria enviada" com o retcode e o comment da corretora. Assim o
+        ensaio também confere o FORMATO da ordem, não só a decisão.
+
+        `order_check` só confere fundos e parâmetros e devolve um
+        MqlTradeCheckResult (retcode 0 = passou, como no exemplo oficial);
+        nada vai à corretora — quem envia é o `order_send` (mql5.com:
+        python_metatrader5/mt5ordercheck_py, trading/ordercheck). `None` =
+        sem resposta: grava o `last_error()`."""
+        info, tk = mt5.symbol_info(simbolo), mt5.symbol_info_tick(simbolo)
+        preco = 0.0 if tk is None else (tk.ask if d.lado > 0 else tk.bid)
+        modos = K.modos_preenchimento(info.filling_mode if info else 0, mt5)
+        req, chk, quebrou = None, None, None
+        for modo in modos:
+            req = pedido(preco, modo)
+            try:
+                chk = mt5.order_check(req)
+            except Exception as erro:
+                # o ensaio nunca derruba a volta: fica registrado e não se
+                # repete a cada 0,1 s
+                log.exception("order_check do ensaio falhou")
+                chk, quebrou = None, repr(erro)
+            if chk is None or K.classificar(chk) != K.PREENCHIMENTO:
+                break
+        extra = {}
+        if quebrou is not None:
+            extra["last_error"] = [None, quebrou]
+        elif chk is None:
+            try:
+                extra["last_error"] = list(mt5.last_error() or ())
+            except Exception as erro:
+                extra["last_error"] = [None, repr(erro)]
+        else:
+            extra["retcode"] = int(chk.retcode)
+            extra["comment"] = str(getattr(chk, "comment", "") or "")
+        dia.registrar("seria_enviada", quando=agora, pedido=req, **extra, **base)
 
     def _desfecho_entrada(self, mt5, classe, res, d, lig, simbolo, desvio, agora,
                           base, op):

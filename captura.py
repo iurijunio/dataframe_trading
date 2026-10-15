@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import logging
 import os
 import re
@@ -24,6 +25,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, time as hora, timedelta, timezone
+from decimal import Decimal
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -77,6 +79,11 @@ RAPIDA_ANTES_S, RAPIDA_DEPOIS_S = 58, 10
 # 5 s, com UMA tentativa sem espera: o banco ocupado por uma mineração não
 # pode atrasar a volta das ordens; fica o retrato anterior.
 A_CADA_RETRATO = 5
+
+
+def _json_simples(o):
+    """Decimal do banco (limite da conta) vira número; o resto, texto."""
+    return float(o) if isinstance(o, Decimal) else str(o)
 # Falha que se repete a cada volta: traceback uma vez, depois uma linha por minuto.
 LOG_REPETIDO_S = 60
 # A conferência papel × backtest roda o backtest do histórico inteiro
@@ -238,6 +245,7 @@ class Servico:
         self.retrato = None             # papel_vivo.Retrato da configuração
         self.retrato_em = None          # hora (servidor) do retrato em memória
         self._retrato_tentado = None    # mono da última tentativa de leitura
+        self._retrato_salvo = None      # conteúdo do último retrato salvo em arquivo
         self.aquecimento = None         # papel_vivo.Aquecimento do dia
         self.aquecimento_chave = None   # plano_id das ligações quando carregou
         # `self.contrato` (acima) é o texto publicado como contrato_vigente;
@@ -1047,6 +1055,7 @@ class Servico:
             # diário antes de o arquivo sumir
             comandos=comandos.PASTA, simbolo=simbolo,
             contrato_ok=simbolo is not None and not self._guarda_bloqueada,
+            contrato_motivo=self._contrato_motivo(srv),
             conectado_ha_s=(m - self.conectado_desde
                             if self.conectado_desde is not None else 0.0),
             no_pregao=no_pregao)
@@ -1059,6 +1068,19 @@ class Servico:
         if (est.get("conta") or {}).get("conta_id") is not None:
             self._conta_logada = est["conta"]["conta_id"]
         self.ordens_estado = {**est, **self._ordens_extra()}
+
+    def _contrato_motivo(self, srv):
+        """Por que o contrato não opera agora (None = opera). Sem contrato
+        escolhido ainda (WIN$N com último 0 às 09:00, lista que falhou) é
+        passageiro: a entrada tenta de novo e sai quando a volta seguinte
+        escolher. Vencimento hoje e a guarda de preço são do dia/minutos."""
+        c = self.contrato_dia or {}
+        if c.get("simbolo"):
+            return ordens.GUARDA_PRECO if self._guarda_bloqueada else None
+        if c.get("vence_em") is not None and srv is not None \
+                and c["vence_em"] == srv.date():
+            return c.get("motivo") or ordens.SEM_CONTRATO_HOJE
+        return ordens.SEM_CONTRATO
 
     def _virar_dia(self, dia) -> None:
         """Nada atravessa a noite: retrato, aquecimento, contrato e
@@ -1119,6 +1141,7 @@ class Servico:
 
     def _ordens_extra(self) -> dict:
         return {"retrato_em": self.retrato_em, "disponivel": self._disponivel,
+                "retrato_antigo": bool(self.retrato is not None and self.retrato.antigo),
                 "contrato_dia": self.contrato_dia,
                 "preco_contrato_bloqueado": self._guarda_bloqueada}
 
@@ -1138,9 +1161,12 @@ class Servico:
         try:
             con = db.connect(read_only=True, tentativas=1, espera=0)
         except RuntimeError:
-            return          # ocupado: o normal com uma mineração gravando
+            # ocupado: o normal com uma mineração gravando
+            self._retrato_do_arquivo()
+            return
         except Exception as e:
             self._falha("não consegui abrir o banco para o retrato das ordens", e)
+            self._retrato_do_arquivo()
             return
         try:
             with con:
@@ -1156,13 +1182,62 @@ class Servico:
                     self._versao_papel += 1
         except Exception as e:
             self._falha("não consegui ler o retrato da configuração das ordens", e)
+            self._retrato_do_arquivo()
             return
         self._sem_falha("não consegui ler o retrato da configuração das ordens")
         antigo, self.retrato, self.retrato_em = self.retrato, novo, quando
         # relido a cada 5 s, mas os desejados só mudam se as ligações mudaram
         # (fase, ligada, plano, períodos): senão refaria o papel à toa
-        if antigo is None or antigo.dia != novo.dia or antigo.ligacoes != novo.ligacoes:
+        if antigo is None or antigo.antigo or antigo.dia != novo.dia \
+                or antigo.ligacoes != novo.ligacoes:
             self._versao_papel += 1
+        self._salvar_retrato(novo)
+
+    # o retrato salvo (M3): ao lado do diário, lido de diario_ordens.PASTA na
+    # hora (o conftest a desvia) — nunca a pasta real num teste
+    ARQ_RETRATO = "retrato.json"
+
+    def _salvar_retrato(self, r) -> None:
+        """Guarda o último retrato lido do banco num arquivo local, com
+        escrita atômica (temporário + replace): a captura que reabre com o
+        banco preso pela mineração não fica sem saber a conta e as ligações.
+        Só regrava quando o conteúdo muda (o retrato é relido a cada 5 s).
+        Falhar aqui nunca para as ordens."""
+        try:
+            dados = papel_vivo.retrato_para_json(r)
+            chave = json.dumps({k: v for k, v in dados.items() if k != "lido_em"},
+                               sort_keys=True, default=_json_simples)
+            if chave == self._retrato_salvo:
+                return
+            pasta = Path(diario_ordens.PASTA)
+            pasta.mkdir(parents=True, exist_ok=True)
+            tmp = pasta / (self.ARQ_RETRATO + ".tmp")
+            tmp.write_text(json.dumps(dados, default=_json_simples), encoding="utf-8")
+            os.replace(tmp, pasta / self.ARQ_RETRATO)
+            self._retrato_salvo = chave
+        except Exception as e:
+            self._falha("não consegui salvar o retrato das ordens", e)
+        else:
+            self._sem_falha("não consegui salvar o retrato das ordens")
+
+    def _retrato_do_arquivo(self) -> None:
+        """Sem retrato nenhum (subida, virada do dia) e banco indisponível:
+        o último salvo, marcado `antigo` — a automação sabe a conta, protege
+        e sai por comando; nada entra até o banco responder."""
+        if self.retrato is not None:
+            return
+        arq = Path(diario_ordens.PASTA) / self.ARQ_RETRATO
+        if not arq.exists():
+            return
+        try:
+            r = papel_vivo.retrato_de_json(json.loads(arq.read_text(encoding="utf-8")))
+        except Exception as e:
+            self._falha("não consegui ler o retrato salvo das ordens", e)
+            return
+        self.retrato, self.retrato_em = r, r.lido_em
+        self._versao_papel += 1
+        log.warning("banco ocupado: ordens com o retrato salvo de %s (nada entra)",
+                    r.lido_em)
 
     def _escolher_contrato(self, srv, diario) -> None:
         """Na primeira volta conectada do pregão (e a cada nova conexão).
@@ -1229,6 +1304,11 @@ class Servico:
             return
         hoje, provisoria = self._barras_hoje(srv)
         self._provisoria_ts = provisoria[0] if provisoria else None
+        if self.retrato is not None and self.retrato.antigo:
+            # o retrato salvo não tem plano nem código: papel indisponível
+            # (só protege) até o banco responder
+            self._desejados, self._disponivel, self._minuto_calculado = {}, False, None
+            return
         # o candle fechado que o MT5 revisa (caso 11) também refaz: a chave
         # leva o conteúdo das barras, não só o minuto
         chave = (self._versao_papel, provisoria, len(hoje["ts"]),

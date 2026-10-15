@@ -48,6 +48,12 @@ class MT5Ordens:
         self.hedging = True
         self.vazio_uma_vez = False         # lista vazia logo após reconectar
         self.erro_leitura = False          # positions_get/orders_get/... -> None
+        # só estas leituras falham (nomes dos métodos): a corretora meio
+        # ilegível — ex.: {"history_deals_get"} lê posições e não o histórico
+        self.falhar: set = set()
+        self.erro_check = None             # order_check -> None com este last_error
+        self.check_retcode = None          # order_check devolve este retcode
+        self.check_comment = ""
         self.filling = 3                   # máscara FOK|IOC
         self.parcial_volume = 1.0
         self.stops_level = 0               # SYMBOL_TRADE_STOPS_LEVEL, em pontos
@@ -60,10 +66,15 @@ class MT5Ordens:
 
     # ---------------------------------------------------------- leitura
     def last_error(self):
-        return (-10004, "IPC") if self.erro_leitura else (1, "Success")
+        if self.erro_check is not None:
+            return self.erro_check
+        return (-10004, "IPC") if self.erro_leitura or self.falhar else (1, "Success")
+
+    def _falha(self, nome):
+        return self.erro_leitura or nome in self.falhar
 
     def positions_get(self, **k):
-        if self.erro_leitura:
+        if self._falha("positions_get"):
             return None
         if self.vazio_uma_vez:
             self.vazio_uma_vez = False
@@ -71,20 +82,24 @@ class MT5Ordens:
         return tuple(self.posicoes.values())
 
     def orders_get(self, **k):
-        return None if self.erro_leitura else tuple(self.ordens.values())
+        return None if self._falha("orders_get") else tuple(self.ordens.values())
 
     def history_deals_get(self, de, ate, **k):
-        return None if self.erro_leitura else tuple(self.negocios)
+        return None if self._falha("history_deals_get") else tuple(self.negocios)
 
     def history_orders_get(self, de, ate, **k):
-        return None if self.erro_leitura else tuple(self.historico)
+        return None if self._falha("history_orders_get") else tuple(self.historico)
 
     def account_info(self):
+        if "account_info" in self.falhar:
+            return None
         return NS(login=self.login, server=self.servidor,
                   margin_mode=2 if self.hedging else 0,
                   margin_free=self.margem_livre)
 
     def terminal_info(self):
+        if "terminal_info" in self.falhar:
+            return None
         return NS(connected=self.conectado, trade_allowed=self.algo)
 
     def symbol_info(self, s):
@@ -115,6 +130,11 @@ class MT5Ordens:
 
     def order_check(self, req):
         self.checados.append(dict(req))
+        if self.erro_check is not None:
+            return None
+        if self.check_retcode is not None:
+            return NS(retcode=self.check_retcode, comment=self.check_comment,
+                      margin_free=self.margem_livre)
         sem = self.margem_livre <= 0
         return NS(retcode=10019 if sem else 0, comment="No money" if sem else "Done",
                   margin_free=self.margem_livre)

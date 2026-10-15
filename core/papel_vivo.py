@@ -62,6 +62,45 @@ class Retrato:
     ligacoes: dict
     contas: dict
     portfolio_de: dict
+    # lido do arquivo local (banco ocupado na subida), não do banco: sem
+    # plano nem código, só serve para saber a conta e proteger (M3)
+    antigo: bool = False
+
+
+# campos da LigacaoViva que o retrato salvo guarda: o plano e o módulo não
+# (o papel não se calcula com o retrato antigo — só se protege e sai)
+_CAMPOS_LIG = ("ligacao_id", "portfolio_id", "status", "motivo", "fase", "conta_id",
+               "contratos_conta", "ligada", "falha", "desvio")
+
+
+def retrato_para_json(r: Retrato) -> dict:
+    return {
+        "dia": r.dia.isoformat(), "lido_em": r.lido_em.isoformat(),
+        "ligacoes": [dict({k: getattr(lv, k) for k in _CAMPOS_LIG},
+                          periodos=[[a.isoformat() if a else None,
+                                     b.isoformat() if b else None]
+                                    for a, b in lv.periodos])
+                     for lv in r.ligacoes.values()],
+        "contas": {str(k): v for k, v in r.contas.items()},
+        "portfolio_de": {str(k): v for k, v in r.portfolio_de.items()},
+    }
+
+
+def retrato_de_json(d: dict) -> Retrato:
+    """O retrato salvo, marcado `antigo`. As chaves voltam a int (o JSON as
+    guarda como texto)."""
+    def hora(x):
+        return datetime.fromisoformat(x) if x else None
+    ligs = {}
+    for x in d["ligacoes"]:
+        lv = LigacaoViva(plano=None, modulo=None,
+                         periodos=[(hora(a), hora(b)) for a, b in x.get("periodos") or []],
+                         **{k: x.get(k) for k in _CAMPOS_LIG})
+        ligs[int(lv.ligacao_id)] = lv
+    return Retrato(dia=date.fromisoformat(d["dia"]), lido_em=hora(d["lido_em"]),
+                   ligacoes=ligs, contas={int(k): v for k, v in d["contas"].items()},
+                   portfolio_de={int(k): v for k, v in d["portfolio_de"].items()},
+                   antigo=True)
 
 
 def ler_retrato(con, dia: date, agora: datetime, cache_codigo: dict, *,

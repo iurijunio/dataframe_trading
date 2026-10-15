@@ -244,6 +244,12 @@ class Fotografia:
     # ordens do dia, executadas ou não: prova de que uma entrada "sem
     # resposta" chegou à corretora (dicts: ticket, magic, ligacao_id, quando)
     historico_ordens: list = field(default_factory=list)
+    # leitura parcial: posições e ordens vieram, mas histórico, negócios,
+    # conta ou terminal falharam. Basta para sair e proteger; não basta para
+    # entrar, adotar nem dizer "saiu antes" (dependem do histórico) — o
+    # planejar respeita. `falhas` diz o que faltou (texto do chamado).
+    parcial: bool = False
+    falhas: list = field(default_factory=list)
 
 
 def _hora(epoch) -> datetime:
@@ -271,24 +277,51 @@ def _lista(mt5, valor):
     raise _Falha(erro)
 
 
-def fotografar(mt5, inicio_dia: datetime) -> Fotografia | None:
-    """A conta numa leitura só. `None` = volta perdida: sem foto confiável
-    a automação não decide nada (spec §5.1)."""
+# o que cada leitura é, para o chamado dizer em português o que falha
+_LEITURAS = {"positions_get": "posições", "orders_get": "ordens pendentes",
+             "history_deals_get": "negócios do dia",
+             "history_orders_get": "histórico de ordens",
+             "account_info": "dados da conta", "terminal_info": "dados do terminal"}
+
+
+def fotografar(mt5, inicio_dia: datetime, falhas: list | None = None) -> Fotografia | None:
+    """A conta numa leitura só. `None` = posições ou ordens ilegíveis: sem
+    elas nada se decide (spec §5.1). Com elas, mas sem histórico, negócios,
+    conta ou terminal, a foto sai PARCIAL (`parcial=True`): uma corretora
+    meio ilegível por minutos não pode deixar a automação calada com uma
+    posição que o papel já mandou encerrar. `falhas` (lista, opcional)
+    recebe o nome de cada leitura que falhou, também quando volta None."""
     de, ate = _utc(inicio_dia), _utc(inicio_dia + timedelta(days=1))
-    try:
-        pos = _lista(mt5, mt5.positions_get())
-        ords = _lista(mt5, mt5.orders_get())
-        deals = _lista(mt5, mt5.history_deals_get(de, ate))
-        hist = _lista(mt5, mt5.history_orders_get(de, ate))
-    except _Falha:
+    faltou: list[str] = []
+
+    def ler(nome, *args):
+        try:
+            return _lista(mt5, getattr(mt5, nome)(*args))
+        except _Falha:
+            faltou.append(_LEITURAS[nome])
+            return None
+    pos = ler("positions_get")
+    ords = ler("orders_get")
+    if pos is None or ords is None:
+        if falhas is not None:
+            falhas.extend(faltou)
         return None
+    deals = ler("history_deals_get", de, ate)
+    hist = ler("history_orders_get", de, ate)
     conta, term = mt5.account_info(), mt5.terminal_info()
-    if conta is None or term is None:
-        return None
-    f = Fotografia(login=int(conta.login), servidor=conta.server,
-                   hedging=int(conta.margin_mode) == mt5.ACCOUNT_MARGIN_MODE_RETAIL_HEDGING,
-                   margem_livre=float(conta.margin_free),
-                   algo_ligado=bool(term.trade_allowed))
+    if conta is None:
+        faltou.append(_LEITURAS["account_info"])
+    if term is None:
+        faltou.append(_LEITURAS["terminal_info"])
+    if falhas is not None:
+        falhas.extend(faltou)
+    f = Fotografia(parcial=bool(faltou), falhas=list(faltou))
+    if conta is not None:
+        f.login, f.servidor = int(conta.login), conta.server
+        f.hedging = int(conta.margin_mode) == mt5.ACCOUNT_MARGIN_MODE_RETAIL_HEDGING
+        f.margem_livre = float(conta.margin_free)
+    if term is not None:
+        f.algo_ligado = bool(term.trade_allowed)
     for p in pos:
         f.posicoes.append(Posicao(
             ticket=int(p.ticket), magic=int(p.magic),
@@ -306,11 +339,11 @@ def fotografar(mt5, inicio_dia: datetime) -> Fotografia | None:
                          "lado": {0: 1, 2: 1, 4: 1, 6: 1,
                                   1: -1, 3: -1, 5: -1, 7: -1}.get(int(o.type), 0),
                          "quando": _hora(o.time_setup)})
-    for o in hist:
+    for o in hist or ():
         f.historico_ordens.append({"ticket": int(o.ticket), "magic": int(o.magic),
                                    "ligacao_id": ligacao_do_magic(o.magic),
                                    "quando": _hora(o.time_setup)})
-    for d in deals:
+    for d in deals or ():
         # depósito/saldo (type 2...) não é negócio: viraria lucro do dia
         if int(d.type) not in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
             continue

@@ -429,3 +429,92 @@ def test_executada_sem_ticket_nunca_reentra_e_vira_perdida_sem_confirmacao(tmp_p
         a = plan(tmp_path, {4: D}, foto(), agora=T + timedelta(seconds=31), diario=d)
         assert tipos(a) == [("perdida", 4, None)]
         assert a[0].motivo == "executada sem confirmação da posição"
+
+
+# ================================================ correção final (09/10)
+def _parcial(f):
+    f.parcial, f.falhas = True, ["negócios do dia"]
+    return f
+
+
+def _neg(posicao, entrada=True, quando=T, lig=4):
+    return K.Negocio(ticket=900 + posicao, posicao=posicao, magic=K.magic(lig),
+                     ligacao_id=lig, simbolo="WINV26", entrada=entrada, lado=1,
+                     volume=2, preco=189_005, resultado=0.0, motivo=3, quando=quando)
+
+
+def test_foto_parcial_com_posicao_e_papel_zerado_sai(tmp_path):
+    # I2a: sem o histórico, a saída que o papel pede sai mesmo assim
+    a = plan(tmp_path, {4: Desejado(ZERADO)}, _parcial(foto([pos(10)])))
+    assert tipos(a) == [("sair", 4, 10)]
+
+
+def test_foto_parcial_com_papel_em_posicao_e_sem_posicao_nao_entra(tmp_path):
+    assert plan(tmp_path, {4: D}, _parcial(foto())) == []
+    # nem dá a operação por perdida depois da janela (depende do histórico)
+    assert plan(tmp_path, {4: D}, _parcial(foto()),
+                agora=T + timedelta(seconds=31)) == []
+
+
+def test_foto_parcial_protege_a_posicao_da_operacao(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("executada", quando=T, ligacao_id=4, entry_ts=T, ticket=10)
+    a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d)
+    assert tipos(a) == [("proteger", 4, 10)]
+
+
+def test_foto_parcial_nao_adota_nem_encerra_a_candidata(tmp_path):
+    # enviou e a resposta não chegou: a posição pode ser a própria operação.
+    # Sem histórico não se adota — e ela não sai por "não é a atual"
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
+    d.registrar("incerta", quando=T, ligacao_id=4, entry_ts=T)
+    assert plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d) == []
+    # com a foto completa, adota
+    a = plan(tmp_path, {4: D}, foto([pos(10, sl=0, tp=0)]), diario=d)
+    assert ("adotar", 4, 10) in tipos(a)
+
+
+def test_foto_parcial_nao_registra_saiu_antes(tmp_path):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("executada", quando=T, ligacao_id=4, entry_ts=T, ticket=10)
+    f = foto(negocios=[_neg(10), _neg(10, entrada=False)])
+    assert tipos(plan(tmp_path, {4: Desejado(ZERADO)}, _parcial(f), diario=d)) == []
+    assert tipos(plan(tmp_path, {4: D}, _parcial(f), diario=d)) == []
+
+
+def test_saida_da_propria_automacao_nao_vira_saiu_antes(tmp_path):
+    # M2: "Encerrar posição" fechou o ticket; o papel segue em POSICAO
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("executada", quando=T, ligacao_id=4, entry_ts=T, ticket=10)
+    d.registrar("saida_executada", quando=T + timedelta(seconds=5), ligacao_id=4,
+                ticket=10)
+    f = foto(negocios=[_neg(10), _neg(10, entrada=False)])
+    a = plan(tmp_path, {4: D}, f, agora=T + timedelta(seconds=6), diario=d)
+    assert a == []
+
+
+def test_entrada_nova_nao_e_casada_com_a_entrada_da_operacao_antiga(tmp_path):
+    # M2: a operação das 10:00 executou às 10:01:00 (ticket 10) e já saiu;
+    # a das 10:01 nunca foi enviada — entra, não "executou" pelo negócio antigo
+    d = Diario(tmp_path, date(2026, 10, 9))
+    antiga = T - timedelta(minutes=1)
+    d.registrar("enviando", quando=antiga, ligacao_id=4, entry_ts=antiga)
+    d.registrar("executada", quando=T, ligacao_id=4, entry_ts=antiga, ticket=10)
+    d.registrar("saida_executada", quando=T, ligacao_id=4, ticket=10)
+    f = foto(negocios=[_neg(10, quando=T), _neg(10, entrada=False, quando=T)])
+    assert tipos(plan(tmp_path, {4: D}, f, diario=d)) == [("entrar", 4, None)]
+
+
+def test_executou_so_vale_depois_do_primeiro_envio_desta_operacao(tmp_path):
+    # um negócio de entrada da ligação ANTES do primeiro envio desta operação
+    # não é dela (ex.: ticket que o diário não conhece)
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T + timedelta(seconds=10), ligacao_id=4, entry_ts=T)
+    d.registrar("recusada", quando=T + timedelta(seconds=10), ligacao_id=4, entry_ts=T)
+    f = foto(negocios=[_neg(77, quando=T + timedelta(seconds=2))])
+    a = plan(tmp_path, {4: D}, f, agora=T + timedelta(seconds=12), diario=d)
+    assert tipos(a) == [("entrar", 4, None)]
+    # o negócio depois do envio é desta operação: não reenvia
+    f2 = foto(negocios=[_neg(78, quando=T + timedelta(seconds=10))])
+    assert plan(tmp_path, {4: D}, f2, agora=T + timedelta(seconds=12), diario=d) == []

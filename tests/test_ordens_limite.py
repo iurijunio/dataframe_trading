@@ -920,3 +920,214 @@ def test_n_demo_zero_e_sem_retrato_none(tmp_path):
     est = m.passo(mt5, agora_srv=AG, retrato=None, desejados={}, disponivel=False,
                   comandos=[], simbolo="WINV26", contrato_ok=True, conectado_ha_s=60.0)
     assert est["n_demo"] is None
+
+
+# ================================================ correção final (09/10)
+from types import SimpleNamespace as NS  # noqa: E402
+
+from core import ordens as O  # noqa: E402
+from core.papel_leitura import checagem_ensaio  # noqa: E402
+
+
+# ---------------------------------------------------------------- I1
+def test_zerar_de_ontem_lido_hoje_e_descartado(tmp_path):
+    # clicado ontem à noite fora do pregão, sem posição: o arquivo só é
+    # lido na manhã seguinte — não pode desligar o envio do dia inteiro
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    z = {"tipo": "zerar_tudo", "id": "z", "criado_em": "2026-10-08T19:30:00"}
+    est = passo(m, mt5, {4: D}, comandos=[z])
+    assert est["zerar"] is False and est["envio"] is True   # segue o retrato
+    assert est["comandos"] == []
+    [ev] = evs(m, "comando")
+    assert ev["motivo"] == O.ZERAR_DESCARTADO and ev["comando_id"] == "z"
+    assert len(entradas(mt5)) == 1
+    # o mesmo arquivo de volta (unlink falhou) não roda nem registra de novo
+    passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=2), comandos=[dict(z)])
+    assert len(evs(m, "comando")) == 1 and m.zerar is False
+
+
+def test_zerar_de_hoje_antes_da_abertura_vale(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    z = {"tipo": "zerar_tudo", "id": "z", "criado_em": "2026-10-09T08:40:00"}
+    est = passo(m, mt5, {4: D}, comandos=[z])
+    assert est["zerar"] is True and est["envio"] is False and not entradas(mt5)
+    assert [e["motivo"] for e in evs(m, "comando")] == ["zerar_tudo"]
+
+
+# ---------------------------------------------------------------- I2
+def test_foto_parcial_no_passo_sai_da_posicao_com_papel_zerado(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    passo(m, mt5, {4: D})
+    t = evs(m, "executada")[0]["ticket"]
+    mt5.falhar = {"history_deals_get", "history_orders_get"}
+    est = passo(m, mt5, {4: Desejado(ZERADO)}, agora=AG + timedelta(seconds=2))
+    assert est["foto"] == "parcial" and t not in mt5.posicoes
+    assert evs(m, "saida_executada")[0]["ticket"] == t
+
+
+def test_foto_parcial_no_passo_nao_entra_nem_ensaia(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.falhar = {"history_deals_get"}
+    est = passo(m, mt5, {4: D})
+    assert not entradas(mt5) and est["foto"] == "parcial"
+    assert est["envio"] is True                 # o interruptor não muda na tela
+    passo(m, mt5, {4: D}, ret=retrato(contas={2: conta(envio=False)}),
+          agora=AG + timedelta(seconds=2))
+    assert not evs(m, "seria_enviada") and mt5.checados == []
+
+
+def test_foto_parcial_sem_a_conta_usa_a_da_mesma_conexao(tmp_path):
+    # account_info falhou: a última conta lida numa foto completa vale se a
+    # conexão não caiu desde então; sem ela, nada sai
+    mono = [100.0]
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST, mono=lambda: mono[0])
+    passo(m, mt5, {4: D})
+    t = evs(m, "executada")[0]["ticket"]
+    mt5.falhar = {"account_info"}
+    mono[0] = 102.0
+    # reconectou há 1 s (depois da última foto completa): não se sabe a conta
+    passo(m, mt5, {4: Desejado(ZERADO)}, agora=AG + timedelta(seconds=2), conectado=1.0)
+    assert t in mt5.posicoes and "conta_errada" not in m.chamados
+    # mesma conexão: a conta de antes vale e a saída sai
+    passo(m, mt5, {4: Desejado(ZERADO)}, agora=AG + timedelta(seconds=3), conectado=60.0)
+    assert t not in mt5.posicoes
+
+
+def test_chamado_sem_leitura_abre_depois_de_30_s_e_fecha_ao_voltar(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.falhar = {"history_deals_get"}
+    passo(m, mt5, {}, agora=AG)
+    passo(m, mt5, {}, agora=AG + timedelta(seconds=30))
+    assert "sem_leitura" not in m.chamados
+    est = passo(m, mt5, {}, agora=AG + timedelta(seconds=31))
+    c = m.chamados["sem_leitura"]
+    assert "leitura parcial" in c["texto"] and "negócios do dia" in c["texto"]
+    assert [x["chave"] for x in est["chamados"]] == ["sem_leitura"]
+    mt5.falhar = set()
+    passo(m, mt5, {}, agora=AG + timedelta(seconds=32))
+    assert "sem_leitura" not in m.chamados
+    assert [e["tipo"] for e in m.diario(DIA).eventos
+            if e["tipo"].startswith("chamado")] == ["chamado", "chamado_fechado"]
+
+
+def test_chamado_sem_leitura_na_hora_com_posicao_aberta_e_nem_foto_parcial(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    passo(m, mt5, {4: D})
+    mt5.falhar = {"positions_get"}
+    est = passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=1))
+    assert est["foto"] == "falhou"
+    assert "posições" in m.chamados["sem_leitura"]["texto"]
+    assert [c["chave"] for c in est["chamados"]] == ["sem_leitura"]
+
+
+def test_chamado_sem_leitura_nao_abre_fora_do_pregao(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.falhar = {"history_deals_get"}
+    passo(m, mt5, {}, agora=AG, no_pregao=False)
+    passo(m, mt5, {}, agora=AG + timedelta(seconds=40), no_pregao=False)
+    assert "sem_leitura" not in m.chamados
+
+
+# ---------------------------------------------------------------- I3
+def _ensaio(m, mt5):
+    passo(m, mt5, {4: D}, ret=retrato(contas={2: conta(envio=False)}))
+    [s] = evs(m, "seria_enviada")
+    return s
+
+
+def test_ensaio_confere_o_pedido_no_order_check_e_grava_o_retcode(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    s = _ensaio(m, mt5)
+    assert mt5.enviados == []                    # nunca envia
+    assert mt5.checados == [s["pedido"]]         # o MESMO request
+    assert s["retcode"] == 0 and s["comment"] == "Done"
+    assert s["pedido"]["type_filling"] == mt5.ORDER_FILLING_IOC
+    assert checagem_ensaio(s) is None
+
+
+def test_ensaio_recusado_mostra_seria_recusada(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.check_retcode, mt5.check_comment = 10019, "No money"
+    s = _ensaio(m, mt5)
+    assert s["retcode"] == 10019 and s["comment"] == "No money"
+    assert checagem_ensaio(s) == "seria recusada: No money"
+    assert mt5.enviados == []
+
+
+def test_ensaio_sem_resposta_grava_o_last_error(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.erro_check = (-10005, "IPC timeout")
+    s = _ensaio(m, mt5)
+    assert s["last_error"] == [-10005, "IPC timeout"] and "retcode" not in s
+    assert "sem resposta do MT5" in checagem_ensaio(s)
+
+
+def test_ensaio_usa_o_modo_de_preenchimento_que_o_caminho_real_usaria(tmp_path):
+    # IOC recusado (10030): como na entrada de verdade, passa ao FOK
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    real = mt5.order_check
+
+    def check(req):
+        r = real(req)
+        return NS(retcode=10030, comment="Unsupported filling mode") \
+            if req["type_filling"] == mt5.ORDER_FILLING_IOC else r
+    mt5.order_check = check
+    s = _ensaio(m, mt5)
+    assert s["pedido"]["type_filling"] == mt5.ORDER_FILLING_FOK and s["retcode"] == 0
+    assert [r["type_filling"] for r in mt5.checados] == [mt5.ORDER_FILLING_IOC,
+                                                         mt5.ORDER_FILLING_FOK]
+
+
+def test_ensaio_com_order_check_que_estoura_registra_e_nao_repete(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+
+    def quebra(req):
+        raise RuntimeError("terminal caiu")
+    mt5.order_check = quebra
+    s = _ensaio(m, mt5)
+    assert "terminal caiu" in s["last_error"][1]
+    passo(m, mt5, {4: D}, ret=retrato(contas={2: conta(envio=False)}),
+          agora=AG + timedelta(seconds=2))
+    assert len(evs(m, "seria_enviada")) == 1
+
+
+# ---------------------------------------------------------------- M1
+def test_sem_contrato_por_um_instante_tenta_de_novo_e_entra(tmp_path):
+    # 09:00:00: WIN$N com último 0, contrato ainda não escolhido; a volta
+    # seguinte escolhe — a entrada sai, não vira "não entrou" para sempre
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    passo(m, mt5, {4: D}, simbolo=None, contrato_ok=False,
+          contrato_motivo=O.SEM_CONTRATO)
+    assert not evs(m, "nao_entrou")
+    assert evs(m, "recusada")[0]["motivo"] == O.SEM_CONTRATO
+    passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=2))
+    assert len(entradas(mt5)) == 1 and evs(m, "executada")
+
+
+def test_vencimento_hoje_e_final(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    passo(m, mt5, {4: D}, simbolo=None, contrato_ok=False,
+          contrato_motivo="vencimento do WINV26: sem entradas hoje")
+    assert evs(m, "nao_entrou")[0]["motivo"] == "vencimento do WINV26: sem entradas hoje"
+    passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=2))
+    assert not entradas(mt5)
+
+
+def test_guarda_de_preco_tem_texto_proprio(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    passo(m, mt5, {4: D}, contrato_ok=False, contrato_motivo=O.GUARDA_PRECO)
+    assert evs(m, "nao_entrou")[0]["motivo"] == \
+        "preço do contrato não confere com o WIN$N"
+
+
+# ---------------------------------------------------------------- M2
+def test_encerrar_posicao_da_automacao_nao_registra_saiu_antes(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    passo(m, mt5, {4: D})
+    t = evs(m, "executada")[0]["ticket"]
+    cmd = [{"tipo": "encerrar_posicao", "ticket": t, "id": "a"}]
+    passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=2), comandos=cmd)
+    assert t not in mt5.posicoes and evs(m, "saida_executada")
+    for s in (4, 6, 8):
+        passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=s))
+    assert not evs(m, "saiu_antes") and len(entradas(mt5)) == 1

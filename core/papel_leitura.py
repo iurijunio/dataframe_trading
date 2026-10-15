@@ -830,6 +830,32 @@ def _texto_pedido(e: dict) -> str:
     return " · ".join(partes)
 
 
+def checagem_ensaio(e: dict) -> str | None:
+    """O que o `order_check` disse do pedido do ensaio ("seria enviada"):
+    None quando passou (retcode 0) ou o evento é de antes da conferência.
+    O retcode 0 é o "Done" do exemplo oficial do order_check (mql5.com)."""
+    erro = e.get("last_error")
+    if erro:
+        return f"conferência sem resposta do MT5 ({_texto_erro(erro)})"
+    rc = e.get("retcode")
+    if rc is None:
+        return None
+    try:
+        rc = int(rc)
+    except (TypeError, ValueError):
+        return None
+    if rc == 0:
+        return None
+    from .corretora import TEXTOS
+    return f"seria recusada: {e.get('comment') or TEXTOS.get(rc) or f'retorno {rc}'}"
+
+
+def _texto_erro(erro) -> str:
+    if isinstance(erro, (list, tuple)):
+        return " ".join(str(x) for x in erro if x is not None)
+    return str(erro)
+
+
 def _ordinal(n: int) -> str:
     return f"{n}ª"
 
@@ -852,7 +878,8 @@ def _uma_operacao_demo(chave, evs: list[dict], papel_op: dict | None,
              "exit_ts": None, "derrapagem_entrada": None,
              "derrapagem_saida": None, "pontos": None, "resultado": None,
              "situacao": None, "saida_motivo": None, "nota": None,
-             "pedido": None, "atraso_ms": None, "mesmo_minuto": False,
+             "pedido": None, "checagem": None, "atraso_ms": None,
+             "mesmo_minuto": False,
              "recusas": tipos.count("recusada"),
              "slippage_plano": slip_plano, "papel_mesmo_tamanho": None,
              "papel_liquido": None if papel_op is None
@@ -861,7 +888,8 @@ def _uma_operacao_demo(chave, evs: list[dict], papel_op: dict | None,
     if not entradas:
         if "seria_enviada" in tipos:
             e = next(e for e in evs if e["tipo"] == "seria_enviada")
-            linha.update(situacao="seria_enviada", pedido=_texto_pedido(e))
+            linha.update(situacao="seria_enviada", pedido=_texto_pedido(e),
+                         checagem=checagem_ensaio(e))
             return linha
         perdida = next((e for e in reversed(evs) if e["tipo"] == "perdida"), None)
         if perdida is not None:

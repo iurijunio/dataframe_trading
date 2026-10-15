@@ -485,8 +485,11 @@ def test_envio_desligado_so_registra_seria_enviada_da_ligacao_em_demo(base, mund
     c = Cena(base)
     for t in (_as(10, 0, 30), _as(10, 1, 1), _as(10, 1, 3), _as(10, 1, 20)):
         c.ir(t)
-    assert c.mt5.enviados == [] and c.mt5.checados == []
+    # o ensaio confere o formato na corretora (order_check), nunca envia
+    assert c.mt5.enviados == []
+    assert [r["magic"] for r in c.mt5.checados] == [7_000_000 + mundo.lig]
     assert [e["ligacao_id"] for e in _eventos("seria_enviada")] == [mundo.lig]
+    assert _eventos("seria_enviada")[0]["retcode"] == 0
     assert papel_.lig not in {e.get("ligacao_id") for e in _eventos()}
 
 
@@ -801,3 +804,146 @@ def test_fora_do_pregao_sem_retrato_nao_inventa(cena):
     cena.ir(_as(18, 40))
     o = cena.estado()["ordens"]
     assert o["n_demo"] is None and o["envio"] is None
+
+
+# ======================================================= correção final (09/10)
+@pytest.mark.lento
+def test_order_check_do_ensaio_cabe_no_orcamento_e_vem_depois_das_saidas(tmp_path):
+    """I3 + spec §3.1 (virada → ordem < 1 s): o ensaio passa cada pedido
+    pelo order_check. Com 5 ligações em demo e um order_check pessimista de
+    50 ms (no terminal é uma chamada local), a volta inteira cabe em 1 s, o
+    custo do motor além das chamadas fica pequeno, e a saída de uma posição
+    da automação sai ANTES do primeiro order_check — o ensaio nunca segura
+    uma saída."""
+    from core.papel_vivo import Desejado, LigacaoViva, Retrato
+    espera = 0.050
+    agora = datetime(2026, 10, 9, 10, 1, 1)
+    mt5 = MT5Ordens(agora=agora)
+    linha = []
+    real_check, real_send = mt5.order_check, mt5.order_send
+
+    def check(req):
+        linha.append("check")
+        _time.sleep(espera)
+        return real_check(req)
+
+    def send(req):
+        linha.append("send")
+        return real_send(req)
+    mt5.order_check, mt5.order_send = check, send
+    velha = mt5.abrir_manual(1, magic=7_000_000 + 9)       # da automação: sai
+    ligs = {i: LigacaoViva(ligacao_id=i, portfolio_id=1, status="rodando", motivo=None,
+                           plano=None, modulo=None, fase="demo", conta_id=2,
+                           ligada=True, desvio=10) for i in range(1, 6)}
+    ret = Retrato(dia=DIA, lido_em=agora, ligacoes=ligs,
+                  contas={2: {"login": LOGIN, "servidor": SERVIDOR, "limite": 1e6,
+                              "envio": False}},
+                  portfolio_de={i: 1 for i in ligs})
+    ts = agora.replace(second=0)
+    des = {i: Desejado(PV.POSICAO, lado=1, entry_ts=ts, entry_px=PRECO,
+                       stop_px=PRECO - 200, alvo_px=PRECO + 400, contratos=1)
+           for i in ligs}
+    m = ordens.Motor(tmp_path, {"tick_size": 5, "point_value": 0.2})
+    t0 = _time.perf_counter()
+    m.passo(mt5, agora_srv=agora, retrato=ret, desejados=des, disponivel=True,
+            comandos=[], simbolo="WINV26", contrato_ok=True, conectado_ha_s=60.0)
+    total = _time.perf_counter() - t0
+    seria = [e for e in m.diario(DIA).eventos if e["tipo"] == "seria_enviada"]
+    print(f"\nensaio com order_check: {len(seria)} ligações, {total * 1000:.0f} ms "
+          f"({len(ligs)} × {espera * 1000:.0f} ms de order_check)")
+    assert len(seria) == 5 and all(e["retcode"] == 0 for e in seria)
+    assert velha not in mt5.posicoes
+    assert linha[0] == "send" and linha.count("send") == 1      # a saída primeiro
+    assert total < 1.0
+    assert total - len(ligs) * espera < 0.150                   # o resto do motor
+
+
+def test_subida_com_banco_ocupado_usa_o_retrato_salvo_e_protege(cena, mundo, monkeypatch):
+    """M3: a captura cai logo depois de a proteção da entrada falhar e volta
+    com o banco preso pela mineração. Sem retrato do banco, o salvo (ao lado
+    do diário) diz a conta: a posição sem SL/TP recebe a proteção gravada
+    no diário. Nada entra; nada sai por falta de papel."""
+    from core import diario_ordens as DO
+    cena.mt5.roteiro = [10009, 10018]          # entra; a proteção é recusada
+    cena.ir(_as(10, 0, 30))
+    arq = Path(DO.PASTA) / P.Servico.ARQ_RETRATO
+    assert arq.exists() and "ao_vivo" in str(arq) and str(RAIZ) not in str(arq)
+    cena.ir(_as(10, 1, 1))
+    [ex] = _eventos("executada")
+    assert cena.mt5.posicoes[ex["ticket"]].sl == 0
+
+    _ocupar(monkeypatch)
+    s2 = cena.novo_servico()
+    cena.ir(_as(10, 1, 2), s2)
+    assert s2.retrato is not None and s2.retrato.antigo
+    p = cena.mt5.posicoes[ex["ticket"]]
+    assert p.sl == 188_805 and p.tp == 189_405
+    assert len(cena.entradas()) == 1 and cena.saidas() == []
+    o = cena.estado()["ordens"]
+    assert o["retrato_antigo"] is True and o["envio"] is True
+    # depois de 3 min o chamado do papel parado diz a verdade
+    cena.ir(_as(10, 4, 5), s2)
+    texto = s2.motor.chamados["papel_parado"]["texto"]
+    assert "banco ocupado" in texto and "configuração salva" in texto
+    assert len(cena.entradas()) == 1 and cena.saidas() == []
+
+
+def test_subida_com_banco_ocupado_sem_retrato_salvo_nao_protege(cena, mundo, monkeypatch):
+    # o controle do teste acima: sem o arquivo, a automação fica sem a conta
+    from core import diario_ordens as DO
+    cena.mt5.roteiro = [10009, 10018]
+    cena.ir(_as(10, 0, 30))
+    cena.ir(_as(10, 1, 1))
+    [ex] = _eventos("executada")
+    (Path(DO.PASTA) / P.Servico.ARQ_RETRATO).unlink()
+    _ocupar(monkeypatch)
+    s2 = cena.novo_servico()
+    cena.ir(_as(10, 1, 2), s2)
+    assert s2.retrato is None and cena.mt5.posicoes[ex["ticket"]].sl == 0
+
+
+def test_retrato_salvo_some_quando_o_banco_volta(cena, mundo, monkeypatch):
+    from core import diario_ordens as DO
+    cena.ir(_as(10, 0, 30))
+    soltar = _ocupar(monkeypatch)
+    s2 = cena.novo_servico()
+    cena.ir(_as(10, 0, 40), s2)
+    assert s2.retrato.antigo and s2._disponivel is False
+    soltar()
+    cena.ir(_as(10, 0, 46), s2)
+    cena.ir(_as(10, 0, 47), s2)
+    assert not s2.retrato.antigo and s2._disponivel is True
+    assert Path(DO.PASTA, P.Servico.ARQ_RETRATO).exists()
+
+
+def test_contrato_escolhido_um_instante_depois_ainda_entra(cena, mundo):
+    """M1: às 10:01:01 o WIN$N está com último 0 (contrato não escolhido);
+    na volta seguinte o preço chega, o contrato é escolhido e a entrada sai."""
+    cena.mt5.precos["WIN$N"] = 0
+    cena.ir(_as(10, 0, 30))
+    assert cena.s.contrato_dia["simbolo"] is None
+    cena.ir(_as(10, 1, 1))
+    assert cena.entradas() == [] and not _eventos("nao_entrou")
+    assert _eventos("recusada")[0]["motivo"] == ordens.SEM_CONTRATO
+    cena.mt5.precos["WIN$N"] = PRECO
+    cena.ir(_as(10, 1, 3))
+    assert len(cena.entradas()) == 1 and _eventos("executada")
+
+
+def test_zerar_clicado_ontem_fora_do_pregao_nao_trava_hoje(cena, mundo):
+    """I1 na captura: o comando escrito ontem à noite (sem posição, as
+    ordens paradas) fica na pasta e é lido na manhã seguinte: descartado."""
+    import json as _json
+    from core import comandos as CMD
+    pasta = Path(CMD.PASTA)
+    pasta.mkdir(parents=True, exist_ok=True)
+    (pasta / "20261008193000000000-x.json").write_text(_json.dumps(
+        {"id": "x", "tipo": "zerar_tudo", "criado_em": "2026-10-08T19:30:00"}),
+        encoding="utf-8")
+    cena.ir(_as(10, 0, 30))
+    cena.ir(_as(10, 1, 1))
+    assert not list(pasta.glob("*.json"))
+    # (o "envio" é o ligar do Envio que o cenário fez pela ficha)
+    assert [e["motivo"] for e in _eventos("comando") if e["motivo"] != "envio"] == \
+        [ordens.ZERAR_DESCARTADO]
+    assert len(cena.entradas()) == 1 and cena.estado()["ordens"]["zerar"] is False

@@ -33,11 +33,37 @@ def test_none_com_res_s_ok_vale_como_lista_vazia(monkeypatch):
     assert f is not None and f.ordens == []
 
 
-def test_none_do_historico_de_ordens_com_erro_e_volta_perdida(monkeypatch):
+def test_none_do_historico_de_ordens_com_erro_e_foto_parcial(monkeypatch):
+    # correção final I2a: posições e ordens lidas bastam para sair e proteger
     mt5 = MT5Ordens()
+    mt5.abrir_manual(1, magic=K.magic(4))
     monkeypatch.setattr(mt5, "history_orders_get", lambda de, ate, **k: None)
     monkeypatch.setattr(mt5, "last_error", lambda: (-10004, "IPC"))
-    assert K.fotografar(mt5, DIA) is None
+    falhas = []
+    f = K.fotografar(mt5, DIA, falhas)
+    assert f is not None and f.parcial and f.falhas == ["histórico de ordens"]
+    assert [p.ligacao_id for p in f.posicoes] == [4] and f.historico_ordens == []
+    assert falhas == ["histórico de ordens"]
+
+
+def test_foto_completa_nao_e_parcial():
+    f = K.fotografar(MT5Ordens(), DIA)
+    assert f.parcial is False and f.falhas == []
+
+
+def test_conta_e_terminal_ilegiveis_dao_foto_parcial_sem_login():
+    mt5 = MT5Ordens()
+    mt5.falhar = {"account_info", "terminal_info", "history_deals_get"}
+    f = K.fotografar(mt5, DIA)
+    assert f.parcial and f.login is None and f.negocios == []
+    assert set(f.falhas) == {"dados da conta", "dados do terminal", "negócios do dia"}
+
+
+def test_posicoes_ilegiveis_e_volta_perdida_com_o_motivo():
+    mt5 = MT5Ordens()
+    mt5.falhar = {"positions_get"}
+    falhas = []
+    assert K.fotografar(mt5, DIA, falhas) is None and falhas == ["posições"]
 
 
 def test_negocio_que_nao_e_compra_nem_venda_e_ignorado():
