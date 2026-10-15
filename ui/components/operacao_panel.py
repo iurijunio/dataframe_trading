@@ -888,6 +888,10 @@ def cabecalho(pf: dict, resumo: dict, *, contrato=None) -> list:
     def item(rot, valor):
         return html.Span([rot + " ", html.B(valor)], className="op-meta-i")
     n, op = resumo.get("n_variantes", 0), resumo.get("n_operando", 0)
+    # o estado da captura traz o contrato do dia como dicionário: um dict
+    # como filho quebra o desenho e o Dash devolve o menu à aba anterior
+    if isinstance(contrato, dict):
+        contrato = contrato.get("simbolo")
     return [
         _etiqueta("ligado", "verde") if pf.get("ligado")
         else _etiqueta("desligado", "cinza"),

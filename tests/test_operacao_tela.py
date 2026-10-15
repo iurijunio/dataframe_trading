@@ -625,3 +625,20 @@ def test_subtela_operacao_liga_o_pulso_dela():
     assert pg_off is True and op_off is False
     assert mostrar_subtela("operacao", "backtest")[4] is True
     assert mostrar_subtela("pregao", "aovivo")[4] is True
+
+
+def test_cabecalho_mostra_o_simbolo_mesmo_com_o_contrato_do_dia_inteiro():
+    # o estado da captura traz o contrato do dia como dicionário; um dict como
+    # filho de html.B quebra o desenho da tela e o Dash volta o menu para a
+    # aba anterior (bug de 15/10/2026)
+    import json
+    from ui.components import operacao_panel as OP
+    contrato = {"simbolo": "WINZ26", "motivo": "pelo volume",
+                "vence_em": "2026-12-16", "amanha": None}
+    cab = OP.cabecalho({"ligado": True}, {}, contrato=contrato)
+    texto = json.dumps([c.to_plotly_json() for c in cab], default=lambda o: o.to_plotly_json())
+    assert "WINZ26" in texto
+    assert "vence_em" not in texto and "motivo" not in texto
+    cab = OP.cabecalho({"ligado": True}, {}, contrato="WINZ26")
+    assert "WINZ26" in json.dumps([c.to_plotly_json() for c in cab],
+                                  default=lambda o: o.to_plotly_json())
