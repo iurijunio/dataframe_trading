@@ -535,9 +535,9 @@ def numeros(ordens: dict | None, resultado_portfolio: float,
         nota_pos = [html.Span(f"{conferem} confere" + ("m" if conferem > 1 else ""),
                               className="pos")]
         if diferentes:
-            nota_pos += [" · ", html.Span(f"{diferentes} pede"
-                                          + ("m" if diferentes > 1 else "")
-                                          + " atenção", className="aviso")]
+            nota_pos += [" · ", html.Span(f"{diferentes} diferente"
+                                          + ("s" if diferentes > 1 else ""),
+                                          className="neg")]
     else:
         nota_pos = "nenhuma na corretora" if tem else "sem demo hoje"
     posicoes = _kpi("Posições abertas", "Posições da automação deste portfólio "

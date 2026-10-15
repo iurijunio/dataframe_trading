@@ -1554,7 +1554,7 @@ body{
 .ord-chamados{display:flex;flex-direction:column;gap:8px;}
 .ord-chamado{display:flex;align-items:center;gap:14px;padding:11px 15px;border-radius:6px;
   border:1px solid rgba(255,77,125,.6);background:rgba(255,77,125,.07);flex-wrap:wrap;}
-.ord-chamado-espera{border-color:rgba(255,201,60,.4);background:rgba(255,201,60,.06);}
+.ord-chamado-espera{border-color:rgba(255,184,77,.4);background:rgba(255,184,77,.06);}
 .ord-chamado-txt{flex:1 1 320px;min-width:0;font-size:13px;line-height:1.5;color:var(--ink);}
 .ord-chamado-txt .mut{color:var(--muted);font-size:12px;}
 .ord-chamado-acoes{display:flex;gap:8px;flex-wrap:wrap;}
@@ -1578,6 +1578,11 @@ body{
 .ord-numeros{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr);
   gap:10px;}
 .ord-numeros .op-kpi-n{-webkit-line-clamp:3;}
+/* cores dentro das notas dos números e do aviso do editor (rascunho v2:
+   "1 confere" verde, "1 diferente" rosa, aviso âmbar) */
+.op-kpi-n .pos{color:var(--pos);}
+.op-kpi-n .neg{color:var(--neg);}
+.op-kpi-n .aviso,.ord-pop-custo .aviso{color:var(--warn);}
 .ord-kpi-de{font-size:13px;color:var(--muted);}
 .ord-barra{position:relative;height:6px;background:var(--surface-3);border-radius:3px;
   margin-top:6px;}
