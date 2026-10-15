@@ -740,3 +740,114 @@ def test_ticket_sem_ordem_nao_pega_posicao_herdada_mais_antiga(tmp_path):
     ev = evs(m, "executada")[-1]
     assert ev["entry_ts"] == T and ev["ticket"] is None
     assert not [r for r in acoes_de(mt5, 6) if r["position"] == herdada]
+
+
+# ------------------------------------- foto parcial: a posição órfã (14/10)
+# A entrada executou sem a resposta (incerta) e, na volta seguinte, o
+# histórico não vem: a candidata não pode ser adotada, mas também não pode
+# ficar sem stop enquanto a leitura seguir parcial.
+HIST = {"history_deals_get", "history_orders_get"}
+AG2 = T + timedelta(seconds=4)
+
+
+def _orfa(tmp_path, d=D):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.roteiro = ["executou_sem_resposta"]
+    assert volta(m, mt5, {4: d})[-1] == "incerta"
+    [t] = mt5.posicoes
+    assert mt5.posicoes[t].sl == 0
+    return mt5, m, t
+
+
+def test_parcial_protege_a_orfa_com_o_stop_do_enviando(tmp_path):
+    mt5, m, t = _orfa(tmp_path)
+    mt5.falhar = set(HIST)
+    # o papel recalculou o stop depois do envio: vale o que foi enviado
+    outro = Desejado(POSICAO, lado=1, entry_ts=T, entry_px=189_000, stop_px=188_700,
+                     alvo_px=189_600, contratos=2)
+    volta(m, mt5, {4: outro}, agora=AG2)
+    [prot] = acoes_de(mt5, 6)
+    assert prot == K.pedido_protecao(mt5, simbolo="WINV26", ticket=t, sl=188_800,
+                                     tp=189_400, magic_=K.magic(4))
+    assert (mt5.posicoes[t].sl, mt5.posicoes[t].tp) == (188_800, 189_400)
+    assert evs(m, "protecao")[0]["ticket"] == t
+    # nada entra, nada é adotado, nada sai, nenhum "saiu antes"
+    assert len(entradas_(mt5)) == 1 and len(evs(m, "enviando")) == 1
+    for tipo in ("adotada", "saiu_antes", "saida_enviando", "perdida"):
+        assert not evs(m, tipo), tipo
+    assert not m.chamados
+    # na volta seguinte, já protegida, nada a mais
+    volta(m, mt5, {4: outro}, agora=AG2 + timedelta(seconds=2))
+    assert len(acoes_de(mt5, 6)) == 1 and not evs(m, "adotada")
+
+
+def test_parcial_protege_a_orfa_vendida_com_arredondamento_da_protecao(tmp_path):
+    # stop do papel fora do tick: o enviando grava o arredondado e a
+    # proteção da órfã manda o mesmo valor (nunca mais apertado)
+    venda = Desejado(POSICAO, lado=-1, entry_ts=T, entry_px=189_000, stop_px=189_203,
+                     alvo_px=188_602, contratos=2)
+    mt5, m, t = _orfa(tmp_path, venda)
+    sl, tp = K.protecao(-1, 189_203, 188_602, 5)
+    assert (evs(m, "enviando")[0]["stop_px"], evs(m, "enviando")[0]["alvo_px"]) == (sl, tp)
+    mt5.falhar = set(HIST)
+    volta(m, mt5, {4: venda}, agora=AG2)
+    [prot] = acoes_de(mt5, 6)
+    assert (prot["sl"], prot["tp"]) == (float(sl), float(tp)) == (189_205.0, 188_600.0)
+
+
+def test_parcial_com_duas_candidatas_chama_e_nao_protege(tmp_path):
+    mt5, m, t = _orfa(tmp_path)
+    t2 = mt5.abrir_manual(1, magic=K.magic(4))
+    mt5.falhar = set(HIST)
+    volta(m, mt5, {4: D}, agora=AG2)
+    assert acoes_de(mt5, 6) == []
+    assert {k for k in m.chamados} == {f"sem_stop:{t}", f"sem_stop:{t2}"}
+    assert all(c["tipo"] == "sem_stop" for c in m.chamados.values())
+    assert t in mt5.posicoes and t2 in mt5.posicoes
+    assert not evs(m, "adotada") and len(entradas_(mt5)) == 1
+
+
+def test_parcial_sem_stop_no_enviando_chama_e_nao_protege(tmp_path):
+    sem = Desejado(POSICAO, lado=1, entry_ts=T, entry_px=189_000, stop_px=None,
+                   alvo_px=189_400, contratos=2)
+    mt5, m, t = _orfa(tmp_path, sem)
+    assert evs(m, "enviando")[0]["stop_px"] is None
+    mt5.falhar = set(HIST)
+    # o papel agora tem stop, mas o que foi enviado não tinha: não se inventa
+    volta(m, mt5, {4: D}, agora=AG2)
+    assert acoes_de(mt5, 6) == []
+    assert m.chamados[f"sem_stop:{t}"]["tipo"] == "sem_stop"
+    assert not evs(m, "adotada") and len(entradas_(mt5)) == 1
+
+
+def test_parcial_sem_candidata_nao_entra_nem_chama(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.falhar = set(HIST)
+    volta(m, mt5, {4: D})
+    assert mt5.enviados == [] and not m.chamados and m.diario(DIA).eventos == []
+
+
+def test_foto_completa_com_a_orfa_segue_adotando(tmp_path):
+    # a foto completa não muda: adota e protege com o stop do papel
+    mt5, m, t = _orfa(tmp_path)
+    outro = Desejado(POSICAO, lado=1, entry_ts=T, entry_px=189_000, stop_px=188_700,
+                     alvo_px=189_600, contratos=2)
+    foto = K.fotografar(mt5, datetime(2026, 10, 9))
+    acoes = planejar({4: outro}, True, foto, m.diario(DIA), AG2, 5, 60.0)
+    assert [(a.tipo, a.ticket, a.desejado) for a in acoes] == [
+        ("adotar", t, outro), ("proteger", t, outro)]
+    volta(m, mt5, {4: outro}, agora=AG2)
+    assert (mt5.posicoes[t].sl, mt5.posicoes[t].tp) == (188_700, 189_600)
+    assert evs(m, "adotada")[0]["ticket"] == t and not m.chamados
+
+
+def test_foto_completa_com_duas_candidatas_segue_sem_chamado(tmp_path):
+    mt5, m, t = _orfa(tmp_path)
+    t2 = mt5.abrir_manual(1, magic=K.magic(4))
+    foto = K.fotografar(mt5, datetime(2026, 10, 9))
+    acoes = planejar({4: D}, True, foto, m.diario(DIA), AG2, 5, 60.0)
+    assert sorted((a.tipo, a.ticket) for a in acoes) == [("sair", t), ("sair", t2)]
+
+
+def entradas_(mt5):
+    return [r for r in mt5.enviados if r["action"] == 1 and "position" not in r]

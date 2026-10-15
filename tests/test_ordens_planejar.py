@@ -469,7 +469,11 @@ def test_foto_parcial_nao_adota_nem_encerra_a_candidata(tmp_path):
     d = Diario(tmp_path, date(2026, 10, 9))
     d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
     d.registrar("incerta", quando=T, ligacao_id=4, entry_ts=T)
-    assert plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d) == []
+    # (o enviando aqui não tem stop gravado: a órfã sem stop vira chamado)
+    assert tipos(plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])),
+                      diario=d)) == [("chamar", 4, 10)]
+    # já com stop na corretora: nada
+    assert plan(tmp_path, {4: D}, _parcial(foto([pos(10)])), diario=d) == []
     # com a foto completa, adota
     a = plan(tmp_path, {4: D}, foto([pos(10, sl=0, tp=0)]), diario=d)
     assert ("adotar", 4, 10) in tipos(a)
@@ -518,3 +522,35 @@ def test_executou_so_vale_depois_do_primeiro_envio_desta_operacao(tmp_path):
     # o negócio depois do envio é desta operação: não reenvia
     f2 = foto(negocios=[_neg(78, quando=T + timedelta(seconds=10))])
     assert plan(tmp_path, {4: D}, f2, agora=T + timedelta(seconds=12), diario=d) == []
+
+
+def test_foto_parcial_protege_a_orfa_com_o_stop_do_enviando(tmp_path):
+    # a entrada executou sem resposta; sem histórico não se adota, mas a
+    # candidata única recebe o stop/alvo gravados no enviando (não os do papel)
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T, lado=1,
+                stop_px=188_750, alvo_px=189_450)
+    d.registrar("incerta", quando=T, ligacao_id=4, entry_ts=T)
+    a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d)
+    assert tipos(a) == [("proteger", 4, 10)]
+    assert (a[0].desejado.lado, a[0].desejado.stop_px, a[0].desejado.alvo_px) == \
+        (1, 188_750, 189_450)
+    # sem alvo gravado: protege só com o stop
+    d2 = Diario(tmp_path / "b", date(2026, 10, 9))
+    d2.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T, stop_px=188_750)
+    a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d2)
+    assert tipos(a) == [("proteger", 4, 10)] and a[0].desejado.alvo_px is None
+    # tentou há menos de 1 s: espera
+    d.registrar("protecao_enviando", quando=T + timedelta(seconds=1), ticket=10)
+    assert plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d,
+                agora=T + timedelta(seconds=1.5)) == []
+
+
+def test_foto_parcial_orfa_de_outra_operacao_nao_usa_este_enviando(tmp_path):
+    # o enviando com stop é de outra operação: o desta não tem stop -> chamado
+    d = Diario(tmp_path, date(2026, 10, 9))
+    antes = T - timedelta(minutes=5)
+    d.registrar("enviando", quando=antes, ligacao_id=4, entry_ts=antes, stop_px=188_750)
+    d.registrar("enviando", quando=T, ligacao_id=4, entry_ts=T)
+    a = plan(tmp_path, {4: D}, _parcial(foto([pos(10, sl=0, tp=0)])), diario=d)
+    assert tipos(a) == [("chamar", 4, 10)]

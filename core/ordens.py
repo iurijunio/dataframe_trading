@@ -135,12 +135,40 @@ def _so_protecao(foto, diario, lig, agora) -> list[Acao]:
     return acoes
 
 
+def _orfa_na_parcial(candidatas, d, diario, lig, agora) -> list[Acao]:
+    """Foto parcial com a entrada que executou sem resposta: a candidata não
+    se adota (a adoção confere o histórico), mas também não pode ficar sem
+    stop enquanto a leitura seguir parcial. Uma só: recebe o stop/alvo do
+    `enviando` desta operação (o que de fato foi à corretora, já
+    arredondado; nunca o do papel agora). Mais de uma, ou nada gravado no
+    envio: não se sabe qual é nem qual stop — chamado, como no
+    `_so_protecao`."""
+    sem_sl = [p for p in candidatas if round(p.sl) == 0]
+    if not sem_sl:
+        return []
+    envio = next((e for e in reversed(diario._da(lig, d.entry_ts, "enviando"))
+                  if e.get("stop_px") is not None), None)
+    if len(candidatas) == 1 and envio is not None:
+        p = sem_sl[0]
+        if not _pode(diario.ultima_tentativa("protecao_enviando", ticket=p.ticket), agora):
+            return []
+        return [Acao("proteger", lig, ticket=p.ticket, posicao=p,
+                     desejado=Desejado(POSICAO, lado=d.lado, stop_px=envio["stop_px"],
+                                       alvo_px=envio.get("alvo_px")))]
+    motivo = ("posição sem stop e leitura parcial: mais de uma candidata à entrada "
+              "sem resposta" if len(candidatas) > 1 else
+              "posição sem stop e leitura parcial: entrada sem resposta sem stop gravado")
+    return [Acao("chamar", lig, ticket=p.ticket, posicao=p, motivo=motivo)
+            for p in sem_sl]
+
+
 def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
              tick: int, conectado_ha_s: float) -> list[Acao]:
     """Com a foto PARCIAL (histórico/negócios/conta ilegíveis) só saídas e
     proteção: entrar, adotar, "perdida" e "saiu antes" dependem do
     histórico, e decidir sem ele duplicaria uma entrada ou daria por saída
-    uma posição que só não apareceu na lista."""
+    uma posição que só não apareceu na lista. A candidata da entrada sem
+    resposta não é adotada, mas recebe o stop do envio (`_orfa_na_parcial`)."""
     acoes: list[Acao] = []
     parcial = bool(getattr(foto, "parcial", False))
     if not disponivel or agora_srv is None:
@@ -243,6 +271,8 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
                 acoes.append(Acao("proteger", lig, desejado=d, ticket=minha.ticket,
                                   posicao=minha))
             continue
+        if parcial and candidatas:
+            acoes += _orfa_na_parcial(candidatas, d, diario, lig, agora_srv)
         if pend or parcial:
             continue          # ordem em trânsito / sem histórico: nada de entrar
 
@@ -790,7 +820,9 @@ class Motor:
                 f"corretora sem leitura ({oque}) há mais de 30 s: nada entra nem sai"
                 if foto is None else
                 f"corretora com leitura parcial ({oque}) há mais de 30 s: só sai "
-                "e protege, nada entra"), agora)
+                "e protege; a posição de uma entrada sem resposta recebe o stop "
+                "enviado, sem ser adotada (mais de uma, ou sem stop gravado: "
+                "chamado de posição sem stop); nada entra"), agora)
 
     def _consumir(self, comandos, dia, agora) -> list[dict]:
         vistos = {e.get("comando_id") for e in dia.eventos

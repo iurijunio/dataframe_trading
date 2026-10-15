@@ -1131,3 +1131,25 @@ def test_encerrar_posicao_da_automacao_nao_registra_saiu_antes(tmp_path):
     for s in (4, 6, 8):
         passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=s))
     assert not evs(m, "saiu_antes") and len(entradas(mt5)) == 1
+
+
+def test_chamado_sem_leitura_parcial_diz_o_que_a_automacao_faz(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.falhar = {"history_deals_get"}
+    passo(m, mt5, {}, agora=AG)
+    passo(m, mt5, {}, agora=AG + timedelta(seconds=31))
+    texto = m.chamados["sem_leitura"]["texto"]
+    assert "sem ser adotada" in texto and "stop enviado" in texto
+    assert "nada entra" in texto
+
+
+def test_passo_parcial_protege_a_orfa_sem_adotar(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.roteiro = ["executou_sem_resposta"]
+    passo(m, mt5, {4: D})
+    [t] = mt5.posicoes
+    mt5.falhar = {"history_deals_get", "history_orders_get"}
+    est = passo(m, mt5, {4: D}, agora=AG + timedelta(seconds=4))
+    assert est["foto"] == "parcial"
+    assert (mt5.posicoes[t].sl, mt5.posicoes[t].tp) == (188_800, 189_400)
+    assert len(entradas(mt5)) == 1 and not evs(m, "adotada") and not evs(m, "saiu_antes")

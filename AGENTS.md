@@ -211,6 +211,9 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
     falharam → só sair e proteger (nada de entrar, adotar, perdida nem
     "saiu antes"). Sem conta legível vale a da mesma conexão. Foto incompleta
     > 30 s no pregão (ou ilegível com posição aberta) → chamado `sem_leitura`.
+    Exceção à "só proteger": a candidata ÚNICA da entrada sem resposta, sem SL,
+    recebe o stop/alvo do `enviando` dela (nunca o do papel), sem ser adotada;
+    duas candidatas ou envio sem stop → chamado `sem_stop` (`_orfa_na_parcial`).
   - **"Zerar tudo" de outro dia** (clicado fora do pregão sem posição, lido na
     manhã seguinte) é descartado no diário — não desliga o envio de hoje.
   - **Retrato salvo** (`data/ao_vivo/ordens/retrato.json`, escrita atômica):
