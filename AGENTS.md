@@ -20,7 +20,7 @@ de o usuário juntar o `candidata` nele (remoto `origin` no GitHub).
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~1.980 testes, <1 min de coleta)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~2.100 testes, <1 min de coleta)
 ```
 
 - Para ver o app: rode `ui/app.py` e abra http://127.0.0.1:8050. Quem tiver
@@ -237,6 +237,15 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - "Saiu antes" só para ticket que a própria automação não encerrou; a
     entrada sem resposta só casa com negócio depois do 1º envio da operação
     e nunca com ticket de outra operação.
+- **Nunca passe dicionário (ou qualquer coisa que não seja componente) como
+  filho de `html.*`.** O Dash 4 falha ao desenhar e, em silêncio, devolve o
+  estado de OUTROS componentes: o menu e as sub-telas voltavam sozinhos para
+  a aba anterior (`421cc4f`: o cabeçalho da Operação recebeu o `contrato_dia`
+  inteiro). Trocar para `dcc.Tabs` (`47b00bb`) não era o problema e foi
+  revertido (`d0d180b`). Formate o texto antes de pôr na tela.
+- **Relógio do Windows:** com o serviço `w32time` parado o PC atrasou 222 s.
+  Com o MT5 conectado a automação usa o relógio da corretora, mas deixe o
+  `w32time` em início automático com os servidores do ntp.br.
 - **Mineração sem cópias:** campo de um tipo não escolhido (ATR com alvo
   em pontos, DI no rango) e as variações do ADX desligado dão resultado
   idêntico — `optimizer.espaco_util` / `combinacoes_uteis` podam antes de
@@ -282,11 +291,18 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    (branch `live-trading`, 16 tarefas). Spec:
    `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md`; decisões em
    `...-ordens-decisoes.md`. O **Envio de ordens nasce desligado** e registra
-   "seria enviada". **Próximo passo: o ensaio** — um pregão inteiro com o
-   portfólio em fase demo e Envio desligado; no fim do dia, cada operação do
-   papel deve ter um "seria enviada" no mesmo minuto, com lado, volume e
-   stop/alvo certos. Só então o usuário liga o Envio com 1 contrato. Conta
-   real fica fora desta parte. Pausar com posição aberta encerra na hora.
+   "seria enviada". Conta real fica fora desta parte. Pausar com posição
+   aberta encerra na hora.
+   **Situação em 15/10/2026:** o usuário dispensou o ensaio de um pregão
+   inteiro. A **ordem de teste** na demo passou (entrada 149 ms, proteção
+   676 ms, saída 496 ms). O **Envio de ordens está LIGADO na conta demo, com
+   1 contrato**, na ligação do `rompimento_ema_abertura`; a ligação do
+   rompimento de canal segue só no papel. O PR `live-trading` → `master` está
+   aberto (não mergeado).
+   **Próximo passo:** acompanhar a demo por 3 a 5 pregões, comparando papel ×
+   demo todo dia; depois mergear no `master` e promover a estratégia de canal.
+   Ideias para depois: "sair no sinal contrário" como opção minerável; recursos
+   com LLM fora do caminho da ordem; aba Conta.
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
 
 Entrega futura: aba **Conta** no topo (nome escolhido pelo usuário; nunca

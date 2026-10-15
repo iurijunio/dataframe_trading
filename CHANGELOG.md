@@ -13,9 +13,27 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
   `core/comandos.py`, `core/contrato_dia.py`, `core/papel_backtest.py`,
   `captura.py`, `ui/components/ordens_panel.py`; desenho em
   [docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md](docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md)).
-  Suíte: 1.977 testes. O serviço de captura agora manda as ordens do papel
+  Suíte: 2.097 testes. O serviço de captura agora manda as ordens do papel
   para a demo. **O Envio de ordens nasce desligado** e só registra "seria
-  enviada"; o próximo passo é o ensaio de um pregão inteiro nesse modo.
+  enviada". Em 15/10/2026 o usuário dispensou o ensaio de um pregão inteiro
+  e ligou o Envio na demo com 1 contrato, na ligação do
+  `rompimento_ema_abertura` (a de rompimento de canal segue no papel).
+  - **Ordem de teste** (`core/ordem_teste.py`, comando `ordem_teste`, magic
+    7.000.000, só conta demo): compra 1, põe SL/TP, confere e sai pelo ticket.
+    Rodada em 15/10: entrada 149 ms, proteção 676 ms, saída 496 ms. O botão
+    saiu da tela; o motor, o comando e o Diário ficam.
+  - **Correções finais.** Leitura parcial da corretora ainda roda saídas e
+    proteção e abre o chamado `sem_leitura`; posição órfã na leitura parcial
+    ganha stop, e se o stop for recusado por mais de 2 s ela é encerrada. O
+    ensaio passa cada ordem pelo `order_check` do MT5 e mostra "seria
+    recusada". "Zerar tudo" de dia anterior é descartado. Entrada sem
+    contrato escolhido é retentada, não perdida. Acabou o `saiu_antes`
+    fantasma. O último retrato vai a um arquivo local, usado quando o banco
+    está preso na subida.
+  - **Bug do menu** (`ui/components/operacao_panel.py`): o cabeçalho da
+    Operação recebia o `contrato_dia` como dicionário; o Dash falhava ao
+    desenhar e devolvia menu e sub-telas à aba anterior. A troca por
+    `dcc.Tabs` foi revertida.
   - **Reconciliação desejado × corretora.** A cada volta o serviço compara a
     posição que o papel quer com a que a corretora tem e envia só a diferença
     (entrada, saída, stop/alvo, stop móvel). Erro do MT5 é classificado por
