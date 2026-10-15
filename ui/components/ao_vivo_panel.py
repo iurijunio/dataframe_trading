@@ -93,15 +93,19 @@ def painel():
         dcc.Store(id="av-aberta", data=None),
         html.Section([
             html.Div([html.H2("Ao vivo", className="panel-title av-titulo"),
-                      dcc.RadioItems(
+                      # dcc.Tabs, nao RadioItems (que voltava sozinho no Dash 4)
+                      dcc.Tabs(
                           id="av-subtela", value="estrategias",
                           persistence=True, persistence_type="local",
                           className="av-subtelas",
-                          options=[{"label": "Estratégias",
-                                    "value": "estrategias"},
-                                   {"label": "Pregão", "value": "pregao"},
-                                   {"label": "Operação",
-                                    "value": OP.SUBTELA}])],
+                          parent_className="av-subtelas-pai",
+                          content_style={"display": "none"},
+                          children=[
+                              dcc.Tab(label=r, value=v, className="av-aba",
+                                      selected_className="av-aba-sel")
+                              for r, v in [("Estratégias", "estrategias"),
+                                           ("Pregão", "pregao"),
+                                           ("Operação", OP.SUBTELA)]])],
                      className="panel-head"),
         ], className="panel av-topo"),
         html.Div(_estrategias(), id="av-bloco-estrategias",
