@@ -87,6 +87,17 @@ def zerar(armado_em: float | None, estado: dict | None, agora: datetime,
     if info["selo"] == "sem_captura":
         aviso = ("Comando gravado, esperando a captura voltar — stop e alvo "
                  "seguem na corretora")
+    elif info["posicoes"] == 0:
+        # nada a encerrar: o efeito é o Envio desligado no banco (feito
+        # acima). Fora do pregão o comando só é lido na manhã seguinte e lá
+        # é descartado (core/ordens.py `_de_outro_dia`)
+        aviso = ("Envio de ordens desligado — nenhuma posição da automação "
+                 "aberta para encerrar")
+        if ocupado:
+            aviso = ("Nenhuma posição da automação aberta · banco ocupado: o "
+                     "Envio NÃO foi desligado no banco — desligue na ficha da "
+                     "conta quando o banco liberar")
+        return None, ROTULO, aviso
     else:
         aviso = "Zerando tudo: a captura encerra as posições na próxima volta"
     if ocupado:

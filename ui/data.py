@@ -92,6 +92,11 @@ _SELO_TEXTO = {
 }
 
 
+# os `parado` que a captura só publica sem posição da automação aberta
+# (captura.py `_ordens_volta`); "MT5 fora do ar" não diz nada das posições
+_PARADO_SEM_POSICAO = ("fora do pregão", "sem relógio do servidor")
+
+
 def _posicoes_da_automacao(o: dict) -> int:
     return sum(len((l or {}).get("posicoes") or [])
                for l in (o.get("ligacoes") or {}).values())
@@ -130,6 +135,10 @@ def ordens_do_estado(e: dict | None, agora: datetime | None = None) -> dict:
     chamados = [c for c in (o.get("chamados") or []) if isinstance(c, dict)]
     chaves = [f"{c.get('chave')}@{c.get('desde')}" for c in chamados]
     posicoes = _posicoes_da_automacao(o) if "ligacoes" in o else None
+    if posicoes is None and o.get("parado") in _PARADO_SEM_POSICAO:
+        # a captura só para as ordens fora do pregão quando a automação não
+        # tem posição (na corretora nem no diário): zero, não "não se sabe"
+        posicoes = 0
 
     def com_alarme(selo, texto=None, extra=False, chave_extra=None):
         ks = chaves + ([chave_extra] if chave_extra else [])
@@ -160,6 +169,12 @@ def ordens_do_estado(e: dict | None, agora: datetime | None = None) -> dict:
         return com_alarme("desligado", texto)
     if o.get("foto") == "falhou":
         return com_alarme("desligado", "Demo · sem leitura da corretora agora")
+    if o.get("foto") == "parcial":
+        return com_alarme("desligado", "Demo · leitura parcial da corretora "
+                          "(só sai e protege)")
+    if o.get("retrato_antigo"):
+        return com_alarme("desligado", "Demo · banco ocupado, configuração salva "
+                          "(só protege)")
     conta = o.get("conta") or {}
     if "conta" in o and conta.get("conta_id") is None:
         # MT5 logado numa conta que não está cadastrada: a automação não

@@ -1031,3 +1031,54 @@ def test_trocar_o_filtro_do_diario_nao_refaz_o_comparativo(_banco_isolado):
         return {f"{e['id']}.{e['property']}" for e in cb["inputs"]}
     assert "av-op-ord-diario-filtro.value" not in entradas("ordens_op")
     assert "av-op-ord-diario-filtro.value" in entradas("diario_op")
+
+
+# ======================================================= correção final (09/10)
+def test_ensaio_recusado_no_order_check_aparece_na_tabela_e_no_diario(banco):
+    # I3: o order_check do ensaio disse não — a tela mostra "seria recusada"
+    with db.connect_write() as con:
+        con.execute("INSERT INTO portfolios (portfolio_id, nome, criado_em) "
+                    "VALUES (1, 'pf', '2026-09-01')")
+        con.execute("INSERT INTO estrategia_variantes (variante_id, estrategia, "
+                    "nome, criado_em) VALUES (1,'rompimento_canal','canal',"
+                    "'2026-09-01')")
+        con.execute("INSERT INTO portfolio_membros (ligacao_id, portfolio_id, "
+                    "variante_id, adicionado_em, fase, fase_desde, ligada) "
+                    "VALUES (7,1,1,'2026-09-01','demo','2026-10-01',true)")
+        _evento(con, 1, "10:15:01", "seria_enviada", 7, "10:15", lado=-1,
+                contratos=2, simbolo="WINV26", preco_papel=188205,
+                stop_px=188575, alvo_px=187495, retcode=10019, comment="No money")
+        _evento(con, 2, "10:20:01", "seria_enviada", 7, "10:20", lado=1,
+                contratos=2, simbolo="WINV26", stop_px=188000, retcode=0,
+                comment="Done")
+    ops = {o["entry_ts"].strftime("%H:%M"): o
+           for o in _ler(lambda con: PL.operacoes_demo(con, 1, DIA))}
+    assert ops["10:15"]["checagem"] == "seria recusada: No money"
+    assert ops["10:20"]["checagem"] is None
+    t = textos(OR.operacoes_demo([ops["10:15"]]))
+    assert "seria enviada" in t and "seria recusada: No money" in t
+    d = textos(OR.diario_do_dia(_ler(lambda con: PL.eventos_ordens(con, 1, DIA)),
+                                NOMES))
+    assert "seria recusada: No money" in d
+
+
+def test_ensaio_sem_resposta_do_order_check_no_diario():
+    e = _ev("10:15:01", "seria_enviada", lado=1, contratos=1,
+            last_error=[-10005, "IPC timeout"])
+    t = textos(OR.diario_do_dia([e], NOMES))
+    assert "sem resposta do MT5" in t and "IPC timeout" in t
+
+
+def test_zerar_de_outro_dia_descartado_no_diario():
+    e = _ev("09:00:01", "comando", lig=None, motivo="zerar de outro dia, descartado")
+    assert "Zerar tudo de outro dia descartado" in textos(OR.diario_do_dia([e], NOMES))
+
+
+def test_faixa_de_saude_com_leitura_parcial():
+    o = {"foto": "parcial", "vivo_em": AGORA.isoformat(),
+         "conta": {"conta_id": 1, "login": 123, "algo": True, "margem_livre": 1.0}}
+    assert "leitura parcial" in textos(OR.faixa_saude(o, agora=AGORA))
+
+
+def test_chamado_sem_leitura_tem_explicacao():
+    assert "leitura parcial" in OR._SUBTEXTO["sem_leitura"]

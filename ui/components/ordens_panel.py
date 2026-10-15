@@ -20,6 +20,9 @@ from datetime import date, datetime
 
 from dash import dcc, html
 
+from core.ordens import ZERAR_DESCARTADO
+from core.papel_leitura import checagem_ensaio
+
 from .cartao import dica, inteiro, num
 
 # trava da conta (core.ordens.TRAVA): a marca na barra da perda do dia
@@ -161,7 +164,7 @@ def faixa_saude(ordens: dict | None, *, ultimo_candle=None, atraso_ms=None,
     dos carimbos do estado), para a idade não herdar o atraso do PC."""
     o = ordens or {}
     conta = o.get("conta") or {}
-    tem_foto = o.get("foto") == "ok"
+    tem_foto = o.get("foto") in ("ok", "parcial")
 
     if o.get("erro"):
         mt5, mt5_tom = "erro nas ordens", "rosa"
@@ -170,6 +173,8 @@ def faixa_saude(ordens: dict | None, *, ultimo_candle=None, atraso_ms=None,
         mt5_tom = "rosa" if "MT5" in str(o["parado"]) else "cinza"
     elif o.get("foto") == "falhou":
         mt5, mt5_tom = "sem leitura", "ambar"
+    elif o.get("foto") == "parcial":
+        mt5, mt5_tom = "leitura parcial", "ambar"
     elif tem_foto:
         mt5, mt5_tom = "conectado", "ok"
     elif not o:
@@ -244,7 +249,11 @@ _SUBTEXTO = {
     "saida_pendente": "A automação segue tentando sair. O stop e o alvo seguem "
                       "na corretora.",
     "sem_stop": "Posição sem stop na corretora: encerre ou acompanhe de perto.",
-    "papel_parado": "Sem o papel a automação só protege: não entra nem sai.",
+    "papel_parado": "Sem o papel a automação só protege e sai por comando "
+                    "(Zerar tudo, Encerrar posição, trava): nada entra.",
+    "sem_leitura": "A corretora não responde a leitura completa. Com a leitura "
+                   "parcial a automação só sai e protege; sem nenhuma, nada sai "
+                   "(o stop e o alvo seguem na corretora).",
     "conta_errada": "Nada é enviado enquanto o MT5 estiver em outra conta.",
     "algo_desligado": "Ligue o Algo Trading no MT5; nada sai até lá.",
     "mt5_fora": "O stop e o alvo seguem na corretora.",
@@ -581,6 +590,8 @@ def _situacao_demo(l: dict):
         filhos = [_etiqueta(rot, tom, explica)]
     if sit == "seria_enviada" and l.get("pedido"):
         filhos.append(html.Span(f" {l['pedido']}", className="mut"))
+    if sit == "seria_enviada" and l.get("checagem"):
+        filhos.append(html.Span(f" · {l['checagem']}", className="ord-pend"))
     elif sit == "fechada" and l.get("nota"):
         filhos.append(html.Span(f" {l['nota']}", className="ord-pend"))
     return filhos
@@ -661,6 +672,9 @@ def _texto_evento(e: dict) -> tuple[str, str] | None:
             return None
         if motivo == "zerar_tudo":
             return "Zerar tudo pedido na tela", "ambar"
+        if motivo == ZERAR_DESCARTADO:
+            return ("Zerar tudo de outro dia descartado (o Envio já tinha sido "
+                    "desligado no clique)"), ""
         if motivo == "encerrar_posicao":
             return f"Encerrar posição pedido na tela (ticket {e.get('ticket')})", "ambar"
         if motivo == "envio":
@@ -680,7 +694,9 @@ def _texto_evento(e: dict) -> tuple[str, str] | None:
         "perdida": (f"entrada perdida: {motivo}" if motivo else "entrada perdida",
                     "ambar"),
         "nao_entrou": (f"não entrou: {motivo}" if motivo else "não entrou", "ambar"),
-        "seria_enviada": (f"seria enviada (Envio desligado): {lado}{ctr_t}{sim}", ""),
+        "seria_enviada": (f"seria enviada (Envio desligado): {lado}{ctr_t}{sim}"
+                          + (f" · {checagem_ensaio(e)}" if checagem_ensaio(e) else ""),
+                          "ambar" if checagem_ensaio(e) else ""),
         "adotada": (f"posição adotada a {_preco(e.get('preco'))} ({motivo})"
                     if motivo else "posição adotada", ""),
         "saiu_antes": (f"saiu na corretora a {_preco(e.get('preco'))}: {motivo}"

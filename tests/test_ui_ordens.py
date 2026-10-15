@@ -412,3 +412,40 @@ def test_pulso_do_topo_responde_pelo_servidor(tmp_path):
     assert resp["ord-alarme"]["data-alarme"] == "1"
     assert "travada" in resp["ord-alarme"]["data-chaves"]
     assert "ord-selo-travada" in resp["ord-selo"]["className"]
+
+
+# ======================================================= correção final (09/10)
+def _parado_fora():
+    return {"foto": None, "parado": "fora do pregão", "vivo_em": AGORA.isoformat(),
+            "n_demo": 1, "envio": True, "travada": None, "chamados": []}
+
+
+def test_fora_do_pregao_sem_posicao_o_aviso_diz_que_o_envio_foi_desligado(contas_falsas):
+    # I1: fora do pregão a captura só para as ordens sem posição; o zerar
+    # não "encerra na próxima volta" — o efeito é o Envio desligado
+    _, rotulo, _ = CO.zerar(None, _estado(_parado_fora()), AGORA, agora_s=100.0)
+    assert "nenhuma posição" in rotulo
+    _, _, aviso = CO.zerar(98.0, _estado(_parado_fora()), AGORA, agora_s=100.0)
+    assert "Envio de ordens desligado" in aviso and "próxima volta" not in aviso
+    assert contas_falsas == [(1, False, True), (2, False, True)]
+
+
+def test_sem_posicao_e_banco_ocupado_avisa_que_o_envio_nao_desligou(monkeypatch,
+                                                                    contas_falsas):
+    def ocupado():
+        raise RuntimeError("banco ocupado")
+    monkeypatch.setattr(CO, "_contas_ativas", ocupado)
+    _, _, aviso = CO.zerar(98.0, _estado(_ordens(ligacoes={})), AGORA, agora_s=100.0)
+    assert "NÃO foi desligado" in aviso and "próxima volta" not in aviso
+
+
+def test_mt5_fora_do_ar_nao_diz_que_nao_ha_posicao():
+    o = dict(_parado_fora(), parado="MT5 fora do ar")
+    assert D.ordens_do_estado(_estado(o), AGORA)["posicoes"] is None
+
+
+def test_selo_com_leitura_parcial_e_retrato_antigo():
+    r = D.ordens_do_estado(_estado(_ordens(foto="parcial")), AGORA)
+    assert r["selo"] == "desligado" and "leitura parcial" in r["texto"]
+    r = D.ordens_do_estado(_estado(_ordens(retrato_antigo=True)), AGORA)
+    assert "configuração salva" in r["texto"]
