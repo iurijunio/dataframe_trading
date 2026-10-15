@@ -523,15 +523,40 @@ def linha_operacao(o: dict) -> html.Tr:
         _cel(var, "t"),
         _cel(html.Span("COMPRA" if compra else "VENDA",
                        className="op-lado " + ("op-c" if compra else "op-v"))),
-        _cel(f"{o.get('contratos')} / —", "n"),
+        _cel(f"{o.get('contratos')} / {_ctr_demo(o.get('demo'))}", "n"),
         _cel(_preco(o.get("entry_px")), "n"),
         preco_saida,
         _cel(("+" if pts > 0 else "-" if pts < 0 else "") + inteiro(abs(pts)),
              "n " + (_sinal(pts) or "")),
         _cel(resultado, "n " + (_sinal(o.get("liquido")) or "")),
         _cel(saiu, saiu_cls),
-        _cel("—", "n mut"),
+        _papel_x_demo(o.get("demo")),
     ], className=classe)
+
+
+def _ctr_demo(d) -> str:
+    if not d or d.get("contratos") is None:
+        return "—"
+    c = float(d["contratos"])
+    return str(int(c)) if c == int(c) else num(c, 1)
+
+
+def _papel_x_demo(d):
+    """Derrapagem além do plano da mesma operação na demo, por ponta
+    (entrada · saída), em ticks; sem a demo nela, "—"."""
+    if not d:
+        return _cel("—", "n mut")
+    e, s = d.get("derrapagem_entrada"), d.get("derrapagem_saida")
+    if e is None and s is None:
+        return _cel("não executada" if d.get("preco_entrada") is None else "—",
+                    "n mut")
+
+    def f(v):
+        if v is None:
+            return "—"
+        return str(int(round(v))) if abs(v - round(v)) < 1e-9 else num(v, 1)
+    pior = max(x for x in (e, s) if x is not None)
+    return _cel(f"{f(e)} · {f(s)} ticks", "n" + (" aviso" if pior > 2 else ""))
 
 
 def tabela_operacoes(ops: list[dict]):
@@ -556,9 +581,10 @@ def tabela_operacoes(ops: list[dict]):
            "plano. Na aberta é provisório: o preço do último candle. Bom: a "
            "média por operação do plano ou mais.", True),
         th("Saiu por"),
-        th("Papel × demo", "Diferença por contrato entre o papel e a demo na "
-           "mesma operação. Bom: perto de zero. Os números da demo estão na "
-           "tabela da demo, acima.", True),
+        th("Papel × demo", "Derrapagem da demo além da que o plano supõe, na "
+           "mesma operação, por ponta (entrada · saída), em ticks. Bom: perto "
+           "de 0. Ruim: acima de 2 ticks (âmbar). \"não executada\" = a demo "
+           "não entrou nesta operação.", True),
     ])
     # sem a caixa que rola: ela fica fixa no layout (`av-op-operacoes`),
     # senão cada releitura a recriava e a rolagem voltava ao topo

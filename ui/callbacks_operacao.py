@@ -30,6 +30,7 @@ from core import db_manager as db
 from core import papel_leitura as PL
 
 from . import data as D
+from .callbacks_ordens import TENTATIVAS_BANCO
 from .callbacks_pregao import janela_inicial, juntar, voltar_para_agora
 from .components import charts
 from .components import operacao_panel as OP
@@ -64,10 +65,14 @@ _ACOES = {
                     "de agora"),
     "pf-ligar": (AV.ligar_portfolio,
                  "portfólio ligado — as variantes ligadas voltam a contar"),
-    "envio-desligar": (lambda cid: AV.ligar_envio(cid, False),
+    # o Envio espera pouco pelo banco (como o Zerar tudo): desligar já vale
+    # pelo comando escrito antes do banco; ligar precisa do banco
+    "envio-desligar": (lambda cid: AV.ligar_envio(cid, False,
+                                                  tentativas=TENTATIVAS_BANCO),
                        "Envio de ordens desligado — a captura encerra as "
                        "posições da automação na próxima volta; o papel segue"),
-    "envio-ligar": (lambda cid: AV.ligar_envio(cid, True),
+    "envio-ligar": (lambda cid: AV.ligar_envio(cid, True,
+                                               tentativas=TENTATIVAS_BANCO),
                     "Envio de ordens ligado — as variantes na fase demo "
                     "passam a operar na conta demo"),
 }
@@ -160,30 +165,43 @@ def pulso_ordens(estado: dict | None, visto_ordens_em, vars_, pid, dados,
             no_update if versao is None or versao == visto_ordens_em else versao)
 
 
-def ler_ordens(pid, so_problemas: bool) -> tuple:
-    """(operações da demo, diário, selo papel = backtest, papel × demo,
-    dados para o pulso) do pregão que a tela mostra."""
+def dados_demo(ops: list[dict], evs: list[dict], pid) -> dict:
+    """O que o pulso precisa do banco para os três números: o realizado da
+    demo (bruto), o papel das MESMAS operações executadas no tamanho da demo
+    (bruto também — a mesma base) e o atraso médio da ordem."""
+    demo = [o for o in ops if o["situacao"] != "seria_enviada"]
+    atrasos = [e["atraso_ms"] for e in evs
+               if e["tipo"] in ("executada", "parcial") and e.get("atraso_ms") is not None]
+    return {"pid": pid,
+            "realizado": sum(o["resultado"] or 0 for o in demo
+                             if o["situacao"] == "fechada"),
+            "papel": sum(o["papel_mesmo_tamanho"] or 0 for o in demo
+                         if o.get("papel_mesmo_tamanho") is not None),
+            "atraso_ms": sum(atrasos) / len(atrasos) if atrasos else None}
+
+
+def ler_ordens(pid) -> tuple:
+    """(operações da demo, selo papel = backtest, papel × demo, dados para
+    o pulso) do pregão que a tela mostra. O diário é outro callback: trocar
+    o filtro dele não refaz o selo nem o comparativo."""
     estado = D.estado_captura()
     dia = D.dia_do_pregao(estado)
 
     def ler(con):
         return (PL.operacoes_demo(con, pid, dia), PL.eventos_ordens(con, pid, dia),
                 PL.situacao_backtest(con, pid, dia),
-                PL.comparativo_demo(con, pid, dia=dia), PL.nomes(con, pid))
-    ops, evs, sit, cmp, nomes = _ler(ler)
-    demo = [o for o in ops if o["situacao"] != "seria_enviada"]
-    atrasos = [e["atraso_ms"] for e in evs
-               if e["tipo"] in ("executada", "parcial") and e.get("atraso_ms") is not None]
-    dados = {"pid": pid,
-             "realizado": sum(o["resultado"] or 0 for o in demo
-                              if o["situacao"] == "fechada"),
-             # o papel das MESMAS operações, perdidas inclusive: é o que a
-             # demo deixou de fazer
-             "papel": sum(o["papel_liquido"] or 0 for o in demo),
-             "atraso_ms": sum(atrasos) / len(atrasos) if atrasos else None}
-    return (OR.operacoes_demo(ops),
-            OR.diario_do_dia(evs, nomes, so_problemas=so_problemas),
-            OR.selo_backtest(sit), OR.tabela_papel_demo(cmp), dados)
+                PL.comparativo_demo(con, pid, dia=dia))
+    ops, evs, sit, cmp = _ler(ler)
+    return (OR.operacoes_demo(ops), OR.selo_backtest(sit),
+            OR.tabela_papel_demo(cmp), dados_demo(ops, evs, pid))
+
+
+def ler_diario(pid, so_problemas: bool):
+    estado = D.estado_captura()
+    dia = D.dia_do_pregao(estado)
+    evs, nomes = _ler(lambda con: (PL.eventos_ordens(con, pid, dia),
+                                   PL.nomes(con, pid)))
+    return OR.diario_do_dia(evs, nomes, so_problemas=so_problemas)
 
 
 def acao_chamado(nome, alvo, armado, escondidos, enviados,
@@ -240,7 +258,7 @@ def custo_editor(lig, valor):
         return html.Span("Vazio: a demo usa os contratos do plano.",
                          className="mut")
     try:
-        custo = AV.custo_de_um_stop(int(lig), n)
+        custo = AV.custo_de_um_stop(int(lig), n, tentativas=TENTATIVAS_BANCO)
     except ValueError as e:
         return html.Span(str(e), className="aviso")
     except (duckdb.Error, RuntimeError):
@@ -255,7 +273,7 @@ def salvar_editor(lig, valor) -> tuple[bool, str]:
         return False, "nenhuma variante escolhida"
     try:
         n = OR.ler_contratos(valor)
-        AV.definir_contratos(int(lig), n)
+        AV.definir_contratos(int(lig), n, tentativas=TENTATIVAS_BANCO)
     except ValueError as e:
         return False, str(e)
     except (duckdb.Error, RuntimeError):
@@ -284,6 +302,10 @@ def acao(nome, alvo, armado, posicoes: int | None = None
     except ValueError as e:
         return None, str(e), False
     except RuntimeError:
+        if nome == "envio-desligar":
+            # o comando foi escrito ANTES do banco: a captura já desliga
+            return (None, "comando enviado — a captura desliga o envio na "
+                    "próxima volta; o banco será atualizado depois", False)
         return None, "banco ocupado, tente de novo", False
     return None, texto, True
 
@@ -358,6 +380,19 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
             _opcoes_filtro(vars_), filtro,
             [{"label": v["nome"], "value": v["ligacao_id"]} for v in vars_],
             curva)
+
+
+def juntar_demo(ops: list[dict], demo: list[dict]) -> list[dict]:
+    """Põe em cada operação do papel o que a demo fez nela (mesma chave
+    `(ligacao_id, entry_ts)`): contratos executados e a derrapagem além do
+    plano por ponta — a coluna "Papel × demo" da tabela do papel."""
+    por = {(o["ligacao_id"], o["entry_ts"]): o for o in demo
+           if o["situacao"] != "seria_enviada"}
+    out = []
+    for o in ops:
+        d = por.get((o["ligacao_id"], o["entry_ts"]))
+        out.append({**o, "demo": d} if d else o)
+    return out
 
 
 def ler_curva(pid, lig) -> dict:
@@ -503,10 +538,11 @@ def register(app):
         lig = None if filtro in (None, "todas") else int(filtro)
         dia = D.dia_do_pregao(D.estado_captura())
         try:
-            ops = _ler(lambda con: PL.operacoes_do_dia(con, pid, dia, lig))
+            ops, demo = _ler(lambda con: (PL.operacoes_do_dia(con, pid, dia, lig),
+                                          PL.operacoes_demo(con, pid, dia)))
         except (duckdb.Error, RuntimeError):
             raise PreventUpdate
-        return OP.tabela_operacoes(ops)
+        return OP.tabela_operacoes(juntar_demo(ops, demo))
 
     @app.callback(
         Output("av-op-curva", "series"),
@@ -720,7 +756,6 @@ def register(app):
     # ------------------------------------------------- parte 4: a demo
     @app.callback(
         Output("av-op-ord-operacoes", "children"),
-        Output("av-op-ord-diario", "children"),
         Output("av-op-ord-selo", "children"),
         Output("av-op-ord-cmp", "children"),
         Output("av-op-ord-dados", "data"),
@@ -730,15 +765,30 @@ def register(app):
         Input("av-op-versao", "data"),
         Input("av-op-portfolio", "value"),
         Input("av-op-acao-versao", "data"),
+        Input("av-subtela", "value"),
+        Input("modo", "value"),
+    )
+    def ordens_op(_ordens_em, _versao, pid, _acoes, qual, modo):
+        if not _visivel(qual, modo) or pid is None:
+            raise PreventUpdate
+        try:
+            return ler_ordens(pid)
+        except (duckdb.Error, RuntimeError):
+            raise PreventUpdate
+
+    @app.callback(
+        Output("av-op-ord-diario", "children"),
+        Input("av-op-ord-versao", "data"),
+        Input("av-op-portfolio", "value"),
         Input("av-op-ord-diario-filtro", "value"),
         Input("av-subtela", "value"),
         Input("modo", "value"),
     )
-    def ordens_op(_ordens_em, _versao, pid, _acoes, filtro, qual, modo):
+    def diario_op(_ordens_em, pid, filtro, qual, modo):
         if not _visivel(qual, modo) or pid is None:
             raise PreventUpdate
         try:
-            return ler_ordens(pid, filtro == "problemas")
+            return ler_diario(pid, filtro == "problemas")
         except (duckdb.Error, RuntimeError):
             raise PreventUpdate
 

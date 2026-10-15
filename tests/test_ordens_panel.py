@@ -283,7 +283,7 @@ def test_perda_da_conta_aberta_em_tres_partes():
 def test_numeros_resultado_e_posicoes():
     n = OR.numeros(_ordens(), 361.0, 190.0, portfolio_id=1, ligacoes=[7, 8])
     t = textos(n)
-    assert "+R$ 361" in t and "papel +R$ 190" in t
+    assert "+R$ 361" in t and "papel no mesmo tamanho: +R$ 190" in t
     assert "1 confere" in t
     assert len(_dicas(n)) == 3
 
@@ -314,7 +314,8 @@ def test_tabela_demo_tem_as_colunas_e_dica_na_derrapagem():
     tab = OR.operacoes_demo([_linha()])
     t = textos(tab)
     for col in ("Entrada", "Saída", "Variante", "Lado", "Contr.",
-                "Preço entrada", "Preço saída", "Derrapagem (ticks)", "Pontos",
+                "Preço entrada", "Preço saída", "Derrapagem além do plano (ticks)",
+                "Pontos",
                 "Resultado", "Situação"):
         assert col in t
     assert "stop na corretora" in t and "-R$ 150" in t
@@ -572,8 +573,16 @@ def demo(banco):
                         "portfolio_id, variante_id, adicionado_em, fase, "
                         "fase_desde, ligada) VALUES (?,?,?,'2026-09-01',"
                         "'demo','2026-10-01',true)", [lig, pf, vid])
+        con.execute(
+            "INSERT INTO planos_operacao (plano_id, wfa_id, symbol, strategy, "
+            "variante_id, estado, vale_a_partir, contratos, profile, "
+            "created_at) VALUES (1, 1, 'WIN$N', 'rompimento_canal', 1, 'ativo', "
+            "'2026-09-01', 1, '{\"slippage_ticks\": 2}', '2026-09-01')")
         _papel(con, 7, "10:15", "10:40", 1, 188330, 188420, 18.0)
-        _papel(con, 7, "11:05", "11:42", -1, 188205, 188580, -75.0)
+        # o plano opera 2 contratos aqui; a demo, 1 (o papel no tamanho da
+        # demo é a metade do bruto)
+        _papel(con, 7, "11:05", "11:42", -1, 188205, 188580, -150.0,
+               contratos=2)
         _papel(con, 7, "13:00", "13:20", -1, 188000, 187900, 20.0)
         _papel(con, 7, "09:56", "10:05", -1, 188100, 188000, 20.0)
         n = iter(range(1, 100))
@@ -705,8 +714,12 @@ def test_comparativo_demo(demo):
     d = c["demo"]
     assert d["n"] == 2 and d["pontos_por_operacao"] == pytest.approx(-160.0)
     assert d["fator_lucro"] == pytest.approx(70 / 390)
-    # pontas: 2, 2 (compra) · 1, 2 (venda) · −2 (aberta, só a entrada) = 5/5
-    assert d["derrapagem"] == pytest.approx(1.0)
+    # além do plano, por ponta: 2, 2 (compra) · 1, 2 (venda) · −2 (aberta,
+    # só a entrada) = 5/5 = 1. O plano supõe 2 ticks por ponta: papel 2,
+    # demo absoluta 1 + 2 = 3, diferença = o além = 1
+    assert d["derrapagem_extra"] == pytest.approx(1.0)
+    assert c["papel"]["derrapagem"] == pytest.approx(2.0)
+    assert d["derrapagem"] == pytest.approx(3.0)
     # mesmo minuto: 10:15 e 11:05 (13:00 executou 13:01)
     assert d["mesmo_minuto"] == 2
     assert d["perdidas"] == 2
@@ -838,9 +851,10 @@ def test_editor_de_contratos_abre_com_o_valor_e_salva(banco, monkeypatch):
     assert "variante-canal-M7" in titulo and "antes: 2" in antes
     gravados = []
     monkeypatch.setattr(CO.AV, "definir_contratos",
-                        lambda lig, n: gravados.append((lig, n)))
-    assert CO.salvar_editor(7, "3")[0] and gravados == [(7, 3)]
-    assert CO.salvar_editor(7, "")[0] and gravados[-1] == (7, None)
+                        lambda lig, n, **k: gravados.append((lig, n, k)))
+    # o banco ocupado não segura a tela: 2 tentativas, como o Zerar tudo
+    assert CO.salvar_editor(7, "3")[0] and gravados == [(7, 3, {"tentativas": 2})]
+    assert CO.salvar_editor(7, "")[0] and gravados[-1][:2] == (7, None)
     ok, msg = CO.salvar_editor(7, "1,5")
     assert not ok and "inteiro" in msg and len(gravados) == 2
 
@@ -860,3 +874,160 @@ def test_quem_le_o_diario_das_ordens_nao_ouve_o_pulso(_banco_isolado):
     entradas = {f"{e['id']}.{e['property']}" for e in cb["inputs"]}
     assert "av-op-ord-versao.data" in entradas
     assert "av-op-intervalo.n_intervals" not in entradas
+
+
+# ======================================================================
+# Rodada de correção 1
+# ======================================================================
+def test_operacao_traz_a_derrapagem_do_plano_e_o_papel_no_tamanho_da_demo(demo):
+    por = {o["entry_ts"].strftime("%H:%M"): o
+           for o in _ler(lambda con: PL.operacoes_demo(con, 1, DIA))}
+    # o perfil do plano 1 supõe 2 ticks por ponta
+    assert por["10:15"]["slippage_plano"] == pytest.approx(2.0)
+    # sem operação no papel (09:21): o plano em vigor da ligação
+    assert por["09:21"]["slippage_plano"] == pytest.approx(2.0)
+    # bruto 18 com 1 contrato no plano, 1 na demo
+    assert por["10:15"]["papel_mesmo_tamanho"] == pytest.approx(18.0)
+    # bruto −150 com 2 no plano, 1 na demo: −75
+    assert por["11:05"]["papel_mesmo_tamanho"] == pytest.approx(-75.0)
+    # não executada: sem par no tamanho da demo
+    assert por["09:56"]["papel_mesmo_tamanho"] is None
+
+
+def test_dados_da_demo_comparam_bruto_com_bruto_no_mesmo_tamanho(demo):
+    from ui import callbacks_operacao as CO
+    ops, evs = _ler(lambda con: (PL.operacoes_demo(con, 1, DIA),
+                                 PL.eventos_ordens(con, 1, DIA)))
+    d = CO.dados_demo(ops, evs, 1)
+    # realizado da demo: +70 pts (14) e −390 pts (−78) → −64
+    assert d["realizado"] == pytest.approx(-64.0)
+    # papel das executadas no tamanho da demo: 18 − 75 + 20 = −37
+    assert d["papel"] == pytest.approx(-37.0)
+    assert d["atraso_ms"] == pytest.approx(800.0)
+
+
+def test_papel_x_demo_mostra_plano_demo_absoluta_e_o_alem():
+    c = _cmp()
+    c["papel"]["derrapagem"] = 1.0
+    c["demo"].update(derrapagem=1.3, derrapagem_extra=0.3)
+    tab = OR.tabela_papel_demo(c)
+    linha = next(x for x in todos(tab) if type(x).__name__ == "Tr"
+                 and "Derrapagem média por ponta" in textos(x))
+    t = textos(linha)
+    assert "1 tick" in t and "1,3 tick" in t and "+0,3" in t
+    dica_ = next(x for x in todos(linha) if "dica-mark" in classes(x))
+    assert "perto de 0" in dica_.to_plotly_json()["props"]["data-dica"]
+
+
+def test_comparativo_de_dia_passado_vem_do_cache(demo, monkeypatch):
+    chamadas = []
+    original = PL._demo_do_dia
+
+    def contando(con, pid, d):
+        chamadas.append(d)
+        return original(con, pid, d)
+    monkeypatch.setattr(PL, "_demo_do_dia", contando)
+    depois = date(2026, 10, 15)
+    a = _ler(lambda con: PL.comparativo_demo(con, 1, dia=depois))
+    b = _ler(lambda con: PL.comparativo_demo(con, 1, dia=depois))
+    assert a == b and chamadas == [DIA]
+    # o pregão de hoje (o da tela) nunca vem do cache
+    _ler(lambda con: PL.comparativo_demo(con, 1, dia=DIA))
+    _ler(lambda con: PL.comparativo_demo(con, 1, dia=DIA))
+    assert chamadas == [DIA, DIA, DIA]
+    # evento atrasado chegando ao banco muda a impressão: recalcula
+    with db.connect_write() as con:
+        _evento(con, 90, "16:00:00", "chamado", 7, motivo="atrasado", ticket=113)
+    c = _ler(lambda con: PL.comparativo_demo(con, 1, dia=depois))
+    assert chamadas[-1] == DIA and len(chamadas) == 4
+    assert c["demo"]["chamados"] == 2
+
+
+def test_dia_no_ganho_mostra_as_partes_com_rotulo():
+    o = _ordens(perda={"este": 0.0, "outros": -80.0, "fora": 20.0, "total": 0.0,
+                       "por_portfolio": {"1": -80.0}})
+    t = textos(OR.numeros(o, 0.0, 0.0, portfolio_id=1, ligacoes=[7, 8]))
+    assert "este portfólio ganho R$ 80" in t
+    assert "outros portfólios R$ 0" in t and "fora da automação R$ 20" in t
+    assert "a barra conta só perdas" in t
+
+
+def test_ler_contratos_so_digitos_ascii():
+    for ruim in ("²", "٣", "３"):
+        with pytest.raises(ValueError):
+            OR.ler_contratos(ruim)
+
+
+def test_stop_maior_que_o_limite_avisa_sem_bloquear():
+    t = textos(OR.custo_stop_texto(10, {"reais": 600.0, "pct_limite": 120.0}))
+    assert "passa do limite do dia" in t
+    assert "passa do limite" not in textos(OR.custo_stop_texto(
+        3, {"reais": 180.0, "pct_limite": 36.0}))
+
+
+def test_editor_previa_espera_pouco_pelo_banco(monkeypatch):
+    from ui import callbacks_operacao as CO
+    pedidos = []
+    monkeypatch.setattr(CO.AV, "custo_de_um_stop", lambda lig, n, **k: (
+        pedidos.append(k) or {"reais": 60.0, "pct_limite": 12.0}))
+    assert "R$ 60" in textos(CO.custo_editor(7, "1"))
+    assert pedidos == [{"tentativas": 2}]
+
+
+def test_envio_com_banco_ocupado(monkeypatch, tmp_path):
+    """Desligar escreve o comando antes do banco: ocupado, a captura
+    desliga mesmo assim. Ligar precisa do banco. Nenhum dos dois segura a
+    tela: 2 tentativas, resposta em menos de 2 s."""
+    import time as _t
+
+    from core import comandos
+    from ui import callbacks_operacao as CO
+    monkeypatch.setattr(comandos, "PASTA", tmp_path / "cmd")
+    vistas = []
+
+    def ocupado(tentativas=40, espera=0.25):
+        vistas.append(tentativas)
+        raise RuntimeError("banco ocupado")
+    monkeypatch.setattr(db, "connect_write", ocupado)
+    t0 = _t.monotonic()
+    armado, aviso, feito = CO.acao("envio-desligar", 3, "envio-desligar:3")
+    assert _t.monotonic() - t0 < 2
+    assert not feito and armado is None
+    assert "comando enviado — a captura desliga o envio na próxima volta" in aviso
+    assert [(c["tipo"], c["ligado"]) for c in comandos.consumir(tmp_path / "cmd")] \
+        == [("envio", False)]
+    armado, aviso, feito = CO.acao("envio-ligar", 3, "envio-ligar:3")
+    assert aviso == "banco ocupado, tente de novo" and not feito
+    assert vistas == [2, 2]
+
+
+def test_tabela_do_papel_mostra_a_demo_na_mesma_operacao(demo):
+    from ui import callbacks_operacao as CO
+    from ui.components import operacao_panel as OP
+    ops, dem = _ler(lambda con: (PL.operacoes_do_dia(con, 1, DIA, hoje=DIA),
+                                 PL.operacoes_demo(con, 1, DIA)))
+    tab = OP.tabela_operacoes(CO.juntar_demo(ops, dem))
+    linhas = {textos(x).split()[0]: textos(x) for x in todos(tab)
+              if type(x).__name__ == "Tr"}
+    assert "2 · 2 ticks" in linhas["10:15"]          # além do plano
+    assert "2 / 1" in linhas["11:05"]                 # papel 2, demo 1
+    assert "não executada" in linhas["09:56"]
+
+
+def test_trocar_o_filtro_do_diario_nao_refaz_o_comparativo(_banco_isolado):
+    with db.connect_write() as con:
+        db.init_schema(con)
+        con.execute("INSERT INTO instruments (symbol, description) "
+                    "VALUES ('WIN$N', 'teste')")
+        con.execute("INSERT INTO bars_m1 (symbol, ts, open, high, low, close, "
+                    "src_ingest_id) VALUES ('WIN$N', TIMESTAMP '2026-01-05 "
+                    "09:00:00', 100, 101, 99, 100, 1)")
+    from ui.app import build
+    app = build()
+
+    def entradas(nome):
+        cb = next(c for c in app.callback_map.values()
+                  if getattr(c.get("callback"), "__name__", "") == nome)
+        return {f"{e['id']}.{e['property']}" for e in cb["inputs"]}
+    assert "av-op-ord-diario-filtro.value" not in entradas("ordens_op")
+    assert "av-op-ord-diario-filtro.value" in entradas("diario_op")

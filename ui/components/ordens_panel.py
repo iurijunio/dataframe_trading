@@ -453,6 +453,14 @@ def tom_da_perda(pct: float) -> str:
     return "cinza"
 
 
+def _parte(v: float) -> str:
+    """Uma parte da perda do dia: perda "R$ 100", ganho "ganho R$ 30" (na
+    quebra um ganho vem negativo; sem o rótulo pareceria perda)."""
+    if v < 0 and round(v) != 0:
+        return f"ganho {_reais(-v)}"
+    return _reais(v)
+
+
 def _quebra(perda: dict, portfolio_id) -> tuple[float, float, float]:
     """(este portfólio, outros portfólios, fora da automação), com sinal (um
     ganho entra negativo): a soma é o que a corretora mostra."""
@@ -475,11 +483,13 @@ def numeros(ordens: dict | None, resultado_portfolio: float,
     resultado = _kpi(
         "Resultado hoje na demo",
         "Fechadas na demo hoje mais o resultado aberto das posições, só deste "
-        "portfólio, antes dos custos. Embaixo, o papel das mesmas operações. "
-        "Bom: perto do papel (a execução custa pouco). Ruim: bem abaixo do papel "
-        "todo dia.",
+        "portfólio, antes dos custos. Embaixo, o papel das mesmas operações "
+        "executadas, no tamanho da demo e também antes dos custos — a mesma "
+        "base. Bom: perto do papel (a execução custa pouco). Ruim: bem abaixo "
+        "do papel todo dia.",
         _rs(resultado_portfolio) if tem else "—",
-        f"papel {_rs(papel_portfolio)}" if tem else "sem demo hoje",
+        f"papel no mesmo tamanho: {_rs(papel_portfolio)}" if tem
+        else "sem demo hoje",
         _sinal(resultado_portfolio) if tem else "")
 
     perda = o.get("perda") or {}
@@ -495,8 +505,10 @@ def numeros(ordens: dict | None, resultado_portfolio: float,
     else:
         total = float(perda.get("total") or 0)
         este, outros, fora = _quebra(perda, portfolio_id)
-        abertura = (f"este portfólio {_reais(este)} · outros portfólios "
-                    f"{_reais(outros)} · fora da automação {_reais(fora)}")
+        abertura = (f"este portfólio {_parte(este)} · outros portfólios "
+                    f"{_parte(outros)} · fora da automação {_parte(fora)}")
+        if este + outros + fora < 0:
+            abertura += " · dia no ganho: a barra conta só perdas"
         if limite:
             pct = total / float(limite) * 100
             barra = html.Div([
@@ -583,7 +595,8 @@ def _derrap(l: dict) -> str:
 
 def operacoes_demo(linhas: list[dict]):
     """A tabela "Operações do dia" da demo. A derrapagem vai por ponta
-    (entrada · saída), em ticks, positivo = pior que o papel."""
+    (entrada · saída), em ticks, ALÉM da que o plano supõe (o preço do papel
+    já a inclui), positivo = pior."""
     if not linhas:
         return html.P("nenhuma operação na demo hoje — com as variantes no papel, "
                       "esta tabela fica vazia; o papel está na tabela de baixo",
@@ -614,10 +627,12 @@ def operacoes_demo(linhas: list[dict]):
         _th("Entrada"), _th("Saída"), _th("Variante"), _th("Lado"),
         _th("Contr.", "Contratos executados na demo.", True),
         _th("Preço entrada", n=True), _th("Preço saída", n=True),
-        _th("Derrapagem (ticks)", "Diferença para o preço do papel em cada ponta "
-            "(entrada · saída), em ticks (1 tick = 5 pontos). Positivo = pior "
-            "que o papel; negativo = melhor. Bom: até 1 tick por ponta. Ruim: "
-            "acima de 2 ticks (âmbar) com frequência.", True),
+        _th("Derrapagem além do plano (ticks)", "Quanto a demo derrapou A MAIS "
+            "do que o plano já supõe, em cada ponta (entrada · saída), em ticks "
+            "(1 tick = 5 pontos). O preço do papel já inclui a derrapagem do "
+            "plano: 0 = a demo derrapou o que o plano previu. Positivo = pior; "
+            "negativo = melhor. Bom: perto de 0. Ruim: acima de 2 ticks (âmbar) "
+            "com frequência — o backtest está otimista.", True),
         _th("Pontos", "Pontos a favor (+) ou contra (−) por contrato, nos preços "
             "da demo.", True),
         _th("Resultado", "Em R$, antes dos custos (corretagem e emolumentos).",
@@ -809,13 +824,16 @@ def tabela_papel_demo(cmp: dict | None):
          "papel, sobre as operações do papel. Bom: 100%. Ruim: abaixo de 90%.",
          "—", f"{num(mm / pn * 100, 1)}%" if pn else "—",
          f"{mm} de {pn}" if pn else "—", "mut"),
-        ("Derrapagem média por ponta", "Média, por ponta, da diferença entre o "
-         "preço da demo e o do papel, em ticks; no papel, a derrapagem que o plano "
-         "supõe. Bom: demo até o que o plano supõe. Ruim: demo acima — o "
-         "backtest está otimista.",
+        ("Derrapagem média por ponta", "Ticks por ponta. Papel = a derrapagem "
+         "que o plano supõe (o backtest e o papel já a descontam). Demo = a que "
+         "a demo teve de fato (a do plano mais o que passou dela). Diferença = "
+         "o que passou do plano. Bom: diferença perto de 0. Ruim: acima de 1 "
+         "tick por ponta — o backtest está otimista.",
          "—" if p.get("derrapagem") is None else f"{_decimal(p['derrapagem'])} tick",
          "—" if d.get("derrapagem") is None else f"{_decimal(d['derrapagem'])} tick",
-         dif(p.get("derrapagem"), d.get("derrapagem"), lambda v: mais(v, 1)), ""),
+         mais(d["derrapagem_extra"], 1) if d.get("derrapagem_extra") is not None
+         else dif(p.get("derrapagem"), d.get("derrapagem"), lambda v: mais(v, 1)),
+         ""),
         ("Recusadas · resolvidas sozinha · chamados", "Entradas que a corretora "
          "recusou, quantas delas a automação resolveu sozinha tentando de novo, e "
          "os chamados que pediram você. Bom: zero chamados. Ruim: recusas todo "
@@ -870,7 +888,8 @@ def ler_contratos(texto) -> int | None:
     t = str(texto or "").strip()
     if not t:
         return None
-    if not t.isdigit() or int(t) < 1:
+    # isdigit() aceita "²" e dígitos de outras escritas, que int() recusa
+    if not (t.isascii() and t.isdigit()) or int(t) < 1:
         raise ValueError("digite um número inteiro de contratos (1 ou mais), ou "
                          "deixe vazio para usar os do plano")
     return int(t)
@@ -890,6 +909,11 @@ def custo_stop_texto(contratos, custo: dict | None):
         pct = c["pct_limite"]
         partes += [" = ", html.B(f"{_decimal(pct, 0) if pct >= 10 else num(pct, 1)}%"),
                    " do limite do dia."]
+        if pct > 100:
+            partes += [html.Br(), html.Span(
+                "Atenção: um stop sozinho passa do limite do dia — a trava "
+                "barraria a entrada. Dá para salvar, mas reveja.",
+                className="aviso")]
     else:
         partes.append(" (conta demo sem limite cadastrado).")
     return html.Span(partes)
@@ -902,8 +926,10 @@ def editor_contratos() -> html.Div:
         html.H4("Contratos na demo", id="av-op-ord-ctr-titulo",
                 className="ord-pop-t"),
         html.Div([
+            # debounce: a prévia (que lê o banco) roda ao sair do campo
+            # ou no Enter, não a cada tecla
             dcc.Input(id="av-op-ord-ctr-valor", type="text", inputMode="numeric",
-                      debounce=False, placeholder="plano",
+                      debounce=True, placeholder="plano",
                       className="ord-pop-inp", autoComplete="off"),
             html.Span(id="av-op-ord-ctr-antes", className="mut"),
         ], className="ord-pop-linha"),

@@ -674,8 +674,9 @@ def mudar_fase(ligacao_id: int, fase: str, *, quando=None) -> None:
 
 
 def definir_contratos(ligacao_id: int, contratos: int | None, *,
-                      tipo: str = "demo") -> None:
-    """Contratos na conta, no lugar dos do plano (`None` volta ao plano)."""
+                      tipo: str = "demo", tentativas: int = 40) -> None:
+    """Contratos na conta, no lugar dos do plano (`None` volta ao plano).
+    `tentativas`: a tela espera pouco pelo banco (ocupado = tente de novo)."""
     if tipo != "demo":
         raise ValueError("contratos da conta real ainda não disponíveis")
     if contratos is not None and (isinstance(contratos, bool)
@@ -683,7 +684,7 @@ def definir_contratos(ligacao_id: int, contratos: int | None, *,
                                   or contratos < 1):
         raise ValueError("contratos deve ser um inteiro de 1 em diante "
                          "(ou vazio para usar os do plano)")
-    with db.connect_write() as con, db.transacao(con):
+    with db.connect_write(tentativas=tentativas) as con, db.transacao(con):
         pid, vid, *_ = _membro(con, ligacao_id)
         antes = con.execute("SELECT contratos_demo FROM portfolio_membros "
                             "WHERE ligacao_id = ?", [ligacao_id]).fetchone()[0]
@@ -733,14 +734,16 @@ def ligar_envio(conta_id: int, ligado: bool, *, tentativas: int = 40,
                           ligado=True)
 
 
-def custo_de_um_stop(ligacao_id: int, contratos: int) -> dict:
+def custo_de_um_stop(ligacao_id: int, contratos: int, *,
+                     tentativas: int = 60) -> dict:
     """Quanto custa UM stop com `contratos`, em reais e em % do limite de
     perda do dia da conta demo do portfólio. Sem distância de stop conhecida
     (ATR sem operação no papel) ou sem limite, o campo vem `None`."""
     if (isinstance(contratos, bool) or not isinstance(contratos, int)
             or contratos < 1):
         raise ValueError("contratos deve ser um inteiro de 1 em diante")
-    with db.connect(read_only=True) as con:
+    # a prévia da tela espera pouco: banco ocupado mostra "em seguida"
+    with db.connect(read_only=True, tentativas=tentativas) as con:
         pid, vid, *_ = _membro(con, ligacao_id)
         plano = _plano_do_membro(con, vid)
         if plano is None:
