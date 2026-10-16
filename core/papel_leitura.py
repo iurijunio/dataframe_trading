@@ -665,18 +665,25 @@ def comparativo(con, portfolio_id: int, *, dia: date | None = None,
     o plano em vigor: a aberta ainda não tem resultado, e média de
     operação por fazer não compara com trade do WFA. Por isso o `total`
     daqui pode ser menor que o `acumulado` do `resumo`, que inclui a aberta
-    provisória — a (?) da tela explica. Demo/Real chegam na parte 4.
+    provisória — a (?) da tela explica.
+
+    Demo = as operações da conta demo pelo mesmo recorte do papel (fechadas,
+    desde o plano em vigor de cada ligação), líquidas dos custos do plano
+    como o papel, e mais as linhas de execução (`_demo_do_comparativo`).
+    None quando o portfólio nunca operou na demo. Real fica para depois.
 
     `dia`: o pregão que a tela mostra (ver `curva_vs_esperado`).
     """
     dia = dia or _hoje(hoje)
     wfas: set[int] = set()
     papel = []
+    planos: dict[int, dict] = {}
     for l in _ligacoes(con, portfolio_id, dia):
         gravado = _pregao(con, l["ligacao_id"], dia)[0]
         p = _plano_do_dia(con, l["variante_id"], dia, gravado)
         if p is None:
             continue
+        planos[l["ligacao_id"]] = p
         if p.get("wfa_id") is not None:
             wfas.add(int(p["wfa_id"]))
         filtro, args = _desde_o_plano(p)
@@ -690,7 +697,76 @@ def comparativo(con, portfolio_id: int, *, dia: date | None = None,
             "SELECT liquido, contratos, points FROM wfa_trades WHERE wfa_id "
             f"IN ({', '.join('?' * len(wfas))})", sorted(wfas)).fetchall()
     return {"esperado_wfa": _metricas(esperado), "papel": _metricas(papel),
-            "demo": None, "real": None}
+            "demo": _demo_do_comparativo(con, portfolio_id, dia, planos),
+            "real": None}
+
+
+def _como_data(v) -> date | None:
+    if v is None or isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    if isinstance(v, datetime):
+        return v.date()
+    return date.fromisoformat(str(v)[:10])
+
+
+def _custo_por_contrato(plano: dict) -> float:
+    """Corretagem + emolumentos de uma operação inteira (as duas pontas),
+    por contrato — a mesma conta do `metrics.monetize` que o papel usa."""
+    perfil = _papel.perfil_do_plano(plano)[1]
+    return (float(perfil.corretagem_por_contrato)
+            + float(perfil.emolumentos_por_contrato)) * 2
+
+
+def _demo_do_comparativo(con, portfolio_id: int, dia: date,
+                         planos: dict[int, dict]) -> dict | None:
+    """A coluna Demo: o recorte do papel (plano em vigor de cada ligação,
+    desde que ele vale) aplicado às operações da demo.
+
+    O resultado da demo vem BRUTO da corretora (`operacoes_demo`); aqui
+    desconta-se o custo do plano como o papel desconta, senão a demo
+    pareceria melhor só por não pagar corretagem. Derrapagem é a de
+    `operacoes_demo` (ticks além do papel, por ponta; negativo = melhor
+    que o papel), a mesma da tabela Papel × demo.
+    """
+    pregoes = _pregoes_demo(con, portfolio_id, dia)
+    if not pregoes:
+        return None
+    custos: dict[int, float] = {}
+    ops = []
+    for d, parte in pregoes:
+        for o in parte[1]:
+            p = planos.get(o["ligacao_id"])
+            if p is None or o.get("plano_id") != int(p["plano_id"]):
+                continue
+            vale = _como_data(p.get("vale_a_partir"))
+            if vale is not None and d < vale:
+                continue
+            ops.append((o, p))
+    linhas = []
+    for o, p in ops:
+        if o["situacao"] != "fechada" or o["resultado"] is None:
+            continue
+        pid = int(p["plano_id"])
+        if pid not in custos:
+            custos[pid] = _custo_por_contrato(p)
+        ctr = float(o["contratos"] or 0)
+        linhas.append((o["resultado"] - custos[pid] * ctr, ctr, o["pontos"]))
+    m = _metricas(linhas)
+
+    def media(vs):
+        vs = list(vs)
+        return sum(vs) / len(vs) if vs else None
+    executadas = [o for o, _ in ops if o["situacao"] in ("fechada", "aberta")]
+    m.update(
+        mesmo_minuto=(sum(1 for o in executadas if o["mesmo_minuto"])
+                      / len(executadas) if executadas else None),
+        derrapagem_extra=media(x for o, _ in ops
+                               for x in (o["derrapagem_entrada"],
+                                         o["derrapagem_saida"])
+                               if x is not None),
+        atraso_ms=media(a for o, _ in ops for a in o.get("atrasos_ms") or []),
+        rejeitadas=sum(int(o.get("rejeitadas") or 0) for o, _ in ops))
+    return m
 
 
 # ---------------------------------------------------------------- alertas
@@ -752,6 +828,9 @@ _TENTOU = ("enviando", "executada", "parcial", "adotada", "recusada",
            "perdida", "nao_entrou", "aceita", "incerta")
 _ENTROU = ("executada", "parcial", "adotada")
 _SAIDA_FINAL = ("saida_executada", "saiu_antes")
+# toda ordem que a corretora recusou: entrada, saída, proteção, cancelamento
+_RECUSAS = ("recusada", "saida_recusada", "protecao_recusada",
+            "cancelar_recusada")
 # motivo da saída gravado pelo motor -> como a mesa chama
 _MOTIVO_SAIDA = {"papel zerado": "sinal"}
 
@@ -881,6 +960,11 @@ def _uma_operacao_demo(chave, evs: list[dict], papel_op: dict | None,
              "pedido": None, "checagem": None, "atraso_ms": None,
              "mesmo_minuto": False,
              "recusas": tipos.count("recusada"),
+             "rejeitadas": sum(tipos.count(t) for t in _RECUSAS),
+             # o atraso de cada execução da entrada (a adoção não tem)
+             "atrasos_ms": [float(e["atraso_ms"]) for e in evs
+                            if e["tipo"] in ("executada", "parcial")
+                            and e.get("atraso_ms") is not None],
              "slippage_plano": slip_plano, "papel_mesmo_tamanho": None,
              "papel_liquido": None if papel_op is None
              else float(papel_op["liquido"] or 0.0)}
@@ -1035,8 +1119,10 @@ def operacoes_demo(con, portfolio_id: int, dia: date,
             continue
         p_op = papel.get(k)
         plano_id = p_op["plano_id"] if p_op is not None else plano_da_ligacao(k[0])
-        out.append(_uma_operacao_demo(k, evs, p_op, ligs[k[0]], tick, pv,
-                                      slip(plano_id)))
+        linha = _uma_operacao_demo(k, evs, p_op, ligs[k[0]], tick, pv,
+                                   slip(plano_id))
+        linha["plano_id"] = None if plano_id is None else int(plano_id)
+        out.append(linha)
     out.sort(key=lambda o: (o["entry_ts"], o["ligacao_id"]))
     return out
 
@@ -1082,6 +1168,36 @@ def _demo_do_dia(con, portfolio_id: int, d: date) -> tuple:
     return papel_pts, demo_ops, chamados
 
 
+def _pregoes_demo(con, portfolio_id: int, dia: date) -> list[tuple]:
+    """`[(dia, parte do _demo_do_dia)]` dos pregões até `dia` em que alguma
+    ligação do portfólio TENTOU operar na demo (o ensaio não conta).
+
+    Pregão passado sai do `_CACHE_DEMO_DIA`; o de `dia` é sempre relido —
+    ainda muda a cada volta da captura."""
+    ligs = _ligs_do_portfolio(con, portfolio_id)
+    if not ligs:
+        return []
+    marcas = ", ".join("?" * len(ligs))
+    tentou = ", ".join(f"'{t}'" for t in _TENTOU)
+    dias = [r[0] for r in con.execute(
+        f"SELECT DISTINCT CAST(quando AS DATE) AS d FROM ordens_eventos "
+        f"WHERE ligacao_id IN ({marcas}) AND tipo IN ({tentou}) "
+        "AND CAST(quando AS DATE) <= ? ORDER BY d", [*ligs, dia]).fetchall()]
+    out = []
+    for d in dias:
+        chave = None
+        if d < dia:
+            chave = (str(db.DB_PATH), portfolio_id, d,
+                     _impressao_do_dia(con, ligs, d))
+        parte = _CACHE_DEMO_DIA.get(chave) if chave else None
+        if parte is None:
+            parte = _demo_do_dia(con, portfolio_id, d)
+            if chave:
+                _CACHE_DEMO_DIA[chave] = parte
+        out.append((d, parte))
+    return out
+
+
 def comparativo_demo(con, portfolio_id: int, *, dia: date | None = None,
                      hoje: date | None = None) -> dict:
     """Papel × demo por contrato, nos mesmos pregões (spec ordens §8).
@@ -1093,31 +1209,13 @@ def comparativo_demo(con, portfolio_id: int, *, dia: date | None = None,
     tem custos do plano, a demo não — em pontos os dois comparam).
     """
     dia = dia or _hoje(hoje)
-    ligs = _ligs_do_portfolio(con, portfolio_id)
-    vazio = {"pregoes": 0, "papel": None, "demo": None}
-    if not ligs:
-        return vazio
-    marcas = ", ".join("?" * len(ligs))
-    tentou = ", ".join(f"'{t}'" for t in _TENTOU)
-    dias = [r[0] for r in con.execute(
-        f"SELECT DISTINCT CAST(quando AS DATE) AS d FROM ordens_eventos "
-        f"WHERE ligacao_id IN ({marcas}) AND tipo IN ({tentou}) "
-        "AND CAST(quando AS DATE) <= ? ORDER BY d", [*ligs, dia]).fetchall()]
-    if not dias:
-        return vazio
+    pregoes = _pregoes_demo(con, portfolio_id, dia)
+    if not pregoes:
+        return {"pregoes": 0, "papel": None, "demo": None}
     papel_pts: list[float] = []
     demo_ops: list[dict] = []
     chamados = 0
-    for d in dias:
-        chave = None
-        if d < dia:
-            chave = (str(db.DB_PATH), portfolio_id, d,
-                     _impressao_do_dia(con, ligs, d))
-        parte = _CACHE_DEMO_DIA.get(chave) if chave else None
-        if parte is None:
-            parte = _demo_do_dia(con, portfolio_id, d)
-            if chave:
-                _CACHE_DEMO_DIA[chave] = parte
+    for _d, parte in pregoes:
         papel_pts += parte[0]
         demo_ops += parte[1]
         chamados += parte[2]
@@ -1135,7 +1233,7 @@ def comparativo_demo(con, portfolio_id: int, *, dia: date | None = None,
         return sum(vs) / len(vs) if vs else None
     pts = [float(o["pontos"]) for o in fechadas]
     return {
-        "pregoes": len(dias),
+        "pregoes": len(pregoes),
         "papel": {"n": len(papel_pts),
                   "pontos_por_operacao": media(papel_pts),
                   "fator_lucro": _fator_pontos(papel_pts),

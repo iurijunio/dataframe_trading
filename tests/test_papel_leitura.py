@@ -657,3 +657,210 @@ def test_alertas_sem_nada_alem_do_mesmo_assim(cenario):
     with _ler() as con:
         a = L.alertas(con, 1, DIA, hoje=DIA)
     assert [(x["tipo"], x["ligacao_id"]) for x in a] == [("mesmo_assim", 101)]
+
+
+# ------------------------------------------------- comparativo: coluna Demo
+# Espelho do pregão de 16/10/2026 (números do banco real, semeados aqui à
+# mão — nenhum teste lê o banco real): duas operações fechadas na demo,
+# +R$ 61 e +R$ 60 brutas, 1 contrato cada, entradas em ~65 ms.
+HOJE_DEMO = date(2026, 10, 16)
+
+
+def _ev_demo(con, n, quando, tipo, lig, entry=None, **campos):
+    colunas = ("lado", "contratos", "simbolo", "ticket", "retcode",
+               "preco_papel", "preco", "atraso_ms", "tentativa", "motivo")
+    dados = {k: v for k, v in campos.items() if k not in colunas}
+    con.execute(
+        "INSERT INTO ordens_eventos (evento_id, quando, tipo, conta_id, "
+        "ligacao_id, entry_ts, lado, contratos, simbolo, ticket, retcode, "
+        "preco_papel, preco, atraso_ms, tentativa, motivo, dados) "
+        "VALUES (?,?,?,10,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [f"demo-{n:06d}", datetime.fromisoformat(quando), tipo, lig,
+         None if entry is None else datetime.fromisoformat(entry),
+         *[campos.get(c) for c in colunas],
+         json.dumps(dados) if dados else None])
+
+
+def _papel_demo(con, lig, plano_id, entrada, saida, side, entry_px, exit_px,
+                contratos=1):
+    pts = (exit_px - entry_px) * side
+    bruto = pts * 0.2 * contratos
+    custo = 1.5 * contratos
+    dia = datetime.fromisoformat(entrada).date()
+    con.execute(
+        "INSERT INTO papel_operacoes (op_id, ligacao_id, plano_id, dia, "
+        "entry_ts, exit_ts, side, contratos, entry_px, exit_px, points, bruto, "
+        "custo, liquido, reason, aberta, conta, calculado_em) VALUES "
+        "(nextval('seq_papel_op'),?,?,?,?,?,?,?,?,?,?,?,?,?,2,false,true,?)",
+        [lig, plano_id, dia, datetime.fromisoformat(entrada),
+         datetime.fromisoformat(saida), side, contratos, entry_px, exit_px,
+         pts, bruto, custo, bruto - custo,
+         datetime.combine(dia, datetime.min.time()).replace(hour=18)])
+
+
+def _entrada_e_saida(con, n, lig, entry, lado, preco_papel, preco, ticket,
+                     atraso, saida_quando, preco_saida, executada_em=None):
+    _ev_demo(con, n, entry, "enviando", lig, entry, lado=lado, contratos=1,
+             preco_papel=preco_papel, tentativa=1)
+    _ev_demo(con, n + 1, executada_em or entry[:-2] + "00.065", "executada",
+             lig, entry, lado=lado, contratos=1, preco_papel=preco_papel,
+             preco=preco, ticket=ticket, atraso_ms=atraso)
+    if saida_quando:
+        _ev_demo(con, n + 2, saida_quando, "saida_executada", lig,
+                 ticket=ticket, lado=lado, contratos=1, preco=preco_saida,
+                 motivo="alvo")
+
+
+@pytest.fixture
+def cenario_demo(banco):
+    """Portfólio 5 com a ligação 501 ("ema-abertura") na demo.
+
+    Plano 51 (aposentado) valeu de 01/10 a 14/10; o 52 vale desde 15/10,
+    com corretagem 0,50 e emolumentos 0,25 por contrato por ponta (custo
+    de 1,50 por operação de 1 contrato).
+
+    16/10 (plano 52):
+      - compra 10:00: papel entra 130.005, demo 130.000 (comprou 5 pts mais
+        barato = −1 tick, melhor); sai 130.305 nos dois (0). Demo +305 pts
+        = +R$ 61 bruto, 59,50 líquido. Executada em 64 ms.
+      - venda 11:00: entra 131.000 nos dois (0); papel sai 130.705, demo
+        130.700 (recomprou 5 pts mais barato = −1 tick). Demo +300 pts =
+        +R$ 60 bruto, 58,50 líquido. Executada em 66 ms.
+    14/10 (plano 51, ANTERIOR ao plano em vigor): uma compra de −R$ 100
+    na demo, com uma recusa — fora de tudo.
+    """
+    with db.connect_write() as con:
+        con.execute("INSERT INTO contas (conta_id, nome, tipo, criado_em) "
+                    "VALUES (10, 'demo-1', 'demo', '2026-09-01')")
+        con.execute("INSERT INTO portfolios (portfolio_id, nome, criado_em, "
+                    "capital, ligado, conta_demo_id) VALUES "
+                    "(5, 'Seis', '2026-09-01', 10000, true, 10)")
+        con.execute("INSERT INTO estrategia_variantes (variante_id, "
+                    "estrategia, nome, criado_em) VALUES "
+                    "(5, 'rompimento_ema_abertura', 'ema-abertura', "
+                    "'2026-09-01')")
+        con.execute("INSERT INTO portfolio_membros (ligacao_id, portfolio_id, "
+                    "variante_id, adicionado_em, fase, fase_desde, ligada) "
+                    "VALUES (501, 5, 5, '2026-09-01', 'demo', '2026-10-01', "
+                    "true)")
+        perfil = json.dumps({"corretagem_por_contrato": 0.5,
+                             "emolumentos_por_contrato": 0.25,
+                             "slippage_ticks": 1})
+        for pid, wfa, estado, vale, apos in (
+                (51, 9, "aposentado", "2026-10-01", "2026-10-15"),
+                (52, 10, "ativo", "2026-10-15", None)):
+            con.execute(
+                "INSERT INTO planos_operacao (plano_id, wfa_id, symbol, "
+                "strategy, variante_id, estado, vale_a_partir, aposentado_em, "
+                "contratos, profile, expectativa, created_at) VALUES "
+                "(?,?,'WIN$N','rompimento_ema_abertura',5,?,?,?,1,?,'{}',"
+                "'2026-09-01')", [pid, wfa, estado, vale, apos, perfil])
+        _pregao(con, 501, "2026-10-14", 51, "conferido")
+        _pregao(con, 501, "2026-10-16", 52, "rodando")
+        _papel_demo(con, 501, 52, "2026-10-16 10:00", "2026-10-16 10:30", 1,
+                    130005, 130305)
+        _papel_demo(con, 501, 52, "2026-10-16 11:00", "2026-10-16 11:40", -1,
+                    131000, 130705)
+        _entrada_e_saida(con, 1, 501, "2026-10-16 10:00:00", 1, 130005,
+                         130000, 9001, 64, "2026-10-16 10:30:01", 130305)
+        _entrada_e_saida(con, 4, 501, "2026-10-16 11:00:00", -1, 131000,
+                         131000, 9002, 66, "2026-10-16 11:40:01", 130700)
+        # plano anterior: fora
+        _papel_demo(con, 501, 51, "2026-10-14 10:00", "2026-10-14 10:20", 1,
+                    130000, 129500)
+        _ev_demo(con, 20, "2026-10-14 09:59:59", "recusada", 501,
+                 "2026-10-14 10:00:00", motivo="preço fora do limite")
+        _entrada_e_saida(con, 21, 501, "2026-10-14 10:00:00", 1, 130000,
+                         130000, 8001, 900, "2026-10-14 10:20:01", 129500)
+        con.execute("INSERT INTO wfa_trades (wfa_id, n, liquido, contratos, "
+                    "points) VALUES (10, 1, 50.0, 1, 250)")
+    return banco
+
+
+def _cmp_demo(dia=HOJE_DEMO, hoje=HOJE_DEMO):
+    with _ler() as con:
+        return L.comparativo(con, 5, dia=dia, hoje=hoje)
+
+
+def test_comparativo_demo_do_plano_em_vigor_e_liquido(cenario_demo):
+    d = _cmp_demo()["demo"]
+    # só as duas de 16/10 (plano 52); a de 14/10 é do plano 51
+    assert d["n"] == 2
+    # líquido = bruto − (0,50 + 0,25) × 1 contrato × 2 pontas:
+    # 61 − 1,5 = 59,5 e 60 − 1,5 = 58,5
+    assert d["total"] == pytest.approx(118.0)
+    assert d["resultado_por_contrato"] == pytest.approx(59.0)
+    assert d["pontos_por_operacao"] == pytest.approx(302.5)
+    assert d["fator_lucro"] == math.inf
+    assert d["acerto"] == pytest.approx(1.0)
+    assert d["contratos_por_operacao"] == pytest.approx(1.0)
+
+
+def test_comparativo_demo_linhas_de_execucao(cenario_demo):
+    d = _cmp_demo()["demo"]
+    # as duas entradas executaram no minuto do sinal do papel
+    assert d["mesmo_minuto"] == pytest.approx(1.0)
+    # por ponta, além do papel: compra −1 (entrada) e 0 (saída); venda 0
+    # (entrada) e −1 (saída) → −2/4 = −0,5 (negativo = melhor que o papel)
+    assert d["derrapagem_extra"] == pytest.approx(-0.5)
+    assert d["atraso_ms"] == pytest.approx(65.0)
+    # a recusa de 14/10 é do plano anterior
+    assert d["rejeitadas"] == 0
+
+
+def test_comparativo_demo_derrapagem_pior_e_positiva(cenario_demo):
+    with db.connect_write() as con:
+        # a venda de 16/10 entrou 15 pts mais barato que o papel: +3 ticks
+        con.execute("UPDATE ordens_eventos SET preco = 130985 "
+                    "WHERE tipo = 'executada' AND ticket = 9002")
+    d = _cmp_demo()["demo"]
+    # −1, 0, +3, −1 → +1/4 (positivo = pior que o papel)
+    assert d["derrapagem_extra"] == pytest.approx(0.25)
+
+
+def test_comparativo_demo_conta_recusas_e_mesmo_minuto_parcial(cenario_demo):
+    with db.connect_write() as con:
+        # 16/10 14:00: recusada uma vez, depois executada às 14:01 (fora do
+        # minuto do sinal) e ainda aberta; a saída das 10:30 teve uma recusa
+        _papel_demo(con, 501, 52, "2026-10-16 14:00", "2026-10-16 14:30", 1,
+                    130000, 130100)
+        _ev_demo(con, 40, "2026-10-16 14:00:00", "recusada", 501,
+                 "2026-10-16 14:00:00", motivo="preço fora do limite")
+        _entrada_e_saida(con, 41, 501, "2026-10-16 14:00:00", 1, 130000,
+                         130000, 9003, 200, None, None,
+                         executada_em="2026-10-16 14:01:02")
+        _ev_demo(con, 50, "2026-10-16 10:30:00", "saida_recusada", 501,
+                 ticket=9001, motivo="mercado em leilão")
+    d = _cmp_demo()["demo"]
+    assert d["n"] == 2                      # a aberta não entra no resultado
+    assert d["mesmo_minuto"] == pytest.approx(2 / 3)
+    assert d["atraso_ms"] == pytest.approx((64 + 66 + 200) / 3)
+    assert d["rejeitadas"] == 2
+
+
+def test_comparativo_demo_sem_demo_e_none(cenario):
+    with _ler() as con:
+        assert L.comparativo(con, 1, hoje=DIA)["demo"] is None
+
+
+def test_comparativo_demo_hoje_nunca_vem_do_cache(cenario_demo):
+    assert _cmp_demo()["demo"]["n"] == 2
+    with db.connect_write() as con:
+        _papel_demo(con, 501, 52, "2026-10-16 15:00", "2026-10-16 15:20", 1,
+                    130000, 130050)
+        _entrada_e_saida(con, 60, 501, "2026-10-16 15:00:00", 1, 130000,
+                         130000, 9004, 70, "2026-10-16 15:20:01", 130050)
+    d = _cmp_demo()["demo"]
+    assert d["n"] == 3 and d["total"] == pytest.approx(118.0 + 10.0 - 1.5)
+
+
+def test_comparativo_demo_dia_passado_usa_o_cache(cenario_demo, monkeypatch):
+    amanha = date(2026, 10, 17)
+    primeiro = _cmp_demo(dia=amanha, hoje=amanha)["demo"]
+    chamadas = []
+    original = L.operacoes_demo
+    monkeypatch.setattr(L, "operacoes_demo",
+                        lambda *a, **k: chamadas.append(a) or original(*a, **k))
+    de_novo = _cmp_demo(dia=amanha, hoje=amanha)["demo"]
+    assert de_novo == primeiro and de_novo["n"] == 2
+    assert chamadas == []

@@ -475,6 +475,78 @@ def test_comparativo_demo_e_real_travessao_e_fator_infinito():
     assert "None" not in t and "nan" not in t
 
 
+def _linha_cmp(arvore, rotulo) -> list[str]:
+    """As células (texto) da linha do comparativo cujo rótulo é `rotulo`."""
+    for tr in todos(arvore):
+        if type(tr).__name__ != "Tr":
+            continue
+        cels = tr.children if isinstance(tr.children, list) else [tr.children]
+        if cels and textos(cels[0]).startswith(rotulo):
+            return [textos(c) for c in cels[1:]]
+    raise AssertionError(rotulo)
+
+
+def _demo_cmp(**mudar):
+    # o pregão de 16/10/2026: +61 e +60 brutos, 1 contrato, 1,50 de custo
+    d = {"n": 2, "resultado_por_contrato": 59.0, "pontos_por_operacao": 302.5,
+         "fator_lucro": float("inf"), "acerto": 1.0,
+         "contratos_por_operacao": 1.0, "total": 118.0, "mesmo_minuto": 1.0,
+         "derrapagem_extra": -0.5, "atraso_ms": 65.0, "rejeitadas": 0}
+    d.update(mudar)
+    return d
+
+
+def test_comparativo_coluna_demo_preenchida():
+    papel = {"n": 4, "resultado_por_contrato": 50.0, "pontos_por_operacao": 260.0,
+             "fator_lucro": 2.0, "acerto": 0.75, "contratos_por_operacao": 1.0,
+             "total": 200.0}
+    arv = OP.tabela_comparativo({"esperado_wfa": papel, "papel": papel,
+                                 "demo": _demo_cmp(), "real": None})
+    # colunas: Esperado, Papel, Demo, Real
+    assert _linha_cmp(arv, "Operações")[2] == "2"
+    assert _linha_cmp(arv, "Resultado médio por contrato")[2] == "+R$ 59,00"
+    assert _linha_cmp(arv, "Resultado total")[2] == "+R$ 118,00"
+    assert _linha_cmp(arv, "Fator de lucro")[2] == "sem perdas"
+    assert _linha_cmp(arv, "Sinal no mesmo minuto") == ["—", "—", "100%", "—"]
+    assert _linha_cmp(arv, "Derrapagem média") == ["—", "—", "-0,5 tick", "—"]
+    assert _linha_cmp(arv, "Atraso médio da ordem") == ["—", "—", "65 ms", "—"]
+    assert _linha_cmp(arv, "Ordens rejeitadas") == ["—", "—", "0", "—"]
+    assert "None" not in textos(arv) and "nan" not in textos(arv)
+
+
+def test_comparativo_demo_derrapagem_pior_tem_sinal_e_atraso_em_segundos():
+    arv = OP.tabela_comparativo({"esperado_wfa": None, "papel": None,
+                                 "demo": _demo_cmp(derrapagem_extra=0.3,
+                                                   atraso_ms=1450.0,
+                                                   rejeitadas=3,
+                                                   mesmo_minuto=2 / 3),
+                                 "real": None})
+    assert _linha_cmp(arv, "Derrapagem média")[2] == "+0,3 tick"
+    assert _linha_cmp(arv, "Atraso médio da ordem")[2] == "1,4 s"
+    assert _linha_cmp(arv, "Ordens rejeitadas")[2] == "3"
+    assert _linha_cmp(arv, "Sinal no mesmo minuto")[2] == "67%"
+
+
+def test_comparativo_demo_so_com_aberta_mostra_execucao():
+    # nenhuma fechada ainda: resultado "—", execução já tem número
+    demo = _demo_cmp(n=0, resultado_por_contrato=None, pontos_por_operacao=None,
+                     fator_lucro=None, acerto=None, contratos_por_operacao=None,
+                     total=0.0, derrapagem_extra=None, atraso_ms=80.0)
+    arv = OP.tabela_comparativo({"esperado_wfa": None, "papel": None,
+                                 "demo": demo, "real": None})
+    assert _linha_cmp(arv, "Resultado total")[2] == "—"
+    assert _linha_cmp(arv, "Derrapagem média")[2] == "—"
+    assert _linha_cmp(arv, "Atraso médio da ordem")[2] == "80 ms"
+
+
+def test_comparativo_sem_demo_execucao_toda_travessao():
+    arv = OP.tabela_comparativo({"esperado_wfa": None, "papel": None,
+                                 "demo": None, "real": None})
+    for rot in ("Sinal no mesmo minuto", "Derrapagem média",
+                "Atraso médio da ordem", "Ordens rejeitadas"):
+        assert _linha_cmp(arv, rot) == ["—"] * 4, rot
+
+
 # ------------------------------------------------------------- estrutura
 def test_bloco_tem_os_ids():
     ids = {x.id for x in todos(OP.bloco()) if isinstance(getattr(x, "id", None), str)}

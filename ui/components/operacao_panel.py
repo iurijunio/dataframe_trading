@@ -788,12 +788,25 @@ def _fator(v):
     return num(v, 2)
 
 
+def _atraso(ms) -> str:
+    return f"{inteiro(int(round(ms)))} ms" if ms < 1000 else f"{num(ms / 1000, 1)} s"
+
+
+# linhas de execução: só existem na conta (a demo, por ora); papel e
+# esperado não mandam ordem
+_SO_CONTA = ("mesmo_minuto", "derrapagem_extra", "atraso_ms", "rejeitadas")
+
+
 def tabela_comparativo(c: dict):
     """Esperado (WFA) × Papel × Demo × Real, por contrato (spec §6.7)."""
     cols = [c.get("esperado_wfa"), c.get("papel"), c.get("demo"), c.get("real")]
+    contas = (False, False, True, True)
 
-    def val(m, chave, fmt):
-        if m is None or not m.get("n") and chave != "n":
+    def val(m, chave, fmt, conta):
+        if m is None or chave in _SO_CONTA and not conta:
+            return "—"
+        # a execução tem número antes de a primeira operação fechar
+        if not m.get("n") and chave not in ("n", *_SO_CONTA):
             return "—"
         v = m.get(chave)
         return "—" if v is None else fmt(v)
@@ -812,8 +825,9 @@ def tabela_comparativo(c: dict):
          "ainda dizem pouco."),
         ("Resultado médio por contrato", "resultado_por_contrato",
          lambda v: _rs(v, 2),
-         "Resultado médio de uma operação, por contrato. Bom: papel perto "
-         "do esperado. Ruim: papel bem abaixo por muitos pregões."),
+         "Resultado médio de uma operação, por contrato, já sem os custos "
+         "do plano (a demo também). Bom: papel perto do esperado. Ruim: "
+         "papel bem abaixo por muitos pregões."),
         ("Pontos por operação", "pontos_por_operacao",
          lambda v: ("+" if v > 0 else "") + num(v, 0),
          "Pontos médios por operação. Bom: papel perto do esperado ou "
@@ -831,18 +845,21 @@ def tabela_comparativo(c: dict):
          "Soma com o tamanho real de cada operação. Só fechadas: pode ser "
          "menor que o Acumulado lá em cima, que inclui a aberta."),
         ("Execução", None),
-        ("Sinal no mesmo minuto", None, None,
-         "Quantas ordens da conta saíram no mesmo minuto do sinal do papel. "
-         "Bom: 100%. Os da demo estão em Avaliação › Papel × demo."),
-        ("Derrapagem média", None, None,
-         "Diferença entre o preço do papel e o preço executado, por ponta. "
-         "Bom: até 1 tick. A da demo está em Avaliação › Papel × demo."),
-        ("Atraso médio da ordem", None, None,
-         "Tempo entre o sinal e a ordem chegar à corretora. Bom: menos de "
-         "1 s. O da demo está na faixa de saúde, no topo."),
-        ("Ordens rejeitadas", None, None,
-         "Ordens que a corretora recusou. Bom: zero. As da demo estão "
-         "em Avaliação › Papel × demo."),
+        ("Sinal no mesmo minuto", "mesmo_minuto",
+         lambda v: pct(v * 100, 0),
+         "Entradas executadas no mesmo minuto do sinal do papel, sobre as "
+         "executadas desde o plano em vigor. Bom: 100%. Ruim: abaixo de 90%."),
+        ("Derrapagem média", "derrapagem_extra",
+         lambda v: ("+" if round(v, 1) > 0 else "") + num(v, 1) + " tick",
+         "Ticks por ponta além do preço do papel (que já desconta a "
+         "derrapagem do plano). Negativo = executou melhor que o papel. Bom: "
+         "perto de 0. Ruim: acima de 1 tick — o backtest está otimista."),
+        ("Atraso médio da ordem", "atraso_ms", _atraso,
+         "Tempo entre mandar a entrada e a corretora executar. Bom: menos "
+         "de 1 s. Ruim: acima de 2 s."),
+        ("Ordens rejeitadas", "rejeitadas", lambda v: inteiro(int(v)),
+         "Ordens que a corretora recusou (entrada, saída, proteção). Bom: "
+         "zero. Ruim: recusa todo dia."),
     ]
     corpo = []
     for linha in linhas:
@@ -852,9 +869,10 @@ def tabela_comparativo(c: dict):
             continue
         rot, chave, fmt, explica = linha
         celulas = [html.Td(_rotulo(rot, explica), className="k")]
-        for m in cols:
-            celulas.append(html.Td(val(m, chave, fmt) if chave else "—",
-                                   className="n" + ("" if chave and m else " mut")))
+        for m, conta in zip(cols, contas):
+            texto = val(m, chave, fmt, conta)
+            celulas.append(html.Td(texto,
+                                   className="n" + ("" if texto != "—" else " mut")))
         corpo.append(html.Tr(celulas))
     cab = html.Tr([html.Th(""), html.Th("Esperado (WFA)", className="n"),
                    html.Th("Papel", className="n"), html.Th("Demo", className="n"),
