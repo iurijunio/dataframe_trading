@@ -101,7 +101,10 @@ def painel():
                                     "value": "estrategias"},
                                    {"label": "Pregão", "value": "pregao"},
                                    {"label": "Operação",
-                                    "value": OP.SUBTELA}])],
+                                    "value": OP.SUBTELA}]),
+                      # saída do pulso da Operação; o CSS só a mostra nela
+                      html.Div(id="av-op-ord-saude",
+                               className="ord-saude-caixa")],
                      className="panel-head"),
         ], className="panel av-topo"),
         html.Div(_estrategias(), id="av-bloco-estrategias",

@@ -644,9 +644,9 @@ def test_caixas_que_rolam_sao_fixas_no_layout():
                 if "op-tabela-caixa" in classes(x)]
 
 
-def test_botao_abrir_em_estrategias():
-    b = next(x for x in todos(OP.bloco()) if getattr(x, "id", None) == "av-op-ficha")
-    assert b.children == "Abrir em Estratégias"
+def test_sem_botao_abrir_em_estrategias():
+    ids = {getattr(x, "id", None) for x in todos(OP.bloco())}
+    assert "av-op-ficha" not in ids
 
 
 def test_o_pulso_nao_abre_o_banco(monkeypatch):

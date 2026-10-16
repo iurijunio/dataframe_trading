@@ -1631,9 +1631,9 @@ body{
 /* linha do portfólio */
 .op-topo{padding:0;}
 .op-cab{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;
-  flex-wrap:wrap;padding:8px 12px;min-height:44px;}
+  flex-wrap:nowrap;padding:8px 12px;min-height:44px;}
 .op-cab-esq{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap;min-width:0;
-  flex:1 1 auto;}
+  flex:1 1 0;}
 .op-pf-ic{color:var(--muted);}
 .op-pf-dd{width:300px;max-width:100%;flex:0 0 auto;}
 /* nome de portfólio longo: o menu aberto passa da largura do campo */
@@ -1644,13 +1644,13 @@ body{
 .op-situacao:empty{display:none;}
 .op-situacao>.av-tag{margin:0 4px 0 8px;}
 .op-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 0;}
-.op-par{display:inline-flex;align-items:center;gap:5px;padding:0 12px;white-space:nowrap;
+.op-par{display:inline-flex;align-items:center;gap:5px;padding:0 9px;white-space:nowrap;
   border-left:1px solid var(--line);font-size:var(--fs-sm);line-height:1.4;}
 .op-par-r{color:var(--muted);font-size:var(--fs-xs);}
 .op-par-v{color:var(--ink);font-weight:500;}
 .op-par-v.mono{font-family:var(--mono);}
 .op-par .dica-mark{margin-left:1px;width:12px;height:12px;font-size:8.5px;}
-.op-cab-dir{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto;}
+.op-cab-dir{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:auto;}
 .op-botoes{display:flex;gap:6px;}
 .op-topo>.av-aviso{margin:0 12px 10px;}
 
@@ -1661,8 +1661,6 @@ body{
   background:currentColor;-webkit-mask:center/contain no-repeat;mask:center/contain no-repeat;}
 .op-bt-send::before{-webkit-mask-image:url(icones/send.svg);mask-image:url(icones/send.svg);}
 .op-bt-power::before{-webkit-mask-image:url(icones/power.svg);mask-image:url(icones/power.svg);}
-.op-bt-link::before{-webkit-mask-image:url(icones/external-link.svg);
-  mask-image:url(icones/external-link.svg);}
 .op-bt-agora::before{-webkit-mask-image:url(icones/skip-forward.svg);
   mask-image:url(icones/skip-forward.svg);}
 .op-bt-cheia::before{-webkit-mask-image:url(icones/maximize-2.svg);
@@ -1680,11 +1678,15 @@ body{
 /* variantes em tabela: o mesmo grid-template-columns no cabeçalho e nas
    linhas. Nome em cima, fase e etiquetas embaixo dele (em 1280 px a
    coluna do nome não comporta tudo numa linha) */
-.op-variantes{--op-var-cols:minmax(0,1fr) 68px 34px 50px 74px 80px;}
-.op-var-cols,.op-var-linha{display:grid;grid-template-columns:var(--op-var-cols);gap:6px;
+.op-variantes{--op-var-cols:minmax(0,1fr) 84px 56px 74px 104px 80px;}
+.op-var-cols,.op-var-linha{display:grid;grid-template-columns:var(--op-var-cols);gap:6px 10px;
   align-items:center;}
 .op-var-cols{padding:7px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);}
 .op-var-cols>.op-rot:nth-child(n+2){justify-self:end;}
+/* a lista rola e o cabeçalho não: reservar a calha nos dois mantém as
+   colunas do cabeçalho exatamente sobre as das linhas */
+.op-var-lista{scrollbar-gutter:stable;}
+#av-op-var-cab{overflow:hidden;scrollbar-gutter:stable;}
 .op-var{padding:7px 12px;border-bottom:1px solid var(--line-soft);}
 .op-var-c-nome{display:flex;flex-direction:column;gap:3px;min-width:0;}
 .op-var-n1{display:flex;align-items:center;gap:7px;min-width:0;}
@@ -1738,3 +1740,17 @@ body{
 @media (max-width:1100px){
   .op-aval-grade{grid-template-columns:minmax(0,1fr);}
 }
+/* ===================== Ao vivo: saúde no cabeçalho ========================
+   A faixa de saúde divide o painel do título com as sub-telas: título e abas
+   à esquerda, os sete itens à direita; em tela estreita quebram para uma
+   segunda linha dentro do mesmo painel. Só aparece na Operação (é a saída
+   do pulso dela). */
+.av-topo .panel-head{flex-wrap:wrap;align-items:center;gap:8px 16px;}
+.av-topo .ord-saude-caixa{margin-left:auto;min-width:0;display:none;}
+#painel-aovivo:has(.av-subtelas input[value="operacao"]:checked) .av-topo .ord-saude-caixa{
+  display:block;}
+.av-topo .ord-saude{border:0;background:transparent;border-radius:0;overflow:visible;
+  justify-content:flex-end;row-gap:6px;}
+.av-topo .ord-saude-i{flex:0 0 auto;gap:1px;padding:0 10px;}
+.av-topo .ord-saude-k{font-size:var(--fs-3xs);letter-spacing:.05em;}
+.av-topo .ord-saude-v{font-size:var(--fs-xs);}

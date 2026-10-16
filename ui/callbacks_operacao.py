@@ -664,16 +664,6 @@ def register(app):
     )
 
     @app.callback(
-        Output("av-subtela", "value"),
-        Input("av-op-ficha", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def ver_ficha_op(n):
-        if not n:
-            raise PreventUpdate
-        return "estrategias"
-
-    @app.callback(
         Output("av-op-ocultas", "data"),
         Input({"type": "av-op-chip", "id": ALL}, "n_clicks"),
         State("av-op-ocultas", "data"),

@@ -1128,7 +1128,8 @@ def bloco():
         # ganham largura (ver callbacks_operacao)
         dcc.Store(id="av-op-enquadrar"),
         dcc.Store(id="av-op-curva-enquadrar"),
-        html.Div(id="av-op-ord-saude", className="ord-saude-caixa"),
+        # a faixa de saúde (av-op-ord-saude) mora no cabeçalho de Ao vivo
+        # (ao_vivo_panel.painel), junto do título e das sub-telas
         html.Div(id="av-op-ord-chamados", className="ord-chamados-caixa"),
         html.Section([
             html.Div([
@@ -1148,12 +1149,6 @@ def bloco():
                 ], className="op-cab-esq"),
                 html.Div([
                     html.Div(id="av-op-botoes", className="op-botoes"),
-                    html.Button("Abrir em Estratégias", id="av-op-ficha",
-                                n_clicks=0,
-                                className="btn-ghost av-btn-sec op-bt op-bt-link",
-                                title="Abre Ao vivo › Estratégias, onde ficam "
-                                      "o portfólio, as contas e a ficha de "
-                                      "cada variante"),
                 ], className="op-cab-dir"),
             ], className="op-cab"),
             # retorno das ações (clique duplo): some quando vazio
