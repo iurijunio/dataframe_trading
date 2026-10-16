@@ -1,0 +1,32 @@
+/* Icones Lucide locais, pela mascara CSS: o desenho vem do SVG e a cor vem
+   do texto (currentColor), entao o icone segue verde/rosa/cinza da etiqueta
+   ou do botao onde esta. Use pelo helper ui/components/icones.py.
+   Origem: lucide-static@1.58.0 (ISC; icones herdados do Feather sob MIT),
+   licenca em icones/LICENSE-lucide.txt. Traco trocado de 2 para 1.8.
+   O url() fica em cada regra, nunca numa variavel CSS: o Chrome resolve o
+   caminho relativo pelo arquivo onde a variavel e USADA, e o icone some. */
+
+.ic{display:inline-block;width:15px;height:15px;flex:0 0 auto;
+  vertical-align:-3px;background:currentColor;
+  -webkit-mask:center/contain no-repeat;mask:center/contain no-repeat;}
+.ic-sm{width:13px;height:13px;vertical-align:-2px;}
+
+.ic-arrow-down{-webkit-mask-image:url(icones/arrow-down.svg);mask-image:url(icones/arrow-down.svg);}
+.ic-arrow-up{-webkit-mask-image:url(icones/arrow-up.svg);mask-image:url(icones/arrow-up.svg);}
+.ic-briefcase{-webkit-mask-image:url(icones/briefcase.svg);mask-image:url(icones/briefcase.svg);}
+.ic-chart-candlestick{-webkit-mask-image:url(icones/chart-candlestick.svg);mask-image:url(icones/chart-candlestick.svg);}
+.ic-circle-help{-webkit-mask-image:url(icones/circle-help.svg);mask-image:url(icones/circle-help.svg);}
+.ic-crosshair{-webkit-mask-image:url(icones/crosshair.svg);mask-image:url(icones/crosshair.svg);}
+.ic-external-link{-webkit-mask-image:url(icones/external-link.svg);mask-image:url(icones/external-link.svg);}
+.ic-layers{-webkit-mask-image:url(icones/layers.svg);mask-image:url(icones/layers.svg);}
+.ic-list{-webkit-mask-image:url(icones/list.svg);mask-image:url(icones/list.svg);}
+.ic-maximize-2{-webkit-mask-image:url(icones/maximize-2.svg);mask-image:url(icones/maximize-2.svg);}
+.ic-pause{-webkit-mask-image:url(icones/pause.svg);mask-image:url(icones/pause.svg);}
+.ic-pencil{-webkit-mask-image:url(icones/pencil.svg);mask-image:url(icones/pencil.svg);}
+.ic-play{-webkit-mask-image:url(icones/play.svg);mask-image:url(icones/play.svg);}
+.ic-power{-webkit-mask-image:url(icones/power.svg);mask-image:url(icones/power.svg);}
+.ic-scale{-webkit-mask-image:url(icones/scale.svg);mask-image:url(icones/scale.svg);}
+.ic-scroll-text{-webkit-mask-image:url(icones/scroll-text.svg);mask-image:url(icones/scroll-text.svg);}
+.ic-send{-webkit-mask-image:url(icones/send.svg);mask-image:url(icones/send.svg);}
+.ic-skip-forward{-webkit-mask-image:url(icones/skip-forward.svg);mask-image:url(icones/skip-forward.svg);}
+.ic-triangle-alert{-webkit-mask-image:url(icones/triangle-alert.svg);mask-image:url(icones/triangle-alert.svg);}
