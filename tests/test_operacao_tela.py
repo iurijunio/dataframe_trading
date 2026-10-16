@@ -43,6 +43,18 @@ def classes(c) -> str:
     return getattr(c, "className", "") or ""
 
 
+def dicas_txt(c) -> str:
+    """O texto de todos os (?) da árvore: a explicação mora no `data-dica`,
+    não na tela."""
+    return " ".join(x.to_plotly_json()["props"]["data-dica"] for x in todos(c)
+                    if "dica-mark" in classes(x))
+
+
+def titulos(c) -> str:
+    """Os `title` da árvore (o que o mouse em cima mostra)."""
+    return " ".join(getattr(x, "title", None) or "" for x in todos(c))
+
+
 def _resumo(**mudar):
     r = {
         "resultado_hoje": 286.0,
@@ -86,9 +98,10 @@ def _kpi(cartoes, rotulo):
     return next(c for c in cartoes if rotulo in textos(c))
 
 
-def test_seis_indicadores_cada_um_com_dica():
+def test_cinco_indicadores_do_papel_cada_um_com_dica():
+    # a faixa tem sete: os dois da demo vêm do pulso (OR.numeros)
     cartoes = OP.kpis(_resumo(), [_op()], {"diferenca": 120.0, "faixas": []})
-    assert len(cartoes) == 6
+    assert len(cartoes) == 5
     for c in cartoes:
         assert any("dica-mark" in classes(x) for x in todos(c)), textos(c)
 
@@ -117,7 +130,7 @@ def test_posicao_agora_diz_o_lado_e_os_contratos():
 def test_resultado_hoje_conta_so_o_que_conta():
     ops = [_op(), _op(op_id=2, conta=False),
            _op(op_id=3, situacao="aberta", aberta=True, exit_ts=None)]
-    t = textos(_kpi(OP.kpis(_resumo(), ops, {}), "Resultado hoje"))
+    t = textos(_kpi(OP.kpis(_resumo(), ops, {}), "Papel hoje"))
     assert "+R$ 286" in t
     assert "2 operações" in t and "1 aberta" in t
 
@@ -131,30 +144,39 @@ def test_contra_o_esperado_sem_expectativa_e_travessao():
 def test_contra_o_esperado_conta_as_faixas():
     esp = {"diferenca": -80.0,
            "faixas": ["p10_p50", "p50_p90", "abaixo_p10", None]}
-    t = textos(_kpi(OP.kpis(_resumo(), [], esp), "Contra o esperado"))
-    assert "abaixo da mediana" in t
-    assert "2 de 3 dentro da faixa" in t and "1 abaixo do p10" in t
+    c = _kpi(OP.kpis(_resumo(), [], esp), "Contra o esperado")
+    # na nota (uma linha) o que mais importa; a frase inteira no title
+    assert "1 abaixo do p10" in textos(c)
+    assert ("abaixo da mediana · 2 de 3 dentro da faixa · 1 abaixo do p10"
+            in titulos(c))
 
 
 # ------------------------------------------------------------- variantes
 def test_cartao_mostra_contratos_papel_e_demo():
-    t = textos(OP.cartao_variante(_var(contratos=3), None))
-    assert "papel 3" in t and "demo —" in t and "plano #5" in t
+    c = OP.cartao_variante(_var(contratos=3), None)
+    assert "papel 3" in textos(c)
+    # papel, demo e plano juntos no title da etiqueta da fase
+    assert "papel 3" in titulos(c) and "demo —" in titulos(c)
+    assert "plano #5" in titulos(c)
+    demo = OP.cartao_variante(_var(fase="demo", contratos=3, contratos_demo=1),
+                              None)
+    assert "demo 1" in textos(demo)
 
 
 def test_cartao_pulado_fica_apagado_com_o_motivo():
     c = OP.cartao_variante(_var(status="pulado",
                                 motivo="código mudou desde o plano"), None)
     assert "op-var-apagada" in classes(c)
-    t = textos(c)
-    assert "pulado" in t and "código mudou desde o plano" in t
+    assert "pulado" in textos(c)
+    # o motivo é frase: mora no (?) da etiqueta
+    assert "código mudou desde o plano" in dicas_txt(c)
 
 
 def test_cartao_interrompido_fica_apagado_com_o_motivo():
     c = OP.cartao_variante(_var(status="interrompido", motivo="código mudou"),
                            None)
     assert "op-var-apagada" in classes(c)
-    assert "interrompido" in textos(c) and "código mudou" in textos(c)
+    assert "interrompido" in textos(c) and "código mudou" in dicas_txt(c)
 
 
 def test_cartao_gravado_mesmo_assim_tem_a_etiqueta():
@@ -165,13 +187,18 @@ def test_cartao_gravado_mesmo_assim_tem_a_etiqueta():
 
 
 def test_cartao_posicao_aberta():
-    t = textos(OP.cartao_variante(_var(posicao=1), None))
-    assert "comprado 1" in t
+    c = OP.cartao_variante(_var(posicao=1), None)
+    assert "comprado 1" in titulos(c)
+    assert "vendido 2" in titulos(OP.cartao_variante(_var(posicao=-2), None))
+    # zerado: nenhuma seta
+    assert not [x for x in todos(OP.cartao_variante(_var(), None))
+                if "op-var-pos" in classes(x)]
 
 
 def test_cartao_botao_de_dois_cliques():
     b = [x for x in todos(OP.cartao_variante(_var(), None))
-         if isinstance(getattr(x, "id", None), dict)]
+         if isinstance(getattr(x, "id", None), dict)
+         and x.id["type"] == "av-op-acao"]
     assert b[0].id == {"type": "av-op-acao", "acao": "membro-desligar", "id": 1}
     armado = OP.cartao_variante(_var(), "membro-desligar:1")
     assert "Confirmar?" in textos(armado)
@@ -211,7 +238,7 @@ def test_pior_momento_sem_hora_nao_comeca_com_separador():
                      [], {}), "Pior momento")
     nota = next(x for x in todos(c) if "op-kpi-n" in classes(x))
     assert not nota.children.startswith(" ·")
-    assert nota.children.startswith("limite do dia")
+    assert nota.children.startswith("limite R$ 500")
 
 
 def _com_dica(arvore, rotulo):
@@ -224,7 +251,7 @@ def _com_dica(arvore, rotulo):
 
 def test_colunas_da_variante_tem_dica():
     arvore = OP.coluna_variantes([_var()], None, _resumo())
-    for rot in ("Hoje", "Operações", "Acerto", "Acumulado"):
+    for rot in ("Variante", "Hoje", "Op.", "Acerto", "Acumulado"):
         assert _com_dica(arvore, rot), rot
 
 
@@ -298,8 +325,7 @@ def test_linha_congelada_diz_por_que():
 def test_cartao_com_falha_no_calculo_mostra_o_motivo():
     c = OP.cartao_variante(_var(status="falha",
                                 motivo="falha no cálculo: motor caiu"), None)
-    t = textos(c)
-    assert "falha no cálculo" in t and "motor caiu" in t
+    assert "falha no cálculo" in textos(c) and "motor caiu" in dicas_txt(c)
     assert "op-var-apagada" in classes(c)
 
 
@@ -725,7 +751,34 @@ def test_operacao_sem_frase_visivel_sob_os_titulos():
     for frase in ("Tudo o que a automação fez", "clique para recolher",
                   "Por contrato, para comparar", "O que está na corretora"):
         assert frase not in t, frase
-    titulos = [x for x in todos(arvore) if "av-sec-titulo" in classes(x)]
-    demo = next(x for x in titulos if textos(x).startswith("Operações do dia na demo"))
-    dicas = [x for x in todos(demo) if "dica-mark" in classes(x)]
-    assert "Derrapagem" in dicas[0].to_plotly_json()["props"]["data-dica"]
+    subs = [x for x in todos(arvore) if "op-sub-t" in classes(x)]
+    demo = next(x for x in subs if textos(x).startswith("Demo"))
+    assert "Derrapagem" in dicas_txt(demo)
+    # a chave dos símbolos do gráfico saiu da tela para o (?) do título
+    assert "▲ compra" not in t and "▲ compra" in dicas_txt(arvore)
+
+
+def test_abas_sempre_montadas_com_operacoes_aberta():
+    """As três abas ficam no layout (só o CSS mostra uma): dcc.Tabs
+    desmontaria a fechada e recriaria a curva."""
+    arvore = OP.bloco()
+    por_id = {x.id: x for x in todos(arvore)
+              if isinstance(getattr(x, "id", None), str)}
+    aba = por_id["av-op-aba"]
+    assert type(aba).__name__ == "RadioItems" and aba.value == "operacoes"
+    assert [o["value"] for o in aba.options] == ["operacoes", "diario",
+                                                 "avaliacao"]
+    corpo = por_id["av-op-abas"]
+    assert "op-aba-operacoes" in classes(corpo)
+    dentro = {x.id for x in todos(corpo) if isinstance(getattr(x, "id", None), str)}
+    assert {"av-op-ord-operacoes", "av-op-operacoes", "av-op-filtro",
+            "av-op-alertas", "av-op-ord-diario", "av-op-ord-diario-filtro",
+            "av-op-comparativo", "av-op-curva", "av-op-ord-cmp",
+            "av-op-ord-selo", "av-op-ord-avaliacao"} <= dentro
+    assert not [x for x in todos(arvore) if type(x).__name__ in ("Tabs", "Tab")]
+
+
+def test_cabecalho_mostra_o_pregao_da_tela():
+    cab = OP.cabecalho({"ligado": True}, {}, dia=date(2026, 10, 15))
+    assert "15/10" in textos(cab) and "Pregão" in textos(cab)
+    assert "—" in textos(OP.cabecalho({"ligado": True}, {}))

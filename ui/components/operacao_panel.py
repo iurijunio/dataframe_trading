@@ -15,7 +15,7 @@ fileira de chips que rola de lado e esconde a variante no gráfico.
 """
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 import dash_tvlwc
 from dash import dcc, html
@@ -25,6 +25,7 @@ from ..data import to_epoch
 from . import ordens_panel as OR
 from . import pregao_panel as PP
 from .cartao import FASES, dica, etiqueta_mesmo_assim, inteiro, num, pct
+from .icones import icone
 
 CINZA = T.CINZA_FORA
 SUBTELA = "operacao"
@@ -145,16 +146,20 @@ def _barra(uso_pct: float):
 
 def kpis(resumo: dict, ops: list[dict], esperado: dict,
          nomes: dict | None = None) -> list:
-    """Os seis indicadores do topo (spec §6.2). `ops` é a tabela do dia
+    """Os cinco números do papel na faixa do topo (spec §6.2; a demo põe
+    os dois dela na mesma faixa, pelo pulso). `ops` é a tabela do dia
     (para contar); `esperado` = {"diferenca": papel − soma das medianas,
-    "faixas": faixa atual de cada variante}; `nomes` = ligação → nome."""
+    "faixas": faixa atual de cada variante}; `nomes` = ligação → nome.
+
+    Nota de uma linha: o que não cabe nela vai para o `title` (o mouse em
+    cima mostra a frase inteira)."""
     nomes = nomes or {}
     contam = [o for o in ops if o.get("conta")]
     abertas = sum(1 for o in contam if o.get("situacao") == "aberta")
     n = len(contam)
-    nota_hoje = f"papel · {n} {'operação' if n == 1 else 'operações'}"
+    nota_hoje = f"{n} {'operação' if n == 1 else 'operações'}"
     if abertas:
-        nota_hoje += f" · {abertas} aberta{'s' if abertas > 1 else ''}"
+        nota_hoje += f", {abertas} aberta{'s' if abertas > 1 else ''}"
     hoje = resumo.get("resultado_hoje") or 0.0
 
     pos = resumo.get("posicao") or {}
@@ -162,9 +167,8 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
     lado, _ = _lado_pos(liq)
     quem = [f"{nomes.get(l, f'#{l}')} {p:+d}"
             for l, p in (pos.get("por_ligacao") or {}).items() if p]
-    nota_pos = f"papel {abs(liq)} · demo — contratos"
-    if quem:
-        nota_pos = " · ".join(quem) + " · " + nota_pos
+    nota_pos = f"papel {abs(liq)} · demo —"
+    title_pos = (" · ".join(quem) + " · " if quem else "") + nota_pos + " contratos"
 
     pior = resumo.get("pior_momento") or {}
     valor_pior = pior.get("valor")
@@ -175,38 +179,45 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
     barra = None
     if limite:
         uso = max(0.0, -(valor_pior or 0.0)) / limite * 100
-        partes_pior.append(f"limite do dia R$ {inteiro(int(round(limite)))}")
+        partes_pior.append(f"limite R$ {inteiro(int(round(limite)))}")
         barra = _barra(uso)
     elif demo:
-        partes_pior.append("conta demo sem limite cadastrado")
+        partes_pior.append("sem limite cadastrado")
     else:
-        partes_pior.append("portfólio sem conta demo")
+        partes_pior.append("sem conta demo")
     nota_pior = " · ".join(partes_pior)
 
     acum = resumo.get("acumulado") or {}
-    nota_acum = (f"{acum.get('pregoes', 0)} pregões · "
-                 f"{acum.get('operacoes', 0)} operações · desde o plano em vigor")
+    nota_acum = f"{acum.get('pregoes', 0)} pregões · {acum.get('operacoes', 0)} op."
+    title_acum = (f"{acum.get('pregoes', 0)} pregões e {acum.get('operacoes', 0)} "
+                  "operações desde o plano em vigor")
 
     dif = (esperado or {}).get("diferenca")
     faixas = [f for f in (esperado or {}).get("faixas") or [] if f]
     if dif is None:
         valor_esp, sinal_esp = "—", None
         nota_esp = (esperado or {}).get("aviso") or "plano sem expectativa gravada"
+        title_esp = nota_esp
     else:
         valor_esp, sinal_esp = _rs(dif), _sinal(dif)
-        nota_esp = f"{'acima' if dif >= 0 else 'abaixo'} da mediana"
+        mediana = f"{'acima' if dif >= 0 else 'abaixo'} da mediana"
+        nota_esp, partes = mediana, [mediana]
         if faixas:
             dentro = sum(1 for f in faixas if f in ("p10_p50", "p50_p90"))
-            nota_esp += f" · {dentro} de {len(faixas)} dentro da faixa"
             baixo = faixas.count("abaixo_p10")
             alto = faixas.count("acima_p90")
+            partes.append(f"{dentro} de {len(faixas)} dentro da faixa")
             if baixo:
-                nota_esp += f" · {baixo} abaixo do p10"
+                partes.append(f"{baixo} abaixo do p10")
             if alto:
-                nota_esp += f" · {alto} acima do p90"
+                partes.append(f"{alto} acima do p90")
+            # na nota só o que mais importa: quem está abaixo do p10 primeiro
+            nota_esp = (f"{baixo} abaixo do p10" if baixo
+                        else f"{dentro} de {len(faixas)} dentro da faixa")
+        title_esp = " · ".join(partes)
 
     return [
-        _kpi("Resultado hoje",
+        _kpi("Papel hoje",
              "Soma do papel de hoje das variantes: operações fechadas mais a "
              "aberta pelo preço do último candle (provisório). Operação fora "
              "do período em que a variante estava ligada não entra. Bom: "
@@ -216,21 +227,23 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
              "Contratos em aberto agora, somando as variantes (comprado "
              "soma, vendido subtrai). Bom: no máximo a soma dos contratos "
              "dos planos. Atenção: variantes em lados opostos se anulam "
-             "aqui — veja quem está posicionado no texto de baixo.",
+             "aqui — o mouse em cima da nota mostra quem está posicionado.",
              lado, nota_pos, "acc" if liq else None,
-             nota_title=nota_pos),
-        _kpi("Pior momento hoje",
+             nota_title=title_pos),
+        _kpi("Pior momento",
              "O ponto mais baixo do resultado de hoje, minuto a minuto "
              "(fechadas mais a aberta pelo preço de cada minuto), contra o "
              "limite de perda diária da conta demo. Bom: abaixo de 50% do "
              "limite. Ruim: acima de 80% — a mesa encerraria o dia.",
-             _rs(valor_pior), nota_pior, _sinal(valor_pior), barra),
-        _kpi("Acumulado no papel",
+             _rs(valor_pior), nota_pior, _sinal(valor_pior), barra,
+             nota_title=nota_pior),
+        _kpi("Acumulado papel",
              "Tudo o que o papel fez desde que o plano atual de cada variante "
              "passou a valer (recomeça quando o plano muda). Inclui a "
              "operação aberta pelo valor provisório. Bom: dentro ou acima da "
              "faixa esperada. Ruim: abaixo do p10.",
-             _rs(acum.get("valor")), nota_acum, _sinal(acum.get("valor"))),
+             _rs(acum.get("valor")), nota_acum, _sinal(acum.get("valor")),
+             nota_title=title_acum),
         _kpi("Contra o esperado",
              "Papel acumulado menos a soma das medianas que a Candidata "
              "prometeu para o mesmo número de pregões. Por variante, a faixa "
@@ -238,13 +251,7 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
              "resultado ficou abaixo disso. Bom: entre p10 e p90. Ruim: "
              "abaixo do p10 — o papel está pior que 9 em 10 cenários.",
              valor_esp, nota_esp, "aviso" if "abaixo_p10" in faixas
-             else sinal_esp),
-        _kpi("Papel × demo hoje",
-             "Diferença por contrato entre o papel e a conta demo nas mesmas "
-             "operações — quanto a execução de verdade custa. Bom: perto de "
-             "zero (até 1 tick de derrapagem por ponta). Ruim: demo pior "
-             "todo dia.",
-             "—", "veja Avaliação › Papel × demo"),
+             else sinal_esp, nota_title=title_esp),
     ]
 
 
@@ -259,15 +266,18 @@ _APAGADO = ("pulado", "interrompido", "nao_conferido", "falha")
 
 # (rótulo, classe) de cada botão de ação. Num lugar só porque são duas as
 # mãos que os desenham: o redesenho que lê o banco e o callback leve que só
-# troca o rótulo para "Confirmar?" no primeiro clique.
+# troca o rótulo para "Confirmar?" no primeiro clique. O ícone vem da
+# classe (`op-bt-*`, máscara no CSS) e não do filho: o callback leve troca
+# os filhos por texto puro e um ícone filho sumiria no primeiro clique.
 _BOTOES = {
     "membro-desligar": ("Pausar", "btn-ghost btn-sm av-btn-sec op-var-botao"),
     "membro-ligar": ("Ligar", "btn-ghost btn-sm av-btn-principal op-var-botao"),
-    "pf-desligar": ("Desligar portfólio", "btn-ghost av-btn-sec"),
-    "pf-ligar": ("Ligar portfólio", "btn-ghost av-btn-principal"),
+    "pf-desligar": ("Desligar portfólio", "btn-ghost av-btn-sec op-bt op-bt-power"),
+    "pf-ligar": ("Ligar portfólio", "btn-ghost av-btn-principal op-bt op-bt-power"),
     # o interruptor do Envio de ordens da conta demo (o rótulo diz o estado)
-    "envio-desligar": ("● Envio de ordens ligado", "btn-ghost ord-envio ord-envio-on"),
-    "envio-ligar": ("○ Envio de ordens desligado", "btn-ghost ord-envio"),
+    "envio-desligar": ("Envio de ordens ligado",
+                       "btn-ghost ord-envio ord-envio-on op-bt op-bt-send"),
+    "envio-ligar": ("Envio de ordens desligado", "btn-ghost ord-envio op-bt op-bt-send"),
 }
 
 
@@ -285,31 +295,54 @@ def _botao(acao, alvo, armado, title=""):
                        id={"type": "av-op-acao", "acao": acao, "id": alvo})
 
 
-def _contratos_demo(v: dict) -> html.Span:
-    """"demo 2 ✎": os contratos na conta demo, com o lápis que abre o
-    editor. Sem número gravado a demo usa os do plano — na fase demo isso
-    se diz; no papel fica "—" (nada vai à conta)."""
+def _fase_e_contratos(v: dict) -> html.Span:
+    """"demo 2 ✎": a fase com os contratos dela e o lápis que abre o
+    editor dos contratos da demo. Na fase demo sem número gravado valem os
+    do plano; papel e demo de cada um e o plano ficam no `title`."""
+    fase = v.get("fase") or "papel"
+    ctr = v.get("contratos")
     proprio = v.get("contratos_demo")
+    n = proprio if fase == "demo" and proprio is not None else ctr
     if proprio is not None:
-        texto = f"demo {proprio}"
-    elif v.get("fase") == "demo" and v.get("contratos") is not None:
-        texto = f"demo {v['contratos']} (do plano)"
+        demo = f"demo {proprio}"
+    elif fase == "demo" and ctr is not None:
+        demo = f"demo {ctr} (do plano)"
     else:
-        texto = "demo —"
+        demo = "demo — (nada vai à conta)"
+    plano = f"plano #{v['plano_id']}" if v.get("plano_id") else "sem plano"
+    nome_fase = FASES.get(fase, fase)
     return html.Span([
-        html.B(texto, className="op-var-ctr"),
-        html.Button("✎", n_clicks=0, className="ord-ctr-editar",
+        html.Span(f"{nome_fase} {'—' if n is None else n}"),
+        html.Button(icone("pencil", pequeno=True), n_clicks=0,
+                    className="ord-ctr-editar",
                     id={"type": "av-op-ord-ctr", "id": v["ligacao_id"]},
                     title="Mudar os contratos desta variante na conta demo "
                           "(o papel segue com os do plano)"),
-    ], className="ord-ctr")
+    ], className="op-var-fase" + (" op-var-fase-demo" if fase == "demo" else ""),
+        title=f"fase {nome_fase} · contratos: papel "
+              f"{'—' if ctr is None else ctr} · {demo} · {plano}")
+
+
+def _seta_posicao(p: int):
+    """Seta verde (comprado) ou azul (vendido) com os contratos; zerado
+    não mostra nada — a linha fica limpa."""
+    if not p:
+        return None
+    compra = p > 0
+    return html.Span([icone("arrow-up" if compra else "arrow-down", pequeno=True),
+                      str(abs(p))],
+                     className="op-var-pos " + ("op-var-pos-c" if compra
+                                                else "op-var-pos-v"),
+                     title=f"{'comprado' if compra else 'vendido'} {abs(p)}")
 
 
 def cartao_variante(v: dict, armado) -> html.Div:
+    """Uma linha da tabela de variantes: nome (e embaixo fase e
+    etiquetas), Hoje, Op., Acerto, Acumulado e o botão. Grade de divs com o
+    mesmo `grid-template-columns` do cabeçalho (`cabecalho_colunas`)."""
     lig = v["ligacao_id"]
     nome = v["nome"]
     status = v.get("status")
-    pos_txt, pos_tom = _lado_pos(int(v.get("posicao") or 0))
     if v.get("ligada"):
         botao = _botao("membro-desligar", lig, armado,
                        "Pausar esta variante: as operações dela deixam de "
@@ -319,15 +352,29 @@ def cartao_variante(v: dict, armado) -> html.Div:
         botao = _botao("membro-ligar", lig, armado,
                        "Ligar esta variante: as operações dela voltam a "
                        "contar. Clique duas vezes para confirmar.")
-    cab = html.Div([
-        amostra(v.get("cor"), v.get("ligada", True)),
-        html.Span(nome, className="op-nome", title=nome),
-        _etiqueta(pos_txt, pos_tom),
-        botao,
-    ], className="op-var-cab")
+
+    tags = []
+    if not v.get("ligada", True):
+        tags.append(_etiqueta("pausada", "cinza"))
+    if status in _STATUS:
+        rot, tom = _STATUS[status]
+        # o motivo (frase) mora no (?) da etiqueta, não solto na linha
+        motivo = v.get("motivo") if status in _APAGADO else None
+        tags.append(_etiqueta(rot, tom, motivo))
+    if v.get("gravado_mesmo_assim"):
+        tags.append(etiqueta_mesmo_assim(v.get("pendencias")))
+
+    nome_cel = html.Div([
+        html.Div([amostra(v.get("cor"), v.get("ligada", True)),
+                  html.Span(nome, className="op-nome", title=nome),
+                  _seta_posicao(int(v.get("posicao") or 0))],
+                 className="op-var-n1"),
+        html.Div([_fase_e_contratos(v), *tags], className="op-var-n2"),
+    ], className="op-var-c-nome")
 
     acerto = v.get("acerto")
-    valores = html.Div([
+    linha = html.Div([
+        nome_cel,
         html.Span(_rs(v.get("hoje")), className="op-var-v "
                   + (_sinal(v.get("hoje")) or "")),
         html.Span(str(v.get("n_ops") or 0), className="op-var-v"),
@@ -335,37 +382,15 @@ def cartao_variante(v: dict, armado) -> html.Div:
                   className="op-var-v"),
         html.Span(_rs(v.get("acumulado")), className="op-var-v "
                   + (_sinal(v.get("acumulado")) or "")),
-    ], className="op-var-grade")
+        html.Div(botao, className="op-var-c-acao"),
+    ], className="op-var-linha")
 
-    ctr = v.get("contratos")
-    tags = []
-    if not v.get("ligada", True):
-        tags.append(_etiqueta("pausada", "cinza"))
-    if status in _STATUS:
-        tags.append(_etiqueta(*_STATUS[status]))
-    if v.get("gravado_mesmo_assim"):
-        tags.append(etiqueta_mesmo_assim(v.get("pendencias")))
-    rodape = html.Div([
-        html.Span(["contratos ",
-                   html.B(f"papel {'—' if ctr is None else ctr}",
-                          className="op-var-ctr"), " · ",
-                   _contratos_demo(v)]),
-        html.Span(f"plano #{v['plano_id']}" if v.get("plano_id")
-                  else "sem plano", className="op-var-plano"),
-        html.Span(FASES.get(v.get("fase") or "papel", v.get("fase")),
-                  className="op-var-fase"),
-        *tags,
-    ], className="op-var-rodape")
-
-    filhos = [cab, valores, rodape]
-    if status in _APAGADO and v.get("motivo"):
-        filhos.append(html.P(v["motivo"], className="op-var-motivo"))
     classe = "op-var"
     if not v.get("ligada", True):
         classe += " op-var-off"
     if status in _APAGADO:
         classe += " op-var-apagada"
-    return html.Div(filhos, className=classe)
+    return html.Div(linha, className=classe)
 
 
 def risco_dia(resumo: dict) -> html.Div:
@@ -406,8 +431,9 @@ def coluna_variantes(vs: list[dict], armado, resumo: dict) -> list:
             risco_dia(resumo)]
 
 
-_SEM_VARIANTES = html.P("Este portfólio não tem variantes — adicione em "
-                        "Portfólio e ligue em Ao vivo › Estratégias.",
+_SEM_VARIANTES = html.P(["nenhuma variante neste portfólio",
+                         dica("Adicione variantes ao portfólio na tela "
+                              "Portfólio e ligue-as em Ao vivo › Estratégias.")],
                         className="av-vazio op-vazio")
 
 
@@ -418,10 +444,15 @@ def cartoes(vs: list[dict], armado) -> list:
 
 def cabecalho_colunas():
     return html.Div([
+        _rotulo("Variante", "Ordem: posição aberta primeiro, depois o "
+                "resultado do dia. O ponto é a cor da variante no gráfico; a "
+                "seta, a posição aberta (verde comprado, azul vendido). "
+                "Embaixo do nome, a fase com os contratos dela; o lápis muda "
+                "os contratos na conta demo."),
         _rotulo("Hoje", "Resultado de hoje da variante (fechadas mais a "
                 "aberta provisória). Bom: positivo. Ruim: perda maior que a "
                 "perda média do plano."),
-        _rotulo("Operações", "Operações de hoje que contam. Bom: perto da "
+        _rotulo("Op.", "Operações de hoje que contam. Bom: perto da "
                 "média de operações por pregão do plano. Atenção: muito acima "
                 "(a estratégia está girando demais) ou zero num dia com "
                 "movimento (confira se o papel está calculando)."),
@@ -432,19 +463,22 @@ def cabecalho_colunas():
         _rotulo("Acumulado", "Papel desde o plano em vigor desta variante. "
                 "Bom: dentro da faixa esperada (veja Papel × esperado, Por "
                 "variante). Ruim: abaixo do p10."),
+        html.Span(),
     ], className="op-var-cols")
 
 
 def legenda(vs: list[dict], ocultas) -> html.Div:
-    """Um chip por variante (clicar esconde/mostra no gráfico) e a chave
-    dos símbolos, embaixo."""
-    return html.Div([html.Div(chips(vs, ocultas), className="op-chips"),
-                     _CHAVE], className="op-legenda-in")
+    """Um chip por variante: clicar esconde/mostra no gráfico. A chave dos
+    símbolos fica no (?) do título do gráfico."""
+    return html.Div(html.Div(chips(vs, ocultas), className="op-chips"),
+                    className="op-legenda-in")
 
 
-_CHAVE = html.Span("▲ compra · ▼ venda · ● saída (■ quando a cor repete) · "
-                   "tracejado = stop/alvo da posição aberta · cinza = fora do "
-                   "período ligado", className="op-legenda-chave")
+# a chave dos símbolos do gráfico: no (?) do título, não solta na tela
+_CHAVE = ("Marcadores: ▲ compra, ▼ venda, ● saída (■ quando a cor da "
+          "variante repete). Tracejado = stop e alvo da posição aberta. Cinza "
+          "= operação fora do período em que a variante estava ligada. Os "
+          "botões embaixo do gráfico escondem ou mostram cada variante.")
 
 
 def chips(vs: list[dict], ocultas) -> list:
@@ -557,7 +591,9 @@ def _papel_x_demo(d):
 
 def tabela_operacoes(ops: list[dict]):
     if not ops:
-        return html.P("nenhuma operação de papel neste pregão até agora",
+        return html.P(["nenhuma operação no papel neste pregão",
+                       dica("O papel ainda não deu sinal hoje (ou o filtro "
+                            "escolheu uma variante sem operação).")],
                       className="av-vazio op-vazio")
 
     def th(texto, explica=None, n=False):
@@ -654,18 +690,22 @@ def tick_operacao(estado: dict | None, tf: str, base: dict | None,
 
 
 # --------------------------------------------------------------- situação
-def _banda(tom, texto, acao=None, explica=None):
-    filhos = [html.Strong(texto, className="pg-alerta-t")]
-    if acao:
-        filhos.append(html.Span(acao, className="pg-alerta-a"))
+def _par(rotulo, valor, explica=None, mono=False):
+    """Um par do cabeçalho: rótulo pequeno e apagado, valor em destaque.
+    Os pares se separam por um traço vertical fino (CSS), não por "·"."""
+    filhos = [html.Span(rotulo, className="op-par-r"),
+              html.B(valor, className="op-par-v" + (" mono" if mono else ""))]
     if explica:
         filhos.append(dica(explica))
-    return html.Div(filhos, className=f"pg-alerta pg-alerta-{tom}")
+    return html.Span(filhos, className="op-par")
 
 
 def faixa_situacao(estado: dict | None, agora: datetime) -> list:
     """A captura (mesma `situacao` do Pregão) e o papel: quando foi
-    calculado, se ficou para trás, se falhou."""
+    calculado, se ficou para trás, se falhou.
+
+    Etiquetas na linha do cabeçalho, com o que fazer no (?): problema
+    (rosa/âmbar) fica sempre à vista, só a frase de ação vai para o (?)."""
     sit = PP.situacao(estado, agora)
     papel = (estado or {}).get("papel") or {}
     em = PP._data(papel.get("calculado_em"))
@@ -675,28 +715,35 @@ def faixa_situacao(estado: dict | None, agora: datetime) -> list:
         texto = sit["texto"]
         if not sit["ativa"] and em:
             texto += f" — papel congelado em {em:%H:%M}"
-        out.append(_banda(sit["tom"], texto, sit["acao"]))
+        out.append(_etiqueta(texto, sit["tom"], sit["acao"]))
     elif not sit["pregao"]:
-        out.append(_banda("cinza", "Mercado fechado",
-                          "a tela mostra o último pregão calculado"))
+        out.append(_etiqueta("mercado fechado", "cinza",
+                             "Fora do horário do pregão: a tela mostra o "
+                             "último pregão calculado."))
     if erros.get("calculo"):
-        out.append(_banda("rosa", "O papel de hoje não foi calculado na última "
-                          "volta", "a captura tenta de novo no próximo candle",
-                          f"Erro: {erros['calculo']}"))
+        out.append(_etiqueta("papel de hoje não foi calculado", "rosa",
+                             "Falhou na última volta da captura; ela tenta de "
+                             f"novo no próximo candle. Erro: {erros['calculo']}"))
     if erros.get("conferencia"):
-        out.append(_banda("ambar", "A conferência do papel falhou",
-                          "tenta de novo na próxima janela de conferência",
-                          f"Erro: {erros['conferencia']}"))
+        out.append(_etiqueta("conferência do papel falhou", "ambar",
+                             "A captura tenta de novo na próxima janela de "
+                             f"conferência. Erro: {erros['conferencia']}"))
     if papel.get("pendente"):
-        out.append(_banda("ambar", "Papel atrasado: banco ocupado",
-                          "uma mineração está gravando; o papel é refeito na "
-                          "próxima volta"))
-    linha = (f"papel calculado às {em:%H:%M:%S} de {em:%d/%m}" if em
-             else "papel ainda não calculado desde que a captura abriu")
-    out.append(html.P([linha, dica(
-        "A captura recalcula o papel a cada candle novo de 1 minuto; a "
-        "tela relê as operações só quando esse horário muda. Bom: no "
-        "pregão, menos de 2 minutos atrás.")], className="op-calculado"))
+        out.append(_etiqueta("papel atrasado: banco ocupado", "ambar",
+                             "Uma mineração está gravando no banco; o papel é "
+                             "refeito na próxima volta da captura."))
+    explica = ("Hora em que a captura calculou o papel pela última vez. Ela "
+               "recalcula a cada candle novo de 1 minuto; a tela relê as "
+               "operações só quando esse horário muda. Bom: no pregão, menos "
+               "de 2 minutos atrás.")
+    if em is None:
+        valor = "—"
+        explica += " Ainda não calculado desde que a captura abriu."
+    elif em.date() == agora.date():
+        valor = f"{em:%H:%M:%S}"
+    else:
+        valor = f"{em:%d/%m %H:%M}"
+    out.append(_par("Papel", valor, explica, mono=True))
     return out
 
 
@@ -897,36 +944,40 @@ def interruptor_envio(conta_id, envio: bool | None, armado):
                   "limite de perda do dia cadastrado. Clique duas vezes.")
 
 
-def cabecalho(pf: dict, resumo: dict, *, contrato=None) -> list:
+def cabecalho(pf: dict, resumo: dict, *, contrato=None, dia=None) -> list:
+    """Etiqueta ligado/desligado e os pares rótulo → valor da linha do
+    portfólio. `dia` é o pregão que a tela mostra: antes da abertura é o de
+    ontem, e sem ele nada na tela diz isso."""
     contas = resumo.get("contas") or {}
     demo, real = contas.get("demo"), contas.get("real")
     cap = resumo.get("capital")
-
-    def item(rot, valor):
-        return html.Span([rot + " ", html.B(valor)], className="op-meta-i")
     n, op = resumo.get("n_variantes", 0), resumo.get("n_operando", 0)
     # o estado da captura traz o contrato do dia como dicionário: um dict
     # como filho quebra o desenho e o Dash devolve o menu à aba anterior
     if isinstance(contrato, dict):
         contrato = contrato.get("simbolo")
+    if not isinstance(contrato, str):
+        contrato = None
+    pregao = f"{dia:%d/%m}" if isinstance(dia, (date, datetime)) else "—"
     return [
         _etiqueta("ligado", "verde") if pf.get("ligado")
         else _etiqueta("desligado", "cinza"),
         html.Div([
-            html.Span(["opera ", html.B(contrato or "—", className="mono"),
-                       dica("O contrato do mês em que a demo manda as ordens "
-                            "hoje (o gráfico mostra o WIN$N, a série "
-                            "contínua). Troca sozinho na rolagem.")],
-                      className="op-meta-i"),
-            item("Ativo", "WIN$N"),
-            item("Conta demo", demo["nome"] if demo else "—"),
-            item("Conta real", real["nome"] if real else "—"),
-            item("Capital", "—" if cap is None else f"R$ {inteiro(int(round(cap)))}"),
-            html.Span([f"{n} {'variante' if n == 1 else 'variantes'} · ",
-                       html.B(f"{op} operando"),
-                       dica("Operando = papel rodando hoje, com a variante e o "
-                            "portfólio ligados.")],
-                      className="op-meta-i"),
+            _par("Pregão", pregao,
+                 "O pregão que a tela mostra. Antes da abertura é o de ontem "
+                 "(o do último candle gravado)."),
+            _par("Contrato", contrato or "—",
+                 "O contrato do mês em que a demo manda as ordens hoje (o "
+                 "gráfico mostra o WIN$N, a série contínua). Troca sozinho na "
+                 "rolagem.", mono=True),
+            _par("Conta demo", demo["nome"] if demo else "—",
+                 "A conta demo onde as variantes na fase demo mandam ordens. "
+                 f"Conta real: {real['nome'] if real else 'nenhuma ainda'}."),
+            _par("Capital", "—" if cap is None
+                 else f"R$ {inteiro(int(round(cap)))}"),
+            _par("Operando", f"{op}/{n}",
+                 "Variantes com o papel rodando hoje (variante e portfólio "
+                 "ligados), sobre o total de variantes do portfólio."),
         ], className="op-meta"),
     ]
 
@@ -945,33 +996,35 @@ def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None) -> list:
 
 
 # -------------------------------------------------------------------- bloco
-def _sec_head(titulo, explica=None, *direita, classe=""):
-    """Título da seção. Nenhuma frase visível embaixo dele: a explicação,
-    quando há, mora no (?) ao lado do título."""
+def _sec_head(titulo, explica=None, *direita, classe="", ic=None):
+    """Título da seção, com ícone. Nenhuma frase visível embaixo dele: a
+    explicação, quando há, mora no (?) ao lado do título."""
     return html.Div([
-        html.Div(html.H3([titulo] + ([dica(explica)] if explica else []),
+        html.Div(html.H3(([icone(ic)] if ic else []) + [titulo]
+                         + ([dica(explica)] if explica else []),
                          className="panel-title av-sec-titulo")),
         *([html.Div(list(direita), className="pg-barra")] if direita else []),
     ], className=("av-sec-head op-head " + classe).strip())
 
 
 def _curva_papel_esperado():
-    """A curva Papel × esperado — mora dentro da Avaliação (rascunho v2)."""
-    return html.Section([
-        _sec_head("Papel × esperado", "Acumulado do papel desde o plano em "
-                  "vigor, contra a faixa que a Candidata prometeu.",
-                  dcc.RadioItems(
-                      id="av-op-curva-modo", value="portfolio",
-                      className="pg-tf",
-                      options=[{"label": "Portfólio",
-                                "value": "portfolio"},
-                               {"label": "Por variante",
-                                "value": "variante"}]),
-                  dcc.Dropdown(id="av-op-curva-variante",
-                               clearable=False, disabled=True,
-                               className="dd op-dd-curva",
-                               placeholder="variante…"),
-                  classe="pg-grafico-head"),
+    """A curva Papel × esperado — mora na aba Avaliação."""
+    return html.Div([
+        OR.subtitulo("Papel × esperado", "Acumulado do papel desde o plano em "
+                     "vigor, contra a faixa que a Candidata prometeu. Bom: a "
+                     "linha verde entre os pontilhados (p10 e p90). Ruim: "
+                     "abaixo do p10 por vários pregões.",
+                     dcc.RadioItems(
+                         id="av-op-curva-modo", value="portfolio",
+                         className="pg-tf",
+                         options=[{"label": "Portfólio",
+                                   "value": "portfolio"},
+                                  {"label": "Por variante",
+                                   "value": "variante"}]),
+                     dcc.Dropdown(id="av-op-curva-variante",
+                                  clearable=False, disabled=True,
+                                  className="dd op-dd-curva",
+                                  placeholder="variante…")),
         html.P(id="av-op-curva-nota", className="op-curva-nota"),
         html.Div(dash_tvlwc.Tvlwc(id="av-op-curva", series=[],
                                   chartOptions=CHART_CURVA,
@@ -987,15 +1040,60 @@ def _curva_papel_esperado():
                               style={"borderColor": T.MUTED}),
                        "mediana esperada"]),
         ], className="op-curva-legenda"),
-    ], className="panel")
+    ], className="op-aval-curva")
+
+
+# as abas de baixo: (valor, rótulo, ícone)
+ABAS = (("operacoes", "Operações", "list"), ("diario", "Diário", "scroll-text"),
+        ("avaliacao", "Avaliação", "scale"))
+
+
+def _aba_operacoes():
+    return html.Section([
+        OR.subtitulo("Demo", "Operações do dia na conta demo. Derrapagem = "
+                     "diferença para o preço do papel, por ponta, em ticks."),
+        html.Div(id="av-op-ord-operacoes", className="op-tabela-caixa ord-caixa"),
+        OR.subtitulo("Papel", "Operações do dia no papel, de todas as "
+                     "variantes, ligadas ou não.",
+                     dcc.Dropdown(id="av-op-filtro", value="todas",
+                                  clearable=False, className="dd op-dd-filtro",
+                                  options=[{"label": "Todas as variantes",
+                                            "value": "todas"}])),
+        html.Div(id="av-op-operacoes", className="op-operacoes op-tabela-caixa"),
+        OR.subtitulo("Real"),
+        html.Div(_etiqueta("ainda não opera", "cinza",
+                           "A conta real ainda não está ligada ao Dataframe: "
+                           "as variantes operam no papel e na conta demo."),
+                 className="op-real"),
+    ], className="op-pane op-pane-operacoes")
+
+
+def _aba_diario():
+    return html.Section([
+        OR.subtitulo("Alertas do papel", "Pregões pulados, interrompidos, não "
+                     "conferidos, planos gravados mesmo assim e candles que "
+                     "mudaram. Bom: nenhum. Ruim: o mesmo alerta vários dias."),
+        html.Div(id="av-op-alertas", className="op-alertas"),
+        OR.subtitulo("Eventos", "Tudo o que a automação fez hoje na conta "
+                     "demo, do mais novo para o mais antigo.",
+                     dcc.RadioItems(
+                         id="av-op-ord-diario-filtro", value="tudo",
+                         className="pg-tf",
+                         options=[{"label": "Tudo", "value": "tudo"},
+                                  {"label": "Só problemas",
+                                   "value": "problemas"}])),
+        html.Div(id="av-op-ord-diario", className="ord-diario"),
+    ], className="op-pane op-pane-diario")
 
 
 def bloco():
     """A sub-tela inteira; começa escondida.
 
-    Ordem (spec ordens §8, rascunho v2): saúde, chamados, cabeçalho, os
-    três números da demo (e os do papel), Posições abertas, variantes |
-    gráfico, Operações do dia (demo e papel), Diário do dia, Avaliação."""
+    Ordem (rascunho v4): saúde, chamados, a linha do portfólio, a faixa de
+    sete números, variantes | gráfico, Posições abertas e as abas
+    Operações | Diário | Avaliação. As três abas ficam sempre montadas e só
+    o CSS mostra uma: `dcc.Tabs` desmontaria a fechada, recriaria a curva e
+    perderia a rolagem das caixas fixas."""
     return html.Div([
         # pulso de 2 s, só com a sub-tela na frente: lê o estado.json
         dcc.Interval(id="av-op-intervalo", interval=2000, disabled=True),
@@ -1035,106 +1133,97 @@ def bloco():
         html.Section([
             html.Div([
                 html.Div([
-                    html.Label("Portfólio", className="op-pf-rot"),
-                    html.Div([
-                        dcc.Dropdown(id="av-op-portfolio", clearable=False,
-                                     searchable=False, persistence=True,
-                                     persistence_type="local",
-                                     className="dd op-dd-pf",
-                                     placeholder="escolha o portfólio…"),
-                        html.Div(id="av-op-cabecalho", className="op-cab-info"),
-                    ], className="op-pf-linha"),
+                    icone("briefcase", classe="op-pf-ic"),
+                    # sem rótulo visível: o ícone faz o papel dele e o nome
+                    # "Portfólio" fica no title, para o mouse e o leitor
+                    html.Div(dcc.Dropdown(id="av-op-portfolio", clearable=False,
+                                          searchable=False, persistence=True,
+                                          persistence_type="local",
+                                          className="dd op-dd-pf",
+                                          placeholder="escolha o portfólio…"),
+                             className="op-pf-dd", title="Portfólio"),
+                    html.Div(id="av-op-cabecalho", className="op-cab-info"),
+                    # saída do pulso: etiquetas de situação e a hora do papel
+                    html.Div(id="av-op-situacao", className="op-situacao"),
                 ], className="op-cab-esq"),
                 html.Div([
                     html.Div(id="av-op-botoes", className="op-botoes"),
                     html.Button("Abrir em Estratégias", id="av-op-ficha",
-                                n_clicks=0, className="btn-ghost av-btn-sec",
+                                n_clicks=0,
+                                className="btn-ghost av-btn-sec op-bt op-bt-link",
                                 title="Abre Ao vivo › Estratégias, onde ficam "
                                       "o portfólio, as contas e a ficha de "
                                       "cada variante"),
                 ], className="op-cab-dir"),
             ], className="op-cab"),
-            html.Div(id="av-op-situacao", className="op-situacao"),
+            # retorno das ações (clique duplo): some quando vazio
             html.Div(id="av-op-aviso", className="av-aviso"),
         ], className="panel op-topo"),
-        html.Div(id="av-op-ord-numeros", className="ord-numeros-caixa"),
-        html.Div(id="av-op-kpis", className="op-kpis"),
-        html.Section([
-            _sec_head("Posições abertas", "Posições na corretora agora, "
-                      "conferidas com o que o papel quer."),
-            html.Div(id="av-op-ord-posicoes", className="op-tabela-caixa ord-caixa"),
-        ], className="panel"),
+        # uma faixa só com os sete números: as células dos dois callbacks
+        # (demo pelo pulso, papel pelo redesenho) viram itens da mesma grade
+        html.Div([
+            html.Div(id="av-op-ord-numeros", className="ord-numeros-caixa"),
+            html.Div(id="av-op-kpis", className="op-kpis"),
+        ], className="panel op-tira"),
         html.Div([
             html.Section([
-                _sec_head("Variantes", "Ordem: posição aberta primeiro, "
-                          "depois o resultado do dia."),
+                _sec_head("Variantes", None, ic="layers"),
                 html.Div([html.Div(id="av-op-var-cab"),
                           html.Div(id="av-op-var-lista", className="op-var-lista"),
+                          # repete o Pior momento da faixa: escondido no CSS
+                          # (a saída do redesenho continua)
                           html.Div(id="av-op-risco")],
                          id="av-op-variantes", className="op-variantes"),
                 OR.editor_contratos(),
             ], className="panel op-painel-var"),
             html.Section([
-                _sec_head("WIN$N ao vivo", "Role para dar zoom; arraste "
-                          "para voltar no dia.",
+                _sec_head("WIN$N ao vivo", "Role para dar zoom; arraste para "
+                          "voltar no dia. " + _CHAVE,
                           dcc.RadioItems(
                               id="av-op-tf", value="M1", className="pg-tf",
                               options=[{"label": "1 min", "value": "M1"},
                                        {"label": "5 min", "value": "M5"},
                                        {"label": "15 min", "value": "M15"}]),
                           html.Button("Voltar para agora", id="av-op-agora",
-                                      n_clicks=0, className="btn-ghost btn-sm"),
+                                      n_clicks=0,
+                                      className="btn-ghost btn-sm op-bt "
+                                                "op-bt-agora"),
                           html.Button("Tela cheia", id="av-op-cheia",
-                                      n_clicks=0, className="btn-ghost btn-sm"),
-                          classe="pg-grafico-head"),
+                                      n_clicks=0,
+                                      className="btn-ghost btn-sm op-bt "
+                                                "op-bt-cheia"),
+                          classe="pg-grafico-head", ic="chart-candlestick"),
                 html.Div(dash_tvlwc.Tvlwc(id="av-op-grafico", series=[],
                                           chartOptions=T.CHART_OPTIONS,
                                           height="100%"),
                          id="av-op-grafico-caixa", className="pg-grafico op-grafico"),
-                # As caixas que rolam (chips, cartões, tabela) são fixas no
+                # As caixas que rolam (chips, linhas, tabelas) são fixas no
                 # layout e só o conteúdo delas é trocado: recriadas a cada
                 # releitura do papel (uma por minuto), a rolagem voltava ao
                 # topo no meio da leitura.
-                html.Div(html.Div([html.Div(id="av-op-chips",
-                                            className="op-chips"), _CHAVE],
+                html.Div(html.Div(html.Div(id="av-op-chips", className="op-chips"),
                                   className="op-legenda-in"),
                          id="av-op-legenda", className="op-legenda"),
             ], className="panel op-painel-grafico"),
         ], className="op-grade"),
         html.Section([
-            _sec_head("Operações do dia na demo", "Derrapagem = diferença "
-                      "para o preço do papel, por ponta, em ticks."),
-            html.Div(id="av-op-ord-operacoes", className="op-tabela-caixa ord-caixa"),
-        ], className="panel"),
+            _sec_head("Posições abertas", "Posições na corretora agora, "
+                      "conferidas com o que o papel quer.", ic="crosshair"),
+            html.Div(id="av-op-ord-posicoes", className="op-tabela-caixa ord-caixa"),
+        ], className="panel op-painel-pos"),
         html.Section([
-            _sec_head("Operações do dia no papel", "Todas as variantes, "
-                      "ligadas ou não.",
-                      dcc.Dropdown(id="av-op-filtro", value="todas",
-                                   clearable=False, className="dd op-dd-filtro",
-                                   options=[{"label": "Todas as variantes",
-                                             "value": "todas"}]),
-                      classe="pg-grafico-head"),
-            html.Div(id="av-op-operacoes", className="op-operacoes op-tabela-caixa"),
-        ], className="panel"),
-        html.Section([
-            _sec_head("Diário do dia", None,
-                      dcc.RadioItems(
-                          id="av-op-ord-diario-filtro", value="tudo",
-                          className="pg-tf",
-                          options=[{"label": "Tudo", "value": "tudo"},
-                                   {"label": "Só problemas",
-                                    "value": "problemas"}]),
-                      classe="pg-grafico-head"),
-            html.Div(id="av-op-ord-diario", className="ord-diario"),
-        ], className="panel"),
-        OR.avaliacao(None, None, curva=_curva_papel_esperado()),
-        html.Section([
-            _sec_head("Esperado (WFA) × Papel × Demo × Real", "Por "
-                      "contrato e só operações fechadas."),
-            html.Div(id="av-op-comparativo", className="op-cmp-caixa"),
-        ], className="panel"),
-        html.Section([
-            _sec_head("Alertas"),
-            html.Div(id="av-op-alertas", className="av-corpo op-alertas"),
-        ], className="panel"),
+            dcc.RadioItems(id="av-op-aba", value="operacoes", persistence=True,
+                           persistence_type="local", className="op-abas",
+                           options=[{"label": html.Span([icone(ic), rot],
+                                                        className="op-aba-rot"),
+                                     "value": valor}
+                                    for valor, rot, ic in ABAS]),
+            html.Div([
+                _aba_operacoes(),
+                _aba_diario(),
+                OR.avaliacao(None, None, curva=_curva_papel_esperado(),
+                             comparativo=html.Div(id="av-op-comparativo",
+                                                  className="op-cmp-caixa")),
+            ], id="av-op-abas", className="op-abas-corpo op-aba-operacoes"),
+        ], className="panel op-painel-abas"),
     ], id="av-bloco-operacao", className="op-bloco", style={"display": "none"})

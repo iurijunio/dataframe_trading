@@ -350,7 +350,7 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
 
     ordens = (estado or {}).get("ordens") or {}
     cab = OP.cabecalho(pf, res, contrato=ordens.get("contrato_dia")
-                       or ordens.get("contrato"))
+                       or ordens.get("contrato"), dia=dia)
     demo = (res.get("contas") or {}).get("demo")
     botoes = OP.botoes_portfolio(pf, armado, conta_id=demo and demo["conta_id"],
                                  envio=envio)
@@ -364,9 +364,7 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
     curva = curva_atual if curva_atual in nomes else (vs[0]["ligacao_id"]
                                                       if vs else None)
     if not vs:
-        kpis = [html.P("Este portfólio não tem variantes — adicione variantes "
-                       "nele na tela Portfólio e ligue em Ao vivo › "
-                       "Estratégias.", className="av-vazio op-vazio")]
+        kpis = [OP._SEM_VARIANTES]
     else:
         esperado = {"diferenca": c_pf.get("diferenca_mediana"),
                     "faixas": faixas, "aviso": c_pf.get("aviso")}
@@ -736,6 +734,27 @@ def register(app):
         Output("av-op-curva-caixa", "role"),
         Input("av-op-curva-enquadrar", "data"),
         prevent_initial_call=True,
+    )
+
+    # As abas Operações | Diário | Avaliação: as três ficam montadas e só a
+    # classe do contêiner diz qual aparece (dcc.Tabs desmontaria a fechada,
+    # recriaria a curva e perderia a rolagem). Ao abrir a Avaliação a curva
+    # é enquadrada de novo: desenhada com a aba fechada, as barras ficavam
+    # espremidas. Só navegador: não lê o banco nem ouve o pulso.
+    app.clientside_callback(
+        """function (aba) {
+            var qual = aba || 'operacoes';
+            if (qual === 'avaliacao') {
+                setTimeout(function () {
+                    window.dash_clientside.set_props('av-op-curva',
+                        {timeScaleAction: {action: 'fitContent',
+                                           nonce: Date.now()}});
+                }, 50);
+            }
+            return 'op-abas-corpo op-aba-' + qual;
+        }""",
+        Output("av-op-abas", "className"),
+        Input("av-op-aba", "value"),
     )
 
     app.clientside_callback(

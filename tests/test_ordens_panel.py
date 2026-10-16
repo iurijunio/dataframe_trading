@@ -55,6 +55,11 @@ def _dicas(c) -> list[str]:
     return [x for x in todos(c) if "dica-mark" in classes(x)]
 
 
+def dicas_txt(c) -> str:
+    """O texto de todos os (?) da árvore (a explicação mora no `data-dica`)."""
+    return " ".join(x.to_plotly_json()["props"]["data-dica"] for x in _dicas(c))
+
+
 def _ordens(**mudar):
     """Uma volta com a demo enviando: ligação 7 comprada 2 (confere),
     ligação 8 vendida 1 com a saída pendente há 6 s na 3ª tentativa."""
@@ -243,9 +248,11 @@ def test_posicoes_de_outro_portfolio_nao_aparecem():
 
 
 def test_posicoes_vazias_explicam_sem_demo():
-    t = textos(OR.posicoes_abertas(_ordens(n_demo=0, ligacoes={}), NOMES, TICK,
-                                   agora=AGORA))
-    assert "nenhuma variante na fase demo" in t
+    p = OR.posicoes_abertas(_ordens(n_demo=0, ligacoes={}), NOMES, TICK,
+                            agora=AGORA)
+    # rótulo curto na tela, o porquê no (?)
+    assert "nenhuma posição" in textos(p)
+    assert "Nenhuma variante na fase demo" in dicas_txt(p)
     t2 = textos(OR.posicoes_abertas({}, NOMES, TICK, agora=AGORA))
     assert "nenhuma posição" in t2 and "None" not in t2
 
@@ -271,21 +278,25 @@ def test_barra_tem_a_marca_dos_90():
 
 
 def test_perda_da_conta_aberta_em_tres_partes():
-    t = textos(OR.numeros(_ordens(), 0.0, 0.0, portfolio_id=1, ligacoes=[7, 8]))
-    assert "da conta" in t
+    n = OR.numeros(_ordens(), 0.0, 0.0, portfolio_id=1, ligacoes=[7, 8])
+    t = textos(n)
+    assert "Perda do dia" in t and "da CONTA" in dicas_txt(n)
     assert "R$ 164" in t and "de R$ 500" in t
+    # a quebra é frase longa: mora no (?) (e no title da nota).
     # este portfólio = o dele no por_portfolio; outros = automação menos ele
-    assert "este portfólio R$ 100" in t
-    assert "outros portfólios R$ 40" in t
-    assert "fora da automação R$ 24" in t
+    d = dicas_txt(n)
+    assert "este portfólio R$ 100" in d
+    assert "outros portfólios R$ 40" in d
+    assert "fora da automação R$ 24" in d
 
 
 def test_numeros_resultado_e_posicoes():
     n = OR.numeros(_ordens(), 361.0, 190.0, portfolio_id=1, ligacoes=[7, 8])
     t = textos(n)
-    assert "+R$ 361" in t and "papel no mesmo tamanho: +R$ 190" in t
-    assert "1 confere" in t
-    assert len(_dicas(n)) == 3
+    assert "+R$ 361" in t and "papel no mesmo tamanho +R$ 190" in t
+    # as posições saíram da faixa: a tabela embaixo do gráfico as mostra
+    assert "confere" not in t
+    assert len(_dicas(n)) == 2
 
 
 def test_numeros_sem_limite_e_sem_estado():
@@ -473,15 +484,21 @@ def test_papel_x_demo_vazio_explica():
     assert "nenhum pregão na demo ainda" in t
 
 
-def test_avaliacao_e_recolhivel_e_leva_a_curva():
+def test_avaliacao_e_aba_e_leva_a_curva_e_o_comparativo():
     from dash import html
     curva = html.Div("CURVA", id="curva-teste")
     a = OR.avaliacao({"pregoes": 0, "operacoes": 0, "diferencas": 0, "ok": None,
                       "lista": []}, {"pregoes": 0, "papel": None, "demo": None},
-                     curva=curva)
-    assert type(a).__name__ == "Details"
+                     curva=curva, comparativo=html.Div(id="cmp-teste"))
+    # deixou de ser recolhível: é a área da aba Avaliação
+    assert type(a).__name__ == "Section" and a.id == "av-op-ord-avaliacao"
+    assert "op-pane-avaliacao" in classes(a)
     ids = {getattr(x, "id", None) for x in todos(a)}
-    assert {"av-op-ord-selo", "av-op-ord-cmp", "curva-teste"} <= ids
+    assert {"av-op-ord-selo", "av-op-ord-cmp", "curva-teste", "cmp-teste"} <= ids
+    t = textos(a)
+    for sub in ("Esperado (WFA) × Papel × Demo × Real", "Papel × demo",
+                "Papel × backtest"):
+        assert sub in t
 
 
 # -------------------------------------------------- editor de contratos
@@ -814,7 +831,8 @@ def test_pulso_tudo_no_papel_nao_quebra():
                            "envio": False, "travada": None, "chamados": []})
     out = CO.pulso_ordens(est, None, VARS, 1, {}, [], [], None, AGORA, 1000.0)
     t = textos(out)
-    assert "None" not in t and "nenhuma variante na fase demo" in t
+    assert "None" not in t and "nenhuma posição" in t
+    assert "Nenhuma variante na fase demo" in dicas_txt(list(out[:4]))
 
 
 def test_encerrar_posicao_dois_cliques_escreve_o_comando(monkeypatch, tmp_path):
@@ -946,10 +964,10 @@ def test_comparativo_de_dia_passado_vem_do_cache(demo, monkeypatch):
 def test_dia_no_ganho_mostra_as_partes_com_rotulo():
     o = _ordens(perda={"este": 0.0, "outros": -80.0, "fora": 20.0, "total": 0.0,
                        "por_portfolio": {"1": -80.0}})
-    t = textos(OR.numeros(o, 0.0, 0.0, portfolio_id=1, ligacoes=[7, 8]))
-    assert "este portfólio ganho R$ 80" in t
-    assert "outros portfólios R$ 0" in t and "fora da automação R$ 20" in t
-    assert "a barra conta só perdas" in t
+    d = dicas_txt(OR.numeros(o, 0.0, 0.0, portfolio_id=1, ligacoes=[7, 8]))
+    assert "este portfólio ganho R$ 80" in d
+    assert "outros portfólios R$ 0" in d and "fora da automação R$ 20" in d
+    assert "a barra conta só perdas" in d
 
 
 def test_ler_contratos_so_digitos_ascii():
