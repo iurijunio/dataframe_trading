@@ -715,3 +715,17 @@ def test_cabecalho_mostra_o_simbolo_mesmo_com_o_contrato_do_dia_inteiro():
     assert "WINZ26" in json.dumps([c.to_plotly_json() for c in cab],
                                   default=lambda o: o.to_plotly_json())
 
+
+
+def test_operacao_sem_frase_visivel_sob_os_titulos():
+    # regra do usuário: explicação só no (?), nunca frase solta na tela
+    arvore = OP.bloco()
+    assert not [x for x in todos(arvore) if "av-sec-nota" in classes(x)]
+    t = textos(arvore)
+    for frase in ("Tudo o que a automação fez", "clique para recolher",
+                  "Por contrato, para comparar", "O que está na corretora"):
+        assert frase not in t, frase
+    titulos = [x for x in todos(arvore) if "av-sec-titulo" in classes(x)]
+    demo = next(x for x in titulos if textos(x).startswith("Operações do dia na demo"))
+    dicas = [x for x in todos(demo) if "dica-mark" in classes(x)]
+    assert "Derrapagem" in dicas[0].to_plotly_json()["props"]["data-dica"]

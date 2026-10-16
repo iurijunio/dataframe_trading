@@ -946,10 +946,12 @@ def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None) -> list:
 
 
 # -------------------------------------------------------------------- bloco
-def _sec_head(titulo, nota, *direita, classe=""):
+def _sec_head(titulo, explica=None, *direita, classe=""):
+    """Título da seção. Nenhuma frase visível embaixo dele: a explicação,
+    quando há, mora no (?) ao lado do título."""
     return html.Div([
-        html.Div([html.H3(titulo, className="panel-title av-sec-titulo"),
-                  html.P(nota, className="av-sec-nota")]),
+        html.Div(html.H3([titulo] + ([dica(explica)] if explica else []),
+                         className="panel-title av-sec-titulo")),
         *([html.Div(list(direita), className="pg-barra")] if direita else []),
     ], className=("av-sec-head op-head " + classe).strip())
 
@@ -957,9 +959,8 @@ def _sec_head(titulo, nota, *direita, classe=""):
 def _curva_papel_esperado():
     """A curva Papel × esperado — mora dentro da Avaliação (rascunho v2)."""
     return html.Section([
-        _sec_head("Papel × esperado", "Acumulado desde que o plano em "
-                  "vigor passou a valer, contra a faixa que a "
-                  "Candidata prometeu.",
+        _sec_head("Papel × esperado", "Acumulado do papel desde o plano em "
+                  "vigor, contra a faixa que a Candidata prometeu.",
                   dcc.RadioItems(
                       id="av-op-curva-modo", value="portfolio",
                       className="pg-tf",
@@ -1060,14 +1061,14 @@ def bloco():
         html.Div(id="av-op-ord-numeros", className="ord-numeros-caixa"),
         html.Div(id="av-op-kpis", className="op-kpis"),
         html.Section([
-            _sec_head("Posições abertas", "O que está na corretora agora, "
-                      "conferido com o que o papel quer."),
+            _sec_head("Posições abertas", "Posições na corretora agora, "
+                      "conferidas com o que o papel quer."),
             html.Div(id="av-op-ord-posicoes", className="op-tabela-caixa ord-caixa"),
         ], className="panel"),
         html.Div([
             html.Section([
-                _sec_head("Variantes", "Posição aberta primeiro, depois o "
-                          "resultado do dia."),
+                _sec_head("Variantes", "Ordem: posição aberta primeiro, "
+                          "depois o resultado do dia."),
                 html.Div([html.Div(id="av-op-var-cab"),
                           html.Div(id="av-op-var-lista", className="op-var-lista"),
                           html.Div(id="av-op-risco")],
@@ -1075,9 +1076,8 @@ def bloco():
                 OR.editor_contratos(),
             ], className="panel op-painel-var"),
             html.Section([
-                _sec_head("WIN$N ao vivo", "Entradas e saídas de cada "
-                          "variante. Role para dar zoom; arraste para voltar "
-                          "no dia.",
+                _sec_head("WIN$N ao vivo", "Role para dar zoom; arraste "
+                          "para voltar no dia.",
                           dcc.RadioItems(
                               id="av-op-tf", value="M1", className="pg-tf",
                               options=[{"label": "1 min", "value": "M1"},
@@ -1103,13 +1103,13 @@ def bloco():
             ], className="panel op-painel-grafico"),
         ], className="op-grade"),
         html.Section([
-            _sec_head("Operações do dia na demo", "Na conta demo · derrapagem = "
-                      "diferença para o preço do papel, por ponta."),
+            _sec_head("Operações do dia na demo", "Derrapagem = diferença "
+                      "para o preço do papel, por ponta, em ticks."),
             html.Div(id="av-op-ord-operacoes", className="op-tabela-caixa ord-caixa"),
         ], className="panel"),
         html.Section([
-            _sec_head("Operações do dia no papel", "Todas as variantes, ligadas "
-                      "ou não. A demo está na tabela de cima.",
+            _sec_head("Operações do dia no papel", "Todas as variantes, "
+                      "ligadas ou não.",
                       dcc.Dropdown(id="av-op-filtro", value="todas",
                                    clearable=False, className="dd op-dd-filtro",
                                    options=[{"label": "Todas as variantes",
@@ -1118,7 +1118,7 @@ def bloco():
             html.Div(id="av-op-operacoes", className="op-operacoes op-tabela-caixa"),
         ], className="panel"),
         html.Section([
-            _sec_head("Diário do dia", "Tudo o que a automação fez, com hora.",
+            _sec_head("Diário do dia", None,
                       dcc.RadioItems(
                           id="av-op-ord-diario-filtro", value="tudo",
                           className="pg-tf",
@@ -1131,12 +1131,11 @@ def bloco():
         OR.avaliacao(None, None, curva=_curva_papel_esperado()),
         html.Section([
             _sec_head("Esperado (WFA) × Papel × Demo × Real", "Por "
-                      "contrato, para comparar mesmo com tamanhos "
-                      "diferentes. Só operações fechadas."),
+                      "contrato e só operações fechadas."),
             html.Div(id="av-op-comparativo", className="op-cmp-caixa"),
         ], className="panel"),
         html.Section([
-            _sec_head("Alertas", "O que pede atenção neste portfólio."),
+            _sec_head("Alertas"),
             html.Div(id="av-op-alertas", className="av-corpo op-alertas"),
         ], className="panel"),
     ], id="av-bloco-operacao", className="op-bloco", style={"display": "none"})

@@ -917,18 +917,18 @@ def avaliacao(situacao_backtest: dict | None, comparativo_demo: dict | None,
     esperado (que já existia) e a tabela Papel × demo por contrato."""
     return html.Details([
         html.Summary([
-            html.H3("Avaliação", className="panel-title av-sec-titulo"),
-            html.Span("papel × backtest, papel × esperado e papel × demo, por "
-                      "contrato · clique para recolher", className="av-sec-nota"),
+            html.H3(["Avaliação", dica("Papel comparado com o backtest, o "
+                                       "esperado e a demo.")],
+                    className="panel-title av-sec-titulo"),
             html.Div(selo_backtest(situacao_backtest), id="av-op-ord-selo",
                      className="ord-selo-bt"),
         ], className="ord-aval-sum"),
         html.Div([
             html.Div(curva if curva is not None else [], className="ord-aval-curva"),
             html.Section([
-                html.Div([html.H3("Papel × demo", className="panel-title av-sec-titulo"),
-                          html.P("mesmos pregões, por contrato",
-                                 className="av-sec-nota")],
+                html.Div(html.H3(["Papel × demo",
+                                  dica("Mesmos pregões, por contrato.")],
+                                 className="panel-title av-sec-titulo"),
                          className="av-sec-head op-head"),
                 html.Div(tabela_papel_demo(comparativo_demo), id="av-op-ord-cmp",
                          className="op-cmp-caixa"),
