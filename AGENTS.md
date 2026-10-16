@@ -258,15 +258,15 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 
 ## Documentos: qual confiar
 
-| Documento | Estado (05/10/2026) |
+| Documento | Estado (15/10/2026) |
 |---|---|
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
 | `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
 | `CHANGELOG.md` | atualizado até a parte 4 do Ao vivo (ordens na demo); **não cobre variantes, portfólio nem gatilho** |
-| `README.md` | **desatualizado**: descreve o MVP (4 modos, "759 testes") |
-| `docs/METODOLOGIA.md` "Estado da plataforma" | **desatualizado**: marca Portfólio como ❌ |
+| `README.md` | atualizado até a parte 4 (papel e demo, `iniciar.bat`); o texto do MVP segue como história |
+| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 15/10/2026 (incubação, portfólio e demo) |
 
 Na dúvida entre documento e código, o código manda. Use o agente
 `documentador` para pôr a documentação em dia depois de uma entrega.

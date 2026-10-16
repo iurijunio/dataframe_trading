@@ -3,11 +3,14 @@
 Plataforma quantitativa em Python para análise, mineração e validação visual
 de estratégias — começando pelo Mini Índice (WIN).
 
-**Status: MVP concluído** — F0 dados · F1 motor · F2 dashboard · F3 mineração ·
-F4 dispersão.
+**Status:** do backtest ao pregão ao vivo. MVP (F0 dados · F1 motor · F2
+dashboard · F3 mineração · F4 dispersão) mais Walk-Forward, Candidata,
+Estratégias, Portfólio e a tela **Ao vivo** (captura, papel e ordens na conta
+demo).
 
 ```bash
-.venv\Scripts\python.exe ui\app.py     # http://127.0.0.1:8050
+iniciar.bat                            # abre o app e o serviço de captura
+.venv\Scripts\python.exe ui\app.py     # só o app: http://127.0.0.1:8050
 ```
 
 | Documento | O que responde |
@@ -178,7 +181,13 @@ docs/METODOLOGIA.md        o processo: da ideia ao dinheiro real
 docs/PLANO-WFA.md          plano e decisões do Walk-Forward
 docs/CALCULOS-WFA.md       as contas do Walk-Forward, uma a uma
 docs/CALCULOS-CANDIDATA.md as contas dos 12 portões e do dimensionamento da tela Candidata
-tests/                     759 testes
+core/papel*.py             papel: calcula o que a variante faria no pregão
+core/ordens.py             reconcilia papel × corretora e manda as ordens
+core/corretora.py          MT5: envio, retornos e conferência (order_check)
+core/ordem_teste.py        ordem de teste na conta demo
+captura.py                 serviço de captura (candles, papel, ordens)
+iniciar.bat                abre o app e a captura
+tests/                     ~2.100 testes
 ```
 
 ## O dashboard
@@ -243,6 +252,34 @@ vira M5; um trade isolado vira M1.
 O logo da TradingView no canto do gráfico é **requisito da licença** Apache 2.0
 da Lightweight Charts, não enfeite. Não desligar.
 
+## Os sete modos
+
+| Modo | Para quê |
+|---|---|
+| Backtest | uma combinação, com diagnóstico em cinco abas |
+| Mineração | varrer parâmetros e achar o platô |
+| Walk-Forward | validar fora da amostra |
+| Candidata | 12 portões, contratos e o plano de operação |
+| Estratégias | variantes (configurações salvas) e sua ficha de rastreio |
+| Portfólio | correlação, capital, Kelly e risco de ruína |
+| Ao vivo | Pregão, Operação e Estratégias em tempo real |
+
+## Ao vivo: papel e demo
+
+O `iniciar.bat` abre o app e o **serviço de captura** (janela *Dataframe -
+Captura*), que grava cada candle M1 do MT5 e mantém o banco completo.
+
+- **Papel:** toda variante ligada a um portfólio opera "no papel" o tempo todo,
+  com a mesma conta do backtest e sem mandar ordem. A sub-tela **Operação**
+  mostra posição, stop, alvo e as operações desenhadas no gráfico do pregão.
+- **Demo:** com a fase *demo* e o **Envio de ordens** ligado, o serviço manda
+  as ordens do papel para a conta demo do MT5. O Envio nasce desligado e só
+  registra "seria enviada" (com o `order_check` do MT5). Há limite de perda do
+  dia, botão "Zerar tudo" e chamados com alarme sonoro. A Operação compara
+  papel × demo (sinal no mesmo minuto, preço, derrapagem).
+- Conta real fica fora desta etapa.
+- Mudou código ou tela: feche e abra o `iniciar.bat` (e a janela da captura).
+
 ## Tempo gráfico
 
 A estratégia lê barras do timeframe escolhido, mas **a execução roda sempre em
@@ -302,6 +339,7 @@ scatter até o trade desenhado no candle, sem digitar nada.
 
 F0 dados · F1 motor · F2 dashboard · F3 mineração · F4 dispersão.
 
-Pós-MVP, em ordem: sincronização automática pela API do MT5, execução ao vivo
-em papel, segundo instrumento para validar a camada de metadados, série
-ajustada por rolagem para estratégias com carrego.
+Já feitos depois do MVP: sincronização pela API do MT5, captura ao vivo,
+execução em papel e ordens na conta demo. Faltam: conta real, segundo
+instrumento para validar a camada de metadados, série ajustada por rolagem
+para estratégias com carrego.
