@@ -38,7 +38,8 @@ def _padrao() -> str:
 PRELOAD_FONTES = "\n".join(
     f'  <link rel="preload" as="font" type="font/woff2" crossorigin '
     f'href="/assets/fontes/{arquivo}">'
-    for arquivo in ("jetbrains-mono-latin-400-normal.woff2",)
+    for arquivo in ("jetbrains-mono-latin-400-normal.woff2",
+                    "poppins-latin-400-normal.woff2")
 )
 
 RANGES = [("1D", 1), ("5D", 5), ("1M", 30), ("3M", 90), ("1A", 365), ("Tudo", 0)]

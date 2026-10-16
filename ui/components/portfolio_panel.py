@@ -431,10 +431,10 @@ def figura_curva(series: dict, combinada: dict | None = None) -> go.Figure:
 
     fig.update_layout(
         paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,
-        font=dict(family="JetBrains Mono, monospace", size=11, color=T.MUTED),
+        font=dict(family=T.FONTE_MONO, size=11, color=T.MUTED),
         margin=dict(l=8, r=8, t=28, b=8),
         hoverlabel=dict(bgcolor=T.SURFACE_2, bordercolor=T.ACCENT_DIM,
-                        font=dict(color=T.INK, family="JetBrains Mono, monospace")),
+                        font=dict(color=T.INK, family=T.FONTE_MONO)),
         legend=dict(orientation="h", y=1.14, font=dict(color=T.MUTED)),
         xaxis=dict(gridcolor=T.LINE_SOFT, linecolor=T.LINE,
                   tickfont=dict(color=T.MUTED)),
@@ -476,10 +476,10 @@ def figura_crescimento(sim: dict) -> go.Figure:
     ))
     fig.update_layout(
         paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,
-        font=dict(family="JetBrains Mono, monospace", size=11, color=T.MUTED),
+        font=dict(family=T.FONTE_MONO, size=11, color=T.MUTED),
         margin=dict(l=8, r=8, t=28, b=8),
         hoverlabel=dict(bgcolor=T.SURFACE_2, bordercolor=T.ACCENT_DIM,
-                        font=dict(color=T.INK, family="JetBrains Mono, monospace")),
+                        font=dict(color=T.INK, family=T.FONTE_MONO)),
         legend=dict(orientation="h", y=1.14, font=dict(color=T.MUTED)),
         xaxis=dict(title="trades à frente", gridcolor=T.LINE_SOFT,
                   linecolor=T.LINE, tickfont=dict(color=T.MUTED)),

@@ -20,17 +20,17 @@ from .. import theme as T
 
 BASE = dict(
     paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,
-    font=dict(family="JetBrains Mono, monospace", size=11, color=T.MUTED),
+    font=dict(family=T.FONTE_MONO, size=11, color=T.MUTED),
     margin=dict(l=10, r=10, t=28, b=10), showlegend=False,
     # vírgula decimal e ponto de milhar em hovers e eixos: "1.234,56", e não
     # "1,234.56" — o formato `%{y:,.2f}` segue estes separadores
     separators=",.",
     hoverlabel=dict(bgcolor=T.SURFACE_2, bordercolor=T.ACCENT_DIM,
-                    font=dict(color=T.INK, family="JetBrains Mono, monospace")),
+                    font=dict(color=T.INK, family=T.FONTE_MONO)),
 )
 EIXO = dict(gridcolor=T.LINE_SOFT, zerolinecolor=T.LINE, linecolor=T.LINE,
             tickfont=dict(color=T.MUTED))
-TITULO = dict(font=dict(color=T.INK_2, size=12.5, family="Archivo"), x=0, xanchor="left")
+TITULO = dict(font=dict(color=T.INK_2, size=12, family=T.FONTE_SANS), x=0, xanchor="left")
 
 
 def _vazio(msg="Rode um backtest."):

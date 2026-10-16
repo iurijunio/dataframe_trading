@@ -170,7 +170,7 @@ def curva(ts, liquido, steps, passos, capital: float,
         # passeia dentro dela, reotimizar não acrescentou nada além de pegar
         # uma combinação qualquer da região.
         dq, qd = fixas["dias"], fixas["quantis"]
-        cinza = "rgba(132,148,179,{})"
+        cinza = "rgba(139,139,147,{})"   # o T.MUTED, com transparência
         for baixo, alto, alfa in ((10, 90, .10), (25, 75, .16)):
             fig.add_trace(go.Scatter(x=dq, y=qd[baixo], mode="lines",
                                      line=dict(width=0), hoverinfo="skip",
