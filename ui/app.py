@@ -31,10 +31,14 @@ def _padrao() -> str:
     lista = D.instrumentos()
     return lista[0]["symbol"] if lista else "WIN$N"
 
-FONTS = (
-    "https://fonts.googleapis.com/css2?"
-    "family=Archivo:wght@500;600;700&"
-    "family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+# As fontes moram em ui/assets/fontes (fontes.css): sem rede no pregão a tela
+# não pode trocar de fonte. O preload existe por causa dos gráficos: o
+# lightweight-charts desenha o texto em canvas e não redesenha quando a fonte
+# termina de carregar, então ela precisa chegar antes do primeiro desenho.
+PRELOAD_FONTES = "\n".join(
+    f'  <link rel="preload" as="font" type="font/woff2" crossorigin '
+    f'href="/assets/fontes/{arquivo}">'
+    for arquivo in ("jetbrains-mono-latin-400-normal.woff2",)
 )
 
 RANGES = [("1D", 1), ("5D", 5), ("1M", 30), ("3M", 90), ("1A", 365), ("Tudo", 0)]
@@ -264,9 +268,7 @@ def build() -> Dash:
 <html>
 <head>
   {{%metas%}}<title>{{%title%}}</title>{{%favicon%}}
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="{FONTS}">
+{PRELOAD_FONTES}
   {{%css%}}
 </head>
 <body>{{%app_entry%}}<footer>{{%config%}}{{%scripts%}}{{%renderer%}}</footer></body>
