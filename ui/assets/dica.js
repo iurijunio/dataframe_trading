@@ -99,4 +99,17 @@
   // balao ficava orfao, preso na posicao antiga, por cima do que veio
   // depois (achado real, 28/09/2026). Fecha ANTES do clique processar.
   document.addEventListener("mousedown", esconder, true);
+  // (?) dentro do <summary> de um bloco recolhível: o clique para ler a
+  // explicação abria/fechava o bloco junto. O (?) só explica; o bloco
+  // continua abrindo pelo resto do título.
+  function dentroDoResumo(e) {
+    var m = marca(e.target);
+    return m && m.closest("summary");
+  }
+  document.addEventListener("click", function (e) {
+    if (dentroDoResumo(e)) e.preventDefault();
+  }, true);
+  document.addEventListener("keydown", function (e) {
+    if ((e.key === "Enter" || e.key === " ") && dentroDoResumo(e)) e.preventDefault();
+  }, true);
 })();

@@ -537,8 +537,7 @@ def linha_operacao(o: dict) -> html.Tr:
 def _ctr_demo(d) -> str:
     if not d or d.get("contratos") is None:
         return "—"
-    c = float(d["contratos"])
-    return str(int(c)) if c == int(c) else num(c, 1)
+    return OR._decimal(d["contratos"])
 
 
 def _papel_x_demo(d):
@@ -551,10 +550,7 @@ def _papel_x_demo(d):
         return _cel("não executada" if d.get("preco_entrada") is None else "—",
                     "n mut")
 
-    def f(v):
-        if v is None:
-            return "—"
-        return str(int(round(v))) if abs(v - round(v)) < 1e-9 else num(v, 1)
+    f = OR._decimal
     pior = max(x for x in (e, s) if x is not None)
     return _cel(f"{f(e)} · {f(s)} ticks", "n" + (" aviso" if pior > 2 else ""))
 
@@ -826,8 +822,9 @@ def tabela_comparativo(c: dict):
         ("Resultado médio por contrato", "resultado_por_contrato",
          lambda v: _rs(v, 2),
          "Resultado médio de uma operação, por contrato, já sem os custos "
-         "do plano (a demo também). Bom: papel perto do esperado. Ruim: "
-         "papel bem abaixo por muitos pregões."),
+         "do plano (a demo também). A tabela de operações da demo e o "
+         "Resultado hoje na demo mostram antes dos custos; por isso os números não batem. Bom: "
+         "papel perto do esperado. Ruim: papel bem abaixo por muitos pregões."),
         ("Pontos por operação", "pontos_por_operacao",
          lambda v: ("+" if v > 0 else "") + num(v, 0),
          "Pontos médios por operação. Bom: papel perto do esperado ou "
@@ -850,7 +847,7 @@ def tabela_comparativo(c: dict):
          "Entradas executadas no mesmo minuto do sinal do papel, sobre as "
          "executadas desde o plano em vigor. Bom: 100%. Ruim: abaixo de 90%."),
         ("Derrapagem média", "derrapagem_extra",
-         lambda v: ("+" if round(v, 1) > 0 else "") + num(v, 1) + " tick",
+         lambda v: ("+" if round(v, 1) > 0 else "") + OR._decimal(v) + " tick",
          "Ticks por ponta além do preço do papel (que já desconta a "
          "derrapagem do plano). Negativo = executou melhor que o papel. Bom: "
          "perto de 0. Ruim: acima de 1 tick — o backtest está otimista."),
@@ -858,8 +855,10 @@ def tabela_comparativo(c: dict):
          "Tempo entre mandar a entrada e a corretora executar. Bom: menos "
          "de 1 s. Ruim: acima de 2 s."),
         ("Ordens rejeitadas", "rejeitadas", lambda v: inteiro(int(v)),
-         "Ordens que a corretora recusou (entrada, saída, proteção). Bom: "
-         "zero. Ruim: recusa todo dia."),
+         "Ordens que a corretora recusou (entrada, saída, proteção). Conta "
+         "cada recusa: uma operação pode somar várias. Recusadas, em Papel × "
+         "demo, conta operações e por isso pode dar menos. Bom: zero. Ruim: "
+         "recusa todo dia."),
     ]
     corpo = []
     for linha in linhas:

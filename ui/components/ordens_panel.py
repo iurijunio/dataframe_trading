@@ -92,12 +92,19 @@ def _hora(v, segundos=False) -> str:
 
 
 def _decimal(v, casas=1) -> str:
-    """1 → "1", 1.3 → "1,3", -2.0 → "-2" (sem ",0" sobrando)."""
+    """1 → "1", 1.3 → "1,3", -2.0 → "-2", -0.04 → "0" (sem ",0" sobrando).
+
+    Arredonda ANTES de olhar zero e inteiro: -0,04 testado cru não é
+    inteiro e saía "-0,0"; 2,96 saía "3,0". `round` devolve -0.0, que é
+    igual a 0, então o zero perde o sinal aqui."""
     if v is None:
         return "—"
-    if abs(v - round(v)) < 1e-9:
-        return str(int(round(v)))
-    return num(v, casas)
+    r = round(float(v), casas)
+    if r == 0:
+        return "0"
+    if r == int(r):
+        return str(int(r))
+    return num(r, casas)
 
 
 def _int_sinal(v) -> str:
@@ -498,8 +505,9 @@ def numeros(ordens: dict | None, resultado_portfolio: float,
         "Fechadas na demo hoje mais o resultado aberto das posições, só deste "
         "portfólio, antes dos custos. Embaixo, o papel das mesmas operações "
         "executadas, no tamanho da demo e também antes dos custos — a mesma "
-        "base. Bom: perto do papel (a execução custa pouco). Ruim: bem abaixo "
-        "do papel todo dia.",
+        "base. A coluna Demo do Esperado × Papel × Demo, na Avaliação, já "
+        "desconta os custos e por isso fica menor. Bom: perto do papel (a "
+        "execução custa pouco). Ruim: bem abaixo do papel todo dia.",
         _rs(resultado_portfolio) if tem else "—",
         f"papel no mesmo tamanho: {_rs(papel_portfolio)}" if tem
         else "sem demo hoje",
@@ -650,8 +658,9 @@ def operacoes_demo(linhas: list[dict]):
             "com frequência — o backtest está otimista.", True),
         _th("Pontos", "Pontos a favor (+) ou contra (−) por contrato, nos preços "
             "da demo.", True),
-        _th("Resultado", "Em R$, antes dos custos (corretagem e emolumentos).",
-            True),
+        _th("Resultado", "Em R$, antes dos custos (corretagem e emolumentos). "
+            "A tabela Esperado × Papel × Demo, na Avaliação, mostra a demo já "
+            "sem os custos; por isso os números não batem.", True),
         _th("Situação", "Como a operação terminou: stop/alvo na corretora, sinal "
             "do papel, recusada, perdida, ou \"seria enviada\" com o Envio "
             "desligado."),
@@ -854,7 +863,8 @@ def tabela_papel_demo(cmp: dict | None):
     mm = int(d.get("mesmo_minuto") or 0)
 
     def mais(v, casas):
-        return ("+" if v > 0 else "") + _decimal(v, casas)
+        # o "+" olha o número arredondado, como o _decimal: 0,04 é "0"
+        return ("+" if round(v, casas) > 0 else "") + _decimal(v, casas)
 
     linhas = [
         ("Operações", "Operações fechadas em cada lado. Diferença = entradas que "
@@ -893,8 +903,11 @@ def tabela_papel_demo(cmp: dict | None):
          ""),
         ("Recusadas · resolvidas sozinha · chamados", "Entradas que a corretora "
          "recusou, quantas delas a automação resolveu sozinha tentando de novo, e "
-         "os chamados que pediram você. Bom: zero chamados. Ruim: recusas todo "
-         "dia.", "—", f"{d.get('recusadas', 0)} · {d.get('resolvidas', 0)} · "
+         "os chamados que pediram você. Recusadas conta operações: uma por "
+         "operação com a entrada recusada, mesmo que a recusa se repita. Ordens "
+         "rejeitadas, no Esperado × Papel × Demo, conta cada recusa da corretora "
+         "(entrada, saída, proteção) e por isso pode dar mais. Bom: zero "
+         "chamados. Ruim: recusas todo dia.", "—", f"{d.get('recusadas', 0)} · {d.get('resolvidas', 0)} · "
          f"{d.get('chamados', 0)}", "—", "mut"),
     ]
     corpo = []
