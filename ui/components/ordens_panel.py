@@ -25,7 +25,7 @@ from core.ordem_teste import texto_falhou as texto_teste_falhou
 from core.ordens import ZERAR_DESCARTADO
 from core.papel_leitura import checagem_ensaio
 
-from .cartao import dica, inteiro, num
+from .cartao import dica, inteiro, nome_curto, num
 
 # trava da conta (core.ordens.TRAVA): a marca na barra da perda do dia
 TRAVA_PCT = 90
@@ -143,7 +143,7 @@ def subtitulo(titulo, explica=None, *direita):
 
 def _vazio(texto, explica):
     """Estado vazio curto: o rótulo na tela, o porquê no (?)."""
-    return html.P([texto, dica(explica)], className="av-vazio op-vazio")
+    return html.P([texto, dica(explica)], className="op-vazio-txt")
 
 
 def _lado(lado) -> html.Span:
@@ -171,6 +171,12 @@ def _nome(nomes, lig) -> str:
     if lig is None:
         return "automação"
     return (nomes or {}).get(lig) or f"#{lig}"
+
+
+def _nome_tab(nome, classe="op-nome-tab") -> html.Span:
+    """O nome curto da variante numa tabela; o inteiro no `title`."""
+    nome = nome or "—"
+    return html.Span(nome_curto(nome), className=classe, title=nome)
 
 
 # ============================================================ faixa de saúde
@@ -384,6 +390,25 @@ def posicoes_abertas(ordens: dict | None, nomes: dict, tick: int, *,
                      ponto: float = 0.2, agora: datetime | None = None):
     """O que está na corretora agora, de ESTE portfólio (`nomes` = as
     ligações dele), conferido com o que o papel quer."""
+    cab = html.Tr([
+        _th("Variante"), _th("Lado"),
+        _th("Contr.", "Contratos na corretora; entre parênteses o que o papel "
+            "quer, quando difere. Bom: iguais. Ruim: diferentes — vira "
+            "\"diferente\" e a automação corrige.", True),
+        _th("Entrada", n=True),
+        _th("Stop", "Stop gravado NA corretora (✓) e a distância do preço de "
+            "agora até ele, em ticks (1 tick = 5 pontos). Bom: stop e alvo "
+            "presentes, stop longe. Atenção: perto de zero. Ruim: sem stop — "
+            "a automação encerra a posição em 2 s.", True),
+        _th("Alvo", "Alvo gravado na corretora e a distância do preço de "
+            "agora até ele, em ticks.", True),
+        _th("Resultado aberto", "Resultado da posição agora, em ticks e em R$ "
+            "(antes dos custos). Bom: positivo.", True),
+        _th("Situação", "confere = a corretora tem o que o papel quer; saída "
+            "pendente = a automação está tentando sair (passa de 2 min, vira "
+            "chamado); indisponível = sem o papel agora, a automação só protege; "
+            "diferente = a corretora tem outra coisa."),
+    ])
     pos = _posicoes(ordens, list(nomes))
     if not pos:
         o = ordens or {}
@@ -395,7 +420,11 @@ def posicoes_abertas(ordens: dict | None, nomes: dict, tick: int, *,
                        "a primeira volta.")
         else:
             explica = "Nenhuma posição da automação aberta na corretora agora."
-        return _vazio("nenhuma posição", explica)
+        # a tabela fica, com o cabeçalho e uma linha só (rascunho v4)
+        vazia = html.Tr(html.Td(["nenhuma na corretora", dica(explica)],
+                                colSpan=8, className="op-td-vazio"))
+        return html.Table([html.Thead(cab), html.Tbody(vazia)],
+                          className="op-tabela ord-tabela")
     tick = int(tick or 1)
     linhas = []
     for lig, l, p in pos:
@@ -411,17 +440,18 @@ def posicoes_abertas(ordens: dict | None, nomes: dict, tick: int, *,
 
         def ate(alvo):
             if atual is None or not alvo:
-                return "—"
-            return f"{inteiro(int(round(abs(alvo - atual) / tick)))} ticks"
-        if sl and tp:
-            prot = [html.Span("✓", className="ord-prot"),
-                    html.Span(f" stop {_preco(sl)} · alvo {_preco(tp)}",
-                              className="mut")]
-        elif sl:
-            prot = [html.Span("✓", className="ord-prot"),
-                    html.Span(f" stop {_preco(sl)} · sem alvo", className="mut")]
+                return ""
+            return f" · {inteiro(int(round(abs(alvo - atual) / tick)))} ticks"
+        if sl:
+            cel_stop = html.Td([html.Span("✓ ", className="ord-prot"), _preco(sl),
+                                html.Span(ate(sl), className="mut")], className="n")
         else:
-            prot = [html.Span("sem stop", className="neg")]
+            cel_stop = html.Td(html.Span("sem stop", className="neg"), className="n")
+        if tp:
+            cel_alvo = html.Td([_preco(tp), html.Span(ate(tp), className="mut")],
+                               className="n")
+        else:
+            cel_alvo = html.Td("sem alvo", className="n mut")
         esperado = l.get("contratos") if l.get("desejado") == "posicao" else 0
         ctr = [inteiro(int(round(vol)))]
         if esperado is not None and float(esperado) != vol:
@@ -430,40 +460,18 @@ def posicoes_abertas(ordens: dict | None, nomes: dict, tick: int, *,
         ticks_abertos = (None if atual is None
                          else round((atual - preco) * lado / tick))
         sit, tom = _situacao_posicao(l, p, agora)
-        nome = _nome(nomes, lig)
         linhas.append(html.Tr([
-            html.Td(html.Span(nome, className="op-nome-tab", title=nome), className="t"),
+            html.Td(_nome_tab(_nome(nomes, lig)), className="t"),
             html.Td(_lado(lado)),
             html.Td(ctr, className="n" + (" neg" if len(ctr) > 1 else "")),
             html.Td(_preco(preco), className="n"),
-            html.Td(prot),
-            html.Td(ate(sl), className="n"),
-            html.Td(ate(tp), className="n"),
+            cel_stop,
+            cel_alvo,
             html.Td(f"{_int_sinal(ticks_abertos)} ticks · {_rs(res)}",
                     className="n " + _sinal(res)),
             html.Td(_etiqueta(sit, tom) if tom != "ambar"
                     else html.Span(sit, className="ord-pend")),
         ]))
-    cab = html.Tr([
-        _th("Variante"), _th("Lado"),
-        _th("Contratos", "Contratos na corretora; entre parênteses o que o papel "
-            "quer, quando difere. Bom: iguais. Ruim: diferentes — vira "
-            "\"diferente\" e a automação corrige.", True),
-        _th("Preço", n=True),
-        _th("Proteção na corretora", "Stop e alvo gravados NA corretora (✓). "
-            "Bom: os dois presentes. Ruim: sem stop — a automação encerra a "
-            "posição em 2 s."),
-        _th("Até o stop", "Distância do preço de agora até o stop, em ticks "
-            "(1 tick = 5 pontos). Bom: longe. Atenção: perto de zero.", True),
-        _th("Até o alvo", "Distância do preço de agora até o alvo, em ticks.",
-            True),
-        _th("Resultado aberto", "Resultado da posição agora, em ticks e em R$ "
-            "(antes dos custos). Bom: positivo.", True),
-        _th("Situação", "confere = a corretora tem o que o papel quer; saída "
-            "pendente = a automação está tentando sair (passa de 2 min, vira "
-            "chamado); indisponível = sem o papel agora, a automação só protege; "
-            "diferente = a corretora tem outra coisa."),
-    ])
     return html.Table([html.Thead(cab), html.Tbody(linhas)],
                       className="op-tabela ord-tabela")
 
@@ -558,8 +566,10 @@ def numeros(ordens: dict | None, resultado_portfolio: float,
                           style={"width": f"{min(100, round(pct))}%"}),
                 html.Span(className="ord-barra-marca", style={"left": f"{TRAVA_PCT}%"}),
             ], className="ord-barra")
-            valor = [_reais(total), html.Span(f" de {_reais(limite)}",
-                                              className="ord-kpi-de")]
+            # "R$ 0 / 500", como no rascunho v4
+            valor = [_reais(total), html.Span(f" / {inteiro(int(round(float(limite))))}",
+                                              className="ord-kpi-de",
+                                              title=f"de {_reais(limite)}")]
             nota = f"{round(pct)}% · trava em {TRAVA_PCT}%"
             explica += (f" A trava encerra tudo em "
                         f"{_reais(float(limite) * TRAVA_PCT / 100)}.")
@@ -598,7 +608,8 @@ _SITUACOES = {
 def _situacao_demo(l: dict):
     sit = l.get("situacao")
     if sit == "fechada":
-        filhos = [_etiqueta(l.get("saida_motivo") or "fechada", "cinza")]
+        # por onde saiu já está na coluna Saída ("11:20 alvo"); aqui só a nota
+        filhos = [] if l.get("nota") else [html.Span("—", className="mut")]
     else:
         rot, tom, explica = _SITUACOES.get(sit, (sit or "—", "cinza", None))
         if sit in ("perdida", "nao_entrou") and l.get("nota"):
@@ -609,8 +620,31 @@ def _situacao_demo(l: dict):
     if sit == "seria_enviada" and l.get("checagem"):
         filhos.append(html.Span(f" · {l['checagem']}", className="ord-pend"))
     elif sit == "fechada" and l.get("nota"):
-        filhos.append(html.Span(f" {l['nota']}", className="ord-pend"))
+        filhos.append(html.Span(l["nota"], className="ord-pend"))
     return filhos
+
+
+def _saida_demo(l: dict) -> str:
+    """"11:20 alvo": a hora e por onde saiu, numa célula (rascunho v4)."""
+    hora = _hora(l.get("exit_ts"))
+    if l.get("situacao") == "fechada":
+        motivo = str(l.get("saida_motivo") or "").replace(" na corretora", "")
+        return f"{hora} {motivo}".strip()
+    return hora
+
+
+def _tom_derrap(l: dict) -> str:
+    """Âmbar acima de 2 ticks numa ponta; verde quando a demo executou
+    melhor que o papel (nenhuma ponta pior e alguma melhor)."""
+    pontas = [x for x in (l.get("derrapagem_entrada"), l.get("derrapagem_saida"))
+              if x is not None]
+    if not pontas:
+        return ""
+    if max(pontas) > 2:
+        return " aviso"
+    if max(pontas) <= 0 and min(pontas) < 0:
+        return " pos"
+    return ""
 
 
 def _derrap(l: dict) -> str:
@@ -630,21 +664,16 @@ def operacoes_demo(linhas: list[dict]):
                       "operações do papel estão logo abaixo, em Papel.")
     corpo = []
     for l in linhas:
-        pior = max([x for x in (l.get("derrapagem_entrada"),
-                                l.get("derrapagem_saida")) if x is not None],
-                   default=None)
         executou = l.get("preco_entrada") is not None
-        nome = l.get("variante") or "—"
         corpo.append(html.Tr([
             html.Td(_hora(l.get("entry_ts"))),
-            html.Td(_hora(l.get("exit_ts"))),
-            html.Td(html.Span(nome, className="op-nome-tab", title=nome), className="t"),
+            html.Td(_saida_demo(l)),
+            html.Td(_nome_tab(l.get("variante")), className="t"),
             html.Td(_lado(l.get("lado"))),
             html.Td(_decimal(l.get("contratos")) if executou else "—", className="n"),
             html.Td(_preco(l.get("preco_entrada")), className="n"),
             html.Td(_preco(l.get("preco_saida")), className="n"),
-            html.Td(_derrap(l), className="n" + (" aviso" if pior is not None
-                                                 and pior > 2 else "")),
+            html.Td(_derrap(l), className="n" + _tom_derrap(l)),
             html.Td(_int_sinal(l.get("pontos")), className="n " + _sinal(l.get("pontos"))),
             html.Td(_rs(l.get("resultado")) if l.get("resultado") is not None else "—",
                     className="n " + _sinal(l.get("resultado"))),
@@ -654,20 +683,21 @@ def operacoes_demo(linhas: list[dict]):
         _th("Entrada"), _th("Saída"), _th("Variante"), _th("Lado"),
         _th("Contr.", "Contratos executados na demo.", True),
         _th("Preço entrada", n=True), _th("Preço saída", n=True),
-        _th("Derrapagem além do plano (ticks)", "Quanto a demo derrapou A MAIS "
+        _th("Derrapagem", "Em ticks, além do plano: quanto a demo derrapou A MAIS "
             "do que o plano já supõe, em cada ponta (entrada · saída), em ticks "
             "(1 tick = 5 pontos). O preço do papel já inclui a derrapagem do "
             "plano: 0 = a demo derrapou o que o plano previu. Positivo = pior; "
-            "negativo = melhor. Bom: perto de 0. Ruim: acima de 2 ticks (âmbar) "
+            "negativo = melhor (verde). Bom: perto de 0. Ruim: acima de 2 ticks (âmbar) "
             "com frequência — o backtest está otimista.", True),
         _th("Pontos", "Pontos a favor (+) ou contra (−) por contrato, nos preços "
             "da demo.", True),
         _th("Resultado", "Em R$, antes dos custos (corretagem e emolumentos). "
             "A tabela Esperado × Papel × Demo, na Avaliação, mostra a demo já "
             "sem os custos; por isso os números não batem.", True),
-        _th("Situação", "Como a operação terminou: stop/alvo na corretora, sinal "
-            "do papel, recusada, perdida, ou \"seria enviada\" com o Envio "
-            "desligado."),
+        _th("Situação", "Por onde a operação saiu (stop/alvo na corretora, sinal "
+            "do papel) está em Saída. Aqui: o que fugiu do normal — recusada, "
+            "perdida, aberta, ou \"seria enviada\" com o Envio desligado — e "
+            "as notas da saída."),
     ])
     return html.Table([html.Thead(cab), html.Tbody(corpo)],
                       className="op-tabela ord-tabela")
@@ -737,7 +767,7 @@ def _texto_evento(e: dict) -> tuple[str, str] | None:
         return _texto_teste(e)
     if tipo in ("executada", "parcial"):
         atraso = e.get("atraso_ms")
-        em = f" em {num(atraso / 1000, 1)} s" if atraso is not None else ""
+        em = f" em {num(atraso / 1000, 2)} s" if atraso is not None else ""
         parte = " (em parte)" if tipo == "parcial" else ""
         return (f"{lado}{ctr_t}{sim} executada{parte} a {_preco(e.get('preco'))}{em}",
                 "")
@@ -793,21 +823,23 @@ def diario_do_dia(eventos: list[dict], nomes: dict | None, *,
         if t is None:
             continue
         texto, tom = t
-        quem = _nome(nomes, e.get("ligacao_id"))
         linhas.append(html.Div([
             html.Span(_hora(e.get("quando"), segundos=True), className="ord-ev-h"),
-            html.Span(quem, className="ord-ev-quem", title=quem),
+            _nome_tab(_nome(nomes, e.get("ligacao_id")), "ord-ev-quem"),
             html.Span(texto, className="ord-ev-t" + (f" {tom}" if tom else "")),
         ], className="ord-ev" + (" ord-ev-problema" if e.get("tipo") in PROBLEMAS
                                  else "")))
     if not linhas:
+        # dentro da tabela: texto apagado no lugar das linhas, sem caixa
         if so_problemas:
-            return html.Div(_vazio("nenhum problema hoje",
-                                   "Nenhuma recusa, perda, chamado ou trava "
-                                   "hoje. \"Tudo\" mostra o resto do dia."))
-        return html.Div(_vazio("nada no diário hoje",
-                               "Sem variante na fase demo a automação não manda "
-                               "ordens, e o diário fica vazio."))
+            return html.Div(html.P(["nenhum problema hoje",
+                                    dica("Nenhuma recusa, perda, chamado ou "
+                                         "trava hoje. \"Tudo\" mostra o resto "
+                                         "do dia.")], className="op-vazio-txt"))
+        return html.Div(html.P(["nada no diário hoje",
+                                dica("Sem variante na fase demo a automação não "
+                                     "manda ordens, e o diário fica vazio.")],
+                               className="op-vazio-txt"))
     return html.Div(linhas)
 
 

@@ -154,13 +154,27 @@ def test_contra_o_esperado_conta_as_faixas():
 # ------------------------------------------------------------- variantes
 def test_cartao_mostra_contratos_papel_e_demo():
     c = OP.cartao_variante(_var(contratos=3), None)
-    assert "papel 3" in textos(c)
+    # rascunho v4: a etiqueta mostra só a fase; os contratos no title dela
+    assert "papel" in textos(c) and "papel 3" not in textos(c)
     # papel, demo e plano juntos no title da etiqueta da fase
     assert "papel 3" in titulos(c) and "demo —" in titulos(c)
     assert "plano #5" in titulos(c)
     demo = OP.cartao_variante(_var(fase="demo", contratos=3, contratos_demo=1),
                               None)
-    assert "demo 1" in textos(demo)
+    assert "demo 1" in titulos(demo)
+
+
+def test_variante_nome_curto_acerto_em_pct_e_uma_linha():
+    c = OP.cartao_variante(_var(nome="variante-rompimento-medias-abertura-M7",
+                                acerto="2/3"), None)
+    nome = next(x for x in todos(c) if "op-nome" in classes(x))
+    assert nome.children == "medias-abertura-M7"
+    assert nome.title == "variante-rompimento-medias-abertura-M7"
+    assert "67%" in textos(c) and "2/3" not in textos(c)
+    assert not [x for x in todos(c) if "op-var-n2" in classes(x)]
+    # pausar e o lápis no fim da linha, só ícone, com o nome no title
+    acoes = next(x for x in todos(c) if "op-var-c-acao" in classes(x))
+    assert "Pausar variante" in titulos(acoes) and "contratos" in titulos(acoes)
 
 
 def test_cartao_pulado_fica_apagado_com_o_motivo():
@@ -257,7 +271,7 @@ def test_colunas_da_variante_tem_dica():
 
 def test_cabecalho_da_tabela_tem_dica_nas_metricas():
     arvore = OP.tabela_operacoes([_op()])
-    for rot in ("Contr. papel / demo", "Pontos", "Resultado papel"):
+    for rot in ("Contr.", "Pontos", "Resultado", "Papel × demo"):
         assert _com_dica(arvore, rot), rot
 
 
@@ -271,10 +285,13 @@ def test_comparativo_tem_dica_em_todas_as_linhas():
 
 
 def test_botao_estado_armado_sem_reler_o_banco():
-    assert OP.estado_botao("membro-desligar", 1, None)[0] == "Pausar"
+    # só ícone (rascunho v4): sem texto até armar
+    rot, cls = OP.estado_botao("membro-desligar", 1, None)
+    assert rot == "" and "op-bt-pause" in cls
     rot, cls = OP.estado_botao("membro-desligar", 1, "membro-desligar:1")
     assert rot == "Confirmar?" and "av-armado" in cls
-    assert OP.estado_botao("membro-desligar", 2, "membro-desligar:1")[0] == "Pausar"
+    assert OP.estado_botao("membro-desligar", 2, "membro-desligar:1")[0] == ""
+    assert OP.estado_botao("pf-desligar", 3, None)[0] == ""
     assert OP.estado_botao("pf-ligar", 3, None)[0] == "Ligar portfólio"
 
 
@@ -467,10 +484,15 @@ def test_situacao_erro_do_papel_aparece():
 
 
 def test_alertas_viram_faixas():
+    # linha em destaque no topo da tabela do Diário: Hora | Variante | texto
     al = [{"tipo": "pulado", "ligacao_id": 1, "texto": "var-1: pregão pulado — x"}]
-    t = textos(OP.lista_alertas(al))
-    assert "var-1: pregão pulado" in t
-    assert "nada pede atenção" in textos(OP.lista_alertas([]))
+    linhas = OP.lista_alertas(al, {1: "var-1"})
+    assert len(linhas) == 1 and "op-alerta-rosa" in classes(linhas[0])
+    cels = [textos(c) for c in linhas[0].children]
+    assert cels[0] == "—" and cels[1] == "var-1"
+    assert "pregão pulado — x" in cels[2] and "var-1:" not in cels[2]
+    # sem alerta, nada ("nada pede atenção" saiu)
+    assert OP.lista_alertas([]) == []
 
 
 # ------------------------------------------------------------ curva / comp.
@@ -780,5 +802,23 @@ def test_abas_sempre_montadas_com_operacoes_aberta():
 
 def test_cabecalho_mostra_o_pregao_da_tela():
     cab = OP.cabecalho({"ligado": True}, {}, dia=date(2026, 10, 15))
-    assert "15/10" in textos(cab) and "Pregão" in textos(cab)
-    assert "—" in textos(OP.cabecalho({"ligado": True}, {}))
+    assert "pregão 15/10" in textos(cab)
+    assert "pregão —" in textos(OP.cabecalho({"ligado": True}, {}))
+
+
+def test_cabecalho_numa_linha_como_o_rascunho():
+    res = _resumo(contas={"demo": {"conta_id": 2, "nome": "ClearInvestimentos-DEMO"},
+                          "real": None})
+    cab = OP.cabecalho({"ligado": True}, res, contrato="WINZ26",
+                       dia=date(2026, 10, 16))
+    # o "?" é o texto escondido dos (?): fora da comparação
+    t = " ".join(p for p in textos(cab).split() if p != "?")
+    assert t.startswith("ligado | WINZ26 · demo ClearInvestimentos · R$ 10.000 · "
+                        "2/2 operando · pregão 16/10")
+    assert "ClearInvestimentos-DEMO" in titulos(cab)
+    assert "op-st-on" in classes(cab[0])
+    # o "papel HH:MM:SS" do pulso continua a linha
+    sit = OP.faixa_situacao(_estado(), AGORA)
+    assert " ".join(textos(sit).split()).startswith("· papel 14:37:01")
+    # todo (?) do cabeçalho continua lá: contrato, conta, operando, pregão
+    assert len([x for x in todos(cab) if "dica-mark" in classes(x)]) == 4

@@ -372,7 +372,7 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
     return (cab, botoes, kpis,
             OP.cabecalho_colunas() if vs else [], OP.cartoes(vs, armado),
             OP.risco_dia(res) if vs else [],
-            OP.lista_alertas(alertas), OP.tabela_comparativo(comp), vars_,
+            OP.lista_alertas(alertas, nomes), OP.tabela_comparativo(comp), vars_,
             _opcoes_filtro(vars_), filtro,
             [{"label": v["nome"], "value": v["ligacao_id"]} for v in vars_],
             curva)

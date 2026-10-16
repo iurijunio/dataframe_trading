@@ -24,7 +24,7 @@ from .. import theme as T
 from ..data import to_epoch
 from . import ordens_panel as OR
 from . import pregao_panel as PP
-from .cartao import FASES, dica, etiqueta_mesmo_assim, inteiro, num, pct
+from .cartao import FASES, dica, etiqueta_mesmo_assim, inteiro, nome_curto, num, pct
 from .icones import icone
 
 CINZA = T.CINZA_FORA
@@ -269,16 +269,25 @@ _APAGADO = ("pulado", "interrompido", "nao_conferido", "falha")
 # troca o rótulo para "Confirmar?" no primeiro clique. O ícone vem da
 # classe (`op-bt-*`, máscara no CSS) e não do filho: o callback leve troca
 # os filhos por texto puro e um ícone filho sumiria no primeiro clique.
+#
+# Rótulo vazio = botão só de ícone (rascunho v4): o nome dele fica no
+# `title` e no `aria-label`; armado, mostra "Confirmar?" ao lado do ícone.
 _BOTOES = {
-    "membro-desligar": ("Pausar", "btn-ghost btn-sm av-btn-sec op-var-botao"),
-    "membro-ligar": ("Ligar", "btn-ghost btn-sm av-btn-principal op-var-botao"),
-    "pf-desligar": ("Desligar portfólio", "btn-ghost av-btn-sec op-bt op-bt-power"),
-    "pf-ligar": ("Ligar portfólio", "btn-ghost av-btn-principal op-bt op-bt-power"),
+    "membro-desligar": ("", "btn-ghost op-bt op-bt-ic op-bt-mini op-bt-pause"),
+    "membro-ligar": ("", "btn-ghost op-bt op-bt-ic op-bt-mini op-bt-play"),
+    "pf-desligar": ("", "btn-ghost op-bt op-bt-ic op-bt-power"),
+    "pf-ligar": ("Ligar portfólio", "btn-ghost op-bt op-bt-principal op-bt-power"),
     # o interruptor do Envio de ordens da conta demo (o rótulo diz o estado)
-    "envio-desligar": ("Envio de ordens ligado",
-                       "btn-ghost ord-envio ord-envio-on op-bt op-bt-send"),
-    "envio-ligar": ("Envio de ordens desligado", "btn-ghost ord-envio op-bt op-bt-send"),
+    "envio-desligar": ("Envio ligado", "btn-ghost op-bt op-bt-on op-bt-send"),
+    "envio-ligar": ("Envio desligado", "btn-ghost op-bt op-bt-send"),
 }
+# o nome de cada botão para o mouse e o leitor de tela
+_NOMES_BOTAO = {"membro-desligar": "Pausar variante",
+                "membro-ligar": "Ligar variante",
+                "pf-desligar": "Desligar portfólio",
+                "pf-ligar": "Ligar portfólio",
+                "envio-desligar": "Envio de ordens ligado",
+                "envio-ligar": "Envio de ordens desligado"}
 
 
 def estado_botao(acao, alvo, armado) -> tuple[str, str]:
@@ -291,18 +300,18 @@ def estado_botao(acao, alvo, armado) -> tuple[str, str]:
 
 def _botao(acao, alvo, armado, title=""):
     rotulo, classe = estado_botao(acao, alvo, armado)
-    return html.Button(rotulo, n_clicks=0, title=title, className=classe,
+    nome = _NOMES_BOTAO[acao]
+    return html.Button(rotulo, n_clicks=0, title=f"{nome}: {title}" if title else nome,
+                       className=classe, **{"aria-label": nome},
                        id={"type": "av-op-acao", "acao": acao, "id": alvo})
 
 
-def _fase_e_contratos(v: dict) -> html.Span:
-    """"demo 2 ✎": a fase com os contratos dela e o lápis que abre o
-    editor dos contratos da demo. Na fase demo sem número gravado valem os
-    do plano; papel e demo de cada um e o plano ficam no `title`."""
+def _contratos_txt(v: dict) -> str:
+    """"contratos: papel 3 · demo 1 · plano #5" — no `title` da etiqueta
+    da fase e do lápis. Na fase demo sem número gravado valem os do plano."""
     fase = v.get("fase") or "papel"
     ctr = v.get("contratos")
     proprio = v.get("contratos_demo")
-    n = proprio if fase == "demo" and proprio is not None else ctr
     if proprio is not None:
         demo = f"demo {proprio}"
     elif fase == "demo" and ctr is not None:
@@ -310,17 +319,40 @@ def _fase_e_contratos(v: dict) -> html.Span:
     else:
         demo = "demo — (nada vai à conta)"
     plano = f"plano #{v['plano_id']}" if v.get("plano_id") else "sem plano"
+    return (f"contratos: papel {'—' if ctr is None else ctr} · {demo} · "
+            f"{plano}")
+
+
+def _fase(v: dict) -> html.Span:
+    """A etiqueta da fase logo depois do nome ("demo" em ciano, "papel" em
+    cinza), como no rascunho v4; os contratos ficam no `title`."""
+    fase = v.get("fase") or "papel"
     nome_fase = FASES.get(fase, fase)
-    return html.Span([
-        html.Span(f"{nome_fase} {'—' if n is None else n}"),
-        html.Button(icone("pencil", pequeno=True), n_clicks=0,
-                    className="ord-ctr-editar",
-                    id={"type": "av-op-ord-ctr", "id": v["ligacao_id"]},
-                    title="Mudar os contratos desta variante na conta demo "
-                          "(o papel segue com os do plano)"),
-    ], className="op-var-fase" + (" op-var-fase-demo" if fase == "demo" else ""),
-        title=f"fase {nome_fase} · contratos: papel "
-              f"{'—' if ctr is None else ctr} · {demo} · {plano}")
+    return html.Span(nome_fase,
+                     className="op-var-fase" + (" op-var-fase-demo"
+                                                if fase == "demo" else ""),
+                     title=f"fase {nome_fase} · {_contratos_txt(v)}")
+
+
+def _lapis(v: dict) -> html.Button:
+    """O lápis que abre o editor dos contratos da demo."""
+    return html.Button(icone("pencil", pequeno=True), n_clicks=0,
+                       className="ord-ctr-editar op-bt-mini",
+                       id={"type": "av-op-ord-ctr", "id": v["ligacao_id"]},
+                       **{"aria-label": "Mudar contratos na demo"},
+                       title="Mudar os contratos desta variante na conta demo "
+                             f"(o papel segue com os do plano) · {_contratos_txt(v)}")
+
+
+def _acerto(txt) -> tuple[str, str]:
+    """"2/3" → ("67%", "2 de 3 fechadas ganharam"); sem fechada, "—"."""
+    try:
+        g, n = (int(x) for x in str(txt).split("/"))
+    except (TypeError, ValueError):
+        return "—", ""
+    if n <= 0:
+        return "—", ""
+    return f"{round(g / n * 100)}%", f"{g} de {n} fechadas ganharam"
 
 
 def _seta_posicao(p: int):
@@ -337,21 +369,22 @@ def _seta_posicao(p: int):
 
 
 def cartao_variante(v: dict, armado) -> html.Div:
-    """Uma linha da tabela de variantes: nome (e embaixo fase e
-    etiquetas), Hoje, Op., Acerto, Acumulado e o botão. Grade de divs com o
+    """Uma linha da tabela de variantes, numa linha só: ponto, nome curto,
+    fase e etiquetas; Hoje, Op., Acerto, Acumulado; e, no fim, os botões só
+    de ícone (pausar/ligar e o lápis dos contratos). Grade de divs com o
     mesmo `grid-template-columns` do cabeçalho (`cabecalho_colunas`)."""
     lig = v["ligacao_id"]
     nome = v["nome"]
     status = v.get("status")
     if v.get("ligada"):
         botao = _botao("membro-desligar", lig, armado,
-                       "Pausar esta variante: as operações dela deixam de "
-                       "contar a partir de agora (o papel segue calculando, "
-                       "em cinza). Clique duas vezes para confirmar.")
+                       "as operações dela deixam de contar a partir de agora "
+                       "(o papel segue calculando, em cinza). Clique duas "
+                       "vezes para confirmar.")
     else:
         botao = _botao("membro-ligar", lig, armado,
-                       "Ligar esta variante: as operações dela voltam a "
-                       "contar. Clique duas vezes para confirmar.")
+                       "as operações dela voltam a contar. Clique duas vezes "
+                       "para confirmar.")
 
     tags = []
     if not v.get("ligada", True):
@@ -364,25 +397,23 @@ def cartao_variante(v: dict, armado) -> html.Div:
     if v.get("gravado_mesmo_assim"):
         tags.append(etiqueta_mesmo_assim(v.get("pendencias")))
 
-    nome_cel = html.Div([
-        html.Div([amostra(v.get("cor"), v.get("ligada", True)),
-                  html.Span(nome, className="op-nome", title=nome),
-                  _seta_posicao(int(v.get("posicao") or 0))],
-                 className="op-var-n1"),
-        html.Div([_fase_e_contratos(v), *tags], className="op-var-n2"),
-    ], className="op-var-c-nome")
+    nome_cel = html.Div([amostra(v.get("cor"), v.get("ligada", True)),
+                         html.Span(nome_curto(nome), className="op-nome",
+                                   title=nome),
+                         _fase(v), *tags,
+                         _seta_posicao(int(v.get("posicao") or 0))],
+                        className="op-var-c-nome")
 
-    acerto = v.get("acerto")
+    acerto, acerto_title = _acerto(v.get("acerto"))
     linha = html.Div([
         nome_cel,
         html.Span(_rs(v.get("hoje")), className="op-var-v "
                   + (_sinal(v.get("hoje")) or "")),
         html.Span(str(v.get("n_ops") or 0), className="op-var-v"),
-        html.Span("—" if not acerto or acerto.endswith("/0") else acerto,
-                  className="op-var-v"),
+        html.Span(acerto, className="op-var-v", title=acerto_title),
         html.Span(_rs(v.get("acumulado")), className="op-var-v "
                   + (_sinal(v.get("acumulado")) or "")),
-        html.Div(botao, className="op-var-c-acao"),
+        html.Div([botao, _lapis(v)], className="op-var-c-acao"),
     ], className="op-var-linha")
 
     classe = "op-var"
@@ -446,9 +477,10 @@ def cabecalho_colunas():
     return html.Div([
         _rotulo("Variante", "Ordem: posição aberta primeiro, depois o "
                 "resultado do dia. O ponto é a cor da variante no gráfico; a "
-                "seta, a posição aberta (verde comprado, azul vendido). "
-                "Embaixo do nome, a fase com os contratos dela; o lápis muda "
-                "os contratos na conta demo."),
+                "seta, a posição aberta (verde comprado, azul vendido). Ao "
+                "lado do nome, a fase (o mouse em cima mostra os contratos). "
+                "No fim da linha: pausar ou ligar a variante (dois cliques) e "
+                "o lápis, que muda os contratos na conta demo."),
         _rotulo("Hoje", "Resultado de hoje da variante (fechadas mais a "
                 "aberta provisória). Bom: positivo. Ruim: perda maior que a "
                 "perda média do plano."),
@@ -456,7 +488,8 @@ def cabecalho_colunas():
                 "média de operações por pregão do plano. Atenção: muito acima "
                 "(a estratégia está girando demais) ou zero num dia com "
                 "movimento (confira se o papel está calculando)."),
-        _rotulo("Acerto", "Ganhadoras sobre fechadas hoje. Bom: perto do "
+        _rotulo("Acerto", "Ganhadoras sobre fechadas hoje, em % (o mouse em "
+                "cima mostra quantas de quantas). Bom: perto do "
                 "acerto esperado (veja o Comparativo; acima de 40–50% na "
                 "maioria das estratégias). Ruim: bem abaixo dele por vários "
                 "pregões. Um dia sozinho diz pouco."),
@@ -488,7 +521,8 @@ def chips(vs: list[dict], ocultas) -> list:
     for v in sorted(vs, key=lambda x: x.get("cor") or 0):
         off = v["ligacao_id"] in ocultas
         out.append(html.Button(
-            [amostra(v.get("cor")), html.Span(v["nome"], className="op-chip-nome")],
+            [amostra(v.get("cor")), html.Span(nome_curto(v["nome"]),
+                                              className="op-chip-nome")],
             id={"type": "av-op-chip", "id": v["ligacao_id"]}, n_clicks=0,
             title=f"{v['nome']} — clique para "
                   f"{'mostrar' if off else 'esconder'} no gráfico",
@@ -513,13 +547,15 @@ def linha_operacao(o: dict) -> html.Tr:
     sit = o.get("situacao")
     compra = int(o["side"]) == 1
     pts = int(o.get("points") or 0)
+    # a coluna Saída diz a hora e por onde saiu ("11:20 alvo", rascunho
+    # v4); na aberta, o stop e o alvo de agora
     if sit == "aberta":
-        saida = html.Span("aberta", className="acc")
+        saida = [html.Span("aberta", className="acc"),
+                 html.Span(f" · stop {_preco(o.get('stop_px'))} · alvo "
+                           f"{_preco(o.get('alvo_px'))}", className="acc")]
         marcado = int(o["entry_px"]) + int(o["side"]) * pts
         preco_saida = _cel(_preco(marcado), "n acc",
                            "preço marcado no último candle calculado")
-        saiu = f"stop {_preco(o.get('stop_px'))} · alvo {_preco(o.get('alvo_px'))}"
-        saiu_cls = "t acc"
     elif sit in _ABERTA_PARADA:
         # aberta no banco, mas não é posição de agora: o stop/alvo gravado
         # é de quando o motor parou, mostrá-lo seria dizer que ainda vale
@@ -529,19 +565,18 @@ def linha_operacao(o: dict) -> html.Tr:
         saida = html.Span(rotulo, className="aviso",
                           title=o.get("nota") or rotulo)
         preco_saida = _cel("—", "n")
-        saiu, saiu_cls = "—", "t mut"
     else:
-        saida = _hora(o.get("exit_ts"))
+        saiu = _SAIU_POR.get(o.get("reason"))
+        saida = _hora(o.get("exit_ts")) + (f" {saiu}" if saiu else "")
         preco_saida = _cel(_preco(o.get("exit_px")), "n")
-        saiu = _SAIU_POR.get(o.get("reason"), "—")
-        saiu_cls = "t mut"
     nome = o.get("variante") or "—"
     var = [html.Div([amostra(o.get("cor"), o.get("conta", True)),
-                     html.Span(nome, className="op-nome-tab", title=nome)],
+                     html.Span(nome_curto(nome), className="op-nome-tab",
+                               title=nome)],
                     className="op-var-cel")]
     if not o.get("conta", True):
         var.append(html.Span("fora do período ligado", className="op-fora-txt"))
-    resultado = [_rs(o.get("liquido"), 2)]
+    resultado = [_rs(o.get("liquido"))]
     if o.get("provisorio"):
         resultado.append(html.Span(" provisório", className="op-prov"))
     classe = "op-linha"
@@ -563,7 +598,6 @@ def linha_operacao(o: dict) -> html.Tr:
         _cel(("+" if pts > 0 else "-" if pts < 0 else "") + inteiro(abs(pts)),
              "n " + (_sinal(pts) or "")),
         _cel(resultado, "n " + (_sinal(o.get("liquido")) or "")),
-        _cel(saiu, saiu_cls),
         _papel_x_demo(o.get("demo")),
     ], className=classe)
 
@@ -594,25 +628,24 @@ def tabela_operacoes(ops: list[dict]):
         return html.P(["nenhuma operação no papel neste pregão",
                        dica("O papel ainda não deu sinal hoje (ou o filtro "
                             "escolheu uma variante sem operação).")],
-                      className="av-vazio op-vazio")
+                      className="op-vazio-txt")
 
     def th(texto, explica=None, n=False):
         return html.Th([texto] + ([dica(explica)] if explica else []),
                        className="n" if n else "")
     cab = html.Tr([
         th("Entrada"), th("Saída"), th("Variante"), th("Lado"),
-        th("Contr. papel / demo", "Contratos da operação no papel (os do "
-           "plano) e na demo (a demo tem a tabela própria, acima). Bom: os dois iguais ao plano. Ruim: "
-           "demo com mais contratos que o plano (risco maior que o medido).",
-           True),
+        th("Contr.", "Contratos da operação: papel / demo. O papel usa os do "
+           "plano; a demo tem a tabela própria, acima. Bom: os dois iguais "
+           "ao plano. Ruim: demo com mais contratos que o plano (risco maior "
+           "que o medido).", True),
         th("Preço entrada", n=True), th("Preço saída", n=True),
         th("Pontos", "Pontos a favor (+) ou contra (−) por contrato, já com a "
            "derrapagem do plano. Bom: ganhos maiores que as perdas na média "
            "do dia. Ruim: perdas no tamanho do stop seguidas.", True),
-        th("Resultado papel", "Em reais, com os contratos e os custos do "
-           "plano. Na aberta é provisório: o preço do último candle. Bom: a "
-           "média por operação do plano ou mais.", True),
-        th("Saiu por"),
+        th("Resultado", "Resultado do papel em reais, com os contratos e os "
+           "custos do plano. Na aberta é provisório: o preço do último "
+           "candle. Bom: a média por operação do plano ou mais.", True),
         th("Papel × demo", "Derrapagem da demo além da que o plano supõe, na "
            "mesma operação, por ponta (entrada · saída), em ticks. Bom: perto "
            "de 0. Ruim: acima de 2 ticks (âmbar). \"não executada\" = a demo "
@@ -690,14 +723,16 @@ def tick_operacao(estado: dict | None, tf: str, base: dict | None,
 
 
 # --------------------------------------------------------------- situação
-def _par(rotulo, valor, explica=None, mono=False):
-    """Um par do cabeçalho: rótulo pequeno e apagado, valor em destaque.
-    Os pares se separam por um traço vertical fino (CSS), não por "·"."""
-    filhos = [html.Span(rotulo, className="op-par-r"),
-              html.B(valor, className="op-par-v" + (" mono" if mono else ""))]
-    if explica:
-        filhos.append(dica(explica))
-    return html.Span(filhos, className="op-par")
+def _sep(texto="·"):
+    return html.Span(texto, className="op-sep")
+
+
+def _seg(filhos, explica=None, classe="", title=None):
+    """Um trecho da linha do portfólio (rascunho v4: "WINZ26 · demo Clear ·
+    R$ 10.000 · 2/2 operando"), sem rótulo de campo; o (?) logo depois."""
+    kw = {"title": title} if title else {}
+    return html.Span(list(filhos) + ([dica(explica)] if explica else []),
+                     className=("op-seg " + classe).strip(), **kw)
 
 
 def faixa_situacao(estado: dict | None, agora: datetime) -> list:
@@ -710,7 +745,20 @@ def faixa_situacao(estado: dict | None, agora: datetime) -> list:
     papel = (estado or {}).get("papel") or {}
     em = PP._data(papel.get("calculado_em"))
     erros = papel.get("erros") or {}
-    out = []
+    explica = ("Hora em que a captura calculou o papel pela última vez. Ela "
+               "recalcula a cada candle novo de 1 minuto; a tela relê as "
+               "operações só quando esse horário muda. Bom: no pregão, menos "
+               "de 2 minutos atrás.")
+    if em is None:
+        valor = "—"
+        explica += " Ainda não calculado desde que a captura abriu."
+    elif em.date() == agora.date():
+        valor = f"{em:%H:%M:%S}"
+    else:
+        valor = f"{em:%d/%m %H:%M}"
+    # o "papel HH:MM:SS" fecha a linha do portfólio; as etiquetas de
+    # problema vêm depois dele
+    out = [_sep(), _seg([f"papel {valor}"], explica, "op-seg-papel")]
     if sit["tom"] in ("rosa", "ambar"):
         texto = sit["texto"]
         if not sit["ativa"] and em:
@@ -732,18 +780,6 @@ def faixa_situacao(estado: dict | None, agora: datetime) -> list:
         out.append(_etiqueta("papel atrasado: banco ocupado", "ambar",
                              "Uma mineração está gravando no banco; o papel é "
                              "refeito na próxima volta da captura."))
-    explica = ("Hora em que a captura calculou o papel pela última vez. Ela "
-               "recalcula a cada candle novo de 1 minuto; a tela relê as "
-               "operações só quando esse horário muda. Bom: no pregão, menos "
-               "de 2 minutos atrás.")
-    if em is None:
-        valor = "—"
-        explica += " Ainda não calculado desde que a captura abriu."
-    elif em.date() == agora.date():
-        valor = f"{em:%H:%M:%S}"
-    else:
-        valor = f"{em:%d/%m %H:%M}"
-    out.append(_par("Papel", valor, explica, mono=True))
     return out
 
 
@@ -755,16 +791,27 @@ _TIPO_ALERTA = {"mesmo_assim": ("gravado mesmo assim", "ambar"),
                 "divergencia": ("candles mudaram", "ambar")}
 
 
-def lista_alertas(alertas: list[dict]) -> list:
-    if not alertas:
-        return [html.P("nada pede atenção neste portfólio",
-                       className="op-alerta-vazio")]
+def lista_alertas(alertas: list[dict], nomes: dict | None = None) -> list:
+    """Os alertas do papel como linhas em destaque (âmbar ou rosa) no topo
+    da tabela do Diário: Hora | Variante | O que aconteceu, as mesmas
+    colunas das linhas do diário logo abaixo. Sem alerta, nada."""
+    nomes = nomes or {}
     out = []
-    for a in alertas:
+    for a in alertas or []:
         rot, tom = _TIPO_ALERTA.get(a.get("tipo"), ("atenção", "ambar"))
-        out.append(html.Div([_etiqueta(rot, tom),
-                             html.Span(a.get("texto") or "", className="op-alerta-t")],
-                            className=f"op-alerta op-alerta-{tom}"))
+        nome = nomes.get(a.get("ligacao_id"))
+        texto = a.get("texto") or ""
+        # o core escreve "nome: ..." — o nome já está na coluna Variante
+        if nome and texto.startswith(f"{nome}: "):
+            texto = texto[len(nome) + 2:]
+        quando = a.get("quando")
+        hora = f"{quando:%H:%M:%S}" if isinstance(quando, datetime) else "—"
+        quem = nome_curto(nome) if nome else "—"
+        out.append(html.Div([
+            html.Span(hora, className="ord-ev-h"),
+            html.Span(quem, className="ord-ev-quem", title=nome or ""),
+            html.Span([_etiqueta(rot, tom), " ", texto], className="ord-ev-t"),
+        ], className=f"ord-ev op-alerta op-alerta-{tom}"))
     return out
 
 
@@ -959,27 +1006,45 @@ def cabecalho(pf: dict, resumo: dict, *, contrato=None, dia=None) -> list:
     if not isinstance(contrato, str):
         contrato = None
     pregao = f"{dia:%d/%m}" if isinstance(dia, (date, datetime)) else "—"
+    nome_demo = str(demo["nome"]) if demo and demo.get("nome") else None
+    ligado = bool(pf.get("ligado"))
     return [
-        _etiqueta("ligado", "verde") if pf.get("ligado")
-        else _etiqueta("desligado", "cinza"),
+        # ponto verde + "ligado" (cinza + "desligado"), como no rascunho v4
+        html.Span("ligado" if ligado else "desligado",
+                  className="op-st " + ("op-st-on" if ligado else "op-st-off")),
         html.Div([
-            _par("Pregão", pregao,
-                 "O pregão que a tela mostra. Antes da abertura é o de ontem "
-                 "(o do último candle gravado)."),
-            _par("Contrato", contrato or "—",
+            _sep("|"),
+            _seg([html.B(contrato or "—", className="mono")],
                  "O contrato do mês em que a demo manda as ordens hoje (o "
                  "gráfico mostra o WIN$N, a série contínua). Troca sozinho na "
-                 "rolagem.", mono=True),
-            _par("Conta demo", demo["nome"] if demo else "—",
+                 "rolagem."),
+            _sep(),
+            _seg(["demo ", html.B(_conta_curta(nome_demo) if nome_demo else "—")],
                  "A conta demo onde as variantes na fase demo mandam ordens. "
-                 f"Conta real: {real['nome'] if real else 'nenhuma ainda'}."),
-            _par("Capital", "—" if cap is None
-                 else f"R$ {inteiro(int(round(cap)))}"),
-            _par("Operando", f"{op}/{n}",
+                 f"Conta real: {real['nome'] if real else 'nenhuma ainda'}.",
+                 title=f"conta demo {nome_demo}" if nome_demo else None),
+            _sep(),
+            _seg([html.B("—" if cap is None
+                         else f"R$ {inteiro(int(round(cap)))}")],
+                 title="capital do portfólio"),
+            _sep(),
+            _seg([html.B(f"{op}/{n}"), " operando"],
                  "Variantes com o papel rodando hoje (variante e portfólio "
                  "ligados), sobre o total de variantes do portfólio."),
+            _sep(),
+            _seg([f"pregão {pregao}"],
+                 "O pregão que a tela mostra. Antes da abertura é o de ontem "
+                 "(o do último candle gravado).", "op-seg-pregao"),
         ], className="op-meta"),
     ]
+
+
+def _conta_curta(nome: str) -> str:
+    """"ClearInvestimentos-DEMO" → "ClearInvestimentos": o "demo" já vem
+    escrito antes do nome. O nome inteiro fica no `title`."""
+    if nome.upper().endswith("-DEMO") and len(nome) > 5:
+        return nome[:-5]
+    return nome
 
 
 def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None) -> list:
@@ -1016,7 +1081,7 @@ def _curva_papel_esperado():
                      "abaixo do p10 por vários pregões.",
                      dcc.RadioItems(
                          id="av-op-curva-modo", value="portfolio",
-                         className="pg-tf",
+                         className="pg-tf op-tfs",
                          options=[{"label": "Portfólio",
                                    "value": "portfolio"},
                                   {"label": "Por variante",
@@ -1060,29 +1125,42 @@ def _aba_operacoes():
                                   options=[{"label": "Todas as variantes",
                                             "value": "todas"}])),
         html.Div(id="av-op-operacoes", className="op-operacoes op-tabela-caixa"),
-        OR.subtitulo("Real"),
-        html.Div(_etiqueta("ainda não opera", "cinza",
-                           "A conta real ainda não está ligada ao Dataframe: "
-                           "as variantes operam no papel e na conta demo."),
-                 className="op-real"),
+        OR.subtitulo("Real", "A conta real ainda não está ligada ao "
+                     "Dataframe: as variantes operam no papel e na conta "
+                     "demo."),
+        html.P("sem conta real", className="op-vazio-txt"),
     ], className="op-pane op-pane-operacoes")
 
 
 def _aba_diario():
+    """Uma tabela só (rascunho v4): Hora | Variante | O que aconteceu. Os
+    alertas do papel, quando há, entram no topo dela em âmbar ou rosa; o
+    filtro "Só problemas" fica acima, à direita."""
     return html.Section([
-        OR.subtitulo("Alertas do papel", "Pregões pulados, interrompidos, não "
-                     "conferidos, planos gravados mesmo assim e candles que "
-                     "mudaram. Bom: nenhum. Ruim: o mesmo alerta vários dias."),
-        html.Div(id="av-op-alertas", className="op-alertas"),
-        OR.subtitulo("Eventos", "Tudo o que a automação fez hoje na conta "
-                     "demo, do mais novo para o mais antigo.",
-                     dcc.RadioItems(
-                         id="av-op-ord-diario-filtro", value="tudo",
-                         className="pg-tf",
-                         options=[{"label": "Tudo", "value": "tudo"},
-                                  {"label": "Só problemas",
-                                   "value": "problemas"}])),
-        html.Div(id="av-op-ord-diario", className="ord-diario"),
+        html.Div([
+            html.Span([html.I(className="op-dia-amostra"), "alerta do papel",
+                       dica("Linhas em âmbar ou rosa no topo da tabela: "
+                            "pregões pulados, interrompidos, não conferidos, "
+                            "planos gravados mesmo assim e candles que "
+                            "mudaram. Bom: nenhuma. Ruim: o mesmo alerta "
+                            "vários dias.")],
+                      className="op-dia-legenda"),
+            dcc.RadioItems(
+                id="av-op-ord-diario-filtro", value="tudo",
+                className="pg-tf op-tfs",
+                options=[{"label": "Tudo", "value": "tudo"},
+                         {"label": "Só problemas", "value": "problemas"}]),
+        ], className="op-dia-barra"),
+        html.Div([
+            html.Div([html.Span("Hora"), html.Span("Variante"),
+                      html.Span(["O que aconteceu",
+                                 dica("Tudo o que a automação fez hoje na "
+                                      "conta demo, do mais novo para o mais "
+                                      "antigo.")])],
+                     className="ord-ev op-dia-cab"),
+            html.Div(id="av-op-alertas", className="op-alertas"),
+            html.Div(id="av-op-ord-diario", className="op-dia-linhas"),
+        ], className="ord-diario"),
     ], className="op-pane op-pane-diario")
 
 
@@ -1134,15 +1212,16 @@ def bloco():
         html.Section([
             html.Div([
                 html.Div([
-                    icone("briefcase", classe="op-pf-ic"),
-                    # sem rótulo visível: o ícone faz o papel dele e o nome
-                    # "Portfólio" fica no title, para o mouse e o leitor
-                    html.Div(dcc.Dropdown(id="av-op-portfolio", clearable=False,
-                                          searchable=False, persistence=True,
-                                          persistence_type="local",
-                                          className="dd op-dd-pf",
-                                          placeholder="escolha o portfólio…"),
-                             className="op-pf-dd", title="Portfólio"),
+                    # a caixa do seletor (rascunho v4 `.sel`): pasta, nome e
+                    # a seta, do tamanho do nome. Sem rótulo visível: o ícone
+                    # faz o papel dele e "Portfólio" fica no title
+                    html.Div([icone("briefcase", classe="op-pf-ic"),
+                              dcc.Dropdown(id="av-op-portfolio", clearable=False,
+                                           searchable=False, persistence=True,
+                                           persistence_type="local",
+                                           className="op-dd-pf",
+                                           placeholder="escolha o portfólio…")],
+                             className="op-sel", title="Portfólio"),
                     html.Div(id="av-op-cabecalho", className="op-cab-info"),
                     # saída do pulso: etiquetas de situação e a hora do papel
                     html.Div(id="av-op-situacao", className="op-situacao"),
@@ -1162,7 +1241,12 @@ def bloco():
         ], className="panel op-tira"),
         html.Div([
             html.Section([
-                _sec_head("Variantes", None, ic="layers"),
+                _sec_head("Variantes", "As variantes deste portfólio: o "
+                          "resultado de hoje e o acumulado do papel de cada "
+                          "uma. O ponto é a cor dela no gráfico. No fim da "
+                          "linha, pausar ou ligar a variante (dois cliques) "
+                          "e o lápis dos contratos na conta demo.",
+                          ic="layers"),
                 html.Div([html.Div(id="av-op-var-cab"),
                           html.Div(id="av-op-var-lista", className="op-var-lista"),
                           # repete o Pior momento da faixa: escondido no CSS
@@ -1175,18 +1259,21 @@ def bloco():
                 _sec_head("WIN$N ao vivo", "Role para dar zoom; arraste para "
                           "voltar no dia. " + _CHAVE,
                           dcc.RadioItems(
-                              id="av-op-tf", value="M1", className="pg-tf",
+                              id="av-op-tf", value="M1", className="pg-tf op-tfs",
                               options=[{"label": "1 min", "value": "M1"},
                                        {"label": "5 min", "value": "M5"},
                                        {"label": "15 min", "value": "M15"}]),
-                          html.Button("Voltar para agora", id="av-op-agora",
-                                      n_clicks=0,
-                                      className="btn-ghost btn-sm op-bt "
-                                                "op-bt-agora"),
-                          html.Button("Tela cheia", id="av-op-cheia",
-                                      n_clicks=0,
-                                      className="btn-ghost btn-sm op-bt "
-                                                "op-bt-cheia"),
+                          # só ícone (rascunho v4); o nome no title
+                          html.Button("", id="av-op-agora", n_clicks=0,
+                                      title="Voltar para agora",
+                                      className="btn-ghost op-bt op-bt-ic "
+                                                "op-bt-agora",
+                                      **{"aria-label": "Voltar para agora"}),
+                          html.Button("", id="av-op-cheia", n_clicks=0,
+                                      title="Tela cheia",
+                                      className="btn-ghost op-bt op-bt-ic "
+                                                "op-bt-cheia",
+                                      **{"aria-label": "Tela cheia"}),
                           classe="pg-grafico-head", ic="chart-candlestick"),
                 html.Div(dash_tvlwc.Tvlwc(id="av-op-grafico", series=[],
                                           chartOptions=T.CHART_OPTIONS,

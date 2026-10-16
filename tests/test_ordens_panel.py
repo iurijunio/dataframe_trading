@@ -203,7 +203,9 @@ def test_posicoes_confere_e_saida_pendente_com_tentativas_e_tempo():
     linhas = [x for x in todos(tab) if type(x).__name__ == "Tr"][1:]
     assert len(linhas) == 2
     canal, medias = textos(linhas[0]), textos(linhas[1])
-    assert "variante-canal-M7" in canal and "confere" in canal
+    # nome curto na tela (rascunho v4); o inteiro no title
+    assert "canal-M7" in canal and "variante-canal-M7" not in canal
+    assert "confere" in canal
     # tentativa 3, pendente desde 14:37:06 -> 6 s
     assert "saída pendente — tentando (3ª) · 0:06" in medias
 
@@ -250,11 +252,12 @@ def test_posicoes_de_outro_portfolio_nao_aparecem():
 def test_posicoes_vazias_explicam_sem_demo():
     p = OR.posicoes_abertas(_ordens(n_demo=0, ligacoes={}), NOMES, TICK,
                             agora=AGORA)
-    # rótulo curto na tela, o porquê no (?)
-    assert "nenhuma posição" in textos(p)
+    # rótulo curto na tela (numa linha da tabela, rascunho v4), o porquê no (?)
+    assert "nenhuma na corretora" in textos(p)
     assert "Nenhuma variante na fase demo" in dicas_txt(p)
+    assert "Resultado aberto" in textos(p)      # o cabeçalho fica
     t2 = textos(OR.posicoes_abertas({}, NOMES, TICK, agora=AGORA))
-    assert "nenhuma posição" in t2 and "None" not in t2
+    assert "nenhuma na corretora" in t2 and "None" not in t2
 
 
 # -------------------------------------------------------------- três números
@@ -281,7 +284,7 @@ def test_perda_da_conta_aberta_em_tres_partes():
     n = OR.numeros(_ordens(), 0.0, 0.0, portfolio_id=1, ligacoes=[7, 8])
     t = textos(n)
     assert "Perda do dia" in t and "da CONTA" in dicas_txt(n)
-    assert "R$ 164" in t and "de R$ 500" in t
+    assert "R$ 164" in t and "/ 500" in t
     # a quebra é frase longa: mora no (?) (e no title da nota).
     # este portfólio = o dele no por_portfolio; outros = automação menos ele
     d = dicas_txt(n)
@@ -325,11 +328,12 @@ def test_tabela_demo_tem_as_colunas_e_dica_na_derrapagem():
     tab = OR.operacoes_demo([_linha()])
     t = textos(tab)
     for col in ("Entrada", "Saída", "Variante", "Lado", "Contr.",
-                "Preço entrada", "Preço saída", "Derrapagem além do plano (ticks)",
+                "Preço entrada", "Preço saída", "Derrapagem",
                 "Pontos",
                 "Resultado", "Situação"):
         assert col in t
-    assert "stop na corretora" in t and "-R$ 150" in t
+    # a saída diz a hora e por onde saiu, como no rascunho v4
+    assert "10:58 stop" in t and "-R$ 150" in t
     th = next(x for x in todos(tab) if type(x).__name__ == "Th"
               and "Derrapagem" in textos(x))
     assert _dicas(th)
@@ -411,7 +415,7 @@ def test_diario_esconde_eventos_internos_e_traduz():
     t = textos(d)
     for interno in ("enviando", "cumprido", "cancelar", "protecao_enviando"):
         assert interno not in t
-    assert "COMPRA 2 WINV26 executada a 188.335 em 0,7 s" in t
+    assert "COMPRA 2 WINV26 executada a 188.335 em 0,70 s" in t
     assert "saída executada a 188.420" in t
     assert "Zerar tudo" in t
     assert "automação" in t
@@ -831,7 +835,7 @@ def test_pulso_tudo_no_papel_nao_quebra():
                            "envio": False, "travada": None, "chamados": []})
     out = CO.pulso_ordens(est, None, VARS, 1, {}, [], [], None, AGORA, 1000.0)
     t = textos(out)
-    assert "None" not in t and "nenhuma posição" in t
+    assert "None" not in t and "nenhuma na corretora" in t
     assert "Nenhuma variante na fase demo" in dicas_txt(list(out[:4]))
 
 
