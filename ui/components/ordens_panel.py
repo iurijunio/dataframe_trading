@@ -783,7 +783,10 @@ def _texto_evento(e: dict) -> tuple[str, str] | None:
                           "ambar" if checagem_ensaio(e) else ""),
         "adotada": (f"posição adotada a {_preco(e.get('preco'))} ({motivo})"
                     if motivo else "posição adotada", ""),
-        "saiu_antes": (f"saiu na corretora a {_preco(e.get('preco'))}: {motivo}"
+        # "saiu no alvo na corretora a 208.845", como no rascunho v4
+        "saiu_antes": ((f"saiu no {motivo} a {_preco(e.get('preco'))}"
+                        if motivo.endswith("na corretora")
+                        else f"saiu a {_preco(e.get('preco'))}: {motivo}")
                        if motivo else "saiu na corretora", ""),
         "saida_executada": (f"saída executada a {_preco(e.get('preco'))}"
                             + (f" ({motivo})" if motivo else ""), ""),

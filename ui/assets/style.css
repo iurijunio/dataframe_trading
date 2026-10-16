@@ -1834,10 +1834,11 @@ body{
 
 /* variantes: as colunas Variante | Hoje | Op. | Acerto | Acumulado e os
    botões só de ícone no fim; uma linha por variante */
-#av-bloco-operacao .op-variantes{--op-var-cols:minmax(0,1fr) 84px 56px 76px 98px 72px;}
+#av-bloco-operacao .op-variantes{--op-var-cols:minmax(150px,1fr) 80px 56px 74px 100px 62px;}
 #av-bloco-operacao .op-var-cols,#av-bloco-operacao .op-var-linha{gap:0;}
 #av-bloco-operacao .op-var-cols{padding:7px 0;background:var(--surface-2);border-bottom:0;}
-#av-bloco-operacao .op-var-cols>*,#av-bloco-operacao .op-var-linha>*{padding:0 12px;}
+#av-bloco-operacao .op-var-cols>*,#av-bloco-operacao .op-var-linha>*{padding:0 8px;}
+#av-bloco-operacao .op-var-cols>:first-child,#av-bloco-operacao .op-var-linha>:first-child{padding-left:12px;}
 #av-bloco-operacao .op-var-linha>.op-var-c-acao,
 #av-bloco-operacao .op-var-cols>:last-child{padding:0 10px 0 0;}
 #av-bloco-operacao .op-var{padding:8px 0;border-top:1px solid var(--line);border-bottom:0;}
