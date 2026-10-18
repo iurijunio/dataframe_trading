@@ -120,3 +120,81 @@ def test_sem_trades_nao_reassina_e_sem_aplicar_nao_grava(banco, tmp_path):
     with db.connect(read_only=True) as con:
         assert con.execute("SELECT codigo_hash FROM planos_operacao "
                            "WHERE plano_id = ?", [pid]).fetchone()[0] == h
+
+
+# Versão de `hash_estrategia` de antes de os ajudantes entrarem: só base.py
+# e o arquivo da estratégia. Vai no código antigo do teste para provar que o
+# hash gravado é conferido pela função DO commit antigo.
+_HASH_ANTIGO = r'''
+
+def hash_estrategia(estrategia, pasta=None):
+    import hashlib as _h
+    from pathlib import Path as _P
+    pasta = _P(pasta) if pasta else db.ROOT / "strategies"
+    arquivo = pasta / f"{estrategia}.py"
+    if not arquivo.exists():
+        return None
+    h = _h.sha256()
+    for parte in (pasta / "base.py", arquivo):
+        h.update(parte.read_bytes().replace(b"\r\n", b"\n"))
+        h.update(b"\0")
+    return h.hexdigest()
+'''
+
+
+def _hash_so_base_e_arquivo(estrategia, pasta):
+    import hashlib
+    h = hashlib.sha256()
+    for parte in (pasta / "base.py", pasta / f"{estrategia}.py"):
+        h.update(parte.read_bytes().replace(b"\r\n", b"\n"))
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def test_hash_gravado_pela_funcao_antiga_e_reconhecido(banco, tmp_path):
+    """A impressão passou a incluir os ajudantes (saida.py): o hash gravado
+    no plano foi calculado pela função de ANTES. O comando confere o
+    gravado com a função do próprio commit antigo — sem isso, todo plano
+    cairia em "o hash gravado não é o do código --de"."""
+    antigo = _codigo_antigo(tmp_path / "antigo")
+    cod = antigo / "core" / "codigo.py"
+    cod.write_text(cod.read_text(encoding="utf-8") + _HASH_ANTIGO,
+                   encoding="utf-8")
+    pasta_antiga = antigo / "strategies"
+    h_antigo = _hash_so_base_e_arquivo("rompimento_canal", pasta_antiga)
+    # a função de hoje no código antigo dá outro hash (inclui saida.py)
+    assert h_antigo != codigo.hash_estrategia("rompimento_canal", pasta_antiga)
+
+    with db.connect_write() as con:
+        fonte = (db.PARQUET_DIR / db.safe_symbol("WIN$N")).as_posix()
+        con.execute(
+            "INSERT INTO bars_m1 SELECT 'WIN$N', ts, open, high, low, close, "
+            "tick_volume, volume, 0, 0 FROM read_parquet("
+            f"{db._sql_str(fonte + '/**/*.parquet')}) "
+            "WHERE ts BETWEEN '2025-01-01' AND '2025-03-31 23:59'")
+    pid = _plano.salvar(**campos_plano(
+        strategy="rompimento_canal", codigo_hash=h_antigo,
+        params=_padrao("rompimento_canal")))
+
+    rel = reassinar_codigo.executar(
+        pasta_antiga=antigo, aplicar=True, banco=db.DB_PATH,
+        backup=tmp_path / "backup", trabalho=tmp_path / "trabalho")
+    (p,) = rel["planos"]
+    assert p["situacao"] == "comparar" and p["identicos"] is True
+    assert p["hash_antigo"] == h_antigo
+    novo = codigo.hash_estrategia("rompimento_canal")
+    with db.connect(read_only=True) as con:
+        assert con.execute("SELECT codigo_hash FROM planos_operacao "
+                           "WHERE plano_id = ?", [pid]).fetchone()[0] == novo
+
+
+def test_hash_gravado_que_nao_e_de_nenhuma_versao_nao_compara(banco, tmp_path):
+    antigo = _codigo_antigo(tmp_path / "antigo")
+    pid = _plano.salvar(**campos_plano(codigo_hash="f" * 64,
+                                       params=_padrao("rompimento_canal")))
+    rel = reassinar_codigo.executar(
+        pasta_antiga=antigo, aplicar=True, banco=db.DB_PATH,
+        backup=tmp_path / "backup", trabalho=tmp_path / "trabalho")
+    (p,) = rel["planos"]
+    assert p["plano_id"] == pid and p["situacao"] != "comparar"
+    assert rel["alterado"] == []

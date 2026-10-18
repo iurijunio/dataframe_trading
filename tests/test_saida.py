@@ -21,11 +21,15 @@ from strategies import saida as S
 from strategies.base import Signals, empty_like
 from tests import _saida_casos as C
 
-ESTRATEGIAS = list(C.PARAMS)
+# o rompimento da abertura fica de fora: um sinal por dia, então com
+# posição aberta nunca há entrada contrária no mesmo pregão e os modos
+# 0/1/2 dariam os mesmos trades (cópias na mineração = platô falso)
+SEM_SAIDA = {"rompimento_abertura"}
+ESTRATEGIAS = [e for e in C.PARAMS if e not in SEM_SAIDA]
 PADRAO = {"setup_cruzamento": 0, "rompimento_canal": 0, "reversao_rsi": 3,
-          "rompimento_abertura": 1, "rompimento_ema_abertura": 1}
+          "rompimento_ema_abertura": 1}
 MAXIMO = {"setup_cruzamento": 2, "rompimento_canal": 2, "reversao_rsi": 3,
-          "rompimento_abertura": 2, "rompimento_ema_abertura": 2}
+          "rompimento_ema_abertura": 2}
 
 
 @pytest.fixture(scope="module")
@@ -48,6 +52,8 @@ def test_padrao_da_os_mesmos_trades_de_antes(barras, antes, nome, estrategia,
                                              params, perfil):
     """Plano gravado antes da opção (sem a chave) e o padrão explícito."""
     assert C.impressao(C.rodar(barras, estrategia, params, perfil)) == antes[nome]
+    if estrategia in SEM_SAIDA:
+        return
     explicito = dict(params, saida=PADRAO[estrategia])
     assert C.impressao(C.rodar(barras, estrategia, explicito, perfil)) == antes[nome]
 
@@ -86,6 +92,70 @@ def test_tela_mostra_o_padrao_da_estrategia_escolhida(estrategia):
     for campo in controls.campos_da_estrategia(mod):
         varrer(campo)
     assert achados == [PADRAO[estrategia]]
+
+
+def _faixa_da_tela(mod, faixas=None):
+    """(de, até) que a tela preenche em cada campo minerável."""
+    from ui.components import controls
+    achados: dict = {}
+
+    def varrer(c):
+        i = getattr(c, "id", None)
+        if isinstance(i, dict) and i.get("type") == "opt":
+            achados.setdefault(i["p"], {})[i["k"]] = c.value
+        filhos = getattr(c, "children", None)
+        for f in (filhos if isinstance(filhos, (list, tuple)) else [filhos]):
+            if f is not None and not isinstance(f, (str, int, float)):
+                varrer(f)
+    for campo in controls.campos_da_estrategia(mod, faixas):
+        varrer(campo)
+    return {p: (v["de"], v["ate"]) for p, v in achados.items()}
+
+
+@pytest.mark.parametrize("estrategia", ESTRATEGIAS)
+def test_ate_da_mineracao_da_saida_vai_ao_ultimo_modo(estrategia):
+    """Padrão × 3 dava 0 a 0 no cruzamento e no canal (padrão 0): ligar
+    "minerar" na saída não varria modo nenhum. Campo de poucos valores
+    (categoria) abre a faixa inteira."""
+    mod = registry.carregar(estrategia)
+    assert _faixa_da_tela(mod)["saida"] == (0, MAXIMO[estrategia])
+
+
+def test_ate_dos_outros_parametros_segue_padrao_vezes_tres():
+    for estrategia in C.PARAMS:
+        mod = registry.carregar(estrategia)
+        faixa = _faixa_da_tela(mod)
+        for nome, meta in mod.params_schema.items():
+            if nome == "saida":
+                continue
+            assert faixa[nome] == (meta["min"],
+                                   min(meta["max"], meta["default"] * 3)), nome
+
+
+def test_ate_de_qualquer_inteiro_de_poucos_valores_e_o_maximo():
+    """A regra é do campo, não do nome `saida`: inteiro com até 10 valores
+    é categoria; com mais, padrão × 3 como sempre (e decimal nunca)."""
+    from types import SimpleNamespace
+
+    def meta(mn, mx, passo, padrao, tipo="int"):
+        return {"label": "x", "default": padrao, "min": mn, "max": mx,
+                "step": passo, "tipo": tipo}
+    mod = SimpleNamespace(params_schema={
+        "modo": meta(0, 4, 1, 1),              # 5 valores: categoria
+        "dez": meta(1, 10, 1, 2),              # 10 valores: ainda categoria
+        "onze": meta(0, 10, 1, 2),             # 11 valores: faixa comum
+        "passo_largo": meta(0, 900, 100, 100), # 10 valores pelo passo
+        "decimal": meta(0.0, 2.0, 0.5, 0.5, "float"),
+    })
+    assert _faixa_da_tela(mod) == {"modo": (0, 4), "dez": (1, 10),
+                                   "onze": (0, 6), "passo_largo": (0, 900),
+                                   "decimal": (0.0, 1.5)}
+
+
+def test_ate_da_mineracao_salva_prevalece():
+    mod = registry.carregar("rompimento_canal")
+    faixas = {"saida": {"on": True, "de": 0, "passo": 1, "ate": 1}}
+    assert _faixa_da_tela(mod, faixas)["saida"] == (0, 1)
 
 
 def test_mineracao_varre_a_saida_como_qualquer_inteiro():
@@ -167,17 +237,17 @@ def test_abertura_ema_no_sinal_contrario_sai_pela_entrada_contraria(barras):
     assert C.impressao(r) != C.impressao(padrao)
 
 
-def test_abertura_no_sinal_contrario_reescreve_a_saida():
+@pytest.mark.parametrize("estrategia", sorted(SEM_SAIDA))
+def test_sem_opcao_de_saida_onde_ela_seria_copia(estrategia):
     """O rompimento da abertura só sinaliza o primeiro rompimento do dia:
-    com uma posição aberta não há entrada contrária no mesmo pregão, e o
-    modo 0 dá os mesmos trades do 1. A saída, porém, é a contrária."""
-    mod = registry.carregar("rompimento_abertura")
-    b = C.barras(dias=3)
-    p = dict(C.PARAMS["rompimento_abertura"][0], saida=S.CONTRARIO)
-    s = mod.signals(b, p)
+    a opção não existe nele, e pedi-la é erro (não um modo ignorado)."""
+    mod = registry.carregar(estrategia)
+    assert "saida" not in mod.params_schema
+    with pytest.raises(ValueError):
+        base.validate(mod.params_schema, {"saida": S.CONTRARIO})
+    s = mod.signals(C.barras(dias=3), C.PARAMS[estrategia][0])
     assert s.entry_long.any() or s.entry_short.any()
-    assert s.exit_long.tolist() == s.entry_short.tolist()
-    assert s.exit_short.tolist() == s.entry_long.tolist()
+    assert not s.exit_long.any() and not s.exit_short.any() and not s.virar
 
 
 def test_virar_com_estrategia_real_vira_na_mesma_abertura(barras):
@@ -298,3 +368,70 @@ def test_virada_nunca_atravessa_o_dia():
                      out["exit_px"], out["reason"], out["mae"], out["mfe"],
                      out["points"], out["stop_fim"], out["alvo_fim"])
     assert out["side"][:nt].tolist() == [1, -1]
+
+
+@pytest.mark.parametrize("nivel,reason,px", [
+    ("stop", K.EXIT_STOP, 100_060),       # venda em 100.040, stop 20 acima
+    ("alvo", K.EXIT_TARGET, 100_000),     # alvo 40 abaixo
+])
+def test_virada_com_stop_ou_alvo_na_propria_barra_da_virada(nivel, reason, px):
+    """B entra na abertura da barra 4 e a mesma barra já toca o stop (ou o
+    alvo) dele: B sai ali mesmo, com os níveis da própria entrada."""
+    bars, s = _cenario()
+    if nivel == "stop":
+        bars["high"][4] = bars["open"][4] + 30
+    else:
+        bars["low"][4] = bars["open"][4] - 50
+    r = backtest(bars, S.aplicar(s, S.VIRAR),
+                 _perfil(stop_pontos=20, alvo_pontos=40), WIN)
+    assert _lista(r) == [(1, 4, 1, K.EXIT_SIGNAL), (4, 4, -1, reason)]
+    t = r.trades
+    assert t["entry_px"][1] == bars["open"][4] and t["exit_px"][1] == px
+    assert (t["stop_fim"][1], t["alvo_fim"][1]) == (100_060, 100_000)
+
+
+def test_virada_com_max_barras_conta_do_zero_em_b():
+    """O tempo máximo de B conta da entrada de B, não da de A: com 3
+    barras, A (barra 1) sai pela virada na 4 e B dura até a 7."""
+    bars, s = _cenario()
+    r = backtest(bars, S.aplicar(s, S.VIRAR), _perfil(max_barras=3), WIN)
+    assert _lista(r) == [(1, 4, 1, K.EXIT_SIGNAL), (4, 7, -1, K.EXIT_MAXBARS)]
+
+
+def test_max_barras_encerra_a_antes_da_virada():
+    """A atinge o tempo máximo na barra do sinal contrário: sai no
+    fechamento dela (tempo), e a venda entra zerada na abertura seguinte
+    — e também dura só 2 barras."""
+    bars, s = _cenario()
+    r = backtest(bars, S.aplicar(s, S.VIRAR), _perfil(max_barras=2), WIN)
+    assert _lista(r) == [(1, 3, 1, K.EXIT_MAXBARS), (4, 6, -1, K.EXIT_MAXBARS)]
+
+
+def _subida(n=60):
+    preco = 100_000 + 10 * np.arange(n, dtype=np.int64)
+    ts = [np.datetime64(datetime(2026, 1, 5, 9, 0), "ns")
+          + np.timedelta64(i, "m") for i in range(n)]
+    bars = {"ts": np.array(ts), "open": preco.copy(), "high": preco + 5,
+            "low": preco - 5, "close": preco.copy()}
+    s = empty_like(n)
+    s["entry_long"][20] = True
+    s["entry_short"][30] = True        # contra a subida: DI− abaixo do DI+
+    return bars, Signals(**s)
+
+
+def test_adx_barra_a_entrada_da_virada_e_sobra_so_a_saida():
+    """A régua de mercado corta a ENTRADA da virada (o kernel tem de
+    receber os sinais filtrados), nunca a saída: com o DI pedindo o lado
+    da subida, a venda da virada não entra, mas a compra sai."""
+    from core.engine.execution import adx
+    bars, s = _subida()
+    _, dip, dim = adx(bars, 5)
+    assert dip[20] > dim[20] and not dim[30] > dip[30]
+    longe = dict(entrada_fim="10:30", fechamento="10:30")
+    livre = backtest(bars, S.aplicar(s, S.VIRAR), _perfil(**longe), WIN)
+    assert _lista(livre) == [(21, 31, 1, K.EXIT_SIGNAL),
+                             (31, 59, -1, K.EXIT_CLOSE_TIME)]
+    filtro = _perfil(filtro_adx="tendencia", adx_periodo=5, adx_limiar=10,
+                     adx_filtro_di=1, **longe)
+    r = backtest(bars, S.aplicar(s, S.VIRAR), filtro, WIN)
+    assert _lista(r) == [(21, 31, 1, K.EXIT_SIGNAL)]

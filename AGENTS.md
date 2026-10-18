@@ -302,20 +302,25 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    **Próximo passo:** acompanhar a demo por 3 a 5 pregões, comparando papel ×
    demo todo dia; depois mergear no `master` e promover a estratégia de canal.
    **Opção "Saída" (18/10/2026, `strategies/saida.py`):** parâmetro `saida`
-   em toda estratégia, minerável como inteiro — 0 sinal contrário, 1 não
+   em toda estratégia menos o `rompimento_abertura` (um sinal por dia: os
+   modos dariam os mesmos trades, cópia = platô falso), minerável como
+   inteiro (o "até" da faixa já vem no último modo) — 0 sinal contrário, 1 não
    sai, 2 vira a mão (sai e entra do outro lado na mesma abertura; o motor
    aplica direção, janela, horas sem entrada e limites do dia), 3 saída
    própria (só `reversao_rsi`). O padrão de cada uma reproduz o de antes
-   (cruzamento e canal 0, RSI 3, aberturas 1; `tests/dados/saida_antes.json`)
+   (cruzamento e canal 0, RSI 3, EMA da abertura 1; `tests/dados/saida_antes.json`)
    e plano sem a chave usa o padrão — `engine.VERSAO` não subiu. Na demo, a
    virada só entra com a posição contrária fora da conta (`ordens.planejar`
-   e `Motor.executar`). Mexer na estratégia muda o `codigo_hash`: plano
+   e `Motor.executar`); passada a janela de 30 s com a contrária presa, a
+   entrada vira "perdida". Mexer na estratégia — ou num ajudante que ela
+   importa, como o `saida.py` (`codigo.ajudantes`) — muda o `codigo_hash`: plano
    gravado antes acusa "código mudou desde o plano". Mudança que NÃO muda
    os trades se reassina sem regravar o plano:
    `scripts/reassinar_codigo.py --de <commit antigo> [--aplicar]` roda o
    backtest de cada plano com o código antigo e com o novo e só troca o
    hash (do plano e dos `papel_pregoes` dele) com trades idênticos; faz
-   backup antes. Os planos #5 e #6 foram reassinados assim em 18/10/2026
+   backup antes; o hash gravado é conferido também pela receita de hash do
+   commit antigo. Os planos #5 e #6 foram reassinados assim em 18/10/2026
    (backup em `C:\Users\mrRobot\Documents\Neturna\backups\2026-10-18-antes-resign-hash`).
    Ideias para depois: recursos com LLM fora do caminho da ordem; aba Conta.
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.

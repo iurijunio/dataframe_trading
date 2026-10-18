@@ -106,3 +106,41 @@ def test_planejar_nao_pede_entrada_com_a_saida_da_anterior_em_espera(tmp_path):
     acoes = planejar({4: B}, True, foto, m.diario(DIA),
                      TB + timedelta(seconds=1, milliseconds=500), 5, 60.0)
     assert [a.tipo for a in acoes] == []
+
+
+# ------------------------------------------- sem virada: contrária na conta
+# A (compra) segue na corretora — a saída dela foi tentada há meio segundo
+# e espera o intervalo entre tentativas — quando o papel pede B (venda) como
+# operação nova. A regra da virada vale igual: B não entra com A na conta.
+
+def _tipos(m, mt5, agora):
+    foto = K.fotografar(mt5, datetime(2026, 10, 9))
+    return [a.tipo for a in planejar({4: B}, True, foto, m.diario(DIA), agora,
+                                     5, 60.0)]
+
+
+def _saida_em_espera(m, ta, agora):
+    m.diario(DIA).registrar("saida_enviando",
+                            quando=agora - timedelta(milliseconds=500),
+                            ligacao_id=4, ticket=ta)
+
+
+def test_contraria_na_conta_segura_a_entrada_ate_ela_sair(tmp_path):
+    mt5, m, ta = _comprado(tmp_path)
+    agora = TB + timedelta(seconds=1)
+    _saida_em_espera(m, ta, agora)
+    assert _tipos(m, mt5, agora) == []           # nem sai de novo, nem entra
+    mt5.stopar(ta)                               # A sai pelo stop na corretora
+    assert "entrar" in _tipos(m, mt5, TB + timedelta(seconds=10))
+
+
+def test_contraria_que_nao_sai_deixa_a_entrada_perdida_apos_30_s(tmp_path):
+    mt5, m, ta = _comprado(tmp_path)
+    agora = TB + timedelta(seconds=29)
+    _saida_em_espera(m, ta, agora)
+    assert _tipos(m, mt5, agora) == []
+    agora = TB + timedelta(seconds=31)
+    _saida_em_espera(m, ta, agora)
+    # passou a janela: B se perde mesmo com A presa na conta, em vez de
+    # ficar "segurada" para sempre e entrar fora de hora quando A sair
+    assert _tipos(m, mt5, agora) == ["perdida"]

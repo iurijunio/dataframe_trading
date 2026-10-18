@@ -318,14 +318,15 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
             acoes += _orfa_na_parcial(candidatas, d, diario, lig, agora_srv, sair)
         if pend or parcial:
             continue          # ordem em trânsito / sem histórico: nada de entrar
-        if any(p.lado == -d.lado and p.ticket not in saindo for p in pos):
-            # virada de mão: a posição contrária segue na conta sem saída
-            # pedida NESTA volta (em trânsito, ou no intervalo entre
-            # tentativas). Entrar agora deixaria compra e venda vivas na conta
-            # hedging; a entrada espera a saída — a janela de 30 s sobra, a
-            # saída leva menos de 1 s. A anterior do MESMO lado (caso 9) segue
-            # a regra de antes: sai e a nova entra na mesma volta.
-            continue
+        # virada de mão (ou qualquer contrária da ligação): a posição
+        # contrária segue na conta sem saída pedida NESTA volta (em trânsito,
+        # ou no intervalo entre tentativas). Entrar agora deixaria compra e
+        # venda vivas na conta hedging; a entrada espera a saída — a janela
+        # de 30 s sobra, a saída leva menos de 1 s. Só a ENTRADA espera: a
+        # janela segue valendo, e passou dela a operação é "perdida" mesmo
+        # com a contrária presa. A anterior do MESMO lado (caso 9) segue a
+        # regra de antes: sai e a nova entra na mesma volta.
+        contraria = any(p.lado == -d.lado and p.ticket not in saindo for p in pos)
 
         # a corretora não tem a posição desta operação
         ja = ticket or _executou(foto, diario, lig, ts)
@@ -374,6 +375,8 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
             if any(o["ligacao_id"] == lig and o["quando"] >= ts
                    for o in foto.historico_ordens):
                 continue      # a ordem existe: o desfecho aparece nas próximas voltas
+        if contraria:
+            continue
         if estavel and _pode(diario.ultima_tentativa("enviando", lig=lig, entry_ts=ts),
                              agora_srv):
             acoes.append(Acao("entrar", lig, desejado=d))

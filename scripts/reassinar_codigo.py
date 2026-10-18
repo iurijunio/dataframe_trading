@@ -96,18 +96,48 @@ def planos_afetados(banco: Path, pasta_antiga: Path,
             "WHERE p.codigo_hash IS NOT NULL ORDER BY p.plano_id").fetchall()
     finally:
         con.close()
+    proprios = hashes_do_codigo(pasta_antiga, sorted({e for _, e, _ in linhas}))
     out = []
     for pid, estrategia, gravado in linhas:
-        antigo = codigo.hash_estrategia(estrategia, pasta_antiga / "strategies")
+        # o código antigo pela função de HOJE e pela dele: a impressão
+        # também muda de receita (ex.: os ajudantes como saida.py passaram
+        # a entrar), e o gravado foi calculado pela receita do commit
+        antigos = {codigo.hash_estrategia(estrategia, pasta_antiga / "strategies"),
+                   proprios.get(estrategia)} - {None}
         novo = codigo.hash_estrategia(estrategia, pasta_nova / "strategies")
         if gravado == novo:
             continue
-        situacao = ("comparar" if gravado == antigo and novo
+        bate = gravado in antigos
+        situacao = ("comparar" if bate and novo
                     else "o hash gravado não é o do código --de")
         out.append({"plano_id": int(pid), "estrategia": estrategia,
-                    "hash_gravado": gravado, "hash_antigo": antigo,
+                    "hash_gravado": gravado,
+                    "hash_antigo": gravado if bate else None,
                     "hash_novo": novo, "situacao": situacao})
     return out
+
+
+_HASH_NO_CODIGO = (
+    "import json, sys\n"
+    "from pathlib import Path\n"
+    "raiz = Path(sys.argv[1]).resolve()\n"
+    "sys.path.insert(0, str(raiz))\n"
+    "from core import codigo\n"
+    "print(json.dumps({e: codigo.hash_estrategia(e, raiz / 'strategies')\n"
+    "                  for e in json.loads(sys.argv[2])}))\n")
+
+
+def hashes_do_codigo(raiz: Path, estrategias: list[str]) -> dict:
+    """O hash de cada estratégia calculado pelo `core/codigo.py` da própria
+    `raiz` — num processo à parte, pelo mesmo motivo do trabalhador: dois
+    `core` não convivem no mesmo interpretador. Sem `core/codigo.py` na
+    raiz (código anterior à impressão), nada."""
+    if not estrategias or not (Path(raiz) / "core" / "codigo.py").exists():
+        return {}
+    r = subprocess.run([sys.executable, "-I", "-c", _HASH_NO_CODIGO,
+                        str(raiz), json.dumps(estrategias)],
+                       capture_output=True, text=True, check=True)
+    return json.loads(r.stdout.strip().splitlines()[-1])
 
 
 def rodar(raiz: Path, banco: Path, ids: list[int], saida: Path) -> dict:

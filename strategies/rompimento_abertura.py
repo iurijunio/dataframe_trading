@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import saida as opcao_saida
 from .base import Signals
 
 name = "rompimento_abertura"
@@ -33,7 +32,6 @@ params_schema = {
     "filtro_amplitude": {"label": "Amplitude mínima da abertura (pontos)",
                          "default": 0, "min": 0, "max": 2000, "step": 50,
                          "tipo": "int"},
-    **opcao_saida.parametro(opcao_saida.NAO_SAIR),
 }
 
 TICK = 5  # pontos; o WIN anda de 5 em 5
@@ -91,9 +89,9 @@ def signals(bars: dict, params: dict) -> Signals:
     entrada_baixo = rompe_baixo & primeiro_do_dia
 
     vazio = np.zeros(n, dtype=np.bool_)
-    return opcao_saida.aplicar(Signals(
+    return Signals(
         entry_long=entrada_cima,
         entry_short=entrada_baixo,
         exit_long=vazio,
         exit_short=vazio,
-    ), opcao_saida.modo(params, params_schema))
+    )

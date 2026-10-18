@@ -7,10 +7,58 @@ editado com o plano #4 ativo, 30/09/2026).
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 from pathlib import Path
 
 from . import db_manager as db
+
+
+def _importados(arquivo: Path) -> set[str]:
+    """Módulos da pasta `strategies` que o arquivo importa (`from . import
+    x`, `from .x import y`, `from strategies import x`, `import
+    strategies.x`)."""
+    try:
+        arvore = ast.parse(arquivo.read_bytes())
+    except (SyntaxError, ValueError):
+        # arquivo quebrado: o texto dele já muda a impressão sozinho
+        return set()
+    nomes: set[str] = set()
+    for no in ast.walk(arvore):
+        if isinstance(no, ast.ImportFrom):
+            if no.level == 1 and no.module is None:
+                nomes |= {a.name for a in no.names}
+            elif no.level == 1:
+                nomes.add(no.module.split(".")[0])
+            elif no.level == 0 and no.module == "strategies":
+                nomes |= {a.name for a in no.names}
+            elif no.level == 0 and (no.module or "").startswith("strategies."):
+                nomes.add(no.module.split(".")[1])
+        elif isinstance(no, ast.Import):
+            for a in no.names:
+                if a.name.startswith("strategies."):
+                    nomes.add(a.name.split(".")[1])
+    return nomes
+
+
+def ajudantes(estrategia: str, pasta: Path | None = None) -> list[str]:
+    """Os módulos compartilhados que a estratégia usa (direto ou pelos
+    próprios ajudantes), em ordem alfabética — fora `base`, que entra
+    sempre, e ela mesma."""
+    pasta = Path(pasta) if pasta else db.ROOT / "strategies"
+    vistos: set[str] = set()
+    fila = [estrategia]
+    while fila:
+        nome = fila.pop()
+        arquivo = pasta / f"{nome}.py"
+        if not arquivo.exists():
+            continue
+        for x in _importados(arquivo):
+            if x not in vistos and x not in ("base", estrategia) \
+                    and (pasta / f"{x}.py").exists():
+                vistos.add(x)
+                fila.append(x)
+    return sorted(vistos)
 
 
 def hash_estrategia(estrategia: str, pasta: Path | None = None) -> str | None:
@@ -20,8 +68,13 @@ def hash_estrategia(estrategia: str, pasta: Path | None = None) -> str | None:
         return None
     h = hashlib.sha256()
     # base.py entra junto: é o contrato de toda estratégia, e mudar ele
-    # muda o sinal de todas
-    for parte in (pasta / "base.py", arquivo):
+    # muda o sinal de todas. Os ajudantes que ela importa (ex.: saida.py,
+    # que decide a saída) também: mudar um muda os trades dela. Estratégia
+    # sem ajudante fica com o hash de antes de eles entrarem.
+    partes = [pasta / "base.py",
+              *(pasta / f"{x}.py" for x in ajudantes(estrategia, pasta)),
+              arquivo]
+    for parte in partes:
         if parte.exists():
             # o git troca LF por CRLF nesta máquina; sem normalizar, todo
             # checkout acusaria "código mudou"

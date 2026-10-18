@@ -38,6 +38,68 @@ def test_mudar_base_py_muda_a_impressao(tmp_path):
     assert a != b
 
 
+def _com_ajudante(pasta, corpo, ajudante=b"A1\n", outro=b"O1\n"):
+    p = _pasta(pasta, corpo=corpo)
+    (p / "saida.py").write_bytes(ajudante)
+    (p / "outro.py").write_bytes(outro)
+    return p
+
+
+def test_ajudante_importado_entra_na_impressao(tmp_path):
+    """`strategies/saida.py` decide a saída de quase toda estratégia: mudar
+    ele muda os trades, e o plano tem de saber."""
+    for k, corpo in enumerate((b"from . import saida as s\n",
+                               b"from .saida import aplicar\n",
+                               b"from strategies import saida\n",
+                               b"from strategies.saida import aplicar\n",
+                               b"import strategies.saida\n")):
+        a = codigo.hash_estrategia("x", _com_ajudante(tmp_path / f"a{k}", corpo))
+        b = codigo.hash_estrategia("x", _com_ajudante(tmp_path / f"b{k}", corpo,
+                                                      ajudante=b"A2\n"))
+        assert a != b, corpo
+
+
+def test_ajudante_nao_importado_fica_fora(tmp_path):
+    corpo = b"from . import saida\n"
+    a = codigo.hash_estrategia("x", _com_ajudante(tmp_path / "a", corpo))
+    b = codigo.hash_estrategia("x", _com_ajudante(tmp_path / "b", corpo,
+                                                  outro=b"O2\n"))
+    assert a == b
+
+
+def test_ajudante_do_ajudante_tambem_entra(tmp_path):
+    corpo = b"from . import saida\n"
+    a = _com_ajudante(tmp_path / "a", corpo, ajudante=b"from . import outro\n")
+    b = _com_ajudante(tmp_path / "b", corpo, ajudante=b"from . import outro\n",
+                      outro=b"O2\n")
+    assert codigo.hash_estrategia("x", a) != codigo.hash_estrategia("x", b)
+
+
+def test_ordem_dos_ajudantes_e_fixa(tmp_path):
+    a = _com_ajudante(tmp_path / "a", b"from . import saida, outro\n")
+    b = _com_ajudante(tmp_path / "b", b"from . import outro\nfrom . import saida\n")
+    assert codigo.ajudantes("x", a) == codigo.ajudantes("x", b) == ["outro", "saida"]
+
+
+def test_sem_ajudante_a_impressao_e_a_de_antes(tmp_path):
+    """Estratégia que só importa base.py mantém o hash de sempre: plano
+    gravado dela não acusa "código mudou" à toa."""
+    import hashlib
+    corpo = b"from .base import Signals\n"
+    h = hashlib.sha256()
+    for parte in (b"BASE\n", corpo):
+        h.update(parte)
+        h.update(b"\0")
+    assert codigo.hash_estrategia("x", _pasta(tmp_path, corpo=corpo)) == h.hexdigest()
+
+
+def test_estrategias_do_projeto_e_seus_ajudantes():
+    for e in ("setup_cruzamento", "rompimento_canal", "reversao_rsi",
+              "rompimento_ema_abertura"):
+        assert codigo.ajudantes(e) == ["saida"], e
+    assert codigo.ajudantes("rompimento_abertura") == []
+
+
 def test_estrategia_inexistente_devolve_none(tmp_path):
     assert codigo.hash_estrategia("nao_existe", _pasta(tmp_path)) is None
 
