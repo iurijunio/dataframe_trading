@@ -226,6 +226,9 @@ _NAO_SAO_JANELA = {
     # strategies/rompimento_abertura.py (arquivo do usuário): conta as
     # barras desde a abertura do PRÓPRIO dia, que o papel sempre tem
     "barras_abertura": "barras do próprio dia, a partir da abertura",
+    # strategies/saida.py: a posição fecha todo dia, então a virada não
+    # carrega estado de um pregão para o outro
+    "saida": "modo de saída (0 a 3), não quantidade de barras",
 }
 
 

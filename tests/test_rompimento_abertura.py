@@ -139,6 +139,6 @@ def test_a_estrategia_nao_decide_stop_nem_alvo_nem_saida():
 def test_contrato_da_estrategia():
     assert R.name and R.label
     assert set(R.params_schema) == {"barras_abertura", "folga_ticks",
-                                    "filtro_amplitude"}
+                                    "filtro_amplitude", "saida"}
     for meta in R.params_schema.values():
         assert {"label", "default", "min", "max", "step", "tipo"} <= set(meta)

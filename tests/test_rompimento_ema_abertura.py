@@ -76,7 +76,8 @@ def test_nao_vende_se_faltar_condicao_de_reteste_da_media_curta():
 
 
 def test_parametros_sao_os_tres_gatilhos_mineraveis():
-    assert set(R.params_schema) == {"ema_curta", "ema_longa", "distancia_abertura"}
+    assert set(R.params_schema) == {"ema_curta", "ema_longa", "distancia_abertura",
+                                    "saida"}
     for meta in R.params_schema.values():
         assert {"label", "default", "min", "max", "step", "tipo"} <= set(meta)
 

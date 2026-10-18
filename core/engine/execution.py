@@ -235,6 +235,7 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
         exit_short=expand_signal(s.exit_short, fim, n),
         sl_points=nivel(s.sl_points),
         tp_points=nivel(s.tp_points),
+        virar=bool(getattr(s, "virar", False)),
     )
     return backtest(bars, sig, profile, instrument, bars_tf, fechada)
 
@@ -526,6 +527,7 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         sl, tp, be, step_t, step_d, trail,
         profile.direcao in ("ambas", "compra"),
         profile.direcao in ("ambas", "venda"),
+        bool(getattr(signals, "virar", False)),
         int(profile.max_trades_dia or 0), int(profile.max_prejuizos_dia or 0),
         stop_dia, meta_dia,
         int(profile.max_barras or 0), int(profile.slippage_ticks * tick),

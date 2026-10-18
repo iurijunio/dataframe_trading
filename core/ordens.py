@@ -253,10 +253,13 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
                 acoes.append(Acao("cancelar", lig, ticket=o["ticket"],
                                   motivo="ordem pendente"))
 
+        saindo: set = set()
+
         def sair(p, motivo):
             if p.ticket not in em_saida and _pode(
                     diario.ultima_tentativa("saida_enviando", ticket=p.ticket), agora_srv):
                 acoes.append(Acao("sair", lig, ticket=p.ticket, posicao=p, motivo=motivo))
+                saindo.add(p.ticket)
 
         vivos = {p.ticket for p in pos}
 
@@ -315,6 +318,14 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
             acoes += _orfa_na_parcial(candidatas, d, diario, lig, agora_srv, sair)
         if pend or parcial:
             continue          # ordem em trânsito / sem histórico: nada de entrar
+        if any(p.lado == -d.lado and p.ticket not in saindo for p in pos):
+            # virada de mão: a posição contrária segue na conta sem saída
+            # pedida NESTA volta (em trânsito, ou no intervalo entre
+            # tentativas). Entrar agora deixaria compra e venda vivas na conta
+            # hedging; a entrada espera a saída — a janela de 30 s sobra, a
+            # saída leva menos de 1 s. A anterior do MESMO lado (caso 9) segue
+            # a regra de antes: sai e a nova entra na mesma volta.
+            continue
 
         # a corretora não tem a posição desta operação
         ja = ticket or _executou(foto, diario, lig, ts)
@@ -1195,7 +1206,14 @@ class Motor:
         ctx = dict(foto=foto, agora=agora, simbolo=simbolo,
                    pode_entrar=pode_entrar, envio=envio, conta_id=conta_id)
         erros = []
+        # ligação cuja saída CONTRÁRIA desta volta não se confirmou: a
+        # entrada dela espera (virada de mão — a anterior pode seguir aberta)
+        saida_pendente: set = set()
+        lado_entrada = {a.ligacao_id: a.desejado.lado for a in acoes
+                        if a.tipo == "entrar"}
         for a in sorted(acoes, key=lambda a: _ORDEM_ACOES[a.tipo]):
+            if a.tipo == "entrar" and a.ligacao_id in saida_pendente:
+                continue
             # deviation é da ligação (derrapagem do plano dela + folga); sem
             # ela no dicionário, a folga mínima de 2 ticks
             d_a = desvio.get(a.ligacao_id, 2 * self.tick) if isinstance(desvio, dict) \
@@ -1203,8 +1221,13 @@ class Motor:
             # uma ação que estoura não pode impedir as outras (a saída de uma
             # ligação não espera a entrada da outra); o erro sobe no fim
             try:
-                getattr(self, _METODO.get(a.tipo, f"_{a.tipo}"))(mt5, a, desvio=d_a, **ctx)
+                r = getattr(self, _METODO.get(a.tipo, f"_{a.tipo}"))(mt5, a, desvio=d_a,
+                                                                      **ctx)
+                if a.tipo == "sair" and r not in (K.OK, K.JA_SAIU)                         and a.posicao.lado == -lado_entrada.get(a.ligacao_id, 0):
+                    saida_pendente.add(a.ligacao_id)
             except Exception as erro:
+                if a.tipo == "sair" and a.posicao is not None                         and a.posicao.lado == -lado_entrada.get(a.ligacao_id, 0):
+                    saida_pendente.add(a.ligacao_id)
                 log.exception("ação %s da ligação %s falhou", a.tipo, a.ligacao_id)
                 erros.append(erro)
         if erros:
@@ -1475,11 +1498,13 @@ class Motor:
     def _sair(self, mt5, a, *, agora, desvio, **_):
         p = a.posicao
         # o contrato da POSIÇÃO, não o do dia (a de ontem pode ser outro)
-        self._sair_ticket(mt5, a.ligacao_id, a.ticket, p.simbolo, p.lado, p.volume,
-                          a.motivo, agora, desvio)
+        return self._sair_ticket(mt5, a.ligacao_id, a.ticket, p.simbolo, p.lado, p.volume,
+                                 a.motivo, agora, desvio)
 
     def _sair_ticket(self, mt5, lig, ticket, simbolo, lado, volume, motivo, agora,
                      desvio):
+        """Devolve a classe da resposta quando a posição deixou a conta (OK,
+        ou já encerrada); `None` quando ela pode seguir aberta."""
         if not self._pode_enviar("sair", ticket):
             return
         dia = self.diario(agora.date())
@@ -1523,7 +1548,7 @@ class Motor:
                 # negócio de saída quando ele aparecer.
                 dia.registrar("saida_recusada", quando=quando, retcode=rc,
                               motivo="já encerrada na corretora", **feito)
-                return
+                return classe
             elif classe in (K.SAIDA_EM_TRANSITO, K.VOLUME_FECHAMENTO):
                 pass          # a próxima volta relê a posição e as ordens
             elif classe == K.INCERTA:
@@ -1541,7 +1566,7 @@ class Motor:
         if classe == K.OK:
             self._fechar(f"saida_pendente:{ticket}", quando)
             self._fechar(f"saida_erro:{ticket}", quando)
-            return
+            return classe
         # nunca desiste: passou de 2 min chama, e a próxima volta tenta de novo
         desde = dia.saida_desde(ticket)
         if desde is not None and _seg(quando, desde) > PENDENTE_CHAMA_S:

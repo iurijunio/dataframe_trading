@@ -29,7 +29,11 @@ backtest honesto de um bonito):
    congelados no valor que tinham na barra de entrada. E isso que permite
    stop em ATR sem o kernel saber o que e ATR.
 
-7. O kernel devolve trades em PONTOS. Dinheiro, contratos e capital entram
+7. Posicionado, entrada nova so com `virar` (virar a mao): a entrada
+   contraria sai e entra na mesma abertura. Sem ele, entrada com posicao
+   aberta e ignorada.
+
+8. O kernel devolve trades em PONTOS. Dinheiro, contratos e capital entram
    depois, em metrics.py.
 """
 
@@ -90,7 +94,7 @@ def run(
     in_entry_window, arm_window, is_close_time, day_id,
     entry_long, entry_short, exit_long, exit_short,
     sl_points, tp_points, be_trigger, step_trigger, step_dist, trail_dist,
-    allow_long, allow_short,
+    allow_long, allow_short, virar,
     max_trades_day, max_losses_day, daily_stop, daily_target,
     max_bars, slippage,
     o_entry_i, o_exit_i, o_side, o_entry_px, o_exit_px,
@@ -321,6 +325,17 @@ def run(
         if pos != 0:
             if (pos == 1 and exit_long[i]) or (pos == -1 and exit_short[i]):
                 pend_exit = True
+                # virar a mao: a entrada contraria tambem fica pendente, sob
+                # as MESMAS travas da entrada zerada. Os limites do dia ficam
+                # para o passo 2 da barra seguinte, que ja ve o trade que a
+                # saida acabou de fechar - barrada ali, sobra so a saida.
+                if (virar and arm_window[i] and blocked == 0 and i + 1 < n
+                        and in_entry_window[i + 1]
+                        and day_id[i + 1] == day_id[i]):
+                    if pos == 1 and entry_short[i] and allow_short:
+                        pend_entry = -1
+                    elif pos == -1 and entry_long[i] and allow_long:
+                        pend_entry = 1
         elif (arm_window[i] and blocked == 0 and i + 1 < n
               and in_entry_window[i + 1] and day_id[i + 1] == day_id[i]):
             # A ordem a mercado entra na barra seguinte - que, num sinal

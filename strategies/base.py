@@ -36,6 +36,10 @@ class Signals:
     exit_short: np.ndarray
     sl_points: int | np.ndarray = 0
     tp_points: int | np.ndarray = 0
+    # virar a mão (`strategies/saida.py`): posicionado, a entrada contrária
+    # sai E entra do outro lado na mesma abertura. Desligado, o motor ignora
+    # entrada com posição aberta, como sempre fez.
+    virar: bool = False
 
     def __post_init__(self):
         n = len(self.entry_long)

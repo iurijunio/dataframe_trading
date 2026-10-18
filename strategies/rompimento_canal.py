@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from . import saida as opcao_saida
 from .base import Signals
 
 name = "rompimento_canal"
@@ -33,6 +34,7 @@ params_schema = {
     "filtro_amplitude": {"label": "Amplitude mínima do canal (pontos)",
                          "default": 0, "min": 0, "max": 3000, "step": 50,
                          "tipo": "int"},
+    **opcao_saida.parametro(opcao_saida.CONTRARIO),
 }
 
 TICK = 5  # pontos; o WIN anda de 5 em 5
@@ -81,9 +83,9 @@ def signals(bars: dict, params: dict) -> Signals:
     entrada_cima = primeiro(rompe_cima)
     entrada_baixo = primeiro(rompe_baixo)
 
-    return Signals(
+    return opcao_saida.aplicar(Signals(
         entry_long=entrada_cima,
         entry_short=entrada_baixo,
         exit_long=entrada_baixo,    # rompimento contrário encerra
         exit_short=entrada_cima,
-    )
+    ), opcao_saida.modo(params, params_schema))
