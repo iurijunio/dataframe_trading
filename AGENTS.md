@@ -310,7 +310,13 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    e plano sem a chave usa o padrão — `engine.VERSAO` não subiu. Na demo, a
    virada só entra com a posição contrária fora da conta (`ordens.planejar`
    e `Motor.executar`). Mexer na estratégia muda o `codigo_hash`: plano
-   gravado antes acusa "código mudou desde o plano".
+   gravado antes acusa "código mudou desde o plano". Mudança que NÃO muda
+   os trades se reassina sem regravar o plano:
+   `scripts/reassinar_codigo.py --de <commit antigo> [--aplicar]` roda o
+   backtest de cada plano com o código antigo e com o novo e só troca o
+   hash (do plano e dos `papel_pregoes` dele) com trades idênticos; faz
+   backup antes. Os planos #5 e #6 foram reassinados assim em 18/10/2026
+   (backup em `C:\Users\mrRobot\Documents\Neturna\backups\2026-10-18-antes-resign-hash`).
    Ideias para depois: recursos com LLM fora do caminho da ordem; aba Conta.
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
 
