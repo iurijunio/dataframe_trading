@@ -714,11 +714,14 @@ def ligar_envio(conta_id: int, ligado: bool, *, tentativas: int = 40,
                           ligado=False)
     with db.connect_write(tentativas=tentativas, espera=espera) as con,             db.transacao(con):
         r = con.execute("SELECT limite_perda_dia, coalesce(envio_ligado, "
-                        "false), arquivada_em FROM contas WHERE conta_id = ?",
+                        "false), arquivada_em, tipo FROM contas WHERE conta_id = ?",
                         [conta_id]).fetchone()
         if r is None:
             raise ValueError(f"conta #{conta_id} não existe")
-        limite, atual, arquivada = r
+        limite, atual, arquivada, tipo = r
+        if ligado and tipo == "real":
+            # até a parte 5 (processo próprio da conta real) existir
+            raise ValueError("envio na conta real ainda não disponível")
         if ligado and arquivada is not None:
             raise ValueError("a conta está arquivada")
         if ligado and not (limite or 0) > 0:

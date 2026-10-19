@@ -255,6 +255,16 @@ def test_ligar_envio_sem_limite_recusa(banco):
     assert _comandos() == []
 
 
+def test_ligar_envio_na_conta_real_recusa_ate_a_parte_5(banco):
+    conta = AV.criar_conta("real", "real", 500.0)
+    with pytest.raises(ValueError, match="conta real ainda não disponível"):
+        AV.ligar_envio(conta, True)
+    assert not _envio(conta)
+    assert _comandos() == []
+    AV.ligar_envio(conta, False)          # desligar sempre pode
+    assert not _envio(conta)
+
+
 def test_ligar_envio_com_limite_grava_evento_e_comando(banco):
     conta = AV.criar_conta("c", "demo", 500.0)
     AV.ligar_envio(conta, True)

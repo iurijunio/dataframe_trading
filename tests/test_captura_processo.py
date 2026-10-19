@@ -1095,3 +1095,15 @@ def test_correcao_posterior_a_reconferencia_nao_reabre_o_papel(base, ligacao, mo
     assert _pregao_papel(ligacao, ontem)[0] == "conferido"
     with db.connect(read_only=True) as con:
         assert [d["dia"] for d in papel.divergencias(con)] == [ontem]
+
+
+def test_captura_so_abre_o_terminal_da_conta_demo(base):
+    # com a conta real cadastrada por último, a captura NUNCA abre o
+    # terminal dela (bug achado na revisão da parte 5, 19/10/2026)
+    import captura as cap
+    from core import ao_vivo as AV
+    AV.criar_conta("demo", "demo", 500.0, login=1, servidor="S-DEMO",
+                   terminal=r"C:\demo\terminal64.exe")
+    AV.criar_conta("real", "real", 500.0, login=2, servidor="S-REAL",
+                   terminal=r"C:\real\terminal64.exe")
+    assert cap._terminal_da_conta() == r"C:\demo\terminal64.exe"

@@ -1493,8 +1493,11 @@ def _terminal_da_conta() -> str | None:
     try:
         with db.connect(read_only=True, tentativas=4) as con:
             linha = con.execute(
+                # só a conta DEMO: a captura nunca abre o terminal da conta
+                # real (a real tem processo próprio — parte 5)
                 "SELECT terminal FROM contas WHERE arquivada_em IS NULL "
-                "AND terminal IS NOT NULL ORDER BY conta_id DESC LIMIT 1").fetchone()
+                "AND terminal IS NOT NULL AND tipo = 'demo' "
+                "ORDER BY conta_id DESC LIMIT 1").fetchone()
     except Exception:
         return None
     return linha[0] if linha else None
