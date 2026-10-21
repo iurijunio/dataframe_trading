@@ -257,7 +257,7 @@ class Diario:
     def espelhar(self, con) -> int:
         """Leva ao banco o que ainda não está lá; devolve quantos. Chamado
         com a conexão de escrita já aberta pela captura."""
-        prefixo = f"{self.origem}-{self.dia:%Y%m%d}-%"
+        prefixo = f"%-{self.dia:%Y%m%d}-%"
         ja = {r[0] for r in con.execute(
             "SELECT evento_id FROM ordens_eventos WHERE evento_id LIKE ?",
             [prefixo]).fetchall()}
@@ -265,13 +265,16 @@ class Diario:
         inseridos = 0
         for e in novos:
             extra = {k: v for k, v in e.items() if k not in _COLUNAS}
+            # a origem é o prefixo do próprio evento_id (demo ou real), não a
+            # do Diario: o arquivo do dia pode trazer eventos de qualquer uma
+            origem = str(e["evento_id"]).partition("-")[0] or self.origem
             try:
                 # uma linha ruim não pode impedir as outras de chegar ao banco
                 r = con.execute(
-                    f"INSERT INTO ordens_eventos ({', '.join(_COLUNAS)}, dados) "
-                    f"VALUES ({', '.join('?' * (len(_COLUNAS) + 1))}) "
+                    f"INSERT INTO ordens_eventos ({', '.join(_COLUNAS)}, origem, dados) "
+                    f"VALUES ({', '.join('?' * (len(_COLUNAS) + 2))}) "
                     "ON CONFLICT (evento_id) DO NOTHING",
-                    [e.get(c) for c in _COLUNAS]
+                    [e.get(c) for c in _COLUNAS] + [origem]
                     + [json.dumps(_para_json(extra), ensure_ascii=False, default=str)
                        if extra else None]).fetchone()
                 inseridos += int(r[0]) if r else 0
@@ -284,23 +287,26 @@ def espelhar_pendentes(pasta, con, dias: int = 5, origem: str = "demo",
                        hoje: date | None = None) -> int:
     """Espelha no banco os arquivos dos últimos `dias` dias da pasta.
 
+    `pasta` é uma pasta ou uma lista de pastas (todas com a mesma `origem`).
     Chamada na subida, na virada do dia e na escrita da conferência: os
     eventos depois do último candle só chegam ao banco por aqui. `hoje` só
     existe para o teste fixar o relógio. Arquivos de nome fora de
     AAAA-MM-DD.jsonl são ignorados."""
-    pasta = Path(pasta)
-    if not pasta.is_dir():
-        return 0
+    pastas = [pasta] if isinstance(pasta, (str, Path)) else list(pasta)
     corte = (hoje or date.today()) - timedelta(days=dias - 1)
     total = 0
-    for arq in sorted(pasta.glob("*.jsonl")):
-        try:
-            dia = date.fromisoformat(arq.stem)
-        except ValueError:
+    for pasta in pastas:
+        pasta = Path(pasta)
+        if not pasta.is_dir():
             continue
-        if dia >= corte:
+        for arq in sorted(pasta.glob("*.jsonl")):
             try:
-                total += Diario(pasta, dia, origem).espelhar(con)
-            except Exception:
-                log.exception("espelho do dia %s falhou", dia)
+                dia = date.fromisoformat(arq.stem)
+            except ValueError:
+                continue
+            if dia >= corte:
+                try:
+                    total += Diario(pasta, dia, origem).espelhar(con)
+                except Exception:
+                    log.exception("espelho do dia %s falhou", dia)
     return total

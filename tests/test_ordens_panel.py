@@ -546,8 +546,8 @@ def _evento(con, n, quando, tipo, lig, entry=None, *, dia=DIA, **campos):
     con.execute(
         "INSERT INTO ordens_eventos (evento_id, quando, tipo, conta_id, "
         "ligacao_id, entry_ts, lado, contratos, simbolo, ticket, retcode, "
-        "preco_papel, preco, atraso_ms, tentativa, motivo, dados) "
-        "VALUES (?,?,?,3,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "preco_papel, preco, atraso_ms, tentativa, motivo, dados, origem) "
+        "VALUES (?,?,?,3,?,?,?,?,?,?,?,?,?,?,?,?,?,'demo')",
         [f"demo-{dia:%Y%m%d}-{n:06d}", _ts(quando, dia), tipo, lig,
          None if entry is None else _ts(entry, dia),
          *[campos.get(c) for c in colunas],
@@ -945,9 +945,9 @@ def test_comparativo_de_dia_passado_vem_do_cache(demo, monkeypatch):
     chamadas = []
     original = PL._demo_do_dia
 
-    def contando(con, pid, d):
+    def contando(con, pid, d, origem="demo"):
         chamadas.append(d)
-        return original(con, pid, d)
+        return original(con, pid, d, origem)
     monkeypatch.setattr(PL, "_demo_do_dia", contando)
     depois = date(2026, 10, 15)
     a = _ler(lambda con: PL.comparativo_demo(con, 1, dia=depois))

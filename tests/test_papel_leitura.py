@@ -673,8 +673,8 @@ def _ev_demo(con, n, quando, tipo, lig, entry=None, **campos):
     con.execute(
         "INSERT INTO ordens_eventos (evento_id, quando, tipo, conta_id, "
         "ligacao_id, entry_ts, lado, contratos, simbolo, ticket, retcode, "
-        "preco_papel, preco, atraso_ms, tentativa, motivo, dados) "
-        "VALUES (?,?,?,10,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "preco_papel, preco, atraso_ms, tentativa, motivo, dados, origem) "
+        "VALUES (?,?,?,10,?,?,?,?,?,?,?,?,?,?,?,?,?,'demo')",
         [f"demo-{n:06d}", datetime.fromisoformat(quando), tipo, lig,
          None if entry is None else datetime.fromisoformat(entry),
          *[campos.get(c) for c in colunas],
@@ -900,3 +900,29 @@ def test_saida_normal_mantem_derrapagem():
                                  lig, 5, 0.2)
     assert linha["derrapagem_saida"] == 0
     assert linha["nota"] is None
+
+
+def test_leitores_por_origem_nao_misturam_demo_e_real(cenario_demo):
+    # um evento da real no mesmo pregão e na mesma ligação da demo: cada
+    # origem só enxerga os seus (a tela da demo nunca mostra o da real)
+    with _ler() as con:
+        demo_antes = L.comparativo_demo(con, 5, dia=HOJE_DEMO, hoje=HOJE_DEMO)
+    with db.connect_write() as con:
+        con.execute(
+            "INSERT INTO ordens_eventos (evento_id, quando, tipo, conta_id, "
+            "ligacao_id, entry_ts, lado, contratos, simbolo, preco_papel, preco, "
+            "origem) VALUES ('real-20261016-000001', ?, 'enviando', 10, 501, ?, "
+            "1, 1, 'WIN$N', 130000, 130000, 'real')",
+            [datetime(2026, 10, 16, 10, 0, 0), datetime(2026, 10, 16, 10, 0, 0)])
+    with _ler() as con:
+        so_real = L.eventos_ordens(con, 5, HOJE_DEMO, "real")
+        so_demo = L.eventos_ordens(con, 5, HOJE_DEMO)
+        cmp_real = L.comparativo_demo(con, 5, dia=HOJE_DEMO, hoje=HOJE_DEMO,
+                                      origem="real")
+        demo_depois = L.comparativo_demo(con, 5, dia=HOJE_DEMO, hoje=HOJE_DEMO)
+    assert [e["evento_id"] for e in so_real] == ["real-20261016-000001"]
+    assert all(e["evento_id"].startswith("demo-") for e in so_demo)
+    assert len(so_demo) > 0
+    # a real tem um "enviando" e nenhuma operação fechada; a demo não muda
+    assert cmp_real["pregoes"] == 1 and cmp_real["demo"]["n"] == 0
+    assert demo_depois == demo_antes

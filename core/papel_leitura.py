@@ -657,7 +657,7 @@ def _metricas(linhas) -> dict:
 
 
 def comparativo(con, portfolio_id: int, *, dia: date | None = None,
-                hoje: date | None = None) -> dict:
+                hoje: date | None = None, origem: str = "demo") -> dict:
     """Esperado (WFA) × Papel × Demo × Real (spec §6.7, decisão 9).
 
     Esperado = os trades fora da amostra do walk-forward que gerou cada
@@ -697,7 +697,7 @@ def comparativo(con, portfolio_id: int, *, dia: date | None = None,
             "SELECT liquido, contratos, points FROM wfa_trades WHERE wfa_id "
             f"IN ({', '.join('?' * len(wfas))})", sorted(wfas)).fetchall()
     return {"esperado_wfa": _metricas(esperado), "papel": _metricas(papel),
-            "demo": _demo_do_comparativo(con, portfolio_id, dia, planos),
+            "demo": _demo_do_comparativo(con, portfolio_id, dia, planos, origem),
             "real": None}
 
 
@@ -718,7 +718,7 @@ def _custo_por_contrato(plano: dict) -> float:
 
 
 def _demo_do_comparativo(con, portfolio_id: int, dia: date,
-                         planos: dict[int, dict]) -> dict | None:
+                         planos: dict[int, dict], origem: str = "demo") -> dict | None:
     """A coluna Demo: o recorte do papel (plano em vigor de cada ligação,
     desde que ele vale) aplicado às operações da demo.
 
@@ -728,7 +728,7 @@ def _demo_do_comparativo(con, portfolio_id: int, dia: date,
     `operacoes_demo` (ticks além do papel, por ponta; negativo = melhor
     que o papel), a mesma da tabela Papel × demo.
     """
-    pregoes = _pregoes_demo(con, portfolio_id, dia)
+    pregoes = _pregoes_demo(con, portfolio_id, dia, origem)
     if not pregoes:
         return None
     custos: dict[int, float] = {}
@@ -843,11 +843,12 @@ def _ligs_do_portfolio(con, portfolio_id: int) -> list[int]:
         [portfolio_id]).fetchall()]
 
 
-def eventos_ordens(con, portfolio_id: int, dia: date) -> list[dict]:
+def eventos_ordens(con, portfolio_id: int, dia: date, origem: str = "demo") -> list[dict]:
     """O diário das ordens do dia (o espelho `ordens_eventos`): os eventos
     das ligações do portfólio e os da automação sem ligação (chamado de
     infraestrutura, comando, trava da conta). Em ordem de tempo; os campos
-    de `dados` vêm soltos no dicionário, como no arquivo do diário."""
+    de `dados` vêm soltos no dicionário, como no arquivo do diário. Só a
+    `origem` pedida ("demo" ou "real")."""
     ini, fim = _limites(dia)
     ligs = _ligs_do_portfolio(con, portfolio_id)
     filtro = "ligacao_id IS NULL"
@@ -855,8 +856,8 @@ def eventos_ordens(con, portfolio_id: int, dia: date) -> list[dict]:
         filtro += f" OR ligacao_id IN ({', '.join('?' * len(ligs))})"
     linhas = con.execute(
         f"SELECT {', '.join(_COLS_EV)}, dados FROM ordens_eventos "
-        f"WHERE quando >= ? AND quando < ? AND ({filtro}) "
-        "ORDER BY quando, evento_id", [ini, fim, *ligs]).fetchall()
+        f"WHERE quando >= ? AND quando < ? AND origem = ? AND ({filtro}) "
+        "ORDER BY quando, evento_id", [ini, fim, origem, *ligs]).fetchall()
     out = []
     for r in linhas:
         e = dict(zip(_COLS_EV, r[:-1]))
@@ -1051,7 +1052,7 @@ def _uma_operacao_demo(chave, evs: list[dict], papel_op: dict | None,
 
 
 def operacoes_demo(con, portfolio_id: int, dia: date,
-                   symbol: str = _papel.SIMBOLO) -> list[dict]:
+                   symbol: str = _papel.SIMBOLO, origem: str = "demo") -> list[dict]:
     """As operações do dia na demo, casadas com o papel pela chave
     `(ligacao_id, entry_ts)` (a mesma do `op_id` do papel e do diário).
 
@@ -1103,7 +1104,7 @@ def operacoes_demo(con, portfolio_id: int, dia: date,
         return vigor["plano_id"] if vigor else None
     dono: dict[int, tuple] = {}
     por_op: dict[tuple, list[dict]] = {}
-    for e in eventos_ordens(con, portfolio_id, dia):
+    for e in eventos_ordens(con, portfolio_id, dia, origem):
         lig = e.get("ligacao_id")
         if lig not in ligs:
             continue
@@ -1147,38 +1148,39 @@ def _fator_pontos(pontos: list[float]):
 _CACHE_DEMO_DIA: dict[tuple, tuple] = {}
 
 
-def _impressao_do_dia(con, ligs: list[int], d: date) -> tuple:
+def _impressao_do_dia(con, ligs: list[int], d: date, origem: str = "demo") -> tuple:
     ini, fim = _limites(d)
     marcas = ", ".join("?" * len(ligs))
     n_ev = con.execute(
         f"SELECT count(*) FROM ordens_eventos WHERE quando >= ? AND quando < ? "
-        f"AND (ligacao_id IS NULL OR ligacao_id IN ({marcas}))",
-        [ini, fim, *ligs]).fetchone()[0]
+        f"AND origem = ? AND (ligacao_id IS NULL OR ligacao_id IN ({marcas}))",
+        [ini, fim, origem, *ligs]).fetchone()[0]
     n_op, calc = con.execute(
         f"SELECT count(*), max(calculado_em) FROM papel_operacoes WHERE dia = ? "
         f"AND ligacao_id IN ({marcas})", [d, *ligs]).fetchone()
     return int(n_ev), int(n_op), calc
 
 
-def _demo_do_dia(con, portfolio_id: int, d: date) -> tuple:
+def _demo_do_dia(con, portfolio_id: int, d: date, origem: str = "demo") -> tuple:
     """(pontos do papel, operações da demo, chamados) de um pregão — só as
     ligações que tentaram operar na demo nele."""
-    linhas = operacoes_demo(con, portfolio_id, d)
+    linhas = operacoes_demo(con, portfolio_id, d, origem=origem)
     demo_ops = [o for o in linhas if o["situacao"] != "seria_enviada"]
     tentaram = {o["ligacao_id"] for o in demo_ops}
     papel_pts = [float(o["points"] or 0) for o in _ops_do_dia(con, sorted(tentaram), d)
                  if o["conta"] and not o["aberta"]]
-    chamados = sum(1 for e in eventos_ordens(con, portfolio_id, d)
+    chamados = sum(1 for e in eventos_ordens(con, portfolio_id, d, origem)
                    if e["tipo"] == "chamado" and e.get("ligacao_id") in tentaram)
     return papel_pts, demo_ops, chamados
 
 
-def _pregoes_demo(con, portfolio_id: int, dia: date) -> list[tuple]:
+def _pregoes_demo(con, portfolio_id: int, dia: date, origem: str = "demo") -> list[tuple]:
     """`[(dia, parte do _demo_do_dia)]` dos pregões até `dia` em que alguma
     ligação do portfólio TENTOU operar na demo (o ensaio não conta).
 
     Pregão passado sai do `_CACHE_DEMO_DIA`; o de `dia` é sempre relido —
-    ainda muda a cada volta da captura."""
+    ainda muda a cada volta da captura. A chave do cache leva a `origem`:
+    demo e real nunca dividem o mesmo pregão guardado."""
     ligs = _ligs_do_portfolio(con, portfolio_id)
     if not ligs:
         return []
@@ -1186,17 +1188,17 @@ def _pregoes_demo(con, portfolio_id: int, dia: date) -> list[tuple]:
     tentou = ", ".join(f"'{t}'" for t in _TENTOU)
     dias = [r[0] for r in con.execute(
         f"SELECT DISTINCT CAST(quando AS DATE) AS d FROM ordens_eventos "
-        f"WHERE ligacao_id IN ({marcas}) AND tipo IN ({tentou}) "
-        "AND CAST(quando AS DATE) <= ? ORDER BY d", [*ligs, dia]).fetchall()]
+        f"WHERE origem = ? AND ligacao_id IN ({marcas}) AND tipo IN ({tentou}) "
+        "AND CAST(quando AS DATE) <= ? ORDER BY d", [origem, *ligs, dia]).fetchall()]
     out = []
     for d in dias:
         chave = None
         if d < dia:
-            chave = (str(db.DB_PATH), portfolio_id, d,
-                     _impressao_do_dia(con, ligs, d))
+            chave = (str(db.DB_PATH), portfolio_id, origem, d,
+                     _impressao_do_dia(con, ligs, d, origem))
         parte = _CACHE_DEMO_DIA.get(chave) if chave else None
         if parte is None:
-            parte = _demo_do_dia(con, portfolio_id, d)
+            parte = _demo_do_dia(con, portfolio_id, d, origem)
             if chave:
                 _CACHE_DEMO_DIA[chave] = parte
         out.append((d, parte))
@@ -1204,7 +1206,7 @@ def _pregoes_demo(con, portfolio_id: int, dia: date) -> list[tuple]:
 
 
 def comparativo_demo(con, portfolio_id: int, *, dia: date | None = None,
-                     hoje: date | None = None) -> dict:
+                     hoje: date | None = None, origem: str = "demo") -> dict:
     """Papel × demo por contrato, nos mesmos pregões (spec ordens §8).
 
     Entram os pregões em que alguma ligação do portfólio TENTOU operar na
@@ -1214,7 +1216,7 @@ def comparativo_demo(con, portfolio_id: int, *, dia: date | None = None,
     tem custos do plano, a demo não — em pontos os dois comparam).
     """
     dia = dia or _hoje(hoje)
-    pregoes = _pregoes_demo(con, portfolio_id, dia)
+    pregoes = _pregoes_demo(con, portfolio_id, dia, origem)
     if not pregoes:
         return {"pregoes": 0, "papel": None, "demo": None}
     papel_pts: list[float] = []

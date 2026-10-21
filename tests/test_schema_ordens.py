@@ -42,3 +42,19 @@ def test_real_minimo_vira_real_e_e_idempotente():
 
 def test_tipos_novos_do_diario():
     assert {"contratos_alterados", "envio_ligado", "envio_desligado"} <= diario.TIPOS
+
+
+def test_origem_migracao_idempotente_e_preenche_pelo_prefixo():
+    with _con() as con:
+        con.execute("INSERT INTO ordens_eventos (evento_id, quando, tipo) "
+                    "VALUES ('demo-20261009-000001', ?, 'enviando')",
+                    [datetime(2026, 10, 9, 10)])
+        con.execute("INSERT INTO ordens_eventos (evento_id, quando, tipo) "
+                    "VALUES ('real-20261009-000001', ?, 'enviando')",
+                    [datetime(2026, 10, 9, 10)])
+        db.init_schema(con)
+        db.init_schema(con)
+        linhas = con.execute("SELECT evento_id, origem FROM ordens_eventos "
+                             "ORDER BY evento_id").fetchall()
+    assert linhas == [("demo-20261009-000001", "demo"),
+                      ("real-20261009-000001", "real")]
