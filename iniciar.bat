@@ -27,6 +27,7 @@ if not exist "data\database.duckdb" (
 REM Captura em janela propria: fechar a tela nao para a captura; ela so
 REM para fechando a janela dela. Se ja houver uma aberta, a nova sai calada.
 start "Dataframe - Captura" /min cmd /c captura.bat
+start "Dataframe - Ordens real" /min cmd /c ordens_real.bat
 
 echo.
 echo  Dataframe  -  http://127.0.0.1:8050

@@ -25,6 +25,7 @@ from core import comandos  # noqa: E402
 from core import diario_ordens  # noqa: E402
 from core import ponte  # noqa: E402
 from ui import data as ui_data  # noqa: E402
+import ordens_real  # noqa: E402
 
 
 def pytest_configure(config):
@@ -52,6 +53,8 @@ def _banco_isolado(tmp_path, monkeypatch):
     # desejados e ack da ponte: a real (processo da conta) le essa pasta; um
     # teste que escrevesse nela faria a conta real agir sobre o teste
     monkeypatch.setattr(ponte, "PASTA", tmp_path / "ao_vivo" / "ponte")
+    # processo da conta real: trava, estado, log e retrato (em ordens/real) no tmp
+    monkeypatch.setattr(ordens_real, "PASTA", tmp_path / "ao_vivo")
     # memoria da ultima leitura: sem zerar, um teste herdaria o estado do outro
     monkeypatch.setattr(ui_data, "_estado_ultimo", None)
     monkeypatch.setattr(ui_data, "_conferencia_vista", None)
