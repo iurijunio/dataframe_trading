@@ -644,7 +644,8 @@ def test_stop_em_atr_varia_com_a_volatilidade():
     esperado = atr(bars, 5) * 2.0
     assert r.n_trades >= 1
     for k, i in enumerate(r.trades["entry_i"]):
-        assert r.sl_at_entry[k] == int(esperado[i])
+        # ATR da barra do sinal: a de entrada ainda nao fechou
+        assert r.sl_at_entry[k] == int(esperado[i - 1])
     # o stop do segundo trade, na parte volatil, e bem maior
     if r.n_trades == 2:
         assert r.sl_at_entry[1] > r.sl_at_entry[0] * 2
@@ -709,3 +710,199 @@ def test_grid_monta_o_espaco_de_busca():
                            "b": {"on": False, "valor": 7}})
     assert espaco["a"] == [10, 15, 20, 25, 30]
     assert espaco["b"] == [7]          # desligado: so o valor atual
+
+
+# ================================================ look-ahead do ATR em M1
+def _barras_atr_m1(n=40):
+    rng = np.random.default_rng(11)
+    close = (100000 + rng.integers(-40, 41, n).cumsum()).astype(np.int64)
+    return {
+        "ts": np.array([np.datetime64(datetime(2026, 1, 5, 9, i), "ns")
+                        for i in range(n)]),
+        "open": close.copy(), "high": close + rng.integers(20, 300, n),
+        "low": close - rng.integers(20, 300, n),
+        "close": close.copy(), "tick_volume": np.ones(n, dtype=np.int64),
+    }
+
+
+def _perfil_atr_m1(**kw):
+    base = dict(entrada_fim="09:59", fechamento="09:59", stop_tipo="atr",
+                stop_atr_periodo=5, stop_atr_mult=2.0, alvo_tipo="atr",
+                alvo_atr_periodo=5, alvo_atr_mult=3.0)
+    base.update(kw)
+    return perfil(**base)
+
+
+@pytest.mark.parametrize("extra", [{}, {"alvo_tipo": "multiplicador",
+                                        "alvo_razao": 2.0}])
+def test_stop_e_alvo_atr_em_m1_nao_olham_a_barra_de_entrada(extra):
+    """A ordem entra na ABERTURA da barra 20: a maxima dela ainda nao
+    existe. Mexer so nela nao pode mudar o stop nem o alvo daquela
+    entrada - eles saem do ATR da barra do sinal (19), ja fechada."""
+    bars = _barras_atr_m1()
+    s = empty_like(len(bars["open"]))
+    s["entry_long"][19] = True
+    p = _perfil_atr_m1(**extra)
+    antes = backtest(bars, Signals(**s), p, WIN)
+
+    mexida = {k: v.copy() for k, v in bars.items()}
+    mexida["high"][20] += 2000
+    depois = backtest(mexida, Signals(**s), p, WIN)
+
+    assert antes.trades["entry_i"].tolist() == [20]
+    assert depois.trades["entry_i"].tolist() == [20]
+    assert depois.sl_at_entry[0] == antes.sl_at_entry[0]
+    assert depois.tp_at_entry[0] == antes.tp_at_entry[0]
+
+
+def test_stop_atr_em_m1_e_o_atr_da_barra_do_sinal():
+    """Mesma regua do M5/M15: o nivel e o da ultima vela fechada ANTES
+    da abertura em que a ordem entra."""
+    from core.engine.execution import atr
+
+    bars = _barras_atr_m1()
+    s = empty_like(len(bars["open"]))
+    s["entry_long"][19] = True
+    r = backtest(bars, Signals(**s), _perfil_atr_m1(), WIN)
+    a = atr(bars, 5)
+    assert r.sl_at_entry[0] == int(a[19] * 2.0)
+    assert r.tp_at_entry[0] == int(a[19] * 3.0)
+
+
+def test_run_strategy_m1_atr_igual_ao_backtest_direto():
+    """O caminho completo (run_strategy) e o backtest direto usam a mesma
+    vela para o nivel em M1."""
+    bars = _barras_atr_m1()
+
+    class Um:
+        def signals(self, b, params):
+            s = empty_like(len(b["open"]))
+            s["entry_long"][19] = True
+            return Signals(**s)
+
+    p = _perfil_atr_m1()
+    mexida = {k: v.copy() for k, v in bars.items()}
+    mexida["high"][20] += 2000
+    a = run_strategy(bars, Um(), {}, p, WIN)
+    b = run_strategy(mexida, Um(), {}, p, WIN)
+    assert b.sl_at_entry[0] == a.sl_at_entry[0]
+    assert b.tp_at_entry[0] == a.tp_at_entry[0]
+
+
+def test_nivel_da_estrategia_em_m1_e_o_da_barra_do_sinal():
+    """Stop proprio da estrategia (array por barra) segue a mesma regra:
+    em M1 vale o numero da barra do sinal, nao o da barra de entrada."""
+    bars = _barras_atr_m1()
+
+    class Propria:
+        def signals(self, b, params):
+            n = len(b["open"])
+            s = empty_like(n)
+            s["entry_long"][19] = True
+            s["sl_points"] = np.arange(100, 100 + 10 * n, 10, dtype=np.int64)
+            return Signals(**s)
+
+    r = run_strategy(bars, Propria(), {}, perfil(entrada_fim="09:59",
+                                                 fechamento="09:59"), WIN)
+    assert r.sl_at_entry[0] == 100 + 10 * 19
+
+
+def test_m5_atr_continua_na_vela_anterior():
+    """Rede de seguranca: a correcao do M1 nao muda o M5."""
+    from core.engine.execution import atr, resample
+
+    bars = _barras_atr_m1(60)
+    s5 = None
+
+    class NoFimDaVela:
+        def signals(self, b, params):
+            nonlocal s5
+            s = empty_like(len(b["open"]))
+            s["entry_long"][4] = True        # vela M5 das 09:20
+            s5 = b
+            return Signals(**s)
+
+    p = _perfil_atr_m1(timeframe="M5", stop_atr_periodo=3,
+                       alvo_atr_periodo=3)
+    r = run_strategy(bars, NoFimDaVela(), {}, p, WIN)
+    assert r.trades["entry_i"].tolist() == [25]   # 09:25, abertura da vela 5
+    a = atr(s5, 3)
+    assert r.sl_at_entry[0] == int(a[4] * 2.0)
+    assert r.tp_at_entry[0] == int(a[4] * 3.0)
+
+
+@pytest.mark.parametrize("sinal,entra", [(19, True), (20, False)])
+def test_adx_em_m1_continua_na_barra_do_sinal(monkeypatch, sinal, entra):
+    """O ADX filtra o SINAL, que nasce no fechamento da barra: ele le a
+    propria barra do sinal - nao a anterior, como o stop. ADX abaixo do
+    limiar ate a 18, acima so na 19: sinal na 19 passa, na 20 nao."""
+    from core.engine import execution as E
+
+    bars = _barras_atr_m1()
+    n = len(bars["open"])
+    va = np.full(n, 10.0)
+    va[19] = 30.0
+    monkeypatch.setattr(E, "adx", lambda b, p: (va, va.copy(), va.copy()))
+    s = empty_like(n)
+    s["entry_long"][sinal] = True
+    p = perfil(entrada_fim="09:59", fechamento="09:59",
+               filtro_adx="tendencia", adx_periodo=5, adx_limiar=20)
+    r = backtest(bars, Signals(**s), p, WIN)
+    assert (r.n_trades == 1) is entra
+
+
+# ============================== regra unica: o nivel vem do minuto anterior
+def _barras_m7_com_vela_de_um_minuto():
+    """M7 conta da meia-noite: 09:00-09:05 e a vela 77, 09:06-09:12 a 78
+    e 09:13-09:19 a 79. Sem os minutos 09:14-09:19 no dado (dia com
+    buraco), a vela 79 tem UM minuto so - ela abre e fecha no 09:13."""
+    minutos = list(range(0, 14)) + list(range(20, 40))
+    n = len(minutos)
+    rng = np.random.default_rng(5)
+    close = (100000 + rng.integers(-40, 41, n).cumsum()).astype(np.int64)
+    return {
+        "ts": np.array([np.datetime64(datetime(2026, 1, 5, 9, m), "ns")
+                        for m in minutos]),
+        "open": close.copy(), "high": close + rng.integers(20, 300, n),
+        "low": close - rng.integers(20, 300, n), "close": close.copy(),
+        "tick_volume": np.ones(n, dtype=np.int64),
+    }
+
+
+def test_vela_de_um_minuto_acima_de_m1_nao_olha_a_propria_vela():
+    """Sinal no fechamento da vela 78 (09:12) entra na abertura de 09:13,
+    que e a vela 79 inteira. A maxima dela ainda nao existe na entrada:
+    mexer so nela nao pode mudar o stop nem o alvo."""
+    bars = _barras_m7_com_vela_de_um_minuto()
+
+    class NaVela78:
+        def signals(self, b, params):
+            s = empty_like(len(b["open"]))
+            s["entry_long"][1] = True          # 2a vela do dado = a 78
+            return Signals(**s)
+
+    p = _perfil_atr_m1(timeframe="M7", stop_atr_periodo=1,
+                       alvo_atr_periodo=1)
+    antes = run_strategy(bars, NaVela78(), {}, p, WIN)
+    mexida = {k: v.copy() for k, v in bars.items()}
+    mexida["high"][13] += 2000                 # o minuto 09:13
+    depois = run_strategy(mexida, NaVela78(), {}, p, WIN)
+
+    assert antes.trades["entry_i"].tolist() == [13]
+    assert depois.sl_at_entry[0] == antes.sl_at_entry[0]
+    assert depois.tp_at_entry[0] == antes.tp_at_entry[0]
+
+
+def test_backtest_direto_com_stop_proprio_le_a_barra_do_sinal():
+    """Quem chama o motor direto com stop por barra recebe a mesma regra
+    do run_strategy: vale o numero da barra do sinal, nao o da entrada."""
+    bars = _barras_atr_m1()
+    n = len(bars["open"])
+    s = empty_like(n)
+    s["entry_long"][19] = True
+    proprio = np.arange(100, 100 + 10 * n, 10, dtype=np.int64)
+    r = backtest(bars, Signals(**s, sl_points=proprio, tp_points=proprio * 2),
+                 perfil(entrada_fim="09:59", fechamento="09:59"), WIN)
+    assert r.trades["entry_i"].tolist() == [20]
+    assert r.sl_at_entry[0] == proprio[19]
+    assert r.tp_at_entry[0] == proprio[19] * 2

@@ -23,6 +23,7 @@ sabe a paleta.
 """
 from __future__ import annotations
 
+import json
 import math
 from datetime import date, datetime, time, timedelta
 
@@ -75,18 +76,51 @@ def _ligacoes(con, portfolio_id: int, dia: date) -> list[dict]:
     ini, fim = _limites(dia)
     linhas = con.execute(
         "SELECT pm.ligacao_id, pm.variante_id, ev.nome, pm.fase, pm.ligada, "
-        "pm.adicionado_em, pm.removido_em FROM portfolio_membros pm "
+        "pm.adicionado_em, pm.removido_em, pm.contratos_demo, pm.contratos_real "
+        "FROM portfolio_membros pm "
         "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
         "WHERE pm.portfolio_id = ? ORDER BY pm.ligacao_id",
         [portfolio_id]).fetchall()
     out = []
-    for i, (lig, vid, nome, fase, ligada, adic, rem) in enumerate(linhas):
+    for i, (lig, vid, nome, fase, ligada, adic, rem, ctr_demo, ctr_real) in enumerate(linhas):
         if adic >= fim or (rem is not None and rem < ini):
             continue
+        # contratos_demo/real NULL = a conta usa os contratos do plano
         out.append({"ligacao_id": int(lig), "variante_id": int(vid),
                     "nome": nome, "fase": fase, "ligada": bool(ligada),
-                    "cor": i})
+                    "cor": i, "contratos_demo": None if ctr_demo is None
+                    else int(ctr_demo),
+                    "contratos_real": None if ctr_real is None else int(ctr_real)})
     return out
+
+
+def total_por_ligacao(con, portfolio_id: int, dia: date,
+                      origem: str = "demo") -> dict[int, dict]:
+    """O total de cada variante na conta `origem`, no mesmo recorte da coluna
+    Demo/Real do Esperado × Papel × Demo × Real: só fechadas, desde o plano em
+    vigor, líquidas dos custos do plano. {ligacao_id: métricas}, com `total`,
+    `acerto` e `n`. Variante sem operação fechada nesse recorte não aparece."""
+    planos: dict[int, dict] = {}
+    for l in _ligacoes(con, portfolio_id, dia):
+        gravado = _pregao(con, l["ligacao_id"], dia)[0]
+        p = _plano_do_dia(con, l["variante_id"], dia, gravado)
+        if p is not None:
+            planos[l["ligacao_id"]] = p
+    linhas: dict[int, list] = {}
+    for d, parte in _pregoes_demo(con, portfolio_id, dia, origem):
+        for o in parte[1]:
+            p = planos.get(o["ligacao_id"])
+            if p is None or o.get("plano_id") != int(p["plano_id"]):
+                continue
+            vale = _como_data(p.get("vale_a_partir"))
+            if vale is not None and d < vale:
+                continue
+            if o["situacao"] != "fechada" or o["resultado"] is None:
+                continue
+            ctr = float(o["contratos"] or 0)
+            liq = o["resultado"] - _custo_por_contrato(p) * ctr
+            linhas.setdefault(o["ligacao_id"], []).append((liq, ctr, o["pontos"]))
+    return {lig: _metricas(v) for lig, v in linhas.items()}
 
 
 def _pregao(con, ligacao_id: int, dia: date):
@@ -653,7 +687,7 @@ def _metricas(linhas) -> dict:
 
 
 def comparativo(con, portfolio_id: int, *, dia: date | None = None,
-                hoje: date | None = None) -> dict:
+                hoje: date | None = None, origem: str = "demo") -> dict:
     """Esperado (WFA) × Papel × Demo × Real (spec §6.7, decisão 9).
 
     Esperado = os trades fora da amostra do walk-forward que gerou cada
@@ -661,18 +695,25 @@ def comparativo(con, portfolio_id: int, *, dia: date | None = None,
     o plano em vigor: a aberta ainda não tem resultado, e média de
     operação por fazer não compara com trade do WFA. Por isso o `total`
     daqui pode ser menor que o `acumulado` do `resumo`, que inclui a aberta
-    provisória — a (?) da tela explica. Demo/Real chegam na parte 4.
+    provisória — a (?) da tela explica.
+
+    Demo = as operações da conta demo pelo mesmo recorte do papel (fechadas,
+    desde o plano em vigor de cada ligação), líquidas dos custos do plano
+    como o papel, e mais as linhas de execução (`_demo_do_comparativo`).
+    None quando o portfólio nunca operou na demo. Real fica para depois.
 
     `dia`: o pregão que a tela mostra (ver `curva_vs_esperado`).
     """
     dia = dia or _hoje(hoje)
     wfas: set[int] = set()
     papel = []
+    planos: dict[int, dict] = {}
     for l in _ligacoes(con, portfolio_id, dia):
         gravado = _pregao(con, l["ligacao_id"], dia)[0]
         p = _plano_do_dia(con, l["variante_id"], dia, gravado)
         if p is None:
             continue
+        planos[l["ligacao_id"]] = p
         if p.get("wfa_id") is not None:
             wfas.add(int(p["wfa_id"]))
         filtro, args = _desde_o_plano(p)
@@ -686,7 +727,76 @@ def comparativo(con, portfolio_id: int, *, dia: date | None = None,
             "SELECT liquido, contratos, points FROM wfa_trades WHERE wfa_id "
             f"IN ({', '.join('?' * len(wfas))})", sorted(wfas)).fetchall()
     return {"esperado_wfa": _metricas(esperado), "papel": _metricas(papel),
-            "demo": None, "real": None}
+            "demo": _demo_do_comparativo(con, portfolio_id, dia, planos, origem),
+            "real": None}
+
+
+def _como_data(v) -> date | None:
+    if v is None or isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    if isinstance(v, datetime):
+        return v.date()
+    return date.fromisoformat(str(v)[:10])
+
+
+def _custo_por_contrato(plano: dict) -> float:
+    """Corretagem + emolumentos de uma operação inteira (as duas pontas),
+    por contrato — a mesma conta do `metrics.monetize` que o papel usa."""
+    perfil = _papel.perfil_do_plano(plano)[1]
+    return (float(perfil.corretagem_por_contrato)
+            + float(perfil.emolumentos_por_contrato)) * 2
+
+
+def _demo_do_comparativo(con, portfolio_id: int, dia: date,
+                         planos: dict[int, dict], origem: str = "demo") -> dict | None:
+    """A coluna Demo: o recorte do papel (plano em vigor de cada ligação,
+    desde que ele vale) aplicado às operações da demo.
+
+    O resultado da demo vem BRUTO da corretora (`operacoes_demo`); aqui
+    desconta-se o custo do plano como o papel desconta, senão a demo
+    pareceria melhor só por não pagar corretagem. Derrapagem é a de
+    `operacoes_demo` (ticks além do papel, por ponta; negativo = melhor
+    que o papel), a mesma da tabela Papel × demo.
+    """
+    pregoes = _pregoes_demo(con, portfolio_id, dia, origem)
+    if not pregoes:
+        return None
+    custos: dict[int, float] = {}
+    ops = []
+    for d, parte in pregoes:
+        for o in parte[1]:
+            p = planos.get(o["ligacao_id"])
+            if p is None or o.get("plano_id") != int(p["plano_id"]):
+                continue
+            vale = _como_data(p.get("vale_a_partir"))
+            if vale is not None and d < vale:
+                continue
+            ops.append((o, p))
+    linhas = []
+    for o, p in ops:
+        if o["situacao"] != "fechada" or o["resultado"] is None:
+            continue
+        pid = int(p["plano_id"])
+        if pid not in custos:
+            custos[pid] = _custo_por_contrato(p)
+        ctr = float(o["contratos"] or 0)
+        linhas.append((o["resultado"] - custos[pid] * ctr, ctr, o["pontos"]))
+    m = _metricas(linhas)
+
+    def media(vs):
+        vs = list(vs)
+        return sum(vs) / len(vs) if vs else None
+    executadas = [o for o, _ in ops if o["situacao"] in ("fechada", "aberta")]
+    m.update(
+        mesmo_minuto=(sum(1 for o in executadas if o["mesmo_minuto"])
+                      / len(executadas) if executadas else None),
+        derrapagem_extra=media(x for o, _ in ops
+                               for x in (o["derrapagem_entrada"],
+                                         o["derrapagem_saida"])
+                               if x is not None),
+        atraso_ms=media(a for o, _ in ops for a in o.get("atrasos_ms") or []),
+        rejeitadas=sum(int(o.get("rejeitadas") or 0) for o, _ in ops))
+    return m
 
 
 # ---------------------------------------------------------------- alertas
@@ -734,3 +844,492 @@ def alertas(con, portfolio_id: int, dia: date, *,
                     f"{dv['dia']:%d/%m} mudaram depois da conferência — o "
                     "papel daquele dia foi calculado sobre outras barras"})
     return out
+
+
+# ======================================================================
+# Parte 4: a demo ao lado do papel (spec ordens §8)
+# ======================================================================
+_COLS_EV = ("evento_id", "quando", "tipo", "conta_id", "ligacao_id", "entry_ts",
+            "lado", "contratos", "simbolo", "ticket", "retcode", "preco_papel",
+            "preco", "atraso_ms", "tentativa", "motivo")
+# o que marca uma operação como tentada NA DEMO (o ensaio `seria_enviada`
+# não é demo: com o Envio desligado nada foi à corretora)
+_TENTOU = ("enviando", "executada", "parcial", "adotada", "recusada",
+           "perdida", "nao_entrou", "aceita", "incerta")
+_ENTROU = ("executada", "parcial", "adotada")
+_SAIDA_FINAL = ("saida_executada", "saiu_antes")
+# toda ordem que a corretora recusou: entrada, saída, proteção, cancelamento
+_RECUSAS = ("recusada", "saida_recusada", "protecao_recusada",
+            "cancelar_recusada")
+# motivo da saída gravado pelo motor -> como a mesa chama
+_MOTIVO_SAIDA = {"papel zerado": "sinal"}
+
+
+def _ligs_do_portfolio(con, portfolio_id: int) -> list[int]:
+    """Todas as ligações que o portfólio já teve, removidas inclusive: o
+    diário de um dia passado pode ter eventos de uma que saiu depois."""
+    return [int(r[0]) for r in con.execute(
+        "SELECT ligacao_id FROM portfolio_membros WHERE portfolio_id = ?",
+        [portfolio_id]).fetchall()]
+
+
+def eventos_ordens(con, portfolio_id: int, dia: date, origem: str = "demo") -> list[dict]:
+    """O diário das ordens do dia (o espelho `ordens_eventos`): os eventos
+    das ligações do portfólio e os da automação sem ligação (chamado de
+    infraestrutura, comando, trava da conta). Em ordem de tempo; os campos
+    de `dados` vêm soltos no dicionário, como no arquivo do diário. Só a
+    `origem` pedida ("demo" ou "real")."""
+    ini, fim = _limites(dia)
+    ligs = _ligs_do_portfolio(con, portfolio_id)
+    filtro = "ligacao_id IS NULL"
+    if ligs:
+        filtro += f" OR ligacao_id IN ({', '.join('?' * len(ligs))})"
+    linhas = con.execute(
+        f"SELECT {', '.join(_COLS_EV)}, dados FROM ordens_eventos "
+        f"WHERE quando >= ? AND quando < ? AND origem = ? AND ({filtro}) "
+        "ORDER BY quando, evento_id", [ini, fim, origem, *ligs]).fetchall()
+    out = []
+    for r in linhas:
+        e = dict(zip(_COLS_EV, r[:-1]))
+        if r[-1]:
+            try:
+                extra = json.loads(r[-1])
+            except (TypeError, ValueError):
+                extra = {}
+            if isinstance(extra, dict):
+                # as colunas mandam: `dados` só traz o que não tem coluna
+                e.update({k: v for k, v in extra.items() if k not in e})
+        out.append(e)
+    return out
+
+
+def _derrapagem(preco_demo, preco_papel, lado, tick, ponta: str):
+    """Ticks por ponta, positivo = pior para o operador. Entrada: pagar
+    mais caro na compra (vender mais barato na venda) é pior; saída: o
+    contrário. Sem um dos preços: None (não se inventa zero)."""
+    if preco_demo is None or preco_papel is None or not lado or not tick:
+        return None
+    dif = float(preco_demo) - float(preco_papel)
+    if ponta == "saida":
+        dif = -dif
+    return dif * int(lado) / float(tick)
+
+
+def _preco_medio(saidas: list[dict]):
+    """Preço médio das saídas (parciais e a final), pesado pelos contratos."""
+    com = [(float(e["preco"]), float(e.get("contratos") or 0)) for e in saidas
+           if e.get("preco") is not None]
+    if not com:
+        return None
+    peso = sum(c for _, c in com)
+    if peso <= 0:
+        return com[-1][0]
+    return sum(p * c for p, c in com) / peso
+
+
+def _texto_pedido(e: dict) -> str:
+    """"VENDA 2 WINV26 · stop 188.575 · alvo 187.495" — o que iria à
+    corretora, para o ensaio com o Envio desligado ser conferível."""
+    lado = "COMPRA" if (e.get("lado") or 0) > 0 else "VENDA"
+    ctr = e.get("contratos")
+    partes = [f"{lado} {'' if ctr is None else int(ctr)} {e.get('simbolo') or ''}"
+              .replace("  ", " ").strip()]
+    for rot, chave in (("stop", "stop_px"), ("alvo", "alvo_px")):
+        if e.get(chave) is not None:
+            partes.append(f"{rot} {int(e[chave]):,}".replace(",", "."))
+    return " · ".join(partes)
+
+
+def checagem_ensaio(e: dict) -> str | None:
+    """O que o `order_check` disse do pedido do ensaio ("seria enviada"):
+    None quando passou (retcode 0) ou o evento é de antes da conferência.
+    O retcode 0 é o "Done" do exemplo oficial do order_check (mql5.com)."""
+    erro = e.get("last_error")
+    if erro:
+        return f"conferência sem resposta do MT5 ({_texto_erro(erro)})"
+    rc = e.get("retcode")
+    if rc is None:
+        return None
+    try:
+        rc = int(rc)
+    except (TypeError, ValueError):
+        return None
+    if rc == 0:
+        return None
+    from .corretora import TEXTOS
+    return f"seria recusada: {e.get('comment') or TEXTOS.get(rc) or f'retorno {rc}'}"
+
+
+def _texto_erro(erro) -> str:
+    if isinstance(erro, (list, tuple)):
+        return " ".join(str(x) for x in erro if x is not None)
+    return str(erro)
+
+
+def _ordinal(n: int) -> str:
+    return f"{n}ª"
+
+
+def _uma_operacao_demo(chave, evs: list[dict], papel_op: dict | None,
+                       lig: dict, tick: int, pv: float,
+                       slip_plano: float | None = None) -> dict:
+    """Uma linha da tabela "Operações do dia" da demo, a partir de todos os
+    eventos da operação `(ligacao_id, entry_ts)` (os de saída casados pelo
+    ticket). `slip_plano`: a derrapagem que o plano da operação supõe,
+    em ticks por ponta (o preço do papel já a inclui)."""
+    lig_id, entry_ts = chave
+    tipos = [e["tipo"] for e in evs]
+    com_lado = next((e for e in evs if e.get("lado")), None)
+    lado = int(com_lado["lado"]) if com_lado else (
+        int(papel_op["side"]) if papel_op else None)
+    linha = {"ligacao_id": lig_id, "entry_ts": entry_ts,
+             "variante": lig["nome"], "cor": lig["cor"], "lado": lado,
+             "contratos": None, "preco_entrada": None, "preco_saida": None,
+             "exit_ts": None, "derrapagem_entrada": None,
+             "derrapagem_saida": None, "pontos": None, "resultado": None,
+             "situacao": None, "saida_motivo": None, "nota": None,
+             "pedido": None, "checagem": None, "atraso_ms": None,
+             "mesmo_minuto": False,
+             "recusas": tipos.count("recusada"),
+             "rejeitadas": sum(tipos.count(t) for t in _RECUSAS),
+             # o atraso de cada execução da entrada (a adoção não tem)
+             "atrasos_ms": [float(e["atraso_ms"]) for e in evs
+                            if e["tipo"] in ("executada", "parcial")
+                            and e.get("atraso_ms") is not None],
+             "slippage_plano": slip_plano, "papel_mesmo_tamanho": None,
+             "papel_liquido": None if papel_op is None
+             else float(papel_op["liquido"] or 0.0)}
+    entradas = [e for e in evs if e["tipo"] in _ENTROU]
+    if not entradas:
+        if "seria_enviada" in tipos:
+            e = next(e for e in evs if e["tipo"] == "seria_enviada")
+            linha.update(situacao="seria_enviada", pedido=_texto_pedido(e),
+                         checagem=checagem_ensaio(e))
+            return linha
+        perdida = next((e for e in reversed(evs) if e["tipo"] == "perdida"), None)
+        if perdida is not None:
+            motivo = perdida.get("motivo")
+            if motivo == "automação fora do ar":
+                linha["situacao"] = "fora_do_ar"
+            elif "recusada" in tipos:
+                linha["situacao"] = "recusada_perdida"
+            else:
+                linha["situacao"] = "perdida"
+            linha["nota"] = motivo
+        elif "nao_entrou" in tipos:
+            e = next(e for e in evs if e["tipo"] == "nao_entrou")
+            linha.update(situacao="nao_entrou", nota=e.get("motivo"))
+        elif "recusada" in tipos and tipos[-1] == "recusada":
+            linha["situacao"] = "recusada"      # segue tentando na janela
+        else:
+            linha["situacao"] = "enviando"
+        return linha
+
+    ent = entradas[0]
+    contratos = sum(float(e.get("contratos") or 0) for e in entradas
+                    if e["tipo"] != "adotada") or float(ent.get("contratos") or 0)
+    preco_ent = float(ent["preco"]) if ent.get("preco") is not None else None
+    papel_ent = (papel_op["entry_px"] if papel_op is not None
+                 else ent.get("preco_papel"))
+    if papel_op is not None and papel_op.get("bruto") is not None \
+            and papel_op.get("contratos"):
+        # o papel no tamanho da demo e bruto como ela: o papel opera os
+        # contratos do plano e desconta custos; a demo, os dela e sem custo
+        linha["papel_mesmo_tamanho"] = round(
+            float(papel_op["bruto"]) / int(papel_op["contratos"]) * contratos, 2)
+    linha.update(contratos=contratos, preco_entrada=preco_ent,
+                 atraso_ms=ent.get("atraso_ms"),
+                 derrapagem_entrada=_derrapagem(preco_ent, papel_ent, lado,
+                                                tick, "entrada"),
+                 # a ordem saiu no mesmo minuto do sinal do papel?
+                 mesmo_minuto=ent["quando"].replace(second=0, microsecond=0)
+                 == entry_ts.replace(second=0, microsecond=0))
+    finais = [e for e in evs if e["tipo"] in _SAIDA_FINAL]
+    if not finais:
+        linha["situacao"] = "aberta"
+        return linha
+    fim = finais[-1]
+    saidas = [e for e in evs if e["tipo"] in ("saida_parcial", "saida_executada",
+                                              "saiu_antes")]
+    preco_sai = _preco_medio(saidas)
+    papel_sai = (papel_op["exit_px"] if papel_op is not None
+                 and papel_op.get("exit_px") is not None else None)
+    pontos = (None if preco_sai is None or preco_ent is None
+              else (preco_sai - preco_ent) * lado)
+    motivo = fim.get("motivo") or ""
+    # a corretora "executou" o stop/alvo sem negócio nesse preço: o preço da
+    # saída não é de mercado, então não entra na derrapagem
+    fora = any(e.get("fora_do_mercado") for e in saidas)
+    linha.update(situacao="fechada", exit_ts=fim["quando"],
+                 preco_saida=preco_sai,
+                 derrapagem_saida=None if fora else _derrapagem(
+                     preco_sai, papel_sai, lado, tick, "saida"),
+                 pontos=None if pontos is None else round(pontos),
+                 resultado=None if pontos is None
+                 else round(pontos * contratos * pv, 2),
+                 saida_motivo=_MOTIVO_SAIDA.get(motivo, motivo or None))
+    envios = [e for e in evs if e["tipo"] == "saida_enviando"]
+    if fora:
+        linha["nota"] = "execução fora do mercado (corretora)"
+    elif len(envios) > 1 and fim["tipo"] == "saida_executada":
+        recusa = next((e.get("motivo") for e in reversed(evs)
+                       if e["tipo"] == "saida_recusada" and e.get("motivo")), None)
+        seg = round((fim["quando"] - envios[0]["quando"]).total_seconds())
+        detalhe = f"{recusa}, {seg} s" if recusa else f"{seg} s"
+        linha["nota"] = (f"saiu na {_ordinal(len(envios))} tentativa "
+                         f"({detalhe})")
+    return linha
+
+
+def operacoes_demo(con, portfolio_id: int, dia: date,
+                   symbol: str = _papel.SIMBOLO, origem: str = "demo") -> list[dict]:
+    """As operações do dia na demo, casadas com o papel pela chave
+    `(ligacao_id, entry_ts)` (a mesma do `op_id` do papel e do diário).
+
+    Derrapagem por ponta, em ticks, positivo = pior para o operador:
+    entrada `(demo − papel) × lado / tick`, saída `(papel − demo) × lado /
+    tick`. Papel = o preço gravado em `papel_operacoes`, que JÁ inclui a
+    derrapagem que o plano supõe (`kernel._fill`): estes números são a
+    derrapagem ALÉM do plano (0 = a demo derrapou o que o plano supôs). A
+    do plano vai em `slippage_plano`; a absoluta é a soma das duas. Sem a
+    operação no papel, o `preco_papel` do evento.
+    Resultado em R$ é bruto (sem corretagem e emolumentos): é o que a
+    corretora mostra na posição; `papel_mesmo_tamanho` é o papel bruto da
+    mesma operação no tamanho da demo, para comparar na mesma base.
+    """
+    ligs = {l["ligacao_id"]: l for l in _ligacoes(con, portfolio_id, dia)}
+    if not ligs:
+        return []
+    inst = _instrumento(symbol)
+    tick = int(inst.get("tick_size", 1))
+    pv = float(inst.get("point_value", 1.0))
+    marcas = ", ".join("?" * len(ligs))
+    cols = ("ligacao_id", "plano_id", "entry_ts", "side", "contratos",
+            "entry_px", "exit_px", "bruto", "liquido")
+    papel = {(o["ligacao_id"], o["entry_ts"]): o for o in (
+        dict(zip(cols, r)) for r in con.execute(
+            f"SELECT {', '.join(cols)} FROM papel_operacoes WHERE dia = ? "
+            f"AND ligacao_id IN ({marcas})", [dia, *ligs]).fetchall())}
+    # o plano de cada operação (o gravado nela; sem ela no papel, o do
+    # pregão / em vigor da ligação) dá a derrapagem que o papel já supõe
+    slips: dict = {}
+
+    def slip(plano_id):
+        if plano_id is None:
+            return None
+        if plano_id not in slips:
+            try:
+                p = _plano.detalhes(int(plano_id), con=con)
+                slips[plano_id] = (None if p is None else
+                                   float(_papel.perfil_do_plano(p)[1].slippage_ticks))
+            except Exception:
+                slips[plano_id] = None      # plano ilegível: sem régua
+        return slips[plano_id]
+
+    def plano_da_ligacao(lig):
+        gravado = _pregao(con, lig, dia)[0]
+        if gravado is not None:
+            return gravado
+        vigor = V.plano_em_vigor(ligs[lig]["variante_id"], dia, con=con)
+        return vigor["plano_id"] if vigor else None
+    dono: dict[int, tuple] = {}
+    por_op: dict[tuple, list[dict]] = {}
+    for e in eventos_ordens(con, portfolio_id, dia, origem):
+        lig = e.get("ligacao_id")
+        if lig not in ligs:
+            continue
+        ticket = e.get("ticket")
+        if e.get("entry_ts") is not None:
+            chave = (lig, e["entry_ts"])
+            if e["tipo"] in _ENTROU and ticket:
+                dono[int(ticket)] = chave
+        elif ticket is not None and int(ticket) in dono:
+            # saída, proteção e chamado de posição só trazem o ticket
+            chave = dono[int(ticket)]
+        else:
+            continue
+        por_op.setdefault(chave, []).append(e)
+    out = []
+    for k, evs in por_op.items():
+        if not any(e["tipo"] in _TENTOU + ("seria_enviada",) for e in evs):
+            continue
+        p_op = papel.get(k)
+        plano_id = p_op["plano_id"] if p_op is not None else plano_da_ligacao(k[0])
+        linha = _uma_operacao_demo(k, evs, p_op, ligs[k[0]], tick, pv,
+                                   slip(plano_id))
+        linha["plano_id"] = None if plano_id is None else int(plano_id)
+        out.append(linha)
+    out.sort(key=lambda o: (o["entry_ts"], o["ligacao_id"]))
+    return out
+
+
+def _fator_pontos(pontos: list[float]):
+    ganho = sum(p for p in pontos if p > 0)
+    perda = -sum(p for p in pontos if p < 0)
+    if perda > 0:
+        return ganho / perda
+    return math.inf if ganho > 0 else None
+
+
+# (banco, portfólio, dia, impressão do dia) -> o pedaço do comparativo
+# daquele pregão. Só pregão PASSADO: o de hoje ainda muda a cada volta. A
+# impressão (quantos eventos e operações, e o último cálculo do papel)
+# invalida o pregão cujo diário chegou atrasado ao banco (espelho na subida).
+_CACHE_DEMO_DIA: dict[tuple, tuple] = {}
+
+
+def _impressao_do_dia(con, ligs: list[int], d: date, origem: str = "demo") -> tuple:
+    ini, fim = _limites(d)
+    marcas = ", ".join("?" * len(ligs))
+    n_ev = con.execute(
+        f"SELECT count(*) FROM ordens_eventos WHERE quando >= ? AND quando < ? "
+        f"AND origem = ? AND (ligacao_id IS NULL OR ligacao_id IN ({marcas}))",
+        [ini, fim, origem, *ligs]).fetchone()[0]
+    n_op, calc = con.execute(
+        f"SELECT count(*), max(calculado_em) FROM papel_operacoes WHERE dia = ? "
+        f"AND ligacao_id IN ({marcas})", [d, *ligs]).fetchone()
+    return int(n_ev), int(n_op), calc
+
+
+def _demo_do_dia(con, portfolio_id: int, d: date, origem: str = "demo") -> tuple:
+    """(pontos do papel, operações da demo, chamados) de um pregão — só as
+    ligações que tentaram operar na demo nele."""
+    linhas = operacoes_demo(con, portfolio_id, d, origem=origem)
+    demo_ops = [o for o in linhas if o["situacao"] != "seria_enviada"]
+    tentaram = {o["ligacao_id"] for o in demo_ops}
+    papel_pts = [float(o["points"] or 0) for o in _ops_do_dia(con, sorted(tentaram), d)
+                 if o["conta"] and not o["aberta"]]
+    chamados = sum(1 for e in eventos_ordens(con, portfolio_id, d, origem)
+                   if e["tipo"] == "chamado" and e.get("ligacao_id") in tentaram)
+    return papel_pts, demo_ops, chamados
+
+
+def _pregoes_demo(con, portfolio_id: int, dia: date, origem: str = "demo") -> list[tuple]:
+    """`[(dia, parte do _demo_do_dia)]` dos pregões até `dia` em que alguma
+    ligação do portfólio TENTOU operar na demo (o ensaio não conta).
+
+    Pregão passado sai do `_CACHE_DEMO_DIA`; o de `dia` é sempre relido —
+    ainda muda a cada volta da captura. A chave do cache leva a `origem`:
+    demo e real nunca dividem o mesmo pregão guardado."""
+    ligs = _ligs_do_portfolio(con, portfolio_id)
+    if not ligs:
+        return []
+    marcas = ", ".join("?" * len(ligs))
+    tentou = ", ".join(f"'{t}'" for t in _TENTOU)
+    dias = [r[0] for r in con.execute(
+        f"SELECT DISTINCT CAST(quando AS DATE) AS d FROM ordens_eventos "
+        f"WHERE origem = ? AND ligacao_id IN ({marcas}) AND tipo IN ({tentou}) "
+        "AND CAST(quando AS DATE) <= ? ORDER BY d", [origem, *ligs, dia]).fetchall()]
+    out = []
+    for d in dias:
+        chave = None
+        if d < dia:
+            chave = (str(db.DB_PATH), portfolio_id, origem, d,
+                     _impressao_do_dia(con, ligs, d, origem))
+        parte = _CACHE_DEMO_DIA.get(chave) if chave else None
+        if parte is None:
+            parte = _demo_do_dia(con, portfolio_id, d, origem)
+            if chave:
+                _CACHE_DEMO_DIA[chave] = parte
+        out.append((d, parte))
+    return out
+
+
+def comparativo_demo(con, portfolio_id: int, *, dia: date | None = None,
+                     hoje: date | None = None, origem: str = "demo") -> dict:
+    """Papel × demo por contrato, nos mesmos pregões (spec ordens §8).
+
+    Entram os pregões em que alguma ligação do portfólio TENTOU operar na
+    demo (o ensaio com o Envio desligado não conta) e, em cada um, só as
+    ligações que tentaram: papel e demo olham as mesmas variantes nos
+    mesmos dias. Pontos por contrato; fator de lucro pelos pontos (o papel
+    tem custos do plano, a demo não — em pontos os dois comparam).
+    """
+    dia = dia or _hoje(hoje)
+    pregoes = _pregoes_demo(con, portfolio_id, dia, origem)
+    if not pregoes:
+        return {"pregoes": 0, "papel": None, "demo": None}
+    papel_pts: list[float] = []
+    demo_ops: list[dict] = []
+    chamados = 0
+    for _d, parte in pregoes:
+        papel_pts += parte[0]
+        demo_ops += parte[1]
+        chamados += parte[2]
+    fechadas = [o for o in demo_ops if o["situacao"] == "fechada"
+                and o["pontos"] is not None]
+    # por ponta: (além do plano, a do plano). O preço do papel já traz a
+    # derrapagem do plano; a absoluta da demo é a soma das duas
+    pontas = [(x, o["slippage_plano"]) for o in demo_ops
+              for x in (o["derrapagem_entrada"], o["derrapagem_saida"])
+              if x is not None]
+    com_plano = [(x, s) for x, s in pontas if s is not None]
+
+    def media(vs):
+        vs = list(vs)
+        return sum(vs) / len(vs) if vs else None
+    pts = [float(o["pontos"]) for o in fechadas]
+    return {
+        "pregoes": len(pregoes),
+        "papel": {"n": len(papel_pts),
+                  "pontos_por_operacao": media(papel_pts),
+                  "fator_lucro": _fator_pontos(papel_pts),
+                  # a que o plano supõe, nas mesmas pontas da demo
+                  "derrapagem": media(s for _, s in com_plano)},
+        "demo": {"n": len(fechadas),
+                 "pontos_por_operacao": media(pts),
+                 "fator_lucro": _fator_pontos(pts),
+                 "mesmo_minuto": sum(1 for o in demo_ops if o["mesmo_minuto"]),
+                 # absoluta = além do plano + a do plano
+                 "derrapagem": media(x + s for x, s in com_plano),
+                 "derrapagem_extra": media(x for x, _ in pontas),
+                 "perdidas": sum(1 for o in demo_ops if o["situacao"] in (
+                     "perdida", "recusada_perdida", "fora_do_ar", "nao_entrou")),
+                 "recusadas": sum(1 for o in demo_ops if o["recusas"]),
+                 # recusada e depois executada: a automação resolveu sozinha
+                 "resolvidas": sum(1 for o in demo_ops if o["recusas"]
+                                   and o["preco_entrada"] is not None),
+                 "chamados": chamados},
+    }
+
+
+def situacao_backtest(con, portfolio_id: int, dia: date) -> dict:
+    """O selo "papel = backtest" do portfólio: a soma de
+    `papel_backtest.situacao` das ligações do dia e a lista dos pregões
+    que diferiram (variante, dia, quantas operações)."""
+    from . import papel_backtest as _pb       # pesado (motor): só aqui
+    out = {"pregoes": 0, "operacoes": 0, "diferencas": 0, "ok": None,
+           "lista": []}
+    oks = []
+    for l in _ligacoes(con, portfolio_id, dia):
+        s = _pb.situacao(con, l["ligacao_id"])
+        out["pregoes"] += s["pregoes"]
+        out["operacoes"] += s["operacoes"]
+        out["diferencas"] += s["diferencas"]
+        if s["ok"] is not None:
+            oks.append(s["ok"])
+        for d, n in con.execute(
+                "SELECT dia, coalesce(json_array_length(diferencas, "
+                "'$.operacoes'), 0) FROM papel_backtest WHERE ligacao_id = ? "
+                "AND NOT ok ORDER BY dia", [l["ligacao_id"]]).fetchall():
+            out["lista"].append({"nome": l["nome"], "dia": d, "n": int(n)})
+    out["ok"] = all(oks) if oks else None
+    return out
+
+
+def envio_da_conta(con, conta_id) -> bool | None:
+    """O interruptor Envio de ordens gravado na conta (None = sem conta)."""
+    if conta_id is None:
+        return None
+    r = con.execute("SELECT coalesce(envio_ligado, false) FROM contas "
+                    "WHERE conta_id = ?", [conta_id]).fetchone()
+    return None if r is None else bool(r[0])
+
+
+def nomes(con, portfolio_id: int) -> dict[int, str]:
+    """Ligação → nome da variante, removidas inclusive (o diário de hoje
+    pode citar uma que saiu do portfólio no meio do dia)."""
+    return {int(l): n for l, n in con.execute(
+        "SELECT pm.ligacao_id, ev.nome FROM portfolio_membros pm "
+        "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
+        "WHERE pm.portfolio_id = ?", [portfolio_id]).fetchall()}

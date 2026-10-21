@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from . import saida as opcao_saida
 from .base import Signals
 
 name = "setup_cruzamento"
@@ -25,6 +26,7 @@ params_schema = {
                      "min": 2, "max": 200, "step": 1, "tipo": "int"},
     "media_lenta": {"label": "Média lenta", "default": 21,
                     "min": 3, "max": 600, "step": 1, "tipo": "int"},
+    **opcao_saida.parametro(opcao_saida.CONTRARIO),
 }
 
 
@@ -57,9 +59,9 @@ def signals(bars: dict, params: dict) -> Signals:
     cruza_cima = acima & ~anterior & formado
     cruza_baixo = ~acima & anterior & formado
 
-    return Signals(
+    return opcao_saida.aplicar(Signals(
         entry_long=cruza_cima,
         entry_short=cruza_baixo,
         exit_long=cruza_baixo,   # o cruzamento contrario encerra a posicao
         exit_short=cruza_cima,
-    )
+    ), opcao_saida.modo(params, params_schema))

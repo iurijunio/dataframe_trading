@@ -21,7 +21,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cli  # noqa: E402
 import corrigir_base  # noqa: E402
 from core import db_manager as db  # noqa: E402
+from core import comandos  # noqa: E402
+from core import diario_ordens  # noqa: E402
+from core import ponte  # noqa: E402
 from ui import data as ui_data  # noqa: E402
+import ordens_real  # noqa: E402
+
+
+def pytest_configure(config):
+    # medição de tempo (orçamento da ordem, spec ao-vivo-ordens §3.1): roda
+    # na suíte normal; a marca só permite separá-la (-m "not lento")
+    config.addinivalue_line("markers", "lento: teste que mede tempo de cálculo")
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +40,25 @@ def _banco_isolado(tmp_path, monkeypatch):
     estado = tmp_path / "ao_vivo" / "estado.json"
     for modulo in (ui_data, cli, corrigir_base):
         monkeypatch.setattr(modulo, "ESTADO_CAPTURA", estado)
+    # diario das ordens: a captura real le essa pasta ao subir, e um teste
+    # que escrevesse nela mudaria o que ela acha que ja enviou
+    monkeypatch.setattr(diario_ordens, "PASTA", tmp_path / "ao_vivo" / "ordens")
+    # comandos da tela: um teste que escrevesse na pasta real seria consumido
+    # pela captura do usuario (ex.: um "zerar_tudo" de verdade)
+    monkeypatch.setattr(comandos, "PASTA", tmp_path / "ao_vivo" / "comandos")
+    # a conta real tem a sua pasta: um teste não pode deixar comando para o
+    # processo da conta real do usuário
+    monkeypatch.setattr(comandos, "PASTA_REAL",
+                        tmp_path / "ao_vivo" / "comandos_real")
+    # desejados e ack da ponte: a real (processo da conta) le essa pasta; um
+    # teste que escrevesse nela faria a conta real agir sobre o teste
+    monkeypatch.setattr(ponte, "PASTA", tmp_path / "ao_vivo" / "ponte")
+    # processo da conta real: trava, estado, log e retrato (em ordens/real) no tmp
+    monkeypatch.setattr(ordens_real, "PASTA", tmp_path / "ao_vivo")
     # memoria da ultima leitura: sem zerar, um teste herdaria o estado do outro
     monkeypatch.setattr(ui_data, "_estado_ultimo", None)
     monkeypatch.setattr(ui_data, "_conferencia_vista", None)
+    # estado da conta real: um teste não pode ler (nem o processo real pode
+    # ser confundido com) o estado_real.json de verdade
+    monkeypatch.setattr(ui_data, "ESTADO_REAL",
+                        tmp_path / "ao_vivo" / "estado_real.json")

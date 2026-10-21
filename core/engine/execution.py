@@ -161,6 +161,35 @@ def expand_signal(sinal: np.ndarray, fim: np.ndarray, n: int) -> np.ndarray:
     return out
 
 
+def vela_do_nivel(fechada: np.ndarray) -> np.ndarray:
+    """Para cada minuto, a vela de onde sai o stop/alvo de uma entrada nele.
+
+    A ordem entra na ABERTURA do minuto: vale a ultima vela fechada ate o
+    fim do minuto ANTERIOR. O `fechada` do proprio minuto nao serve: em M1
+    ele e a barra da entrada, que so fecha depois dela, e acima de M1 da
+    no mesmo quando a vela do timeframe tem um minuto so (dia com buraco
+    no dado) - o ATR leria a maxima e a minima do minuto da entrada. O ADX
+    nao passa por aqui: ele filtra o SINAL, na barra que fechou.
+    """
+    vela = np.empty_like(fechada)
+    if len(vela):
+        vela[0] = -1
+        vela[1:] = fechada[:-1]
+    return vela
+
+
+def _ao_abrir(v):
+    """Nivel por minuto que vale no FECHAMENTO -> o que uma entrada na
+    abertura do minuto pode usar: o do minuto anterior (mesma regra de
+    `vela_do_nivel`, para o stop/alvo proprio da estrategia)."""
+    if v is None or np.isscalar(v):
+        return v
+    arr = np.asarray(v, dtype=np.int64)
+    out = np.zeros_like(arr)
+    out[1:] = arr[:-1]
+    return out
+
+
 def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
                  instrument: dict, vela_aberta: bool = False) -> "BacktestResult":
     """Caminho completo: agrega no timeframe, gera sinais, executa em M1.
@@ -172,6 +201,8 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
     pela metade. No histórico inteiro a mesma barra enxerga a vela
     ANTERIOR; com a flag, ao vivo também. O sinal da vela parcial não muda
     nada: ele cai na última barra, e não há barra seguinte para executar.
+    Hoje o stop/alvo já não depende da flag (`vela_do_nivel` lê o minuto
+    anterior); ela segue valendo para o ADX daquela barra.
     """
     from strategies.base import Signals
 
@@ -187,11 +218,11 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
 
     s = estrategia.signals(bars_tf, params)
 
+    # o nivel da estrategia vai ao minuto em que a vela dele FECHA; o
+    # backtest e que o empurra para a entrada seguinte (`_ao_abrir`)
     def nivel(v):
         if np.isscalar(v):
             return v
-        out = np.zeros(n, dtype=np.int64)
-        out[fim] = np.asarray(v, dtype=np.int64)
         seguro = np.clip(fechada, 0, len(fim) - 1)
         cheio = np.asarray(v, dtype=np.int64)[seguro]
         cheio[fechada < 0] = 0
@@ -204,6 +235,7 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
         exit_short=expand_signal(s.exit_short, fim, n),
         sl_points=nivel(s.sl_points),
         tp_points=nivel(s.tp_points),
+        virar=bool(getattr(s, "virar", False)),
     )
     return backtest(bars, sig, profile, instrument, bars_tf, fechada)
 
@@ -298,14 +330,14 @@ def _adx_wilder(h, l, c, n):
     return da, dip, dim
 
 
-def _nivel(bars_tf, fechada, tipo, pontos, periodo, mult, n_m1) -> np.ndarray:
-    """Stop ou alvo em pontos, por barra M1."""
+def _nivel(bars_tf, vela, tipo, pontos, periodo, mult, n_m1) -> np.ndarray:
+    """Stop ou alvo em pontos, por barra M1 (`vela` = `vela_do_nivel`)."""
     if tipo == "pontos":
         return np.full(n_m1, max(0, int(pontos)), dtype=np.int64)
     valores = atr(bars_tf, int(periodo)) * float(mult)
     valores = np.nan_to_num(valores, nan=0.0)
-    seguro = np.clip(fechada, 0, len(valores) - 1)
-    fora = fechada < 0
+    seguro = np.clip(vela, 0, len(valores) - 1)
+    fora = vela < 0
     out = valores[seguro].astype(np.int64)
     out[fora] = 0
     return out
@@ -413,10 +445,11 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
             bars_tf, fechada = bars, np.arange(n)
         else:
             bars_tf, fechada, _ = resample(bars, passo)
+    vela = vela_do_nivel(fechada)
 
-    sl = _nivel(bars_tf, fechada, profile.stop_tipo, profile.stop_pontos,
+    sl = _nivel(bars_tf, vela, profile.stop_tipo, profile.stop_pontos,
                 profile.stop_atr_periodo, profile.stop_atr_mult, n)
-    sl = _override(sl, signals.sl_points, n)
+    sl = _override(sl, _ao_abrir(signals.sl_points), n)
     tick = int(instrument.get("tick_size", 1)) or 1
     if profile.alvo_tipo == "multiplicador":
         # o alvo e o stop VIGENTE x razao, por barra; stop 0 nao ha o que
@@ -427,9 +460,9 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         tp = (np.rint(sl * float(profile.alvo_razao) / tick)
               * tick).astype(np.int64)
     else:
-        tp = _nivel(bars_tf, fechada, profile.alvo_tipo, profile.alvo_pontos,
+        tp = _nivel(bars_tf, vela, profile.alvo_tipo, profile.alvo_pontos,
                     profile.alvo_atr_periodo, profile.alvo_atr_mult, n)
-    tp = _override(tp, signals.tp_points, n)
+    tp = _override(tp, _ao_abrir(signals.tp_points), n)
 
     # protecoes em % do alvo -> pontos, por barra
     pct = lambda v: (tp * (float(v) / 100.0)).astype(np.int64) if v else np.zeros(n, np.int64)
@@ -494,6 +527,7 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         sl, tp, be, step_t, step_d, trail,
         profile.direcao in ("ambas", "compra"),
         profile.direcao in ("ambas", "venda"),
+        bool(getattr(signals, "virar", False)),
         int(profile.max_trades_dia or 0), int(profile.max_prejuizos_dia or 0),
         stop_dia, meta_dia,
         int(profile.max_barras or 0), int(profile.slippage_ticks * tick),

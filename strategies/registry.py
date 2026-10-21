@@ -17,7 +17,7 @@ from pathlib import Path
 from types import ModuleType
 
 PASTA = Path(__file__).resolve().parent
-OCULTOS = {"base", "registry"}
+OCULTOS = {"base", "registry", "saida"}
 PADRAO = "setup_cruzamento"
 
 _cache: dict[str, ModuleType] = {}

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from . import saida as opcao_saida
 from .base import Signals
 
 name = "reversao_rsi"
@@ -52,6 +53,7 @@ params_schema = {
                           "tipo": "int"},
     "periodo_saida": {"label": "Média curta de saída", "default": 5,
                       "min": 2, "max": 60, "step": 1, "tipo": "int"},
+    **opcao_saida.parametro(opcao_saida.PROPRIA, propria=True),
 }
 
 
@@ -145,9 +147,9 @@ def signals(bars: dict, params: dict) -> Signals:
     volta_de_alta = np.nan_to_num(close > curta, nan=False)
     volta_de_baixa = np.nan_to_num(close < curta, nan=False)
 
-    return Signals(
+    return opcao_saida.aplicar(Signals(
         entry_long=entrada_compra,
         entry_short=entrada_venda,
         exit_long=volta_de_alta,
         exit_short=volta_de_baixa,
-    )
+    ), opcao_saida.modo(params, params_schema))

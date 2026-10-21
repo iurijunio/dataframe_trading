@@ -1010,7 +1010,8 @@ def _uma_operacao(monkeypatch):
     op = {"entry_ts": datetime(2026, 10, 1, 9, 1), "exit_ts": datetime(2026, 10, 1, 9, 2),
           "side": 1, "contratos": 1, "entry_px": 100000, "exit_px": 100010,
           "points": 10, "bruto": 2.0, "custo": 1.0, "liquido": 1.0, "reason": 1,
-          "mae": 0, "mfe": 10, "stop_px": None, "alvo_px": None, "aberta": False}
+          "mae": 0, "mfe": 10, "stop_px": None, "alvo_px": None,
+          "stop_ini_px": None, "aberta": False}
     monkeypatch.setattr(papel, "calcular", lambda *a, **k: [dict(op)])
 
 
@@ -1094,3 +1095,42 @@ def test_correcao_posterior_a_reconferencia_nao_reabre_o_papel(base, ligacao, mo
     assert _pregao_papel(ligacao, ontem)[0] == "conferido"
     with db.connect(read_only=True) as con:
         assert [d["dia"] for d in papel.divergencias(con)] == [ontem]
+
+
+def test_captura_so_abre_o_terminal_da_conta_demo(base):
+    # com a conta real cadastrada por último, a captura NUNCA abre o
+    # terminal dela (bug achado na revisão da parte 5, 19/10/2026)
+    import captura as cap
+    from core import ao_vivo as AV
+    AV.criar_conta("demo", "demo", 500.0, login=1, servidor="S-DEMO",
+                   terminal=r"C:\demo\terminal64.exe")
+    AV.criar_conta("real", "real", 500.0, login=2, servidor="S-REAL",
+                   terminal=r"C:\real\terminal64.exe")
+    assert cap._terminal_da_conta() == r"C:\demo\terminal64.exe"
+
+
+def test_banco_fora_no_terminal_levanta_e_nao_devolve_none(base, monkeypatch):
+    # banco que não responde não pode virar "sem caminho": o MT5 abriria o
+    # terminal padrão, que pode ser o da conta real
+    import captura as cap
+
+    def fora(*a, **k):
+        raise OSError("banco preso")
+    monkeypatch.setattr(cap.db, "connect", fora)
+    with pytest.raises(RuntimeError, match="terminal da conta"):
+        cap._terminal_da_conta()
+
+
+def test_main_com_banco_fora_nao_inicia_o_servico_e_sai_com_erro_comum(base, monkeypatch):
+    import captura as cap
+
+    def fora(*a, **k):
+        raise OSError("banco preso")
+    monkeypatch.setattr(cap, "PASTA", base / "ao_vivo")
+    monkeypatch.setattr(cap.db, "connect", fora)
+
+    def nao_deve_iniciar(**k):
+        raise AssertionError("o serviço não pode subir sem caminho do terminal")
+    monkeypatch.setattr(cap, "Servico", nao_deve_iniciar)
+    with pytest.raises(RuntimeError):      # erro comum: o captura.bat reabre
+        cap.main([])

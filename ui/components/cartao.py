@@ -43,6 +43,21 @@ def pct(v: float, casas=1) -> str:
     return f"{num(v, casas)}%"
 
 
+# o começo que quase todo nome de variante repete: na tabela ele empurra o
+# que distingue uma da outra para fora da coluna
+_PREFIXOS_VARIANTE = ("variante-rompimento-", "variante-")
+
+
+def nome_curto(nome) -> str:
+    """"variante-rompimento-medias-abertura-M7" → "medias-abertura-M7".
+    Só para mostrar: o nome inteiro vai no `title`."""
+    nome = "" if nome is None else str(nome)
+    for p in _PREFIXOS_VARIANTE:
+        if nome.lower().startswith(p) and len(nome) > len(p):
+            return nome[len(p):]
+    return nome
+
+
 # ------------------------------------------------------------------ peças
 def dica(texto: str):
     """O (?) ao lado do rótulo. O texto viaja no atributo; o JS o desenha."""

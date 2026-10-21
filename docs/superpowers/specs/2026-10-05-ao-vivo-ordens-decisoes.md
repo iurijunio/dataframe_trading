@@ -1,8 +1,10 @@
 # Projeto C/E, parte 4: ordens — decisões do brainstorming (rascunho)
 
-> Decisões tomadas com o usuário em 02–05/10/2026. **Ainda não é a spec**:
-> falta o rascunho visual das mudanças de tela (oferecido e adiado por
-> limite de uso), escrever a spec completa, revisão por agente e plano.
+> **Implementado** (outubro/2026, branch `live-trading`). Estas decisões
+> viraram a spec `2026-10-08-ao-vivo-ordens-design.md`, que é a fonte do que
+> foi feito; onde divergirem, vale a spec e o código.
+>
+> Decisões tomadas com o usuário em 02–05/10/2026.
 > Herda da seção 1 §10, da parte 2 (captura) e da parte 3 (papel).
 
 ## Fatos levantados no MT5 (02/10/2026, só leitura)
@@ -27,6 +29,15 @@
 | 10 | Contratos | O plano tem os contratos de referência (o papel usa sempre esses). Cada variante do portfólio ganha **"contratos na conta", separado para demo e para real**, padrão = plano, editável no cartão da variante (Ao vivo › Operação) e na ficha (Ao vivo › Estratégias); vale a partir da próxima operação; registrado no diário; ao editar mostra o custo de um stop contra o limite do dia da conta. Comparação sempre **por contrato e em pontos**. Não se edita na Mineração/WFA/Candidata. |
 | 11 | Processos | **Uma automação por terminal** (um MT5 = uma conta logada). A captura (terminal da demo) grava candles e envia as ordens da demo. Conta real: segunda janela "Dataframe - Conta real" pelo `iniciar.bat`, só ordens, candles de um lugar só. **Nesta parte: demo completa; real desenhada e pronta, mas ligada só depois que a demo rodar bem.** |
 | 12 | Pausar com posição aberta | Pausar variante, desligar portfólio ou desligar "Envio de ordens" com posição aberta **encerra na hora** (a mercado), com aviso "isso encerra N posição(ões) aberta(s)" e dois cliques. |
+
+## Ajustes de 08/10/2026 (rascunho visual v2)
+
+| # | Tema | Decisão |
+|---|---|---|
+| 5a | Falha passageira × chamado (refina a 5) | Falha passageira (leilão, requote, servidor ocupado, conexão piscando) a automação resolve sozinha: **saída recusada** tenta de novo a cada 1–2 s até sair (tela: "saída pendente — tentando (3ª)"), stop/alvo seguem na corretora; **entrada recusada** é perdida e registrada e a variante **continua operando** (não congela). Só chama o usuário (faixa "precisa de você" + botões) quando não consegue resolver: MT5 fechado, Algo Trading desligado, conta errada logada, sem margem, posição na corretora diferente da esperada, ou saída pendente há mais de 2 min (e continua tentando). |
+| 6a | Checagem antes da entrada (refina a 6) | Perda do dia + stop da nova operação é comparada com a **trava de 90%**, não com o limite cheio: a automação nunca abre operação cujo stop travaria a conta. |
+| 13 | Derrapagem | Sempre em **ticks** (1 tick = 5 pontos no WIN). |
+| 14 | Tela Operação (v2) | Botão "Zerar tudo e desligar envio" no topo (dois cliques); faixa de saúde (MT5, Algo Trading, conta logada, margem, sinal de vida, último candle); faixa "precisa de você" em largura total; tabela Posições abertas conferida com a corretora (proteção ✓, ticks até stop/alvo); diário do dia; avaliação recolhível; som + título da aba no chamado/trava; sem limite cadastrado não liga o envio. Rascunho: `.superpowers/brainstorm/1270-1791478735/content/ordens-operacao-v2.html`. |
 
 ## Mudanças de tela previstas (rascunho visual pendente)
 

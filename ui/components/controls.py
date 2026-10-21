@@ -111,6 +111,20 @@ def periodo(inicio, fim):
     )
 
 
+# inteiro com até tantos valores é categoria (ex.: `saida`, 0 a 2): o
+# padrão × 3 cortaria modos — com padrão 0, a faixa virava 0 a 0
+POUCOS_VALORES = 10
+
+
+def _ate_padrao(meta: dict, valor):
+    """O "até" que a faixa de mineração sugere antes de o usuário mexer."""
+    if meta.get("tipo") == "int" and meta.get("step"):
+        valores = round((meta["max"] - meta["min"]) / meta["step"]) + 1
+        if valores <= POUCOS_VALORES:
+            return meta["max"]
+    return min(meta["max"], valor * 3)
+
+
 def campos_da_estrategia(mod=None, faixas: dict | None = None):
     """Os campos de parâmetro são montados a partir do schema da estratégia
     ativa — por isso trocar de estratégia troca a seção inteira.
@@ -129,7 +143,7 @@ def campos_da_estrategia(mod=None, faixas: dict | None = None):
         campos.append(_opt(nome, meta["label"], d,
                            de=f.get("de", meta["min"]),
                            passo=f.get("passo", meta["step"]),
-                           ate=f.get("ate", min(meta["max"], d * 3)),
+                           ate=f.get("ate", _ate_padrao(meta, d)),
                            step=meta["step"], minimo=meta["min"],
                            ligado=bool(f.get("on"))))
     return campos

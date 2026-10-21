@@ -14,6 +14,7 @@ from __future__ import annotations
 import numpy as np
 from numba import njit
 
+from . import saida as opcao_saida
 from .base import Signals
 
 name = "rompimento_ema_abertura"
@@ -27,6 +28,7 @@ params_schema = {
     "distancia_abertura": {"label": "Distância mínima da abertura do dia (pontos)",
                             "default": 0, "min": 0, "max": 3000,
                             "step": 50, "tipo": "int"},
+    **opcao_saida.parametro(opcao_saida.NAO_SAIR),
 }
 
 
@@ -89,10 +91,10 @@ def signals(bars: dict, params: dict) -> Signals:
              & (fechamento < minima_anterior)
              & (abertura_dia - fechamento >= distancia))
 
-    return Signals(
+    return opcao_saida.aplicar(Signals(
         entry_long=compra,
         entry_short=venda,
         exit_long=vazio,
         exit_short=vazio.copy(),
-    )
+    ), opcao_saida.modo(params, params_schema))
 

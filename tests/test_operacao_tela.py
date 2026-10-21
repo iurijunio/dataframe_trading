@@ -6,6 +6,7 @@ core devolve; nenhum teste lê o banco real nem o estado.json real.
 """
 from __future__ import annotations
 
+import re
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -41,6 +42,18 @@ def todos(c):
 
 def classes(c) -> str:
     return getattr(c, "className", "") or ""
+
+
+def dicas_txt(c) -> str:
+    """O texto de todos os (?) da árvore: a explicação mora no `data-dica`,
+    não na tela."""
+    return " ".join(x.to_plotly_json()["props"]["data-dica"] for x in todos(c)
+                    if "dica-mark" in classes(x))
+
+
+def titulos(c) -> str:
+    """Os `title` da árvore (o que o mouse em cima mostra)."""
+    return " ".join(getattr(x, "title", None) or "" for x in todos(c))
 
 
 def _resumo(**mudar):
@@ -86,40 +99,41 @@ def _kpi(cartoes, rotulo):
     return next(c for c in cartoes if rotulo in textos(c))
 
 
-def test_seis_indicadores_cada_um_com_dica():
+def test_dois_indicadores_do_papel_cada_um_com_dica():
+    # a tira tem seis: os de conta vêm do pulso (OR.numeros); estes dois são do papel
     cartoes = OP.kpis(_resumo(), [_op()], {"diferenca": 120.0, "faixas": []})
-    assert len(cartoes) == 6
+    assert len(cartoes) == 2
     for c in cartoes:
         assert any("dica-mark" in classes(x) for x in todos(c)), textos(c)
 
 
-def test_pior_momento_com_limite_mostra_a_barra():
-    c = _kpi(OP.kpis(_resumo(), [], {}), "Pior momento")
-    t = textos(c)
-    assert "-R$ 164" in t and "11:08" in t and "R$ 500" in t
-    barra = [x for x in todos(c) if "op-barra-uso" in classes(x)]
+def test_pior_momento_fica_no_cartao_da_perda_com_barra():
+    # o pior momento saiu da tira: mora no (?) da perda da demo, e a barra
+    # até a trava é a do cartão
+    from ui.components import ordens_panel as OR
+    c = OR.perda_do_dia({"perda": {"total": 164.0}, "limite": 500.0}, None,
+                        origem="demo",
+                        extra="Pior momento de hoje: -R$ 164 às 11:08.")
+    assert "R$ 164" in textos(c) and "33%" in textos(c)
+    assert "11:08" in dicas_txt(c)
+    barra = [x for x in todos(c) if "ord-barra-uso" in classes(x)]
     assert barra and barra[0].style["width"] == "33%"
 
 
-def test_pior_momento_sem_limite_esconde_a_barra():
-    c = _kpi(OP.kpis(_resumo(limite_dia=None), [], {}), "Pior momento")
-    assert not [x for x in todos(c) if "op-barra" in classes(x)]
+def test_pior_momento_sem_limite_nao_desenha_barra():
+    from ui.components import ordens_panel as OR
+    c = OR.perda_do_dia({"perda": {"total": 0.0}, "limite": None}, None)
+    assert not [x for x in todos(c) if "ord-barra" in classes(x)]
     assert "sem limite" in textos(c)
-
-
-def test_posicao_agora_diz_o_lado_e_os_contratos():
-    c = _kpi(OP.kpis(_resumo(posicao={"liquida": -2, "por_ligacao": {}}),
-                     [], {}), "Posição agora")
-    t = textos(c)
-    assert "vendido" in t and "papel 2" in t and "demo —" in t
 
 
 def test_resultado_hoje_conta_so_o_que_conta():
     ops = [_op(), _op(op_id=2, conta=False),
            _op(op_id=3, situacao="aberta", aberta=True, exit_ts=None)]
-    t = textos(_kpi(OP.kpis(_resumo(), ops, {}), "Resultado hoje"))
+    t = textos(_kpi(OP.kpis(_resumo(), ops, {}), "PAPEL"))
     assert "+R$ 286" in t
-    assert "2 operações" in t and "1 aberta" in t
+    # o total embaixo é o acumulado desde o plano em vigor (2.418,00)
+    assert "2.418,00" in t
 
 
 def test_contra_o_esperado_sem_expectativa_e_travessao():
@@ -131,30 +145,53 @@ def test_contra_o_esperado_sem_expectativa_e_travessao():
 def test_contra_o_esperado_conta_as_faixas():
     esp = {"diferenca": -80.0,
            "faixas": ["p10_p50", "p50_p90", "abaixo_p10", None]}
-    t = textos(_kpi(OP.kpis(_resumo(), [], esp), "Contra o esperado"))
-    assert "abaixo da mediana" in t
-    assert "2 de 3 dentro da faixa" in t and "1 abaixo do p10" in t
+    c = _kpi(OP.kpis(_resumo(), [], esp), "Contra o esperado")
+    # na nota (uma linha) o que mais importa; a frase inteira no title
+    assert "1 abaixo do p10" in textos(c)
+    assert ("abaixo da mediana · 2 de 3 dentro da faixa · 1 abaixo do p10"
+            in titulos(c))
 
 
 # ------------------------------------------------------------- variantes
 def test_cartao_mostra_contratos_papel_e_demo():
-    t = textos(OP.cartao_variante(_var(contratos=3), None))
-    assert "papel 3" in t and "demo —" in t and "plano #5" in t
+    c = OP.cartao_variante(_var(contratos=3), None)
+    # rascunho v4: a etiqueta mostra só a fase; os contratos no title dela
+    assert "papel" in textos(c) and "papel 3" not in textos(c)
+    # papel, demo e plano juntos no title da etiqueta da fase
+    assert "papel 3" in titulos(c) and "demo —" in titulos(c)
+    assert "plano #5" in titulos(c)
+    demo = OP.cartao_variante(_var(fase="demo", contratos=3, contratos_demo=1),
+                              None)
+    assert "demo 1" in titulos(demo)
+
+
+def test_variante_nome_curto_acerto_em_pct_e_uma_linha():
+    c = OP.cartao_variante(_var(nome="variante-rompimento-medias-abertura-M7",
+                                acerto="2/3"), None)
+    nome = next(x for x in todos(c) if "op-nome" in classes(x))
+    assert nome.children == "medias-abertura-M7"
+    assert nome.title == "variante-rompimento-medias-abertura-M7"
+    assert "67%" in textos(c) and "2/3" not in textos(c)
+    assert not [x for x in todos(c) if "op-var-n2" in classes(x)]
+    # pausar e o lápis no fim da linha, só ícone, com o nome no title
+    acoes = next(x for x in todos(c) if "op-var-c-acao" in classes(x))
+    assert "Pausar variante" in titulos(acoes) and "contratos" in titulos(acoes)
 
 
 def test_cartao_pulado_fica_apagado_com_o_motivo():
     c = OP.cartao_variante(_var(status="pulado",
                                 motivo="código mudou desde o plano"), None)
     assert "op-var-apagada" in classes(c)
-    t = textos(c)
-    assert "pulado" in t and "código mudou desde o plano" in t
+    assert "pulado" in textos(c)
+    # o motivo é frase: mora no (?) da etiqueta
+    assert "código mudou desde o plano" in dicas_txt(c)
 
 
 def test_cartao_interrompido_fica_apagado_com_o_motivo():
     c = OP.cartao_variante(_var(status="interrompido", motivo="código mudou"),
                            None)
     assert "op-var-apagada" in classes(c)
-    assert "interrompido" in textos(c) and "código mudou" in textos(c)
+    assert "interrompido" in textos(c) and "código mudou" in dicas_txt(c)
 
 
 def test_cartao_gravado_mesmo_assim_tem_a_etiqueta():
@@ -165,13 +202,18 @@ def test_cartao_gravado_mesmo_assim_tem_a_etiqueta():
 
 
 def test_cartao_posicao_aberta():
-    t = textos(OP.cartao_variante(_var(posicao=1), None))
-    assert "comprado 1" in t
+    c = OP.cartao_variante(_var(posicao=1), None)
+    assert "comprado 1" in titulos(c)
+    assert "vendido 2" in titulos(OP.cartao_variante(_var(posicao=-2), None))
+    # zerado: nenhuma seta
+    assert not [x for x in todos(OP.cartao_variante(_var(), None))
+                if "op-var-pos" in classes(x)]
 
 
 def test_cartao_botao_de_dois_cliques():
     b = [x for x in todos(OP.cartao_variante(_var(), None))
-         if isinstance(getattr(x, "id", None), dict)]
+         if isinstance(getattr(x, "id", None), dict)
+         and x.id["type"] == "av-op-acao"]
     assert b[0].id == {"type": "av-op-acao", "acao": "membro-desligar", "id": 1}
     armado = OP.cartao_variante(_var(), "membro-desligar:1")
     assert "Confirmar?" in textos(armado)
@@ -206,14 +248,6 @@ def test_cartao_traduz_a_fase():
     assert "real mínimo" in t and "real_minimo" not in t
 
 
-def test_pior_momento_sem_hora_nao_comeca_com_separador():
-    c = _kpi(OP.kpis(_resumo(pior_momento={"valor": 0.0, "quando": None}),
-                     [], {}), "Pior momento")
-    nota = next(x for x in todos(c) if "op-kpi-n" in classes(x))
-    assert not nota.children.startswith(" ·")
-    assert nota.children.startswith("limite do dia")
-
-
 def _com_dica(arvore, rotulo):
     for x in todos(arvore):
         filhos = getattr(x, "children", None)
@@ -224,13 +258,14 @@ def _com_dica(arvore, rotulo):
 
 def test_colunas_da_variante_tem_dica():
     arvore = OP.coluna_variantes([_var()], None, _resumo())
-    for rot in ("Hoje", "Operações", "Acerto", "Acumulado"):
+    for rot in ("Variante", "Hoje", "Op.", "Acerto", "Acumulado"):
         assert _com_dica(arvore, rot), rot
 
 
 def test_cabecalho_da_tabela_tem_dica_nas_metricas():
     arvore = OP.tabela_operacoes([_op()])
-    for rot in ("Contr. papel / demo", "Pontos", "Resultado papel"):
+    for rot in ("Contr. papel / real / demo", "Pontos", "Resultado",
+                "Papel × demo"):
         assert _com_dica(arvore, rot), rot
 
 
@@ -244,10 +279,13 @@ def test_comparativo_tem_dica_em_todas_as_linhas():
 
 
 def test_botao_estado_armado_sem_reler_o_banco():
-    assert OP.estado_botao("membro-desligar", 1, None)[0] == "Pausar"
+    # só ícone (rascunho v4): sem texto até armar
+    rot, cls = OP.estado_botao("membro-desligar", 1, None)
+    assert rot == "" and "op-bt-pause" in cls
     rot, cls = OP.estado_botao("membro-desligar", 1, "membro-desligar:1")
     assert rot == "Confirmar?" and "av-armado" in cls
-    assert OP.estado_botao("membro-desligar", 2, "membro-desligar:1")[0] == "Pausar"
+    assert OP.estado_botao("membro-desligar", 2, "membro-desligar:1")[0] == ""
+    assert OP.estado_botao("pf-desligar", 3, None)[0] == ""
     assert OP.estado_botao("pf-ligar", 3, None)[0] == "Ligar portfólio"
 
 
@@ -298,8 +336,7 @@ def test_linha_congelada_diz_por_que():
 def test_cartao_com_falha_no_calculo_mostra_o_motivo():
     c = OP.cartao_variante(_var(status="falha",
                                 motivo="falha no cálculo: motor caiu"), None)
-    t = textos(c)
-    assert "falha no cálculo" in t and "motor caiu" in t
+    assert "falha no cálculo" in textos(c) and "motor caiu" in dicas_txt(c)
     assert "op-var-apagada" in classes(c)
 
 
@@ -441,10 +478,15 @@ def test_situacao_erro_do_papel_aparece():
 
 
 def test_alertas_viram_faixas():
+    # linha em destaque no topo da tabela do Diário: Hora | Variante | texto
     al = [{"tipo": "pulado", "ligacao_id": 1, "texto": "var-1: pregão pulado — x"}]
-    t = textos(OP.lista_alertas(al))
-    assert "var-1: pregão pulado" in t
-    assert "nada pede atenção" in textos(OP.lista_alertas([]))
+    linhas = OP.lista_alertas(al, {1: "var-1"})
+    assert len(linhas) == 1 and "op-alerta-rosa" in classes(linhas[0])
+    cels = [textos(c) for c in linhas[0].children]
+    assert cels[0] == "—" and cels[1] == "var-1"
+    assert "pregão pulado — x" in cels[2] and "var-1:" not in cels[2]
+    # sem alerta, nada ("nada pede atenção" saiu)
+    assert OP.lista_alertas([]) == []
 
 
 # ------------------------------------------------------------ curva / comp.
@@ -473,6 +515,79 @@ def test_comparativo_demo_e_real_travessao_e_fator_infinito():
                                       "demo": None, "real": None}))
     assert "sem perdas" in t and "Esperado (WFA)" in t and "Demo" in t
     assert "None" not in t and "nan" not in t
+
+
+def _linha_cmp(arvore, rotulo) -> list[str]:
+    """As células (texto) da linha do comparativo cujo rótulo é `rotulo`."""
+    for tr in todos(arvore):
+        if type(tr).__name__ != "Tr":
+            continue
+        cels = tr.children if isinstance(tr.children, list) else [tr.children]
+        if cels and textos(cels[0]).startswith(rotulo):
+            # a etiqueta bom/atenção/ruim é texto da célula; o valor vem antes
+            return [re.sub(r" (bom|atenção|ruim)$", "", textos(c)) for c in cels[1:]]
+    raise AssertionError(rotulo)
+
+
+def _demo_cmp(**mudar):
+    # o pregão de 16/10/2026: +61 e +60 brutos, 1 contrato, 1,50 de custo
+    d = {"n": 2, "resultado_por_contrato": 59.0, "pontos_por_operacao": 302.5,
+         "fator_lucro": float("inf"), "acerto": 1.0,
+         "contratos_por_operacao": 1.0, "total": 118.0, "mesmo_minuto": 1.0,
+         "derrapagem_extra": -0.5, "atraso_ms": 65.0, "rejeitadas": 0}
+    d.update(mudar)
+    return d
+
+
+def test_comparativo_coluna_demo_preenchida():
+    papel = {"n": 4, "resultado_por_contrato": 50.0, "pontos_por_operacao": 260.0,
+             "fator_lucro": 2.0, "acerto": 0.75, "contratos_por_operacao": 1.0,
+             "total": 200.0}
+    arv = OP.tabela_comparativo({"esperado_wfa": papel, "papel": papel,
+                                 "demo": _demo_cmp(), "real": None})
+    # colunas: Esperado, Papel, Demo, Real
+    assert _linha_cmp(arv, "Operações")[2] == "2"
+    assert _linha_cmp(arv, "Resultado médio por contrato")[2] == "+R$ 59,00"
+    assert _linha_cmp(arv, "Resultado total")[2] == "+R$ 118,00"
+    assert _linha_cmp(arv, "Fator de lucro")[2] == "sem perdas"
+    assert _linha_cmp(arv, "Sinal no mesmo minuto") == ["—", "—", "100%", "—"]
+    assert _linha_cmp(arv, "Derrapagem média") == ["—", "—", "-0,5 tick", "—"]
+    assert _linha_cmp(arv, "Atraso médio da ordem") == ["—", "—", "65 ms", "—"]
+    assert _linha_cmp(arv, "Ordens rejeitadas") == ["—", "—", "0", "—"]
+    assert "None" not in textos(arv) and "nan" not in textos(arv)
+
+
+def test_comparativo_demo_derrapagem_pior_tem_sinal_e_atraso_em_segundos():
+    arv = OP.tabela_comparativo({"esperado_wfa": None, "papel": None,
+                                 "demo": _demo_cmp(derrapagem_extra=0.3,
+                                                   atraso_ms=1450.0,
+                                                   rejeitadas=3,
+                                                   mesmo_minuto=2 / 3),
+                                 "real": None})
+    assert _linha_cmp(arv, "Derrapagem média")[2] == "+0,3 tick"
+    assert _linha_cmp(arv, "Atraso médio da ordem")[2] == "1,4 s"
+    assert _linha_cmp(arv, "Ordens rejeitadas")[2] == "3"
+    assert _linha_cmp(arv, "Sinal no mesmo minuto")[2] == "67%"
+
+
+def test_comparativo_demo_so_com_aberta_mostra_execucao():
+    # nenhuma fechada ainda: resultado "—", execução já tem número
+    demo = _demo_cmp(n=0, resultado_por_contrato=None, pontos_por_operacao=None,
+                     fator_lucro=None, acerto=None, contratos_por_operacao=None,
+                     total=0.0, derrapagem_extra=None, atraso_ms=80.0)
+    arv = OP.tabela_comparativo({"esperado_wfa": None, "papel": None,
+                                 "demo": demo, "real": None})
+    assert _linha_cmp(arv, "Resultado total")[2] == "—"
+    assert _linha_cmp(arv, "Derrapagem média")[2] == "—"
+    assert _linha_cmp(arv, "Atraso médio da ordem")[2] == "80 ms"
+
+
+def test_comparativo_sem_demo_execucao_toda_travessao():
+    arv = OP.tabela_comparativo({"esperado_wfa": None, "papel": None,
+                                 "demo": None, "real": None})
+    for rot in ("Sinal no mesmo minuto", "Derrapagem média",
+                "Atraso médio da ordem", "Ordens rejeitadas"):
+        assert _linha_cmp(arv, rot) == ["—"] * 4, rot
 
 
 # ------------------------------------------------------------- estrutura
@@ -546,9 +661,9 @@ def test_caixas_que_rolam_sao_fixas_no_layout():
                 if "op-tabela-caixa" in classes(x)]
 
 
-def test_botao_abrir_em_estrategias():
-    b = next(x for x in todos(OP.bloco()) if getattr(x, "id", None) == "av-op-ficha")
-    assert b.children == "Abrir em Estratégias"
+def test_sem_botao_abrir_em_estrategias():
+    ids = {getattr(x, "id", None) for x in todos(OP.bloco())}
+    assert "av-op-ficha" not in ids
 
 
 def test_o_pulso_nao_abre_o_banco(monkeypatch):
@@ -608,6 +723,11 @@ def test_curva_e_comparativo_usam_o_dia_da_tela(monkeypatch):
     monkeypatch.setattr(PL, "comparativo", anota("comparativo", {
         "esperado_wfa": vazio, "papel": vazio, "demo": None, "real": None}))
     monkeypatch.setattr(PL, "curva_vs_esperado", anota("curva", curva))
+    # parte 4: o interruptor do Envio lê a conta demo
+    monkeypatch.setattr(PL, "envio_da_conta", lambda con, cid: False)
+    # as operações e o total de cada conta, por variante (painel em partes)
+    monkeypatch.setattr(PL, "operacoes_demo", lambda *a, **k: [])
+    monkeypatch.setattr(PL, "total_por_ligacao", lambda *a, **k: {})
     CO.montar(1, None, None, None)
     CO.ler_curva(1, None)
     CO.ler_curva(1, 1)
@@ -623,3 +743,153 @@ def test_subtela_operacao_liga_o_pulso_dela():
     assert pg_off is True and op_off is False
     assert mostrar_subtela("operacao", "backtest")[4] is True
     assert mostrar_subtela("pregao", "aovivo")[4] is True
+
+
+def test_cabecalho_mostra_o_simbolo_mesmo_com_o_contrato_do_dia_inteiro():
+    # o estado da captura traz o contrato do dia como dicionário; um dict como
+    # filho de html.B quebra o desenho da tela e o Dash volta o menu para a
+    # aba anterior (bug de 15/10/2026)
+    import json
+    from ui.components import operacao_panel as OP
+    contrato = {"simbolo": "WINZ26", "motivo": "pelo volume",
+                "vence_em": "2026-12-16", "amanha": None}
+    cab = OP.cabecalho({"ligado": True}, {}, contrato=contrato)
+    texto = json.dumps([c.to_plotly_json() for c in cab], default=lambda o: o.to_plotly_json())
+    assert "WINZ26" in texto
+    assert "vence_em" not in texto and "motivo" not in texto
+    cab = OP.cabecalho({"ligado": True}, {}, contrato="WINZ26")
+    assert "WINZ26" in json.dumps([c.to_plotly_json() for c in cab],
+                                  default=lambda o: o.to_plotly_json())
+
+
+
+def test_operacao_sem_frase_visivel_sob_os_titulos():
+    # regra do usuário: explicação só no (?), nunca frase solta na tela
+    arvore = OP.bloco()
+    assert not [x for x in todos(arvore) if "av-sec-nota" in classes(x)]
+    t = textos(arvore)
+    for frase in ("Tudo o que a automação fez", "clique para recolher",
+                  "Por contrato, para comparar", "O que está na corretora"):
+        assert frase not in t, frase
+    subs = [x for x in todos(arvore) if "op-sub-t" in classes(x)]
+    demo = next(x for x in subs if textos(x).startswith("Demo"))
+    assert "Derrapagem" in dicas_txt(demo)
+    # a chave dos símbolos do gráfico saiu da tela para o (?) do título
+    assert "▲ compra" not in t and "▲ compra" in dicas_txt(arvore)
+
+
+def test_abas_sempre_montadas_com_operacoes_aberta():
+    """As três abas ficam no layout (só o CSS mostra uma): dcc.Tabs
+    desmontaria a fechada e recriaria a curva."""
+    arvore = OP.bloco()
+    por_id = {x.id: x for x in todos(arvore)
+              if isinstance(getattr(x, "id", None), str)}
+    aba = por_id["av-op-aba"]
+    assert type(aba).__name__ == "RadioItems" and aba.value == "operacoes"
+    assert [o["value"] for o in aba.options] == ["operacoes", "diario",
+                                                 "avaliacao"]
+    corpo = por_id["av-op-abas"]
+    assert "op-aba-operacoes" in classes(corpo)
+    dentro = {x.id for x in todos(corpo) if isinstance(getattr(x, "id", None), str)}
+    assert {"av-op-ord-operacoes", "av-op-operacoes", "av-op-filtro",
+            "av-op-alertas", "av-op-ord-diario", "av-op-ord-diario-filtro",
+            "av-op-comparativo", "av-op-curva", "av-op-ord-cmp",
+            "av-op-ord-selo", "av-op-ord-avaliacao"} <= dentro
+    assert not [x for x in todos(arvore) if type(x).__name__ in ("Tabs", "Tab")]
+
+
+def test_cabecalho_mostra_o_pregao_da_tela():
+    cab = OP.cabecalho({"ligado": True}, {}, dia=date(2026, 10, 15))
+    assert "pregão 15/10" in textos(cab)
+    assert "pregão —" in textos(OP.cabecalho({"ligado": True}, {}))
+
+
+def test_cabecalho_numa_linha_como_o_rascunho():
+    res = _resumo(contas={"demo": {"conta_id": 2, "nome": "ClearInvestimentos-DEMO"},
+                          "real": None})
+    cab = OP.cabecalho({"ligado": True}, res, contrato="WINZ26",
+                       dia=date(2026, 10, 16))
+    # o "?" é o texto escondido dos (?): fora da comparação
+    t = " ".join(p for p in textos(cab).split() if p != "?")
+    assert t.startswith("ligado | WINZ26 · demo ClearInvestimentos · R$ 10.000 · "
+                        "2/2 operando · pregão 16/10")
+    assert "ClearInvestimentos-DEMO" in titulos(cab)
+    assert "op-st-on" in classes(cab[0])
+    # o "papel HH:MM:SS" do pulso continua a linha
+    sit = OP.faixa_situacao(_estado(), AGORA)
+    assert " ".join(textos(sit).split()).startswith("· papel 14:37:01")
+    # todo (?) do cabeçalho continua lá: contrato, conta, operando, pregão
+    assert len([x for x in todos(cab) if "dica-mark" in classes(x)]) == 4
+
+
+# --------------------------------------------- variantes em partes (REAL/DEMO)
+def _ids(arvore):
+    return [x.id for x in todos(arvore) if isinstance(getattr(x, "id", None), dict)]
+
+
+def test_variante_real_aparece_nas_duas_partes_com_pausa_so_na_real():
+    v = _var(fase="real", contratos_real=2)
+    est = {"real": {1: {"hoje": 50.0, "n": 1, "acerto": "1/1", "total": 120.0}},
+           "demo": {1: {"hoje": 20.0, "n": 1, "acerto": "1/1", "total": 80.0}}}
+    arv = OP.cartoes_por_conta([v], None, est)
+    partes = [textos(x) for x in arv if "op-var-parte" in classes(x)]
+    assert partes == ["REAL", "DEMO"]
+    ids = _ids(arv)
+    # pausar só na parte REAL (a variante está em real)
+    assert ids.count({"type": "av-op-acao", "acao": "membro-desligar", "id": 1}) == 1
+    # um ✎ por parte, cada um com a conta dele
+    assert {"type": "av-op-ctr-real", "id": 1} in ids
+    assert {"type": "av-op-ord-ctr", "id": 1} in ids
+    # o resultado é o da conta de cada parte
+    t = textos(arv)
+    assert "+R$ 50" in t and "+R$ 20" in t
+
+
+def test_variante_demo_so_na_parte_demo_com_pausa_la():
+    v = _var(fase="demo")
+    arv = OP.cartoes_por_conta([v], None, {"real": {}, "demo": {}})
+    partes = [textos(x) for x in arv if "op-var-parte" in classes(x)]
+    assert partes == ["REAL", "DEMO"]
+    ids = _ids(arv)
+    assert ids.count({"type": "av-op-acao", "acao": "membro-desligar", "id": 1}) == 1
+    assert {"type": "av-op-ctr-real", "id": 1} not in ids
+
+
+def test_estatisticas_por_conta_hoje_op_acerto_e_total():
+    ops = [{"ligacao_id": 1, "situacao": "fechada", "resultado": 30.0},
+           {"ligacao_id": 1, "situacao": "fechada", "resultado": -10.0},
+           {"ligacao_id": 1, "situacao": "aberta", "resultado": 5.0}]
+    st = OP.estatisticas(ops, {1: {"total": 99.0}}, [1, 2])
+    assert st[1] == {"hoje": 25.0, "n": 3, "acerto": "1/2", "total": 99.0}
+    assert st[2] == {"hoje": 0.0, "n": 0, "acerto": None, "total": None}
+
+
+# ----------------------------------------- etiquetas bom/atenção/ruim (§5.2)
+def _celulas_brutas(arvore, rotulo):
+    for tr in todos(arvore):
+        if type(tr).__name__ == "Tr":
+            cels = tr.children if isinstance(tr.children, list) else [tr.children]
+            if cels and textos(cels[0]).startswith(rotulo):
+                return [textos(c) for c in cels[1:]]
+    raise AssertionError(rotulo)
+
+
+def test_etiquetas_de_execucao_seguem_as_faixas_da_spec():
+    demo = {"n": 5, "mesmo_minuto": 0.96, "derrapagem_extra": 1.5,
+            "atraso_ms": 1200, "rejeitadas": 0, "fator_lucro": 1.0, "acerto": 0.5}
+    esperado = {"n": 30, "fator_lucro": 1.0, "acerto": 0.6}
+    arv = OP.tabela_comparativo({"esperado_wfa": esperado, "papel": {"n": 0},
+                                 "demo": demo, "real": None})
+    assert _celulas_brutas(arv, "Sinal no mesmo minuto")[2].endswith("bom")
+    assert _celulas_brutas(arv, "Derrapagem média")[2].endswith("atenção")
+    assert _celulas_brutas(arv, "Atraso médio")[2].endswith("ruim")
+    assert _celulas_brutas(arv, "Ordens rejeitadas")[2].endswith("bom")
+    # 0,5 contra 0,6 esperado: abaixo de 80% do esperado? 0,5 ≥ 0,48 → atenção
+    assert _celulas_brutas(arv, "Acerto")[2].endswith("atenção")
+    # a legenda com as três etiquetas
+    assert "bom" in textos(arv) and "atenção" in textos(arv) and "ruim" in textos(arv)
+
+
+def test_confirmar_do_envio_nao_troca_o_nome_da_chave():
+    rot, cls = OP.estado_botao("envio-real-desligar", 3, "envio-real-desligar:3")
+    assert rot == "Real" and "av-armado" in cls

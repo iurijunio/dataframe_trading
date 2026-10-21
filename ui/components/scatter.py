@@ -33,10 +33,10 @@ METRICAS = [
 LAYOUT = dict(
     paper_bgcolor=T.SURFACE,
     plot_bgcolor=T.SURFACE,
-    font=dict(family="JetBrains Mono, monospace", size=11, color=T.MUTED),
+    font=dict(family=T.FONTE_MONO, size=11, color=T.MUTED),
     margin=dict(l=8, r=8, t=8, b=8),
     hoverlabel=dict(bgcolor=T.SURFACE_2, bordercolor=T.ACCENT_DIM,
-                    font=dict(color=T.INK, family="JetBrains Mono, monospace")),
+                    font=dict(color=T.INK, family=T.FONTE_MONO)),
     showlegend=False,
 )
 EIXO = dict(gridcolor=T.LINE_SOFT, zerolinecolor=T.LINE,

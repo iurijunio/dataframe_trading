@@ -19,6 +19,8 @@ from core import portfolio as P  # noqa: E402
 from core.engine import kernel as K  # noqa: E402
 from core.engine.execution import ExecutionProfile, run_strategy  # noqa: E402
 from tests._cadeia import banco, campos_plano, mineracao, wfa  # noqa: E402,F401
+from tests.fabrica_ao_vivo import (barras_sinteticas as _barras_sinteticas,  # noqa: E402
+                                   inserir_barras, ligacao_com_plano)
 
 SIMB = "WIN$N"
 ESTRAT = "rompimento_canal"
@@ -33,66 +35,8 @@ CONTRATOS = 2
 
 
 # ------------------------------------------------------------- dados
-def _dias_uteis(n, inicio=date(2026, 1, 5)):
-    out, d = [], inicio
-    while len(out) < n:
-        if d.weekday() < 5:
-            out.append(d)
-        d += timedelta(days=1)
-    return out
-
-
-def _barras_sinteticas(n_dias=40, seed=11):
-    """Pregões de 09:00 a 18:24 (565 minutos), tendência do dia + ruído, de
-    5 em 5 pontos como o WIN."""
-    rng = np.random.default_rng(seed)
-    dias = _dias_uteis(n_dias)
-    ts, o, h, l, c = [], [], [], [], []
-    preco = 120_000
-    for dia in dias:
-        tendencia = rng.normal(0, 6)
-        preco += int(rng.normal(0, 150)) // 5 * 5
-        inicio = np.datetime64(dia) + np.timedelta64(9 * 60, "m")
-        for m in range(565):
-            ab = preco
-            fe = ab + int(round((tendencia + rng.normal(0, 30)) / 5)) * 5
-            ts.append(inicio + np.timedelta64(m, "m"))
-            o.append(ab)
-            c.append(fe)
-            h.append(max(ab, fe) + int(abs(rng.normal(0, 15))) // 5 * 5)
-            l.append(min(ab, fe) - int(abs(rng.normal(0, 15))) // 5 * 5)
-            preco = fe
-    n = len(ts)
-    b = {"ts": np.array(ts, dtype="datetime64[ns]"),
-         "open": np.array(o, np.int64), "high": np.array(h, np.int64),
-         "low": np.array(l, np.int64), "close": np.array(c, np.int64),
-         "tick_volume": np.ones(n, np.int64), "volume": np.ones(n, np.int64)}
-    return b, dias
-
-
 def _inserir(con, b, sl=slice(None)):
-    ts = [str(x) for x in b["ts"][sl].astype("datetime64[s]")]
-    cols = [b[c][sl].tolist() for c in ("open", "high", "low", "close")]
-    if len(ts) == 1:
-        con.execute("INSERT INTO bars_m1 VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, 1)",
-                    [SIMB, ts[0], *(c[0] for c in cols)])
-        return
-    # parâmetro em lista é lento demais para 22 mil barras: vai por CSV
-    import tempfile
-    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False,
-                                     encoding="ascii") as f:
-        f.write("ts,open,high,low,close\n")
-        f.writelines(f"{t},{o},{h},{lo},{c}\n" for t, o, h, lo, c
-                     in zip(ts, *cols))
-        caminho = f.name
-    try:
-        con.execute(
-            "INSERT INTO bars_m1 SELECT ?, ts, open, high, low, close, 1, 1, "
-            f"0, 1 FROM read_csv({db._sql_str(Path(caminho).as_posix())}, "
-            "header = true, columns = {'ts': 'TIMESTAMP', 'open': 'BIGINT', "
-            "'high': 'BIGINT', 'low': 'BIGINT', 'close': 'BIGINT'})", [SIMB])
-    finally:
-        Path(caminho).unlink()
+    inserir_barras(con, b, sl, SIMB)
 
 
 def _indices_do_dia(b, dia):
@@ -134,20 +78,9 @@ def mundo(banco):
     b, dias = _barras_sinteticas()
     with db.connect() as con:
         _inserir(con, b)
-    v = variantes.criar("romp-teste", ESTRAT)
-    mineracao(1, variante_id=v)
-    wfa(1, 1)
-    pid = plano.salvar(**campos_plano(
-        params=PARAMS, profile=PERFIL, contratos=CONTRATOS,
-        codigo_hash=codigo.hash_estrategia(ESTRAT)),
-        agora=datetime(2025, 12, 1, 10))
-    pf = P.criar("pf")
-    lig = P.adicionar_variante(pf, v)
-    with db.connect() as con:
-        # adicionada e ligada bem antes dos pregões sintéticos
-        con.execute("UPDATE portfolio_membros SET adicionado_em = "
-                    "'2025-12-01 09:00'")
-        con.execute("UPDATE portfolios SET ligado = true")
+    f = ligacao_com_plano("romp-teste", params=PARAMS, profile=PERFIL,
+                          contratos=CONTRATOS, portfolio_id=P.criar("pf"))
+    v, pid, pf, lig = f.v, f.plano_id, f.pf, f.lig
     return SimpleNamespace(barras=b, dias=dias, plano_id=pid, lig=lig, pf=pf,
                            v=v, inst=db.load_instrument_yaml(SIMB))
 
@@ -293,6 +226,9 @@ _NAO_SAO_JANELA = {
     # strategies/rompimento_abertura.py (arquivo do usuário): conta as
     # barras desde a abertura do PRÓPRIO dia, que o papel sempre tem
     "barras_abertura": "barras do próprio dia, a partir da abertura",
+    # strategies/saida.py: a posição fecha todo dia, então a virada não
+    # carrega estado de um pregão para o outro
+    "saida": "modo de saída (0 a 3), não quantidade de barras",
 }
 
 
@@ -377,6 +313,27 @@ def test_rodar_dia_usa_stop_do_plano_e_nunca_from_config(mundo, monkeypatch):
     assert all((r.sl_at_entry == 123).all() for r in vistos)
     assert ops and all(o["contratos"] == CONTRATOS for o in ops)
     assert all(abs(o["entry_px"] - o["stop_px"]) == 123 for o in ops)
+
+
+def test_papel_grava_e_atualiza_o_stop_da_entrada(mundo):
+    # stop_px anda com breakeven/trailing; o custo de um stop precisa do da
+    # entrada, e uma operação recalculada tem de corrigir o valor gravado
+    dia = mundo.dias[30]
+    with db.connect() as con:
+        res = papel.rodar_dia(con, dia, _as(dia, 19), {})
+        papel.gravar(con, res, _as(dia, 19))
+        ini = con.execute(
+            "SELECT abs(entry_px - stop_ini_px) FROM papel_operacoes "
+            "WHERE ligacao_id = ? AND dia = ?", [mundo.lig, dia]).fetchall()
+        assert ini and all(r[0] == 123 for r in ini)
+        con.execute("UPDATE papel_operacoes SET stop_ini_px = 1 "
+                    "WHERE ligacao_id = ?", [mundo.lig])
+        res = papel.rodar_dia(con, dia, _as(dia, 19, 1), {})
+        papel.gravar(con, res, _as(dia, 19, 1))
+        ini = con.execute(
+            "SELECT abs(entry_px - stop_ini_px) FROM papel_operacoes "
+            "WHERE ligacao_id = ? AND dia = ?", [mundo.lig, dia]).fetchall()
+    assert all(r[0] == 123 for r in ini)
 
 
 # ------------------------------------------------------------- aberta

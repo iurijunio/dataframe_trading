@@ -253,8 +253,10 @@ Três meses costuma ser o mínimo que diz alguma coisa em day trade.
 A pergunta 1 é a que pega **look-ahead** — o erro mais caro e mais silencioso
 que existe em backtest.
 
-**Na Dataframe:** não existe. É o maior buraco da plataforma para quem quer
-chegar ao live.
+**Na Dataframe:** existe. Cada variante ligada a um portfólio opera "no
+papel" os contratos do plano, com o mesmo motor e o mesmo perfil de execução
+do walk-forward, sem mandar ordem. A tabela `papel_backtest` confere todo dia
+o papel contra o backtest.
 
 ### 12. Portfólio de baixa correlação
 
@@ -271,11 +273,11 @@ O que medir:
 - o **drawdown do conjunto**, calculado sobre a curva somada;
 - se elas ficam posicionadas ao mesmo tempo (a exposição soma, o risco também).
 
-**Na Dataframe:** a tela ainda não existe, mas os **dados já estão
-gravados**. Todo walk-forward salvo guarda os trades da sua curva fora da
-amostra (`wfa_trades`), com entrada, saída, lado, contratos e custo — de onde
-saem a série diária, os intervalos de exposição e, daí, todas as leituras
-acima. Faltam os gráficos, não a matéria-prima.
+**Na Dataframe:** existe a tela Portfólio. Todo walk-forward salvo guarda os
+trades da sua curva fora da amostra (`wfa_trades`), com entrada, saída, lado,
+contratos e custo — de onde saem a série diária, os intervalos de exposição e,
+daí, as leituras acima. O portfólio referencia só a variante e resolve o plano
+ativo na hora.
 
 E vale registrar por que são os trades **OOS**: montar portfólio com
 backtests otimizados é correlacionar dois sobreajustes. A curva concatenada
@@ -287,6 +289,15 @@ Aqui não se testa a estratégia — ela já foi testada. Testa-se a
 **infraestrutura**: o robô reconecta se cair? o que acontece com uma posição
 aberta se o processo morrer? a ordem chega no tempo certo? o horário do
 servidor bate com o de Brasília?
+
+**Na Dataframe:** a automação (serviço de captura) manda as ordens do papel
+para a conta demo e compara papel × demo (sinal no mesmo minuto, preço,
+derrapagem). O Envio nasce desligado e só registra "seria enviada"; o ensaio
+passa cada ordem pelo `order_check` do MT5. Se o MT5 devolver resposta
+incerta, a posição é conferida na corretora antes de reenviar, e o limite de
+perda do dia trava a conta até o próximo pregão. A ordem de teste
+(`core/ordem_teste.py`) mediu em 15/10/2026: entrada 149 ms, proteção 676 ms,
+saída 496 ms.
 
 ### 14. Contrato mínimo
 
@@ -377,6 +388,7 @@ já não funcionou.
 | 8 Salvar mineração | ✅ explícito, com nome |
 | 9 Carregar salva | ✅ restauração completa, com teste |
 | 10 Testes de robustez | ✅ dez testes do Backtest · tela **Candidata** aprova, aprova com ressalva ou reprova a estratégia para a incubação, com 12 portões, dimensiona contratos e grava o plano de operação ([contas](CALCULOS-CANDIDATA.md)) · ❌ outro ativo |
-| 11 Incubação | ❌ |
-| 12 Portfólio | ❌ |
-| 13–15 Live | ❌ falta integração com o MT5 |
+| 11 Incubação | ✅ o **papel roda sempre**, em qualquer fase: o serviço de captura calcula o sinal a cada candle e a conferência diária compara papel × backtest (sub-tela Ao vivo › Operação) |
+| 12 Portfólio | ✅ identidade, correlação (inclusive nos piores dias), capital, Kelly, risco de ruína e simulador de crescimento · ❌ aviso de correlação desatualizada quando o plano ativo muda |
+| 13 Demo | 🔨 ordens pelo próprio Dataframe na conta demo (fase demo por portfólio). Desde 15/10/2026 o Envio está ligado com 1 contrato na ligação do `rompimento_ema_abertura`; em acompanhamento por 3 a 5 pregões, papel × demo todo dia |
+| 14–15 Contrato mínimo e Live | ❌ conta real fora da parte 4 (o "real mínimo" foi eliminado: a fase vai de demo direto a real) |

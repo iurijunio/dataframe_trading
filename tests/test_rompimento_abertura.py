@@ -138,7 +138,11 @@ def test_a_estrategia_nao_decide_stop_nem_alvo_nem_saida():
 
 def test_contrato_da_estrategia():
     assert R.name and R.label
+    # sem `saida`: um sinal por dia, então os modos 0/1/2 dariam os mesmos
+    # trades — e cópias na mineração criam platô falso
     assert set(R.params_schema) == {"barras_abertura", "folga_ticks",
                                     "filtro_amplitude"}
+    assert not getattr(R.signals(_barras([[100, 105, 95, 110, 108, 107]]),
+                                 _params()), "virar", False)
     for meta in R.params_schema.values():
         assert {"label", "default", "min", "max", "step", "tipo"} <= set(meta)

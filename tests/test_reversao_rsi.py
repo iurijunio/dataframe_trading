@@ -144,7 +144,8 @@ def test_a_estrategia_nao_decide_stop_nem_alvo():
 def test_contrato_da_estrategia():
     assert R.name and R.label
     assert set(R.params_schema) == {"periodo_rsi", "limite_extremo",
-                                    "periodo_tendencia", "periodo_saida"}
+                                    "periodo_tendencia", "periodo_saida",
+                                    "saida"}
     for meta in R.params_schema.values():
         assert {"label", "default", "min", "max", "step", "tipo"} <= set(meta)
 

@@ -1,0 +1,362 @@
+{
+ "reversao_rsi#0@m15_sem_stop": {
+  "n": 18,
+  "pontos": -1480,
+  "sha": "a9a0d32953378359ce866420eaeafafd4968815d16a806e3d92ae7071cf02619",
+  "sinal": 15
+ },
+ "reversao_rsi#0@m1_pontos": {
+  "n": 602,
+  "pontos": -4885,
+  "sha": "889d4ef6c5233e2b2fc966716c402d26ecd4cf86b86f00821d6ca57dc2f8729c",
+  "sinal": 583
+ },
+ "reversao_rsi#0@m5_atr_limites": {
+  "n": 36,
+  "pontos": 264,
+  "sha": "88b84f20f7a9800c834fb220bb8cc2715411f04927b32d047ef232320795618a",
+  "sinal": 27
+ },
+ "reversao_rsi#0@m7_compra_protecoes": {
+  "n": 26,
+  "pontos": -90,
+  "sha": "5979caa7d9aaa0e479bc6e9c8d193ca921d3b47dd66c9bc738bf40cca12c43cc",
+  "sinal": 16
+ },
+ "reversao_rsi#1@m15_sem_stop": {
+  "n": 54,
+  "pontos": -3625,
+  "sha": "b80ef5b461c70083dc7d9dadec9bc934d226c2a5cd5f12a3519ebb343b3f0a65",
+  "sinal": 49
+ },
+ "reversao_rsi#1@m1_pontos": {
+  "n": 771,
+  "pontos": -8710,
+  "sha": "c877870ec569de9b6ce61717fa12dd0f38fafdf27ed400eea6309157ac54c4ea",
+  "sinal": 737
+ },
+ "reversao_rsi#1@m5_atr_limites": {
+  "n": 47,
+  "pontos": 647,
+  "sha": "a93476a7efe7ed8352ff2882a2009c74edac55fbd9d52e60c5da9bfb062c775d",
+  "sinal": 36
+ },
+ "reversao_rsi#1@m7_compra_protecoes": {
+  "n": 60,
+  "pontos": -530,
+  "sha": "1d758bb04c68e4fd4bd1b9bbd7b9b3b48e14d5dfc7fd9ce6857eef07ab8c7aa4",
+  "sinal": 38
+ },
+ "reversao_rsi#2@m15_sem_stop": {
+  "n": 41,
+  "pontos": -10,
+  "sha": "d2dd363f34ba5f4a69d910afde3d85bc1077346e234189383903dccc43fb4cf9",
+  "sinal": 36
+ },
+ "reversao_rsi#2@m1_pontos": {
+  "n": 612,
+  "pontos": -4060,
+  "sha": "14e1d12274d09638138e32c71cf7c3162bf28bacf48f879c080f4f461a6a56ab",
+  "sinal": 589
+ },
+ "reversao_rsi#2@m5_atr_limites": {
+  "n": 40,
+  "pontos": -864,
+  "sha": "87bc41c781bb5470a6a13d54816b5e038b46202c06f7e705e32e6f7481afab63",
+  "sinal": 28
+ },
+ "reversao_rsi#2@m7_compra_protecoes": {
+  "n": 36,
+  "pontos": 540,
+  "sha": "a2a5d90cb83d3b080e9995d24546c133d773350ae8db1553ce3956cbcf8f662a",
+  "sinal": 28
+ },
+ "rompimento_abertura#0@m15_sem_stop": {
+  "n": 12,
+  "pontos": 2505,
+  "sha": "e18f6ac3ea1f5db231233c5a3d4d06bc8ec53b29012498ba832bffa782ee1088",
+  "sinal": 0
+ },
+ "rompimento_abertura#0@m1_pontos": {
+  "n": 12,
+  "pontos": 540,
+  "sha": "9797bce761d37ba6eff1d2d0ca7ea61105fdf8692d5b46aad55c8a4e0368bd46",
+  "sinal": 0
+ },
+ "rompimento_abertura#0@m5_atr_limites": {
+  "n": 12,
+  "pontos": 1668,
+  "sha": "2cfc9bb57389a51c76dfcba5c2d8e9c87c939828eab885849bfed85d2ec5f257",
+  "sinal": 0
+ },
+ "rompimento_abertura#0@m7_compra_protecoes": {
+  "n": 5,
+  "pontos": -100,
+  "sha": "9ff766ddb72f1874d105d5bc9f4d7d8dbf0516cfb07bcef7a26b60bb5c60a6c9",
+  "sinal": 0
+ },
+ "rompimento_abertura#1@m15_sem_stop": {
+  "n": 11,
+  "pontos": 300,
+  "sha": "7371cbcd79130d1ea2c19173a3e1073164aa0712907a8a91c12e6db645912854",
+  "sinal": 0
+ },
+ "rompimento_abertura#1@m1_pontos": {
+  "n": 12,
+  "pontos": -60,
+  "sha": "a6325a84a49338da30d0a260b85a602c39feea5ef24ed7be50fa636f7e3699ab",
+  "sinal": 0
+ },
+ "rompimento_abertura#1@m5_atr_limites": {
+  "n": 12,
+  "pontos": -511,
+  "sha": "99fa9b469760af903d49a99128febdceaa6e7d6f1f54c14a4fd509fde168d8e9",
+  "sinal": 0
+ },
+ "rompimento_abertura#1@m7_compra_protecoes": {
+  "n": 2,
+  "pontos": 150,
+  "sha": "6a1815610443ebe82c01009758ca238217ea33fa1396cfe5a25146e396de2f00",
+  "sinal": 0
+ },
+ "rompimento_abertura#2@m15_sem_stop": {
+  "n": 12,
+  "pontos": 1600,
+  "sha": "351a171d020d60c7349698d624287a0a224103209630ef8dd14af300cd856616",
+  "sinal": 0
+ },
+ "rompimento_abertura#2@m1_pontos": {
+  "n": 12,
+  "pontos": 540,
+  "sha": "47d3b40f3a9a52028d699cb9b8210a8982d832a8a62af0722f6f17e3168112a7",
+  "sinal": 0
+ },
+ "rompimento_abertura#2@m5_atr_limites": {
+  "n": 12,
+  "pontos": 478,
+  "sha": "09272dd7bc663922ffc1c2dce0737f09ad593c73c45b3a7b2964b76fe0e498fb",
+  "sinal": 0
+ },
+ "rompimento_abertura#2@m7_compra_protecoes": {
+  "n": 5,
+  "pontos": 25,
+  "sha": "f37bf5daa5d820e965923a1950c54846a31fd5380c542816d21b38ebb4ece62d",
+  "sinal": 0
+ },
+ "rompimento_canal#0@m15_sem_stop": {
+  "n": 10,
+  "pontos": 1905,
+  "sha": "e8dc6462ffb735954fcd5bd267bc23021ddfdb030538c70802d43d49bbea0686",
+  "sinal": 4
+ },
+ "rompimento_canal#0@m1_pontos": {
+  "n": 114,
+  "pontos": 3565,
+  "sha": "e1ea527f0ca550334eb2ab6784a9cb362c0c6f8c4c3af54f30eae60e007bb3d4",
+  "sinal": 69
+ },
+ "rompimento_canal#0@m5_atr_limites": {
+  "n": 35,
+  "pontos": 1326,
+  "sha": "f9255ab832497231ebd36164e17b9905b1081a56432d9d7f1ffba74bafdd1699",
+  "sinal": 4
+ },
+ "rompimento_canal#0@m7_compra_protecoes": {
+  "n": 16,
+  "pontos": 580,
+  "sha": "62019a69959657d943f41ed4077575f03b3b6f1e08be94a54435c75b84e605b5",
+  "sinal": 0
+ },
+ "rompimento_canal#1@m15_sem_stop": {
+  "n": 18,
+  "pontos": 1600,
+  "sha": "6f02d891350c8834b14b99774e0e70d5f4229f7454c144fc07aa5e04a9e6ed98",
+  "sinal": 11
+ },
+ "rompimento_canal#1@m1_pontos": {
+  "n": 169,
+  "pontos": 1050,
+  "sha": "66446fa3b48cd130d17820ceefd56811d709f2b3f46d1aebd055dbfdb15b7ee1",
+  "sinal": 148
+ },
+ "rompimento_canal#1@m5_atr_limites": {
+  "n": 36,
+  "pontos": 1770,
+  "sha": "5196300132c1b4b69bd7321ad11ede1823730f8796ef358be4fe91ed0d5465ff",
+  "sinal": 3
+ },
+ "rompimento_canal#1@m7_compra_protecoes": {
+  "n": 26,
+  "pontos": -700,
+  "sha": "9c268e30cae1aa0dd67760bec1dee9d45efbd0023e18b87e20a108b1156bf962",
+  "sinal": 0
+ },
+ "rompimento_canal#2@m15_sem_stop": {
+  "n": 9,
+  "pontos": 635,
+  "sha": "f2592359257000c4a0e0fb62936951c0a72c29c5d70a0c23abaf93728a5ec337",
+  "sinal": 2
+ },
+ "rompimento_canal#2@m1_pontos": {
+  "n": 71,
+  "pontos": 3845,
+  "sha": "5becdc61f27c4c641e94ece8d46054b209c2f39eade8449472358e7f10dbbd65",
+  "sinal": 19
+ },
+ "rompimento_canal#2@m5_atr_limites": {
+  "n": 31,
+  "pontos": 1216,
+  "sha": "2e9ffd262834a6c5765da5c7cf96298cbab3a516658c1f5a1243e38adb4eda48",
+  "sinal": 0
+ },
+ "rompimento_canal#2@m7_compra_protecoes": {
+  "n": 10,
+  "pontos": 265,
+  "sha": "03eed811e9539d32d50d3f016ce6bcfc637eafc71d0eb015c2f71548d00773fb",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#0@m15_sem_stop": {
+  "n": 11,
+  "pontos": 5275,
+  "sha": "71a9569f6536cdc0a8bd17b1dec3fcc7aa40610bf53964005dbed10a30229776",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#0@m1_pontos": {
+  "n": 65,
+  "pontos": 2100,
+  "sha": "fa7acd72735d929ba257708319e8e9c9c52f5e04da24d63399599ed7e9b60993",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#0@m5_atr_limites": {
+  "n": 29,
+  "pontos": -815,
+  "sha": "94c0bfbac95aa03d96dce659fdb9cf1fb2e89057a59ccde4d392870a6a8cf9f6",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#0@m7_compra_protecoes": {
+  "n": 20,
+  "pontos": -85,
+  "sha": "172d38a9db0dc0a29b625fb586a8dbdfb23e2305863c38043704a73f8bbb0899",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#1@m15_sem_stop": {
+  "n": 12,
+  "pontos": 4125,
+  "sha": "33c70fdbce0ef9c86597b45ece4f2951edbe2b4f6f8202d634b7bbef63ae9fb9",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#1@m1_pontos": {
+  "n": 60,
+  "pontos": 3365,
+  "sha": "0ecc9bb1018a6216132393b46ef0d84730aefdf21fa6179d3cfde0e6d1ff4ba0",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#1@m5_atr_limites": {
+  "n": 31,
+  "pontos": 1273,
+  "sha": "163648434d1f25f5391ea963926adf30e135491d0e58ed4deccd3a608ecf09d4",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#1@m7_compra_protecoes": {
+  "n": 21,
+  "pontos": 110,
+  "sha": "4b11d9ffb6cb0da0cd29f39f6a53d73382784d321e8733002d92475f6efbb93b",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#2@m15_sem_stop": {
+  "n": 11,
+  "pontos": 4265,
+  "sha": "3470d3c43d0fa00180a1cdbaf273986a73757ef91e426055c83138eda9bff995",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#2@m1_pontos": {
+  "n": 60,
+  "pontos": 1440,
+  "sha": "a0112c5db2b41e65fcbbd9a945804abd818b001855eddc52678425a1bb61ebcc",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#2@m5_atr_limites": {
+  "n": 33,
+  "pontos": 442,
+  "sha": "b2c4d8d78cfa226ac7a95669372d33f30908b46b3b88d4db438add7bf6dedae0",
+  "sinal": 0
+ },
+ "rompimento_ema_abertura#2@m7_compra_protecoes": {
+  "n": 11,
+  "pontos": 475,
+  "sha": "ac764590a97286a6f9c70e51634c616c7f6f647ff192d894cb7e9405bec2c892",
+  "sinal": 0
+ },
+ "setup_cruzamento#0@m15_sem_stop": {
+  "n": 12,
+  "pontos": -1725,
+  "sha": "618464363dbcd58ba2590f9d3bd9319c37cf457ea30ca3bbd590198a51465599",
+  "sinal": 7
+ },
+ "setup_cruzamento#0@m1_pontos": {
+  "n": 155,
+  "pontos": -520,
+  "sha": "a5b70939d56966da6b40995eb978f7d009a1071153b7014db44564623e8731c1",
+  "sinal": 144
+ },
+ "setup_cruzamento#0@m5_atr_limites": {
+  "n": 26,
+  "pontos": 154,
+  "sha": "c859a414fbba964bcc638610963b3b27a71c98678d3368048efb0ea7bb1ef21e",
+  "sinal": 6
+ },
+ "setup_cruzamento#0@m7_compra_protecoes": {
+  "n": 14,
+  "pontos": 360,
+  "sha": "a0f13ea0259e4e8c33bbb92096a57b47132671ab13136c21fef866a7d0e9fda3",
+  "sinal": 3
+ },
+ "setup_cruzamento#1@m15_sem_stop": {
+  "n": 10,
+  "pontos": -940,
+  "sha": "cb150188387a6c48d136de663a4b67f4bf5b108bde36db622f0d2b29920124d8",
+  "sinal": 5
+ },
+ "setup_cruzamento#1@m1_pontos": {
+  "n": 112,
+  "pontos": -545,
+  "sha": "dc352104e919a3ffd153177a040eb053c5e6366328bb95f4f5639877e8307af2",
+  "sinal": 97
+ },
+ "setup_cruzamento#1@m5_atr_limites": {
+  "n": 17,
+  "pontos": 1041,
+  "sha": "5b61f135cf50b5b3529910064ac56b7712da5006145ca3ebda5f9549b6fb207d",
+  "sinal": 3
+ },
+ "setup_cruzamento#1@m7_compra_protecoes": {
+  "n": 8,
+  "pontos": 1035,
+  "sha": "6e47186f6b26b23c6d28d9525d2046e72176aaf9a8056c4e2560b4b28f6420dc",
+  "sinal": 0
+ },
+ "setup_cruzamento#2@m15_sem_stop": {
+  "n": 5,
+  "pontos": 1440,
+  "sha": "789d1d36924d592b87400db5c6e0456322119f5a9ffe02c9d95e3bb4fca62468",
+  "sinal": 1
+ },
+ "setup_cruzamento#2@m1_pontos": {
+  "n": 66,
+  "pontos": 2860,
+  "sha": "d306d5f392d1b7c5d6b6c8d045e9a2264e33f37a4d159d7e53ca46908f116931",
+  "sinal": 36
+ },
+ "setup_cruzamento#2@m5_atr_limites": {
+  "n": 12,
+  "pontos": 90,
+  "sha": "56e4824c09448054929cc703be5b3d1a0a67c5c0895b0206b3be161bae3a60ce",
+  "sinal": 0
+ },
+ "setup_cruzamento#2@m7_compra_protecoes": {
+  "n": 3,
+  "pontos": -300,
+  "sha": "6a03925700edd0026052d77a711138350e35fd166c85d066c92c040cf45bd9e3",
+  "sinal": 0
+ }
+}

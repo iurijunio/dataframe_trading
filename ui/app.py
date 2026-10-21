@@ -31,10 +31,15 @@ def _padrao() -> str:
     lista = D.instrumentos()
     return lista[0]["symbol"] if lista else "WIN$N"
 
-FONTS = (
-    "https://fonts.googleapis.com/css2?"
-    "family=Archivo:wght@500;600;700&"
-    "family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+# As fontes moram em ui/assets/fontes (fontes.css): sem rede no pregão a tela
+# não pode trocar de fonte. O preload existe por causa dos gráficos: o
+# lightweight-charts desenha o texto em canvas e não redesenha quando a fonte
+# termina de carregar, então ela precisa chegar antes do primeiro desenho.
+PRELOAD_FONTES = "\n".join(
+    f'  <link rel="preload" as="font" type="font/woff2" crossorigin '
+    f'href="/assets/fontes/{arquivo}">'
+    for arquivo in ("jetbrains-mono-latin-400-normal.woff2",
+                    "poppins-latin-400-normal.woff2")
 )
 
 RANGES = [("1D", 1), ("5D", 5), ("1M", 30), ("3M", 90), ("1A", 365), ("Tudo", 0)]
@@ -88,9 +93,21 @@ def topbar(simbolo):
                     # desliga, e o selo ao lado diz por quê
                     html.Span(id="captura-selo", className="captura-selo",
                               style={"display": "none"}),
+                    # parte 4: o Envio de ordens, ao lado da captura que o faz
+                    html.Span(id="ord-selo", className="ord-selo"),
                     html.Button("Sincronizar com MT5", id="btn-mt5-sync",
                                 n_clicks=0, className="btn-ghost"),
                     html.Span(id="mt5-sync-status", className="mt5-sync-status"),
+                    # o aviso antes do botão: o botão de pânico fica sempre
+                    # no mesmo lugar, no canto, e não anda quando o aviso muda
+                    html.Span(id="ord-zerar-aviso", className="ord-zerar-aviso"),
+                    html.Button(
+                        "⏻ Zerar tudo e desligar envio", id="ord-zerar",
+                        n_clicks=0, className="ord-zerar",
+                        title="Encerra todas as posições da automação e "
+                              "desliga o Envio de ordens de todas as contas. "
+                              "Posições abertas fora da automação não são "
+                              "tocadas. Clique duas vezes para confirmar."),
                 ],
                 className="mt5-sync-wrap",
             ),
@@ -252,9 +269,7 @@ def build() -> Dash:
 <html>
 <head>
   {{%metas%}}<title>{{%title%}}</title>{{%favicon%}}
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="{FONTS}">
+{PRELOAD_FONTES}
   {{%css%}}
 </head>
 <body>{{%app_entry%}}<footer>{{%config%}}{{%scripts%}}{{%renderer%}}</footer></body>
@@ -295,6 +310,18 @@ def build() -> Dash:
             dcc.Interval(id="captura-intervalo", interval=30_000),
             # a última conferência do dia que o calendário já viu
             dcc.Store(id="captura-conferencia-vista"),
+            # parte 4: o selo das ordens e o alarme leem o estado.json a cada
+            # 2 s em QUALQUER aba — um chamado não pode esperar 30 s
+            dcc.Interval(id="ord-intervalo", interval=2000),
+            # o primeiro clique do "Zerar tudo" arma; o segundo, em 5 s, faz
+            # (guarda a HORA do primeiro clique: o servidor recusa confirmar
+            # um armado de mais de 6 s)
+            dcc.Store(id="ord-armado", data=None),
+            # o alarme: `assets/alarme.js` observa estes atributos (bipe por
+            # chamado novo e título da aba piscando). Na raiz do layout para
+            # valer em qualquer aba.
+            html.Div(id="ord-alarme", style={"display": "none"},
+                     **{"data-alarme": "0", "data-chaves": ""}),
             topbar(simbolo),
             html.Div([sidebar(inicio, fim), painel(inicio, fim)], className="body"),
             modal(),

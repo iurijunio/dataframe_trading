@@ -4,25 +4,31 @@ Tema escuro com dois neons: ciano para o que e do sistema (entrada, equity,
 foco) e violeta para o secundario. Verde e rosa neon so para dinheiro -
 cor de P&L nao e cor de marca, e nunca deve competir com ela.
 
-O fundo e azul-preto, nao preto puro: preto absoluto faz o neon vibrar e
-cansa em tela grande.
+O fundo e preto com neutros cinza, sem tom azulado: o usuario preferiu
+assim (16/10/2026). Os mesmos valores estao no :root do style.css; mudou
+um, mude o outro.
 """
 
-GROUND = "#06080F"
-SURFACE = "#0B0F1A"
-SURFACE_2 = "#111726"
-SURFACE_3 = "#182033"
+GROUND = "#000000"
+SURFACE = "#0A0A0B"
+SURFACE_2 = "#111113"
+SURFACE_3 = "#18181B"
 
-INK = "#EAF1FF"
-INK_2 = "#C3CEE4"
-MUTED = "#8494B3"
+INK = "#E7E7EA"
+INK_2 = "#C4C4CA"
+MUTED = "#8B8B93"
 
-LINE = "#1E2740"
-LINE_SOFT = "#161D30"
+LINE = "#232326"
+LINE_SOFT = "#19191C"
 
 ACCENT = "#22E4FF"        # ciano neon
 ACCENT_2 = "#B96BFF"      # violeta neon
-ACCENT_DIM = "#1C5A72"
+ACCENT_DIM = "#164A57"
+
+# As fontes moram em ui/assets/fontes (fontes.css). Os graficos Plotly e o
+# lightweight-charts nao leem o CSS, por isso o nome vem daqui.
+FONTE_SANS = "Poppins, system-ui, 'Segoe UI', Arial, sans-serif"
+FONTE_MONO = "'JetBrains Mono', ui-monospace, Consolas, monospace"
 
 POS = "#00F5A0"           # verde neon
 NEG = "#FF4D7D"           # rosa neon
@@ -38,14 +44,14 @@ DOWN = NEG
 CORES_VARIANTE = ["#22E4FF", "#B96BFF", "#FF9F43", "#F7F06D",
                   "#7C9CFF", "#FF7AE0", "#F2F5FA", "#D4A373"]
 # operação fora do período ligado: aparece, mas não chama atenção
-CINZA_FORA = "#56627C"
+CINZA_FORA = "#5A5A62"
 
 CHART_OPTIONS = {
     "layout": {
         "background": {"type": "solid", "color": SURFACE},
         "textColor": MUTED,
-        "fontFamily": "'JetBrains Mono','IBM Plex Mono',ui-monospace,Consolas,monospace",
-        "fontSize": 12,
+        "fontFamily": FONTE_MONO,
+        "fontSize": 11,
         # exigencia da licenca Apache 2.0 da TradingView - nao desligar
         "attributionLogo": True,
         "panes": {"separatorColor": LINE, "separatorHoverColor": ACCENT_DIM},

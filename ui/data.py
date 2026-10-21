@@ -81,6 +81,141 @@ def estado_captura() -> dict | None:
     return e
 
 
+# O `estado_real.json` do processo da conta real: o mesmo bloco `ordens` do
+# estado da demo, publicado pelo processo da real. Ausente = esse processo
+# nunca subiu (ou não há conta real): a tela não inventa a conta, só mostra
+# "parado" quando a conta cadastrada não publica.
+ESTADO_REAL = db.DATA / "ao_vivo" / "estado_real.json"
+
+
+def estado_real() -> dict | None:
+    """O bloco `ordens` da conta real, ou None se o arquivo não existe ou não
+    lê (o arquivo é trocado de uma vez, mas uma leitura pega no meio falha)."""
+    if not ESTADO_REAL.exists():
+        return None
+    e = CAP.ler_estado(ESTADO_REAL)
+    if not isinstance(e, dict):
+        return None
+    # o arquivo é o estado inteiro do processo; quem usa quer o bloco
+    # `ordens` (vivo_em, conta, chamados…) — o mesmo do estado.json da demo
+    bloco = e.get("ordens")
+    return bloco if isinstance(bloco, dict) else None
+
+
+def posicoes_real(bloco: dict | None) -> int:
+    """Posições da automação na conta real; 0 sem o arquivo da real."""
+    return _posicoes_da_automacao(bloco) if bloco else 0
+
+
+# Selo das ordens no topo (spec ordens §8). O texto é o que o usuário lê de
+# relance em qualquer aba; a dica (title) leva o resto.
+_SELO_TEXTO = {
+    "enviando": "Demo · enviando ordens",
+    "desligado": "Demo · envio desligado",
+    "travada": "Demo · conta travada até amanhã",
+    "sem_captura": "Ordens paradas · sem captura",
+    "sem_demo": "Sem demo",
+}
+
+
+# os `parado` que a captura só publica sem posição da automação aberta
+# (captura.py `_ordens_volta`); "MT5 fora do ar" não diz nada das posições
+_PARADO_SEM_POSICAO = ("fora do pregão", "sem relógio do servidor")
+
+
+def _posicoes_da_automacao(o: dict) -> int:
+    return sum(len((l or {}).get("posicoes") or [])
+               for l in (o.get("ligacoes") or {}).values())
+
+
+def ordens_do_estado(e: dict | None, agora: datetime | None = None) -> dict:
+    """O selo das ordens e o alarme, só a partir do `estado.json`.
+
+    `selo`: enviando | desligado | travada | sem_captura | sem_demo.
+    `alarme`: chamado aberto, conta travada ou o caminho das ordens com erro
+    — o som e o título piscando (`assets/alarme.js`). `chaves` identifica
+    cada motivo de alarme pela hora em que abriu: o bipe toca uma vez por
+    chamado novo, e um chamado que fecha e reabre é novo.
+    `posicoes`: posições da automação na corretora (None = não se sabe)."""
+    # import aqui: o pregao_panel importa este módulo (to_epoch)
+    from .components.pregao_panel import captura_ativa
+
+    agora = agora or datetime.now()
+
+    def r(selo, texto=None, chamados=(), alarme=False, chaves=(), posicoes=None):
+        return {"selo": selo, "texto": texto or _SELO_TEXTO[selo],
+                "chamados": list(chamados), "alarme": bool(alarme),
+                "chaves": "|".join(chaves), "posicoes": posicoes}
+
+    # Mesma régua do selo da captura: estado velho não prova nada — nem o
+    # Envio, nem os chamados (já podem ter fechado). O selo da captura, ao
+    # lado, já está vermelho; tocar alarme aqui seria o mesmo aviso duas vezes.
+    if not captura_ativa(e, agora):
+        return r("sem_captura")
+    o = e.get("ordens")
+    if not isinstance(o, dict) or not o:
+        # captura sem o caminho das ordens (sem o YAML do ativo) ou antes da
+        # primeira volta: não se sabe se há demo — não é "Sem demo"
+        return r("desligado", "Ordens ainda sem estado")
+
+    chamados = [c for c in (o.get("chamados") or []) if isinstance(c, dict)]
+    chaves = [f"{c.get('chave')}@{c.get('desde')}" for c in chamados]
+    posicoes = _posicoes_da_automacao(o) if "ligacoes" in o else None
+    if posicoes is None and o.get("parado") in _PARADO_SEM_POSICAO:
+        # a captura só para as ordens fora do pregão quando a automação não
+        # tem posição (na corretora nem no diário): zero, não "não se sabe"
+        posicoes = 0
+
+    def com_alarme(selo, texto=None, extra=False, chave_extra=None):
+        ks = chaves + ([chave_extra] if chave_extra else [])
+        return r(selo, texto, chamados, bool(chamados) or extra, ks, posicoes)
+
+    if o.get("erro"):
+        # o captura.py abre o chamado `ordens_falhou`, mas este bloco curto
+        # não traz a lista: o alarme vem do próprio erro. A chave é o TEXTO
+        # do erro — o mesmo erro repetido a cada volta bipa uma vez só.
+        return com_alarme("desligado", "Demo · ordens com erro (veja a janela "
+                          "da captura)", extra=True,
+                          chave_extra=f"erro@{o.get('erro')}")
+    # `n_demo` vem do retrato (core.ordens.n_demo): 0 é "nenhuma ligação na
+    # demo"; None/ausente é "não se sabe" e cai nas regras de baixo
+    if o.get("n_demo") == 0:
+        return com_alarme("sem_demo", "Sem demo · nenhuma variante na fase demo")
+    trava = o.get("travada")
+    if trava:
+        return com_alarme("travada", extra=True,
+                          chave_extra=f"travada@{(trava or {}).get('desde')}")
+    if o.get("parado"):
+        # fora do pregão, MT5 fora do ar: nada sai agora; o interruptor vem
+        # do último retrato
+        envio = o.get("envio")
+        texto = f"Demo · {o['parado']}" + (
+            "" if envio is None else
+            f" · envio {'ligado' if envio else 'desligado'}")
+        return com_alarme("desligado", texto)
+    if o.get("foto") == "falhou":
+        return com_alarme("desligado", "Demo · sem leitura da corretora agora")
+    if o.get("foto") == "parcial":
+        return com_alarme("desligado", "Demo · leitura parcial da corretora "
+                          "(só sai e protege)")
+    if o.get("retrato_antigo"):
+        return com_alarme("desligado", "Demo · banco ocupado, configuração salva "
+                          "(só protege)")
+    conta = o.get("conta") or {}
+    if "conta" in o and conta.get("conta_id") is None:
+        # MT5 logado numa conta que não está cadastrada: a automação não
+        # manda nada nela (com demo ligada, o chamado `conta_errada` toca)
+        login = conta.get("login")
+        return com_alarme("desligado", f"Demo · MT5 na conta {login}, não "
+                          "cadastrada" if login else "Demo · MT5 em conta "
+                          "não cadastrada")
+    if o.get("zerar"):
+        return com_alarme("desligado", "Demo · zerando tudo")
+    if o.get("envio"):
+        return com_alarme("enviando")
+    return com_alarme("desligado")
+
+
 def instrumentos() -> list[dict]:
     """Os instrumentos que TÊM barras, do mais populoso para o menos.
 

@@ -19,6 +19,7 @@ TIPOS = frozenset({
     "conta_criada", "conta_editada", "conta_arquivada",
     "plano_gravado", "plano_aposentado", "plano_vinculado",
     "variante_renomeada", "base_corrigida",
+    "contratos_alterados", "envio_ligado", "envio_desligado",
 })
 ORIGENS = frozenset({"usuario", "disjuntor", "sistema"})
 

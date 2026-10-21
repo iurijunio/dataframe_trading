@@ -269,14 +269,14 @@ def tabela_drawdowns(lista):
             style_as_list_view=True,
             style_table={"overflowX": "auto"},
             style_header={"backgroundColor": T.SURFACE_2, "color": T.MUTED,
-                          "border": "none", "fontFamily": "Archivo",
+                          "border": "none", "fontFamily": T.FONTE_SANS,
                           "fontSize": "11px", "textTransform": "uppercase",
                           "letterSpacing": ".08em", "fontWeight": "600"},
             style_cell={"backgroundColor": T.SURFACE, "color": T.INK_2,
                         "border": "none",
                         "borderBottom": f"1px solid {T.LINE_SOFT}",
-                        "fontFamily": "JetBrains Mono, monospace",
-                        "fontSize": "13px", "padding": "9px 14px",
+                        "fontFamily": T.FONTE_MONO,
+                        "fontSize": "12px", "padding": "9px 14px",
                         "textAlign": "right"},
             style_cell_conditional=[
                 {"if": {"column_id": c}, "textAlign": "left"}
