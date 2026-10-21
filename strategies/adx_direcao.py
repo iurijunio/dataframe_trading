@@ -5,9 +5,9 @@ relação à barra anterior: a tendência ganhou força e o candle confirma o la
 Vende no espelho: candle de baixa com o ADX caindo. Doji (`close == open`)
 não gera sinal nenhum.
 
-O período dos DIs (`adx_periodo`) e a suavização da linha do ADX
-(`adx_media`) são separados: o DX sai dos DIs de `adx_periodo` e é suavizado
-por Wilder com `adx_media`. O filtro `amplitude_max` barra candles grandes
+O período dos DIs (`di_periodo`) e a suavização da linha do ADX
+(`adx_suavizacao`) são separados: o DX sai dos DIs de `di_periodo` e é suavizado
+por Wilder com `adx_suavizacao`. O filtro `amplitude_max` barra candles grandes
 demais (amplitude em pontos acima do limite); 0 desliga o filtro.
 
 Como toda estratégia, isto aqui só define entradas. Horário, stop, alvo e
@@ -29,15 +29,22 @@ label = "ADX direção"
 params_schema = {
     # min/max sao limites DUROS: a mineracao recorta a faixa da tela para
     # caber aqui. Se quiser varrer alem, e este numero que muda.
-    "adx_periodo": {"label": "Período do DI+ e DI−", "default": 14,
+    "di_periodo": {"label": "Período do DI+ e DI−", "default": 14,
                     "min": 2, "max": 100, "step": 1, "tipo": "int"},
-    "adx_media": {"label": "Suavização da linha do ADX", "default": 14,
+    "adx_suavizacao": {"label": "Suavização da linha do ADX", "default": 14,
                   "min": 1, "max": 100, "step": 1, "tipo": "int"},
     "amplitude_max": {"label": "Amplitude máxima do candle (pontos; 0 desliga)",
                       "default": 1000, "min": 0, "max": 10000, "step": 5,
                       "tipo": "int"},
     **opcao_saida.parametro(opcao_saida.NAO_SAIR),
 }
+
+
+def aquecimento_barras(params: dict) -> int:
+    """O DI e o ADX são médias de Wilder (recursivas): nunca esquecem o
+    passado. 10× a soma dos dois períodos deixa o papel ao vivo igual ao
+    backtest do histórico inteiro (o resíduo some bem antes disso)."""
+    return 10 * (int(params["di_periodo"]) + int(params["adx_suavizacao"]))
 
 
 def _dx(di_pos: np.ndarray, di_neg: np.ndarray) -> np.ndarray:
@@ -79,8 +86,8 @@ def _suaviza_wilder(dx: np.ndarray, media: int) -> np.ndarray:
 
 
 def signals(bars: dict, params: dict) -> Signals:
-    periodo = int(params["adx_periodo"])
-    media = int(params["adx_media"])
+    periodo = int(params["di_periodo"])
+    media = int(params["adx_suavizacao"])
     amplitude_max = int(params["amplitude_max"])
 
     _, di_pos, di_neg = adx_di(bars, periodo)

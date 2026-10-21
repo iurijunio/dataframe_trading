@@ -95,7 +95,7 @@ def _esperado(bars: dict, periodo: int, media: int, amplitude: int):
 
 
 def _params(**kw) -> dict:
-    base = dict(adx_periodo=14, adx_media=14, amplitude_max=0)
+    base = dict(di_periodo=14, adx_suavizacao=14, amplitude_max=0)
     base.update(kw)
     return base
 
@@ -107,7 +107,7 @@ def _params(**kw) -> dict:
 def test_compra_e_venda_batem_com_a_regra(periodo, media, amplitude):
     bars = _serie()
     sinal = adx_direcao.signals(bars, _params(
-        adx_periodo=periodo, adx_media=media, amplitude_max=amplitude))
+        di_periodo=periodo, adx_suavizacao=media, amplitude_max=amplitude))
     compra, venda = _esperado(bars, periodo, media, amplitude)
     assert np.array_equal(sinal.entry_long, compra)
     assert np.array_equal(sinal.entry_short, venda)
@@ -173,15 +173,15 @@ def test_amplitude_zero_desliga_o_filtro():
 # ------------------------------------------------------------ períodos
 def test_periodo_do_di_muda_o_adx():
     bars = _serie()
-    a = adx_direcao.signals(bars, _params(adx_periodo=14))
-    b = adx_direcao.signals(bars, _params(adx_periodo=7))
+    a = adx_direcao.signals(bars, _params(di_periodo=14))
+    b = adx_direcao.signals(bars, _params(di_periodo=7))
     assert not np.array_equal(a.entry_long, b.entry_long)
 
 
 def test_suavizacao_do_adx_muda_o_adx():
     bars = _serie()
-    a = adx_direcao.signals(bars, _params(adx_media=14))
-    b = adx_direcao.signals(bars, _params(adx_media=3))
+    a = adx_direcao.signals(bars, _params(adx_suavizacao=14))
+    b = adx_direcao.signals(bars, _params(adx_suavizacao=3))
     assert not np.array_equal(a.entry_long, b.entry_long)
 
 
@@ -208,7 +208,7 @@ def test_sem_aquecimento_nao_ha_sinal():
 
 def test_serie_curta_demais_nao_levanta_e_nao_sinaliza():
     bars = _serie(n=10)
-    sinal = adx_direcao.signals(bars, _params(adx_periodo=14))
+    sinal = adx_direcao.signals(bars, _params(di_periodo=14))
     assert not sinal.entry_long.any()
     assert not sinal.entry_short.any()
 
@@ -226,10 +226,10 @@ def test_saida_padrao_e_nao_sair():
 
 def test_parametros_do_schema():
     schema = adx_direcao.params_schema
-    assert schema["adx_periodo"]["default"] == 14
-    assert (schema["adx_periodo"]["min"], schema["adx_periodo"]["max"]) == (2, 100)
-    assert schema["adx_media"]["default"] == 14
-    assert (schema["adx_media"]["min"], schema["adx_media"]["max"]) == (1, 100)
+    assert schema["di_periodo"]["default"] == 14
+    assert (schema["di_periodo"]["min"], schema["di_periodo"]["max"]) == (2, 100)
+    assert schema["adx_suavizacao"]["default"] == 14
+    assert (schema["adx_suavizacao"]["min"], schema["adx_suavizacao"]["max"]) == (1, 100)
     assert schema["amplitude_max"]["default"] == 1000
     assert (schema["amplitude_max"]["min"], schema["amplitude_max"]["max"]) == (0, 10000)
     assert schema["amplitude_max"]["step"] == 5
