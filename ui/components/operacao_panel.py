@@ -1241,6 +1241,10 @@ def _conta_curta(nome: str) -> str:
     escrito antes do nome. O nome inteiro fica no `title`."""
     if nome.upper().endswith("-DEMO") and len(nome) > 5:
         return nome[:-5]
+    # "ClearContaReal-1014062283" → "ClearContaReal" (o número fica no title)
+    base, _, sufixo = nome.rpartition("-")
+    if base and sufixo.isdigit():
+        return base
     return nome
 
 

@@ -2082,3 +2082,11 @@ body{
 /* legenda das etiquetas bom / atenção / ruim da Avaliação */
 .op-cmp-wrap{display:flex;flex-direction:column;gap:0;}
 .op-cmp-leg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px 12px;font:500 var(--fs-xs) var(--sans);}
+/* tira de números na ordem do rascunho conta-real v2:
+   REAL hoje · DEMO hoje · PAPEL hoje · perda real · perda demo · contra o esperado */
+.op-tira .ord-numeros > :nth-child(1){order:1}
+.op-tira .ord-numeros > :nth-child(2){order:2}
+.op-tira #av-op-kpis > :nth-child(1){order:3}
+.op-tira .ord-numeros > :nth-child(3){order:4}
+.op-tira .ord-numeros > :nth-child(4){order:5}
+.op-tira #av-op-kpis > :nth-child(2){order:6}
