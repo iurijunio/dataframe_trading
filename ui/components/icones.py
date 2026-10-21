@@ -12,8 +12,9 @@ from dash import html
 # .ic-<nome> em ui/assets/icones.css (tests/test_icones.py confere).
 ICONES = frozenset({
     "arrow-down", "arrow-up", "briefcase", "chart-candlestick", "circle-help",
-    "crosshair", "external-link", "layers", "list", "maximize-2", "pause",
-    "pencil", "play", "power", "scale", "scroll-text", "send", "skip-forward",
+    "crosshair", "download", "external-link", "layers", "list", "maximize-2",
+    "pause", "pencil", "play", "plus", "power", "scale", "scroll-text", "send",
+    "skip-forward",
     "triangle-alert",
 })
 

@@ -28,15 +28,18 @@ from . import ficha as FI
 from . import operacao_panel as OP
 from . import ordens_panel as OR
 from . import pregao_panel as PG
-from .cartao import FASES, brl, dica, etiqueta_mesmo_assim  # noqa: F401
+from .cartao import FASES, brl, dica, etiqueta_mesmo_assim, num  # noqa: F401
+from .icones import icone
 
 
 # ------------------------------------------------------------ peças comuns
 def _secao(titulo, nota, *filhos):
+    """Título da seção; a explicação dela vai no (?), sem frase visível."""
+    cab = [html.H3(titulo, className="panel-title av-sec-titulo")]
+    if nota:
+        cab.append(dica(nota))
     return html.Section([
-        html.Div([html.H3(titulo, className="panel-title av-sec-titulo"),
-                  html.P(nota, className="av-sec-nota")],
-                 className="av-sec-head"),
+        html.Div(cab, className="av-sec-head"),
         html.Div(list(filhos), className="av-corpo"),
     ], className="panel")
 
@@ -72,11 +75,10 @@ def _plural(n, um, varios):
     return f"{n} {um if n == 1 else varios}"
 
 
-def _passo(n, titulo, texto):
-    return html.Li([html.Span(str(n), className="av-passo-n"),
-                    html.Div([html.Strong(titulo), html.Span(texto)],
-                             className="av-passo-txt")],
-                   className="av-passo")
+def _chip(texto, tipo):
+    """Chip de identidade da conta ou da fase: laranja = real, ciano = demo,
+    violeta = papel. Não é estado (verde/cinza/âmbar/rosa): é quem é."""
+    return html.Span(texto, className=f"av-chip av-chip-{tipo}")
 
 
 # ------------------------------------------------------------------ painel
@@ -115,85 +117,82 @@ def painel():
 
 
 def _estrategias() -> list:
-    """Sub-tela Estratégias: portfólios, variantes, contas e arrumação."""
+    """Sub-tela Estratégias: números do topo, portfólios, variantes, contas e
+    arrumação. Sem passo a passo nem frases-subtítulo: a explicação de cada
+    seção está no (?) do título."""
     return [
         html.Section([
             html.Div([
-                html.Ol([
-                    _passo(1, "Cadastre a conta do MT5",
-                           "Seção Contas, lá embaixo. Ela só passa a ser "
-                           "usada na fase demo."),
-                    _passo(2, "Ligue o portfólio",
-                           "Seção Portfólios. As variantes dele ficam "
-                           "liberadas."),
-                    _passo(3, "Confira as variantes",
-                           "Verde = liberada para o papel. Em “Ver ficha” "
-                           "você vê de onde veio o plano."),
-                ], className="av-passos"),
                 html.Div(id="av-resumo", className="av-resumo"),
                 html.Div(id="av-aviso", className="av-aviso"),
             ], className="av-corpo"),
-        ], className="panel"),
+        ], className="panel av-topo-est"),
         _secao("Portfólios", "Ligar um portfólio libera as variantes dele "
-               "para o papel.",
+               "para o papel. Verde = ligado; cinza = desligado.",
                html.Div(id="av-portfolios", className="av-lista")),
         _secao("Variantes", "Cada variante de cada portfólio. Verde pode "
-               "rodar; cinza está parada e diz por quê.",
+               "rodar; cinza está parada e diz por quê. Em “Ver ficha” você "
+               "vê de onde veio o plano.",
                html.Div(id="av-variantes", className="av-lista-col")),
         _secao("Contas", "Contas do MT5 onde as ordens vão cair a partir da "
-               "fase demo.",
-               html.Div([
+               "fase demo. Na fase papel nada é enviado.",
+               html.Div(id="av-contas", className="av-lista-col"),
+               html.Details([
+                   html.Summary([icone("plus", pequeno=True), "Nova conta"],
+                                className="btn-ghost btn-sm av-btn-sec av-nova-conta-btn"),
                    html.Div([
-                       _rotulado("Nome da conta", dcc.Input(
-                           id="av-conta-nome", type="text", className="inp",
-                           placeholder="ex.: Demo XP"), classe="av-campo-nome"),
-                       _rotulado("Tipo", dcc.Dropdown(
-                           id="av-conta-tipo", className="dd av-dd-tipo",
-                           clearable=False, value="demo", searchable=False,
-                           options=[{"label": "demo", "value": "demo"},
-                                    {"label": "real", "value": "real"}])),
-                       _rotulado("Limite de perda diária (R$)", dcc.Input(
-                           id="av-conta-limite", type="text",
-                           inputMode="numeric", className="inp",
-                           placeholder="opcional"),
-                           explica="O limite diário da mesa proprietária. "
-                                   "Deixe vazio se a conta não tiver.",
-                           classe="av-campo-limite"),
-                   ], className="av-form-linha"),
-                   html.Div([
-                       _rotulado("Número da conta", dcc.Input(
-                           id="av-conta-login", type="text",
-                           inputMode="numeric", className="inp",
-                           placeholder="ex.: 1234567"),
-                           explica="O número que aparece no MT5, no topo da "
-                                   "janela. A senha não é guardada: você faz "
-                                   "login no próprio MT5.",
-                           classe="av-campo-limite"),
-                       _rotulado("Servidor", dcc.Input(
-                           id="av-conta-servidor", type="text",
-                           className="inp",
-                           placeholder="ex.: ClearInvestimentos-DEMO"),
-                           classe="av-campo-nome"),
-                       _rotulado("Pasta do MT5", dcc.Input(
-                           id="av-conta-terminal", type="text",
-                           className="inp", placeholder="opcional"),
-                           explica="Só se você tiver mais de um MT5 "
-                                   "instalado: aponte o terminal64.exe desta "
-                                   "conta.",
-                           classe="av-campo-largo"),
-                       html.Div(html.Button("Puxar do MT5",
-                                            id="av-btn-mt5-puxar",
-                                            n_clicks=0,
-                                            className="btn-ghost btn-sm av-btn-sec"),
+                       html.Div([
+                           _rotulado("Nome da conta", dcc.Input(
+                               id="av-conta-nome", type="text", className="inp",
+                               placeholder="ex.: Demo XP"), classe="av-campo-nome"),
+                           _rotulado("Tipo", dcc.Dropdown(
+                               id="av-conta-tipo", className="dd av-dd-tipo",
+                               clearable=False, value="demo", searchable=False,
+                               options=[{"label": "demo", "value": "demo"},
+                                        {"label": "real", "value": "real"}])),
+                           _rotulado("Limite de perda diária (R$)", dcc.Input(
+                               id="av-conta-limite", type="text",
+                               inputMode="numeric", className="inp",
+                               placeholder="opcional"),
+                               explica="O limite diário da mesa proprietária. "
+                                       "Deixe vazio se a conta não tiver.",
+                               classe="av-campo-limite"),
+                       ], className="av-form-linha"),
+                       html.Div([
+                           _rotulado("Número da conta", dcc.Input(
+                               id="av-conta-login", type="text",
+                               inputMode="numeric", className="inp",
+                               placeholder="ex.: 1234567"),
+                               explica="O número que aparece no MT5, no topo da "
+                                       "janela. A senha não é guardada: você faz "
+                                       "login no próprio MT5.",
+                               classe="av-campo-limite"),
+                           _rotulado("Servidor", dcc.Input(
+                               id="av-conta-servidor", type="text",
+                               className="inp",
+                               placeholder="ex.: ClearInvestimentos-DEMO"),
+                               classe="av-campo-nome"),
+                           _rotulado("Pasta do MT5", dcc.Input(
+                               id="av-conta-terminal", type="text",
+                               className="inp", placeholder="opcional"),
+                               explica="Só se você tiver mais de um MT5 "
+                                       "instalado: aponte o terminal64.exe desta "
+                                       "conta.",
+                               classe="av-campo-largo"),
+                           html.Div(html.Button([icone("download", pequeno=True),
+                                                 "Puxar do MT5"],
+                                                id="av-btn-mt5-puxar",
+                                                n_clicks=0,
+                                                className="btn-ghost btn-sm av-btn-sec"),
+                                    className="av-campo-botao"),
+                           html.Div(id="av-mt5-aviso", className="av-aviso-mt5"),
+                       ], className="av-form-linha"),
+                       html.Div(html.Button("Criar conta",
+                                            id="av-btn-conta-criar", n_clicks=0,
+                                            className="btn-ghost av-btn-principal"),
                                 className="av-campo-botao"),
-                       html.Div(id="av-mt5-aviso", className="av-aviso-mt5"),
-                   ], className="av-form-linha"),
-                   html.Div(html.Button("Criar conta",
-                                        id="av-btn-conta-criar", n_clicks=0,
-                                        className="btn-ghost av-btn-principal"),
-                            className="av-campo-botao"),
-               ], className="av-form"),
-               html.Div(id="av-contas", className="av-lista-col")),
+                   ], className="av-form"),
+               ], className="av-nova-conta")),
         _secao("Arrumação", "Planos gravados que ainda não pertencem a "
                "nenhuma variante. Vincule para poder usá-los num portfólio.",
                html.Div(id="av-arrumacao", className="av-lista-col")),
@@ -219,12 +218,24 @@ def resumo_topo(n_pf, n_pf_lig, n_var, n_var_lib, n_arrumar,
     ]
 
 
-def _botao(rotulo, acao, alvo, armado, classe="btn-ghost btn-sm"):
+def _botao(rotulo, acao, alvo, armado, classe="btn-ghost btn-sm", prefixo=None,
+           so_icone=False):
+    """Botão de ação com dois cliques. `prefixo`: enfeite antes do texto (a
+    chave do Envio, o ícone do power). `so_icone`: sem texto, só o `prefixo`,
+    com o nome completo no `title`; ao pedir confirmação mostra "Confirmar?"."""
     armado_aqui = armado == f"{acao}:{alvo}"
-    return html.Button("Confirmar?" if armado_aqui else rotulo,
+    texto = "Confirmar?" if armado_aqui else rotulo
+    if so_icone and not armado_aqui:
+        filhos = prefixo
+    else:
+        filhos = [prefixo, texto] if prefixo is not None and not armado_aqui else texto
+    extra = {"title": rotulo} if so_icone else {}
+    return html.Button(filhos,
                        id={"type": "av-acao", "acao": acao, "id": alvo},
                        n_clicks=0,
-                       className=classe + (" av-armado" if armado_aqui else ""))
+                       className=classe + (" av-armado" if armado_aqui else "")
+                       + (" av-so-icone" if so_icone else ""),
+                       **extra)
 
 
 def _campo_dd(campo, alvo, valor, opcoes, placeholder, classe="dd av-dd"):
@@ -332,21 +343,24 @@ def cartao_portfolio(p: dict, contas: list[dict], armado,
     if p["ligado"]:
         estado = _etiqueta("ligado", "verde")
         interruptor = _botao("Desligar portfólio", "pf-desligar", pid, armado,
-                             "btn-ghost av-btn-sec")
+                             "btn-ghost av-btn-sec",
+                             prefixo=icone("power", pequeno=True), so_icone=True)
         explica = "Ligado: as variantes dele que estão ligadas podem rodar."
     else:
         estado = _etiqueta("desligado", "cinza")
         interruptor = _botao("Ligar portfólio", "pf-ligar", pid, armado,
-                             "btn-ghost av-btn-principal")
+                             "btn-ghost av-btn-principal",
+                             prefixo=icone("power", pequeno=True), so_icone=True)
         explica = "Desligado: nenhuma variante dele roda. Ligue para liberar."
     qtd = (_plural(n, "variante", "variantes") if n else "nenhuma variante")
     corpo = [
         html.Div([
             html.Div([html.Span(p["nome"], className="av-nome-fixo"), estado],
                      className="av-cab-esq"),
-            interruptor,
+            # o power fica à parte, na ponta: ligar/desligar o portfólio inteiro
+            html.Div(interruptor, className="av-pf-power"),
         ], className="av-cab"),
-        html.P([html.Span(qtd, className="av-qtd"), " · ", explica],
+        html.P([html.Span(qtd, className="av-qtd"), dica(explica)],
                className="av-texto"),
     ]
     if not n:
@@ -356,78 +370,96 @@ def cartao_portfolio(p: dict, contas: list[dict], armado,
         corpo.append(html.P("⚠ nenhuma variante deste portfólio está rodando "
                             "— veja o motivo em Variantes",
                             className="av-alerta"))
-    corpo.append(html.Div([
-        html.Div([html.Span("Contas deste portfólio", className="av-sub-titulo"),
-                  dica("Só importam a partir da fase demo: é nelas que as "
-                       "ordens vão cair. Na fase papel nada é enviado.")],
-                 className="av-sub-head"),
-        html.Div([
-            _rotulado("Conta demo", _campo_dd(
-                "conta-demo", pid, p["conta_demo_id"], demo,
-                "escolha…" if demo else "nenhuma conta demo")),
-            _rotulado("Conta real", _campo_dd(
-                "conta-real", pid, p["conta_real_id"], real,
-                "escolha…" if real else "nenhuma conta real")),
-            html.Div(_botao("Salvar contas", "pf-contas", pid, armado,
-                            "btn-ghost av-btn-sec"),
-                     className="av-campo-botao"),
-        ], className="av-form-linha"),
-    ], className="av-sub"))
-    corpo.append(_conta_do_portfolio(p, contas, armado))
+    corpo.append(_tabela_contas_pf(p, contas, demo, real, armado))
     return html.Div(corpo, className="av-cartao av-cartao-pf"
                     + (" av-ligado" if p["ligado"] else ""))
 
 
-def _conta_do_portfolio(p: dict, contas: list[dict], armado) -> html.Div:
-    """Limite de perda do dia e interruptor do Envio de ordens da conta demo
-    do portfólio. Os ids levam o id do PORTFÓLIO (a mesma conta pode ser a
-    demo de dois portfólios, e id repetido quebra a página); a conta é
-    resolvida no clique."""
+def _tabela_contas_pf(p: dict, contas: list[dict], demo, real, armado) -> html.Div:
+    """Uma linha por conta do portfólio: chip real/demo · conta do MT5 ·
+    Envio de ordens · limite do dia. Os ids levam o id do PORTFÓLIO (a mesma
+    conta pode ser a demo de dois portfólios, e id repetido quebra a página);
+    a conta é resolvida no clique."""
     pid = p["portfolio_id"]
-    titulo = html.Div([
-        html.Span("Envio de ordens", className="av-sub-titulo"),
-        dica("É o interruptor que deixa a automação mandar ordens para a conta "
-             "demo. Desligado, o papel segue normal e nada vai à corretora. "
-             "Para ligar a conta precisa de um limite de perda do dia: ao "
-             "chegar nele a automação para de entrar.")],
-        className="av-sub-head")
-    conta = next((c for c in contas if c["conta_id"] == p["conta_demo_id"]
-                  and not c.get("arquivada_em")), None)
+    demo_c = next((c for c in contas if c["conta_id"] == p["conta_demo_id"]
+                   and not c.get("arquivada_em")), None)
+    real_c = next((c for c in contas if c["conta_id"] == p["conta_real_id"]
+                   and not c.get("arquivada_em")), None)
+    cab = html.Div([
+        html.Span("Conta", className="av-pf-cab-c"),
+        html.Span("Conta do MT5", className="av-pf-cab-c"),
+        html.Span(["Envio de ordens", dica(
+            "É o interruptor que deixa a automação mandar ordens para a conta "
+            "demo. Desligado, o papel segue normal e nada vai à corretora. "
+            "Para ligar, a conta precisa de um limite de perda do dia: ao "
+            "chegar nele a automação para de entrar.")], className="av-pf-cab-c"),
+        html.Span(["Limite de perda do dia", dica(
+            "Quanto a conta pode perder no dia antes da automação parar de "
+            "entrar. Vazio = sem limite (e então o envio não liga).")],
+            className="av-pf-cab-c"),
+    ], className="av-pf-linha av-pf-cab")
+    linha_demo = html.Div([
+        html.Div(_chip("demo", "demo"), className="av-pf-c"),
+        html.Div(_campo_dd("conta-demo", pid, p["conta_demo_id"], demo,
+                           "escolha…" if demo else "nenhuma conta demo"),
+                 className="av-pf-c"),
+        html.Div(_envio_demo(pid, demo_c, armado), className="av-pf-c"),
+        html.Div(_limite_conta(pid, demo_c, "pf-limite", "pf-limite", armado),
+                 className="av-pf-c"),
+    ], className="av-pf-linha")
+    linha_real = html.Div([
+        html.Div(_chip("real", "real"), className="av-pf-c"),
+        html.Div(_campo_dd("conta-real", pid, p["conta_real_id"], real,
+                           "escolha…" if real else "nenhuma conta real"),
+                 className="av-pf-c"),
+        html.Div(_envio_real(real_c), className="av-pf-c"),
+        html.Div(_limite_conta(pid, real_c, "pf-limite-real", "pf-limite-real",
+                               armado), className="av-pf-c"),
+    ], className="av-pf-linha")
+    rodape = html.Div(_botao("Salvar contas", "pf-contas", pid, armado,
+                             "btn-ghost av-btn-sec"), className="av-pf-rodape")
+    return html.Div([cab, linha_demo, linha_real, rodape], className="av-pf-tab")
+
+
+def _envio_demo(pid, conta: dict | None, armado):
+    """O Envio da conta demo: uma chave que liga/desliga, em dois cliques.
+    Os ids levam a CONTA junto ("portfólio:conta"): desligar não depende de
+    uma leitura do banco antes de escrever o comando."""
     if conta is None:
-        return html.Div([titulo, html.P(
-            "Escolha a conta demo acima e salve: o limite e o interruptor "
-            "são dela.", className="av-texto")], className="av-sub")
+        return html.Span("escolha a conta demo e salve: o limite e o "
+                         "interruptor são dela.", className="av-texto")
     ligado = bool(conta.get("envio_ligado"))
-    # o alvo leva a CONTA junto ("portfólio:conta"): desligar não pode
-    # depender de uma leitura do banco antes de escrever o comando
     alvo = f"{pid}:{conta['conta_id']}"
-    botao = (_botao("Desligar envio", "envio-desligar", alvo, armado,
-                    "btn-ghost btn-sm av-btn-sec") if ligado else
-             _botao("Ligar envio", "envio-ligar", alvo, armado,
-                    "btn-ghost btn-sm av-btn-principal"))
+    chave = html.Span(className="av-sw av-sw-on" if ligado else "av-sw")
+    if ligado:
+        return _botao("Desligar envio", "envio-desligar", alvo, armado,
+                      "btn-ghost btn-sm av-btn-sec av-chave", prefixo=chave)
+    return _botao("Ligar envio", "envio-ligar", alvo, armado,
+                  "btn-ghost btn-sm av-btn-principal av-chave", prefixo=chave)
+
+
+def _envio_real(conta: dict | None):
+    """A conta real ainda não recebe ordens: a chave aparece apagada e
+    explica, em vez de um botão que o core recusaria.
+    # TRAVA: o envio da conta real está bloqueado no core (`ligar_envio`
+    # recusa tipo real) até a tarefa que libera o processo da conta real.
+    # Quando ela existir, esta chave vira o mesmo interruptor da demo."""
+    if conta is None:
+        return html.Span("—", className="mut")
+    return html.Span([html.Span(className="av-sw"), "indisponível",
+                      dica("O envio de ordens para a conta real ainda não "
+                           "existe nesta versão.")], className="av-chave-off")
+
+
+def _limite_conta(pid, conta: dict | None, campo: str, acao: str, armado):
+    """Limite de perda do dia de uma conta do portfólio: campo + Salvar."""
+    if conta is None:
+        return html.Span("—", className="mut")
     return html.Div([
-        titulo,
-        html.Div([
-            html.Div([_etiqueta("enviando" if ligado else "desligado",
-                                "verde" if ligado else "cinza"),
-                      html.Span(conta["nome"], className="av-texto")],
-                     className="av-cab-esq"),
-            botao,
-        ], className="av-cab"),
-        html.Div([
-            _rotulado("Limite de perda do dia (R$)",
-                      _campo_txt("pf-limite", pid,
-                                 limite_br(conta["limite_perda_dia"]),
-                                 "sem limite", numerico=True),
-                      explica="Quanto a conta demo pode perder no dia antes da "
-                              "automação parar de entrar. Vazio = sem limite "
-                              "(e então o envio não liga).",
-                      classe="av-campo-limite"),
-            html.Div(_botao("Salvar limite", "pf-limite", pid, armado,
-                            "btn-ghost btn-sm av-btn-sec"),
-                     className="av-campo-botao"),
-        ], className="av-form-linha"),
-    ], className="av-sub")
+        _campo_txt(campo, pid, limite_br(conta["limite_perda_dia"]),
+                   "sem limite", numerico=True),
+        _botao("Salvar", acao, pid, armado, "btn-ghost btn-sm av-btn-sec"),
+    ], className="av-pf-limite-campo")
 
 
 # --------------------------------------------------------------- variantes
@@ -546,71 +578,139 @@ def selo_papel_backtest(sit: dict | None) -> html.Span:
     return _etiqueta("ainda sem pregão conferido", "cinza", explica)
 
 
+def _trilha(fase):
+    """papel → demo → real, com a fase atual acesa e as outras apagadas."""
+    partes = []
+    for i, cod in enumerate(("papel", "demo", "real")):
+        if i:
+            partes.append(html.Span("→", className="av-trilha-seta"))
+        partes.append(html.Span(cod, className=f"av-chip av-chip-{cod} "
+                                + ("av-trilha-on" if cod == fase else "av-trilha-off")))
+    return html.Div(partes, className="av-trilha")
+
+
+def _tick(v) -> str:
+    if v is None:
+        return "—"
+    return ("+" if v > 0 else "") + num(v, 1) + " tick"
+
+
+def _demo_ate_agora(d: dict | None):
+    """Números que a demo fez nesta variante até agora (`ordens_da_ficha`)."""
+    d = d or {}
+    return _kv([
+        ("Operações", _num(d.get("operacoes"))),
+        ("Derrapagem média", _tick(d.get("derrapagem")),
+         "Quanto a demo pagou a mais que o papel, em ticks, por ponta (entrada "
+         "e saída). Positivo = pior que o papel. Perto de zero é o bom."),
+        ("Rejeitadas", _num(d.get("rejeitadas")),
+         "Ordens que a corretora recusou na demo. Zero é o bom."),
+        ("Chamados sem solução", _num(d.get("chamados")),
+         "Pedidos de atenção que a automação abriu para esta variante na demo e "
+         "que ainda não foram fechados. Zero é o bom."),
+    ])
+
+
+def _linha_contratos(lig, campo, acao, custo_tipo, rot, explica, valor, plano,
+                     armado):
+    """Uma linha de contratos (real ou demo): campo, Salvar e a prévia do custo
+    de um stop em % do limite da conta. Os ids são próprios desta ficha."""
+    return [
+        html.Div([rot, dica(explica)], className="av-ord-rot"),
+        html.Div([
+            html.Div([
+                dcc.Input(id={"type": "av-campo", "campo": campo, "id": lig},
+                          type="text", inputMode="numeric", debounce=True,
+                          value="" if valor is None else str(valor),
+                          placeholder="plano", className="inp av-ord-ctr",
+                          autoComplete="off"),
+                _botao("Salvar contratos", acao, lig, armado,
+                       "btn-ghost btn-sm av-btn-sec"),
+                html.Span(OR.contratos_antes(valor, plano), className="mut"),
+            ], className="av-ord-ctr-linha"),
+            html.Div(id={"type": custo_tipo, "id": lig}, className="av-texto"),
+        ], className="av-ord-val"),
+    ]
+
+
 def bloco_ordens_ficha(l: dict, ordens: dict | None, armado) -> html.Div:
-    """Fase, selo papel × backtest e contratos na demo da variante. `ordens`
-    é o que `callbacks_ao_vivo.ordens_da_ficha` leu (None = banco ocupado).
-    Os ids do campo de contratos são próprios (`av-campo`/`av-ficha-custo`):
-    os `av-op-ord-ctr-*` são do popover da tela Operação."""
+    """Fase (trilha com o próximo passo e o de voltar), selo papel × backtest,
+    o que a demo fez até agora e os contratos da real e da demo, cada um com a
+    prévia do custo de um stop. `ordens` é o que `callbacks_ao_vivo.
+    ordens_da_ficha` leu (None = banco ocupado). Os ids do campo de contratos
+    são próprios (`av-campo`/`av-ficha-custo*`): os `av-op-ord-ctr-*` são do
+    popover da tela Operação."""
     lig = l["ligacao_id"]
-    titulo = html.Span("Ordens na conta demo", className="av-sub-titulo")
+    titulo = html.Div([html.Span("Ordens nas contas", className="av-sub-titulo"),
+                       dica("Onde a variante está no caminho até o dinheiro "
+                            "real e o que a conta dela já fez.")],
+                      className="av-sub-head")
     if ordens is None:
         return html.Div([titulo, html.P(
             "Não foi possível ler agora: banco ocupado — feche e abra a ficha "
             "de novo.", className="av-alerta")], className="av-ficha-acoes")
-    em_demo = l["fase"] == "demo"
-    if em_demo:
-        botao = _botao("Voltar para papel", "fase-papel", lig, armado,
-                       "btn-ghost btn-sm av-btn-sec")
-        nota = ("Voltar encerra a posição aberta, se houver; o papel segue "
-                "como sempre.")
+    fase = l["fase"]
+    if fase == "papel":
+        proximo = _botao("Promover para demo", "fase-demo", lig, armado,
+                         "btn-ghost btn-sm av-btn-principal")
+        voltar = None
+    elif fase == "demo":
+        proximo = _botao("Promover para real", "fase-real", lig, armado,
+                         "btn-ghost btn-sm av-btn-principal")
+        voltar = _botao("Voltar para papel", "fase-papel", lig, armado,
+                        "btn-ghost btn-sm av-btn-sec")
     else:
-        botao = _botao("Promover para demo", "fase-demo", lig, armado,
-                       "btn-ghost btn-sm av-btn-principal")
-        nota = ("Promover só libera a variante: as ordens só saem quando o "
-                "Envio de ordens do portfólio estiver ligado.")
+        proximo = None
+        voltar = _botao("Voltar para demo", "fase-voltar-demo", lig, armado,
+                        "btn-ghost btn-sm av-btn-sec")
     restr = ordens.get("restricoes") or {}
     motivos = restr.get("motivos") or []
     avisos = restr.get("avisos") or []
-    linhas_restr = [] if em_demo else (
+    # o que barra a subida ao demo aparece na fase papel; a real vem do core
+    # como erro ao clicar (`mudar_fase`), que a tela mostra no aviso do topo
+    linhas_restr = [] if fase != "papel" else (
         [html.P("✖ " + m, className="av-alerta") for m in motivos]
         + [html.P("⚠ " + a, className="av-texto") for a in avisos])
-    contratos = ordens.get("contratos_demo")
-    return html.Div([
-        titulo,
-        html.Div([
-            html.Div([
-                html.Span("Fase", className="av-kv-r"),
-                _etiqueta(FASES.get(l["fase"], l["fase"]),
-                          "verde" if em_demo else "cinza"),
-            ], className="av-cab-esq"),
-            html.Div([
-                html.Span([html.Span("papel × backtest", className="av-kv-r"),
-                           selo_papel_backtest(ordens.get("situacao"))],
-                          className="av-com-dica"),
-                botao,
-            ], className="av-cab-dir"),
-        ], className="av-cab"),
-        html.P(nota, className="av-texto"),
-        *linhas_restr,
-        html.Div([
-            _rotulado("Contratos na demo", dcc.Input(
-                id={"type": "av-campo", "campo": "contratos", "id": lig},
-                type="text", inputMode="numeric", debounce=True,
-                value="" if contratos is None else str(contratos),
-                placeholder="plano", className="inp", autoComplete="off"),
-                explica="Quantos contratos a demo opera. Vazio = os do plano "
-                        "(o papel segue sempre com os do plano). A mudança "
-                        "vale a partir da próxima operação.",
-                classe="av-campo-limite"),
-            html.Div(_botao("Salvar contratos", "contratos-salvar", lig, armado,
-                            "btn-ghost btn-sm av-btn-sec"),
-                     className="av-campo-botao"),
-            html.Span(OR.contratos_antes(contratos, ordens.get("contratos_plano")),
-                      className="mut"),
-        ], className="av-form-linha"),
-        html.Div(id={"type": "av-ficha-custo", "id": lig},
-                 className="av-texto"),
-    ], className="av-ficha-acoes")
+    acoes = [a for a in (voltar, proximo) if a is not None]
+    contratos_demo = ordens.get("contratos_demo")
+    contratos_real = ordens.get("contratos_real")
+    plano = ordens.get("contratos_plano")
+    grade = [
+        html.Div([html.Span("Fase", className="av-ord-rot-txt"),
+                  dica("Papel: só simula, nada é enviado. Demo: manda ordens à "
+                       "conta demo quando o Envio de ordens do portfólio estiver "
+                       "ligado. Real: manda ordens à conta real (o envio dela "
+                       "ainda não existe nesta versão). Voltar encerra a posição "
+                       "aberta, se houver.")], className="av-ord-rot"),
+        html.Div([_trilha(fase), html.Div(acoes, className="av-ord-acoes"),
+                  *linhas_restr], className="av-ord-val"),
+        html.Div([html.Span("Papel × backtest", className="av-ord-rot-txt")],
+                 className="av-ord-rot"),
+        html.Div(selo_papel_backtest(ordens.get("situacao")),
+                 className="av-ord-val"),
+        html.Div([html.Span("Na demo até agora", className="av-ord-rot-txt"),
+                  dica("Só o que a demo fez nesta variante, nos pregões em que "
+                       "ela tentou operar. Ensaio com o Envio desligado não "
+                       "conta.")], className="av-ord-rot"),
+        html.Div(_demo_ate_agora(ordens.get("demo_ate_agora")),
+                 className="av-ord-val"),
+        *_linha_contratos(
+            lig, "contratos-real", "contratos-real-salvar",
+            "av-ficha-custo-real",
+            html.Span("Contratos na real", className="av-ord-rot-txt"),
+            "Quantos contratos a conta real opera. Vazio = os do plano. A "
+            "mudança vale a partir da próxima operação.",
+            contratos_real, plano, armado),
+        *_linha_contratos(
+            lig, "contratos", "contratos-salvar", "av-ficha-custo",
+            html.Span("Contratos na demo", className="av-ord-rot-txt"),
+            "Quantos contratos a demo opera. Vazio = os do plano (o papel segue "
+            "sempre com os do plano). A mudança vale a partir da próxima "
+            "operação.",
+            contratos_demo, plano, armado),
+    ]
+    return html.Div([titulo, html.Div(grade, className="av-ord-grade")],
+                    className="av-ficha-acoes")
 
 
 def ficha_rastreio(r: dict, estrategia_mod, armado, hoje=None,
@@ -790,16 +890,54 @@ def limite_br(v) -> str:
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def linha_conta(c: dict, armado) -> html.Div:
+def tabela_contas(contas: list[dict], armado) -> html.Div:
+    """A lista de contas: uma linha por conta (Tipo · Nome · Número · Servidor ·
+    Pasta do MT5 · Limite · Editar). Editar abre o formulário da própria conta
+    logo abaixo da linha (`linha_conta`)."""
+    if not contas:
+        return html.P("nenhuma conta cadastrada", className="av-vazio")
+    cab = html.Div([
+        html.Span("Tipo", className="av-conta-cab-c"),
+        html.Span("Nome", className="av-conta-cab-c"),
+        html.Span("Número", className="av-conta-cab-c"),
+        html.Span("Servidor", className="av-conta-cab-c"),
+        html.Span(["Pasta do MT5", dica(
+            "Só se você tiver mais de um MT5 instalado: a pasta do terminal64.exe "
+            "desta conta.")], className="av-conta-cab-c"),
+        html.Span(["Limite do dia", dica(
+            "Quanto a conta pode perder no dia, em reais. Sem limite, o envio "
+            "de ordens não liga.")], className="av-conta-cab-c"),
+        html.Span("", className="av-conta-cab-c"),
+    ], className="av-conta-grade av-conta-cab")
+    return html.Div([cab, *[linha_conta(c, armado) for c in contas]],
+                    className="av-tab-contas")
+
+
+def linha_conta(c: dict, armado) -> html.Details:
+    """Uma conta: a linha da tabela (o próprio resumo do `<details>`) e, ao
+    clicar Editar, o formulário dela. Sem número e servidor a automação não
+    consegue conferir em qual conta o MT5 está logado, então não pode mandar
+    ordem: a etiqueta avisa na linha."""
     cid = c["conta_id"]
-    # sem número e servidor a automação não consegue conferir em qual conta o MT5
-    # está logado, então não pode mandar ordem
     faltam = not c.get("login") or not c.get("servidor")
-    return html.Div([
-        html.Div([_etiqueta(c["tipo"], "ambar" if c["tipo"] == "real" else "info")]
-                 + ([_etiqueta("faltam os dados do MT5 — não poderá receber "
-                               "ordens", "ambar")] if faltam else []),
-                 className="av-conta-tipo"),
+    limite = c["limite_perda_dia"]
+    tipo = [_chip(c["tipo"], c["tipo"])]
+    if faltam:
+        tipo.append(_etiqueta("faltam os dados do MT5 — não poderá receber "
+                              "ordens", "ambar"))
+    resumo = html.Span([
+        html.Span(tipo, className="av-conta-c av-conta-tipo"),
+        html.Span(c["nome"], className="av-conta-c av-conta-nome"),
+        html.Span("—" if c.get("login") is None else str(c["login"]),
+                  className="av-conta-c mono"),
+        html.Span(c.get("servidor") or "—", className="av-conta-c"),
+        html.Span(c.get("terminal") or "—",
+                  className="av-conta-c av-conta-pasta mono"),
+        html.Span("sem limite" if limite is None else f"R$ {limite_br(limite)}",
+                  className="av-conta-c mono"),
+        html.Span("Editar ▾", className="btn-ghost btn-sm av-btn-sec av-conta-editar"),
+    ], className="av-conta-grade av-conta-linha")
+    form = html.Div([
         _rotulado("Nome", _campo_txt("conta-nome", cid, c["nome"], "nome"),
                   classe="av-campo-nome"),
         _rotulado("Limite de perda diária (R$)",
@@ -826,8 +964,13 @@ def linha_conta(c: dict, armado) -> html.Div:
                          "btn-ghost btn-sm av-btn-perigo")],
                  className="av-campo-botao av-botoes"),
     ], className="av-form-linha av-conta")
+    return html.Details([
+        html.Summary(resumo, className="av-conta-sum"),
+        html.Div(form, className="av-conta-corpo"),
+    ], className="av-conta-det")
 
 
+# ---------------------------------------------------------------- arrumação
 # ---------------------------------------------------------------- arrumação
 def _planos_txt(o):
     ids = o.get("plano_ids") or [o["plano_id"]]

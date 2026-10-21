@@ -15,6 +15,7 @@ from core import ao_vivo as AV
 from core import db_manager as db
 from core import mt5_source
 from core import papel_backtest as PB
+from core import papel_leitura as PLE
 from core import plano as PL
 from core import portfolio as P
 from core import variantes as V
@@ -24,6 +25,7 @@ from . import callbacks_operacao as OPC
 from . import data as D
 from .callbacks_ordens import ARMADO_VALE_S, TENTATIVAS_BANCO
 from .components import ao_vivo_panel as AP
+from .components import ordens_panel as OR
 
 
 def _modulo(estrategia):
@@ -46,6 +48,11 @@ _DUPLO = {"pf-ligar": "confirme: clique de novo para LIGAR o portfólio",
                        "fase demo",
           "fase-papel": "confirme: clique de novo para VOLTAR ao papel — isso "
                         "encerra a posição aberta, se houver",
+          "fase-real": "confirme: clique de novo para PROMOVER a variante à "
+                       "fase real",
+          "fase-voltar-demo": "confirme: clique de novo para VOLTAR à demo — a "
+                              "posição aberta na real, se houver, é encerrada "
+                              "pela captura",
           "envio-ligar": "confirme: clique de novo para LIGAR o envio de "
                          "ordens na conta demo",
           "envio-desligar": "confirme: clique de novo para DESLIGAR o envio "
@@ -103,34 +110,75 @@ def puxar(terminal, nome_atual):
             "corretora) — confira e clique em Criar conta")
 
 
-def _conta_demo(pid) -> dict | None:
-    """A conta demo (não arquivada) do portfólio, com o limite e o Envio, ou
-    None. Espera pouco pelo banco: ocupado vira RuntimeError."""
+def _conta_do_pf(pid, tipo) -> dict | None:
+    """A conta (não arquivada) do portfólio do `tipo` ("demo" ou "real"), com
+    o limite e o Envio, ou None. Espera pouco pelo banco: ocupado vira
+    RuntimeError."""
+    coluna = "conta_demo_id" if tipo == "demo" else "conta_real_id"
     with db.connect(read_only=True, tentativas=TENTATIVAS_BANCO) as con:
         r = con.execute(
             "SELECT c.conta_id, c.nome, c.limite_perda_dia, "
             "coalesce(c.envio_ligado, false) FROM portfolios p JOIN contas c "
-            "ON c.conta_id = p.conta_demo_id WHERE p.portfolio_id = ? "
+            f"ON c.conta_id = p.{coluna} WHERE p.portfolio_id = ? "
             "AND c.arquivada_em IS NULL", [pid]).fetchone()
     return None if r is None else dict(zip(
         ("conta_id", "nome", "limite", "envio"), r))
 
 
+def _conta_demo(pid) -> dict | None:
+    """A conta demo (não arquivada) do portfólio, com o limite e o Envio, ou
+    None. Espera pouco pelo banco: ocupado vira RuntimeError."""
+    return _conta_do_pf(pid, "demo")
+
+
+_MSG_FASE = {
+    "fase-demo": "variante promovida para a demo — as ordens saem quando o "
+                 "Envio de ordens do portfólio estiver ligado",
+    "fase-papel": "variante de volta ao papel — a posição aberta, se houver, "
+                  "é encerrada pela captura",
+    "fase-real": "variante promovida para a real — o envio de ordens para a "
+                 "conta real ainda não existe nesta versão",
+    "fase-voltar-demo": "variante de volta à demo — a posição aberta na real, "
+                        "se houver, é encerrada pela captura",
+}
+_FASE_DE = {"fase-demo": "demo", "fase-papel": "papel", "fase-real": "real",
+            "fase-voltar-demo": "demo"}
+
+
+def _salvar_contratos(lig, valor, conta: str) -> str:
+    """Contratos da conta `conta` ("demo" ou "real") da ligação: vazio volta
+    aos do plano. A demo continua pelo `OPC.salvar_editor` (mesmo texto da
+    Operação); a real é gravada aqui."""
+    if lig is None:
+        raise ValueError("nenhuma variante escolhida")
+    n = OR.ler_contratos(valor)
+    AV.definir_contratos(int(lig), n, conta=conta, tentativas=TENTATIVAS_BANCO)
+    if n is None:
+        return (f"a {conta} volta a usar os contratos do plano na próxima "
+                "operação")
+    return f"contratos da {conta} gravados — valem a partir da próxima operação"
+
+
 def _executar(nome, alvo, campos) -> str:
     c = lambda campo: campos.get((campo, alvo))
-    if nome in ("fase-demo", "fase-papel"):
-        fase = "demo" if nome == "fase-demo" else "papel"
-        AV.mudar_fase(alvo, fase, tentativas=TENTATIVAS_BANCO)
-        return ("variante promovida para a demo — as ordens saem quando o "
-                "Envio de ordens do portfólio estiver ligado"
-                if fase == "demo" else
-                "variante de volta ao papel — a posição aberta, se houver, "
-                "é encerrada pela captura")
+    if nome in _FASE_DE:
+        AV.mudar_fase(alvo, _FASE_DE[nome], tentativas=TENTATIVAS_BANCO)
+        return _MSG_FASE[nome]
     if nome == "contratos-salvar":
         gravou, msg = OPC.salvar_editor(alvo, c("contratos"))
         if not gravou:
             raise ValueError(msg)
         return msg
+    if nome == "contratos-real-salvar":
+        return _salvar_contratos(alvo, c("contratos-real"), "real")
+    if nome == "pf-limite-real":
+        conta = _conta_do_pf(alvo, "real")
+        if conta is None:
+            raise ValueError("escolha a conta real do portfólio antes de "
+                             "definir o limite")
+        AV.editar_conta(conta["conta_id"], tentativas=TENTATIVAS_BANCO,
+                        limite_perda_dia=_numero(c("pf-limite-real")))
+        return "limite de perda do dia da conta real salvo"
     if nome == "pf-limite":
         conta = _conta_demo(alvo)
         if conta is None:
@@ -248,26 +296,82 @@ def acao(nome, alvo, campos, armado, aberta, *, posicoes=None,
     return None, aberta, aviso
 
 
+def _demo_ate_agora(con, pid, lig, dia) -> dict:
+    """O que a demo fez nesta variante até o pregão `dia`, nos pregões em que
+    ela TENTOU operar (o ensaio não conta). Lê o que a tela Operação já lê
+    (`papel_leitura`, origem demo) e filtra pela ligação. Derrapagem média
+    como no comparativo: além do plano, em ticks, por ponta."""
+    ops, abertos = [], {}
+    fechados = set()
+    for d, parte in PLE._pregoes_demo(con, pid, dia):
+        ops += [o for o in parte[1] if o["ligacao_id"] == lig]
+        for e in PLE.eventos_ordens(con, pid, d):
+            # chamado sem solução: aberto e nunca fechado. O fechamento leva a
+            # mesma chave no `motivo`; a chave do chamado vem em `chave`
+            if e["tipo"] == "chamado" and e.get("ligacao_id") == lig:
+                abertos[e.get("chave")] = True
+            elif e["tipo"] == "chamado_fechado":
+                fechados.add(e.get("motivo"))
+    chamados = sum(1 for k in abertos if k not in fechados)
+    absolutas = [x + o["slippage_plano"] for o in ops
+                 for x in (o.get("derrapagem_entrada"), o.get("derrapagem_saida"))
+                 if x is not None and o.get("slippage_plano") is not None]
+    return {"operacoes": len(ops),
+            "derrapagem": sum(absolutas) / len(absolutas) if absolutas else None,
+            "rejeitadas": sum(1 for o in ops if o.get("recusas")),
+            "chamados": chamados}
+
+
 def ordens_da_ficha(lig) -> dict | None:
-    """O que a ficha mostra das ordens: contratos da demo, o selo papel ×
-    backtest e o que barra (ou merece atenção) na promoção. None = banco
-    ocupado: a ficha avisa em vez de congelar a tela."""
+    """O que a ficha mostra das ordens: contratos da demo e da real, o selo
+    papel × backtest, o que a demo fez até agora e o que barra (ou merece
+    atenção) na promoção. None = banco ocupado: a ficha avisa em vez de
+    congelar a tela."""
     try:
         with db.connect(read_only=True, tentativas=TENTATIVAS_BANCO) as con:
-            r = con.execute("SELECT contratos_demo FROM portfolio_membros "
-                            "WHERE ligacao_id = ?", [lig]).fetchone()
+            r = con.execute("SELECT portfolio_id, contratos_demo, contratos_real "
+                            "FROM portfolio_membros WHERE ligacao_id = ?",
+                            [lig]).fetchone()
             situacao = PB.situacao(con, lig)
+            demo = (None if r is None else
+                    _demo_ate_agora(con, r[0], lig,
+                                    D.dia_do_pregao(D.estado_captura())))
         restricoes = AV.restricoes_para_demo(lig, tentativas=TENTATIVAS_BANCO)
     except (duckdb.Error, RuntimeError):
         return None
-    return {"contratos_demo": None if r is None or r[0] is None else int(r[0]),
-            "situacao": situacao, "restricoes": restricoes}
+    return {"contratos_demo": None if r is None or r[1] is None else int(r[1]),
+            "contratos_real": None if r is None or r[2] is None else int(r[2]),
+            "situacao": situacao, "restricoes": restricoes,
+            "demo_ate_agora": demo}
 
 
 def custo_ficha(lig, valor):
     """A prévia do custo de um stop com os contratos digitados: a mesma da
     tela Operação (`OPC.custo_editor`)."""
     return OPC.custo_editor(lig, valor)
+
+
+def custo_ficha_real(lig, valor):
+    """A prévia do custo de um stop com os contratos da REAL, contra o limite
+    da conta real do portfólio (mesma frase da demo)."""
+    if lig is None:
+        return []           # ficha fechada
+    try:
+        n = OR.ler_contratos(valor)
+    except ValueError as e:
+        return html.Span(str(e), className="aviso")
+    if n is None:
+        return html.Span("Vazio: a real usa os contratos do plano.",
+                         className="mut")
+    try:
+        custo = AV.custo_de_um_stop(int(lig), n, conta="real",
+                                    tentativas=TENTATIVAS_BANCO)
+    except ValueError as e:
+        return html.Span(str(e), className="aviso")
+    except (duckdb.Error, RuntimeError):
+        return html.Span("banco ocupado — o custo aparece em seguida",
+                         className="mut")
+    return OR.custo_stop_texto(n, custo)
 
 
 def _envio_das_contas() -> dict[int, bool]:
@@ -328,8 +432,7 @@ def montar(armado, aberta, hoje=None, com_resumo=False):
                                   "adicione variantes na tela Portfólio",
                                   className="av-vazio")]
 
-    contas_div = ([AP.linha_conta(c, armado) for c in ativas]
-                  or [html.P("nenhuma conta cadastrada", className="av-vazio")])
+    contas_div = AP.tabela_contas(ativas, armado)
 
     orfaos = AV.planos_sem_variante()
     arruma = []
@@ -446,6 +549,19 @@ def register(app):
         entradas = ctx.inputs_list[0]
         valores = {e["id"]["id"]: e.get("value") for e in entradas}
         return [custo_ficha(o["id"]["id"], valores.get(o["id"]["id"]))
+                for o in ctx.outputs_list]
+
+    # a mesma prévia para os contratos da REAL: registrada depois da da demo
+    # (o teste de ids pega a primeira chave que contém "av-ficha-custo")
+    @app.callback(
+        Output({"type": "av-ficha-custo-real", "id": ALL}, "children"),
+        Input({"type": "av-campo", "campo": "contratos-real", "id": ALL}, "value"),
+    )
+    def prever_custo_real(_valores):
+        """A prévia do custo de um stop com os contratos da real."""
+        entradas = ctx.inputs_list[0]
+        valores = {e["id"]["id"]: e.get("value") for e in entradas}
+        return [custo_ficha_real(o["id"]["id"], valores.get(o["id"]["id"]))
                 for o in ctx.outputs_list]
 
     @app.callback(

@@ -1956,3 +1956,85 @@ body{
 .av-topo .ord-saude-linha .ord-saude-v{font-size:var(--fs-xs);}
 .av-topo .ord-saude-comum{padding:0;border-top:0;justify-content:flex-end;}
 .av-topo .ord-saude-linha+.ord-saude-linha{margin-top:2px;}
+
+/* ===================== Ao vivo > Estrategias com conta real (W3-C, prototipo conta-real-v2) =====
+   Cores de identidade (nao sao estado): laranja = real, ciano = demo, violeta = papel.
+   Estado continua verde/cinza/ambar/rosa, nas etiquetas .av-tag. */
+.av-sec-head{flex-direction:row;align-items:center;gap:8px;}
+.av-topo-est .av-corpo{padding:12px 18px;}
+
+/* chip de identidade (conta e fase) */
+.av-chip{display:inline-flex;align-items:center;padding:1px 9px;border-radius:999px;
+  font-family:var(--mono);font-size:var(--fs-2xs);font-weight:600;letter-spacing:.06em;
+  border:1px solid var(--line);color:var(--muted);background:var(--surface-2);white-space:nowrap;}
+.av-chip-real{color:#fbbf24;border-color:#5a4410;background:#2a2006;}
+.av-chip-demo{color:var(--accent);border-color:var(--accent-dim);background:#06222a;}
+.av-chip-papel{color:var(--accent-2);border-color:#3b2a63;background:#1a1030;}
+
+/* chave do Envio de ordens (liga/desliga, em dois cliques) */
+.av-sw{display:inline-block;flex:0 0 auto;width:28px;height:15px;border-radius:999px;
+  background:var(--surface-3);border:1px solid var(--line);position:relative;
+  vertical-align:middle;margin-right:7px;}
+.av-sw::after{content:"";position:absolute;left:2px;top:2px;width:9px;height:9px;
+  border-radius:50%;background:var(--muted);}
+.av-sw-on{background:#06231a;border-color:var(--pos);}
+.av-sw-on::after{left:15px;background:var(--pos);}
+.av-btn-principal .av-sw:not(.av-sw-on)::after{background:var(--accent);}
+.av-chave{display:inline-flex;align-items:center;}
+.av-chave-off{display:inline-flex;align-items:center;gap:0;font-size:var(--fs-sm);color:var(--muted);}
+.av-chave-off .av-sw{opacity:.45;}
+
+/* portfolio: uma linha por conta */
+.av-pf-power{margin-left:auto;padding-left:12px;border-left:1px solid var(--line);
+  display:flex;align-items:center;}
+.av-pf-tab{display:flex;flex-direction:column;margin-top:4px;}
+.av-pf-linha{display:grid;grid-template-columns:76px minmax(150px,1fr) minmax(150px,auto) minmax(200px,auto);
+  gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--line-soft);}
+.av-pf-cab{border-top:0;padding-top:0;padding-bottom:4px;}
+.av-pf-cab-c{display:inline-flex;align-items:center;font-size:var(--fs-xs);font-weight:500;color:var(--muted);}
+.av-pf-c{min-width:0;}
+.av-pf-c .dd{width:100%;}
+.av-pf-limite-campo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.av-pf-limite-campo .inp{width:112px;font-family:var(--mono);}
+.av-pf-rodape{display:flex;justify-content:flex-end;padding-top:8px;}
+
+/* contas: tabela (o resumo de cada conta é o <summary>; Editar abre o formulario) */
+.av-conta-grade{display:grid;gap:12px;align-items:center;
+  grid-template-columns:minmax(118px,auto) minmax(140px,1.3fr) 92px minmax(120px,1fr) minmax(110px,1fr) 96px 72px;}
+.av-conta-cab{padding:6px 0 4px;font-size:var(--fs-xs);font-weight:500;color:var(--muted);}
+.av-conta-cab-c{display:inline-flex;align-items:center;}
+.av-tab-contas{display:flex;flex-direction:column;}
+.av-conta-det{border-top:1px solid var(--line-soft);}
+.av-conta-sum{display:block;list-style:none;cursor:pointer;}
+.av-conta-sum::-webkit-details-marker{display:none;}
+.av-conta-linha{padding:10px 0;font-size:var(--fs-sm);color:var(--ink);}
+.av-conta-c{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.av-conta-tipo{display:flex;flex-direction:column;align-items:flex-start;gap:4px;white-space:normal;}
+.av-conta-tipo .av-tag{white-space:normal;text-transform:none;letter-spacing:0;font-weight:500;}
+.av-conta-nome{font-weight:600;}
+.av-conta-pasta{font-size:var(--fs-xs);color:var(--muted);}
+.av-conta-editar{justify-self:start;cursor:pointer;}
+.av-conta-det[open] .av-conta-editar{color:var(--accent);border-color:var(--accent-dim);}
+.av-conta-corpo{padding:0 0 12px;}
+.av-conta-corpo .av-form{margin-top:0;}
+.av-nova-conta{margin-top:2px;}
+.av-nova-conta>summary{display:inline-flex;align-items:center;gap:6px;list-style:none;cursor:pointer;}
+.av-nova-conta>summary::-webkit-details-marker{display:none;}
+.av-nova-conta[open]>summary{color:var(--accent);}
+.av-nova-conta>.av-form{margin-top:10px;}
+
+/* ficha: Ordens nas contas (trilha, selo, demo ate agora, contratos real/demo) */
+.av-trilha{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.av-trilha-seta{color:var(--muted);font-size:var(--fs-sm);}
+.av-trilha-on{box-shadow:0 0 0 1px currentColor;}
+.av-trilha-off{opacity:.38;}
+.av-ord-grade{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px 16px;align-items:start;}
+.av-ord-rot{display:flex;align-items:center;gap:2px;font-size:var(--fs-sm);color:var(--muted);padding-top:4px;}
+.av-ord-rot-txt{font-size:var(--fs-sm);color:var(--muted);}
+.av-ord-val{display:flex;flex-direction:column;gap:6px;min-width:0;}
+.av-ord-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px;}
+.av-ord-ctr-linha{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.av-ord-ctr{width:96px;font-family:var(--mono);}
+.av-so-icone{padding:6px 8px;line-height:0;}
+.av-ord-grade .av-kv{padding:0;}
+.av-ord-grade .av-alerta,.av-ord-grade .av-texto{margin:0;}
