@@ -4,8 +4,10 @@ from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from core import papel
+from core.engine import kernel as K
 from strategies.base import Signals
 
 DIA = date(2026, 10, 9)
@@ -157,3 +159,104 @@ def test_sem_alvo_o_alvo_inicial_e_none():
     op = papel.calcular(b, DIA, plano, _mod(), INST, provisoria=True)[0]
     assert op["alvo_ini_px"] is None and op["alvo_px"] is None
     assert op["stop_ini_px"] == op["entry_px"] - 200
+
+# ---- toque do stop/alvo no minuto em formação: a operação fecha no toque
+def _mod_venda():
+    def signals(bars, params):
+        n = len(bars["close"])
+        z = np.zeros(n, dtype=bool)
+        es = bars["ts"] == np.datetime64(SINAL, "ns")
+        return Signals(z, es, z.copy(), z.copy())
+    return SimpleNamespace(signals=signals)
+
+
+PROV = datetime(2026, 10, 9, 10, 6)     # minuto em formação
+ANTES = datetime(2026, 10, 9, 10, 5)    # último minuto real
+
+
+def _aberta(mod=None, plano=None, toque=None, abertura=189_000):
+    b = _com_prov(ANTES, abertura)
+    ops = papel.calcular(b, DIA, plano or PLANO, mod or _mod(), INST,
+                         provisoria=True, toque=toque)
+    return ops[0]
+
+
+def test_sem_toque_a_operacao_segue_aberta_como_hoje():
+    sem = _aberta()
+    assert sem["aberta"] and sem["exit_px"] is None
+    assert _aberta(toque=(189_050, 188_950)) == sem
+
+
+def test_toque_no_stop_da_compra_fecha_no_toque_com_derrapagem():
+    custos = _plano(corretagem_por_contrato=0.5, emolumentos_por_contrato=0.25)
+    op0 = _aberta(plano=custos)
+    stop = op0["stop_px"]
+    op = _aberta(plano=custos, toque=(189_000, stop - 10))
+    assert not op["aberta"]
+    assert op["exit_ts"] == PROV
+    assert op["reason"] == K.EXIT_STOP
+    assert op["exit_px"] == stop - 5                     # 1 tick contra
+    assert op["points"] == op["exit_px"] - op0["entry_px"]
+    bruto = op["points"] * 0.2 * CONTRATOS_PLANO
+    assert op["bruto"] == pytest.approx(bruto)
+    assert op["custo"] == pytest.approx((0.5 + 0.25) * 1 * 2)
+    assert op["liquido"] == pytest.approx(bruto - 1.5)
+
+
+def test_toque_no_alvo_da_compra_fecha_no_alvo():
+    op0 = _aberta()
+    alvo = op0["alvo_px"]
+    op = _aberta(toque=(alvo + 10, 188_950))
+    assert not op["aberta"] and op["reason"] == K.EXIT_TARGET
+    assert op["exit_px"] == alvo - 5
+
+
+def test_stop_tem_prioridade_quando_stop_e_alvo_tocam_no_mesmo_minuto():
+    op0 = _aberta()
+    op = _aberta(toque=(op0["alvo_px"] + 10, op0["stop_px"] - 10))
+    assert op["reason"] == K.EXIT_STOP
+
+
+def test_gap_na_abertura_sai_na_abertura():
+    # abertura já abaixo do stop: a própria provisória (O=H=L=C) já sai ali
+    op0 = _aberta()
+    abertura = op0["stop_px"] - 30
+    op = _aberta(toque=(abertura, abertura), abertura=abertura)
+    assert not op["aberta"] and op["reason"] == K.EXIT_STOP
+    assert op["exit_px"] == abertura - 5
+
+
+def test_toque_na_venda_no_stop_e_no_alvo():
+    op0 = _aberta(mod=_mod_venda())
+    assert op0["side"] == -1
+    op = _aberta(mod=_mod_venda(), toque=(op0["stop_px"] + 10, 188_950))
+    assert not op["aberta"] and op["reason"] == K.EXIT_STOP
+    assert op["exit_px"] == op0["stop_px"] + 5          # venda sai mais alto
+    op = _aberta(mod=_mod_venda(), toque=(189_050, op0["alvo_px"] - 10))
+    assert not op["aberta"] and op["reason"] == K.EXIT_TARGET
+    assert op["exit_px"] == op0["alvo_px"] + 5
+
+
+CONTRATOS_PLANO = 1
+
+
+# equivalência: o toque na provisória dá a MESMA operação que o candle real
+# fechado com a mesma máxima/mínima
+@pytest.mark.parametrize("venda", [False, True])
+@pytest.mark.parametrize("bate_alvo", [False, True])
+def test_toque_no_minuto_igual_ao_candle_fechado(venda, bate_alvo):
+    mod = _mod_venda() if venda else _mod()
+    op0 = _aberta(mod=mod)
+    nivel = op0["alvo_px"] if bate_alvo else op0["stop_px"]
+    if (not venda) == bate_alvo:                         # toca a máxima
+        maxima, minima = nivel + 10, 188_950
+    else:                                                # toca a mínima
+        maxima, minima = 189_050, nivel - 10
+    toque = _aberta(mod=mod, toque=(maxima, minima))
+    real = _barras(PROV)
+    real["high"][-1], real["low"][-1] = maxima, minima
+    fechado = papel.calcular(real, DIA, PLANO, mod, INST)[0]
+    assert not toque["aberta"] and not fechado["aberta"]
+    for campo in ("exit_ts", "exit_px", "reason", "points", "mae", "mfe"):
+        assert toque[campo] == fechado[campo], campo
+    assert toque["liquido"] == pytest.approx(fechado["liquido"])

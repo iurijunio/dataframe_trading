@@ -604,8 +604,11 @@ class Servico:
         # O minuto em formação vira barra provisória (spec ordens §3): sem
         # ela a entrada do sinal das 10:00 só apareceria às 10:02 no papel
         # gravado, um minuto depois da ordem da demo.
+        # com máxima/mínima: o papel fecha a operação no toque do stop/alvo
+        # (`papel.calcular`), como a ordem da corretora
         em = self.em_formacao
-        provisoria = ((em["ts"], int(round(em["open"])))
+        provisoria = ((em["ts"], int(round(em["open"])),
+                       int(round(em["high"])), int(round(em["low"])))
                       if em and em["ts"].date() == dia else None)
         try:
             with self._banco(agora, escrita=False) as con:
@@ -1327,6 +1330,10 @@ class Servico:
                 tocados[lig] = self._toque_em.get(lig, srv)
                 d = replace(d, toque_em=tocados[lig])
             novo[lig] = d
+        # ligação que acabou de tocar: o papel gravado regrava já, no
+        # próximo passo, em vez de esperar o próximo minuto
+        if set(tocados) - set(self._toque_em):
+            self.papel_pendente = True
         self._toque_em = tocados
         self._desejados_ordens = novo
 

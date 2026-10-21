@@ -228,9 +228,55 @@ def _dt(x) -> datetime:
     return np.datetime64(x, "us").item()
 
 
+def _saida_no_toque(op: dict, maxima: int, minima: int, abertura: int,
+                    ts: datetime, perfil: ExecutionProfile, inst: dict) -> dict:
+    """A operação aberta fecha no toque do stop/alvo do minuto em formação.
+
+    Mesma regra do kernel: stop tem prioridade sobre alvo no mesmo minuto;
+    o preço é o nível, ou a abertura se ela já passou dele (gap); e a
+    derrapagem sai pela `_fill` do kernel. Devolve a operação intacta se
+    nenhum dos dois foi tocado.
+    """
+    lado, stop, alvo = op["side"], op["stop_px"], op["alvo_px"]
+    if lado == 1:
+        bateu_stop = stop is not None and minima <= stop
+        bateu_alvo = alvo is not None and maxima >= alvo
+    else:
+        bateu_stop = stop is not None and maxima >= stop
+        bateu_alvo = alvo is not None and minima <= alvo
+    if bateu_stop:
+        nivel, motivo = stop, K.EXIT_STOP
+        gap = abertura < nivel if lado == 1 else abertura > nivel
+    elif bateu_alvo:
+        nivel, motivo = alvo, K.EXIT_TARGET
+        gap = abertura > nivel if lado == 1 else abertura < nivel
+    else:
+        return op
+    tick = int(inst.get("tick_size", 1)) or 1
+    raw = abertura if gap else nivel
+    px = int(K._fill(raw, lado, int(perfil.slippage_ticks * tick), False))
+    entrada = op["entry_px"]
+    pts = lado * (px - entrada)
+    # máxima/mínima do minuto entram no mae/mfe, como o kernel faz no mesmo
+    # minuto (ele atualiza antes de testar o stop)
+    up = maxima - entrada if lado == 1 else entrada - minima
+    dn = minima - entrada if lado == 1 else entrada - maxima
+    mfe, mae = max(op["mfe"], int(up)), min(op["mae"], int(dn))
+    # bruto e custo pela mesma regra de `metrics.monetize`
+    ponto = float(inst.get("point_value", 1.0))
+    qtd = op["contratos"]
+    bruto = pts * ponto * qtd
+    custo = (perfil.corretagem_por_contrato + perfil.emolumentos_por_contrato)         * qtd * 2
+    return {**op, "aberta": False, "exit_ts": ts, "exit_px": px,
+            "reason": motivo, "points": pts, "bruto": float(bruto),
+            "custo": float(custo), "liquido": float(bruto - custo),
+            "mae": mae, "mfe": mfe}
+
+
 def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
              fechamento_hhmm: str | None = None,
-             provisoria: bool = False) -> list[dict]:
+             provisoria: bool = False,
+             toque: tuple[int, int] | None = None) -> list[dict]:
     """As operações com entrada no `dia`, pelo motor de sempre. Puro.
 
     `fechamento_hhmm`: o horário abaixo do qual uma saída forçada na última
@@ -249,6 +295,10 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
     provisória fica aberta — o preço dela seria falso e um minuto adiantado.
     Saída por sinal, stop ou alvo na provisória (a preço de abertura/gap) é
     a do backtest e não muda.
+
+    `toque = (máxima, mínima)` do minuto em formação (só com `provisoria`):
+    a operação aberta fecha no toque do stop/alvo dela, como a ordem da
+    corretora. A barra provisória segue O=H=L=C; só este passo olha a faixa.
     """
     estrat, perfil = perfil_do_plano(plano)
     n = len(barras["ts"])
@@ -290,7 +340,7 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
         # fim da barra, e a da provisória ainda não acabou (`papel_vivo`)
         lado, ent = int(t["side"][i]), int(t["entry_px"][i])
         sl_ini, tp_ini = int(res.sl_at_entry[i]), int(res.tp_at_entry[i])
-        out.append({
+        op = {
             "entry_ts": _dt(t["entry_ts"][i]),
             "exit_ts": None if aberta else _dt(t["exit_ts"][i]),
             "side": int(t["side"][i]),
@@ -308,7 +358,12 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
             "stop_ini_px": ent - lado * sl_ini if sl_ini else None,
             "alvo_ini_px": ent + lado * tp_ini if tp_ini else None,
             "aberta": aberta,
-        })
+        }
+        if aberta and provisoria and toque is not None:
+            op = _saida_no_toque(op, int(toque[0]), int(toque[1]),
+                                 int(barras["open"][n - 1]),
+                                 _dt(barras["ts"][n - 1]), perfil, inst)
+        out.append(op)
     return out
 
 
@@ -578,7 +633,7 @@ def preparar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
 
 def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
               symbol: str = SIMBOLO, dia_encerrado: bool = False,
-              provisoria: tuple[datetime, int] | None = None) -> list[dict]:
+              provisoria: tuple | None = None) -> list[dict]:
     """O papel do dia de cada ligação, calculado — sem gravar.
 
     Separado de `gravar` porque a captura calcula fora da conexão de
@@ -594,7 +649,8 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
     `liquido` do pregão.
 
     `provisoria = (minuto, abertura)` é o candle em formação — só no pregão
-    vivo; a conferência nunca a usa.
+    vivo; a conferência nunca a usa. Com `(minuto, abertura, máxima, mínima)`
+    a operação aberta também fecha no toque (`calcular`, `toque`).
     """
     if not _tem_candle(con, symbol, dia):
         return []
@@ -619,12 +675,13 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
             falhas[pid] = erro
     barras = inst = comum = None
     usou_provisoria = False
+    toque = provisoria[2:4] if provisoria is not None and len(provisoria) == 4 else None
     try:
         barras = barras_do_dia(con, symbol, dia, aquecimento)
         if (provisoria is not None and not dia_encerrado
                 and provisoria[0].date() == dia):
             antes_n = len(barras["ts"]) if barras is not None else 0
-            barras = com_barra_provisoria(barras, *provisoria)
+            barras = com_barra_provisoria(barras, provisoria[0], provisoria[1])
             usou_provisoria = (barras is not None
                                and len(barras["ts"]) > antes_n)
         inst = db.load_instrument_yaml(symbol)
@@ -643,8 +700,9 @@ def rodar_dia(con, dia: date, agora: datetime, cache_codigo: dict, *,
             if pid not in calculados:
                 # mesma variante em dois portfólios: o mesmo plano roda
                 # uma vez só e vale para as duas ligações
-                calculados[pid] = calcular(barras, dia, p, planos[pid][1],
-                                           inst, fech, usou_provisoria)
+                calculados[pid] = calcular(
+                    barras, dia, p, planos[pid][1], inst, fech, usou_provisoria,
+                    toque=toque if usou_provisoria else None)
             periodos = periodos_ligados(con, l["ligacao_id"],
                                         l["portfolio_id"], dia)
             r["operacoes"] = [{**o, "conta": _conta(o["entry_ts"], periodos)}

@@ -1010,9 +1010,19 @@ def test_toque_no_candle_em_formacao_zera_pro_motor_e_guarda_a_hora(
     cena.ir(_as(10, 1, 1))
     cena.ir(_as(10, 1, 30))
     stop = cena.s._desejados[mundo.lig].stop_px
+    rodados = []
+    real_dia = papel.rodar_dia
+
+    def espiao_papel(*a, **k):
+        rodados.append(k.get("provisoria"))
+        return real_dia(*a, **k)
+    monkeypatch.setattr(papel, "rodar_dia", espiao_papel)
     # o minuto 10:02 em formação já tocou o stop (mínima abaixo dele)
     cena.mt5.barras[_as(10, 2)] = (PRECO, PRECO + 10, stop - 10, PRECO)
     cena.ir(_as(10, 2, 20))
+    # o toque novo regrava o papel nesta volta, com máxima e mínima do minuto
+    assert rodados and rodados[-1] is not None and len(rodados[-1]) == 4
+    assert rodados[-1][2:] == (PRECO + 10, stop - 10)
     d = vistos[-1][mundo.lig]
     assert (d.estado, d.motivo, d.lado) == (PV.ZERADO, "stop no toque", 1)
     assert (d.stop_px, d.entry_ts) == (stop, ENTRADA)
