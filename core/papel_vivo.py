@@ -105,7 +105,13 @@ def retrato_de_json(d: dict) -> Retrato:
 
 
 def ler_retrato(con, dia: date, agora: datetime, cache_codigo: dict, *,
-                symbol: str = papel.SIMBOLO) -> Retrato:
+                symbol: str = papel.SIMBOLO, tipo: str = "demo") -> Retrato:
+    """O retrato de UM processo: `tipo="demo"` lê a conta demo (ligação em
+    fase demo ou real, porque real ⊃ demo) e `tipo="real"` lê a conta real
+    (só ligação em fase real). Fora da fase desta conta a ligação sai como
+    "papel", e `desejados` a zera."""
+    if tipo not in ("demo", "real"):
+        raise ValueError("tipo do retrato deve ser 'demo' ou 'real'")
     resultados, fila, planos = papel.preparar_dia(con, dia, agora, cache_codigo,
                                                   symbol=symbol)
     na_fila = {l["ligacao_id"]: (r, p) for r, l, p in fila}
@@ -115,15 +121,23 @@ def ler_retrato(con, dia: date, agora: datetime, cache_codigo: dict, *,
     # ficam só para o `conta` de cada operação, como no papel gravado)
     meta = {r[0]: r[1:] for r in con.execute(
         "SELECT pm.ligacao_id, pm.portfolio_id, pm.fase, p.conta_demo_id, "
-        "pm.contratos_demo, pm.ligada AND coalesce(p.ligado, false) "
+        "p.conta_real_id, pm.contratos_demo, pm.contratos_real, "
+        "pm.ligada AND coalesce(p.ligado, false) "
         "FROM portfolio_membros pm "
         "JOIN portfolios p ON p.portfolio_id = pm.portfolio_id").fetchall()}
     tick = int(db.load_instrument_yaml(symbol)["tick_size"])
     ligs = {}
     for r in resultados:
         lig = r["ligacao_id"]
-        pf, fase, conta, contratos, ligada = meta.get(
-            lig, (None, "papel", None, None, False))
+        pf, fase_banco, c_demo, c_real, k_demo, k_real, ligada = meta.get(
+            lig, (None, "papel", None, None, None, None, False))
+        if tipo == "real":
+            fase_ok, conta, contratos = (fase_banco == "real", c_real, k_real)
+        else:
+            fase_ok, conta, contratos = (fase_banco in ("demo", "real"),
+                                         c_demo, k_demo)
+        # "papel" fora da fase desta conta: a desejados zera como papel
+        fase = fase_banco if fase_ok else "papel"
         lp = na_fila.get(lig)
         plano = lp[1] if lp else None
         falha = r.get("falha")
@@ -318,7 +332,7 @@ def desejados(retrato: Retrato | None, aquecimento: Aquecimento | None,
     for lig, lv in retrato.ligacoes.items():
         # desligada ou fora da demo sai sem precisar de cálculo nenhum: vem
         # antes da falha, senão uma estratégia quebrada prenderia a posição
-        if lv.fase != "demo":
+        if lv.fase not in ("demo", "real"):
             out[lig] = Desejado(ZERADO, motivo="fase papel")
             continue
         if not lv.ligada:

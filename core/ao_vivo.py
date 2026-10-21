@@ -6,12 +6,14 @@ Toda mudança de estado grava o evento do diário NA MESMA transação.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import statistics
 
 from . import codigo, comandos, engine
 from . import db_manager as db
 from . import diario
+from . import diario_ordens
 from . import optimizer as _optimizer
 from . import papel
 from . import papel_backtest as _pb
@@ -131,6 +133,14 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
         if r is None:
             raise ValueError(f"conta #{conta_id} não existe")
         atual = dict(zip(_CAMPOS_EDITAVEIS, r))
+        trocou_acesso = ((("login" in novos and novos["login"] != atual["login"]))
+                         or ("servidor" in novos
+                             and novos["servidor"] != atual["servidor"]))
+        if trocou_acesso and _conta_em_uso_com_posicao(con, conta_id,
+                                                       atual["tipo"]):
+            raise ValueError(f"a conta {atual['nome']} tem operação aberta: "
+                             "feche a posição antes de trocar o login ou o "
+                             "servidor")
         if "nome" in novos:
             _nome_livre(con, novos["nome"], conta_id)
         if "login" in novos or "servidor" in novos:
@@ -232,6 +242,43 @@ def _conta_valida(con, conta_id, tipo):
         raise ValueError(f"a conta {r[2]} está arquivada")
 
 
+def _tem_operacao_aberta(tipo: str) -> bool:
+    """Há ticket aberto no diário das ordens da origem `tipo` ("demo" ou
+    "real")? Escolha desta tela: lê os arquivos do diário, que são a fonte
+    que a automação mesmo usa para saber o que tem aberto. Não usa o banco
+    (o espelho pode estar atrasado) nem o MT5 (a tela não o consulta). Um
+    ticket conta como aberto se abriu em algum dia da pasta e não fechou em
+    nenhum. Conservador: uma conta da origem com posição barra a troca de
+    qualquer outra da mesma origem."""
+    pasta = Path(diario_ordens.PASTA)
+    if tipo == "real":
+        pasta = pasta / "real"
+    if not pasta.is_dir():
+        return False
+    abertos, fechados = set(), set()
+    for arq in sorted(pasta.glob("*.jsonl")):
+        try:
+            dia = date.fromisoformat(arq.stem)
+        except ValueError:
+            continue
+        for e in diario_ordens.Diario(pasta, dia, tipo).eventos:
+            if not e.get("ticket"):
+                continue
+            if e["tipo"] in ("executada", "parcial", "adotada"):
+                abertos.add(int(e["ticket"]))
+            elif e["tipo"] in ("saida_executada", "saiu_antes"):
+                fechados.add(int(e["ticket"]))
+    return bool(abertos - fechados)
+
+
+def _conta_em_uso_com_posicao(con, conta_id, tipo) -> bool:
+    """A conta está escolhida num portfólio e a origem dela tem operação aberta."""
+    if con.execute("SELECT 1 FROM portfolios WHERE conta_demo_id = ? "
+                   "OR conta_real_id = ?", [conta_id, conta_id]).fetchone() is None:
+        return False
+    return _tem_operacao_aberta(tipo)
+
+
 def definir_contas(portfolio_id, conta_demo_id, conta_real_id) -> None:
     with db.connect_write() as con, db.transacao(con):
         _conta_valida(con, conta_demo_id, "demo")
@@ -242,6 +289,13 @@ def definir_contas(portfolio_id, conta_demo_id, conta_real_id) -> None:
             raise ValueError(f"portfólio #{portfolio_id} não existe")
         if tuple(antes) == (conta_demo_id, conta_real_id):
             return
+        # trocar a conta com posição aberta na origem deixaria a posição sem
+        # quem a acompanhe na tela: recusa até fechar
+        for tipo, velha, nova in (("demo", antes[0], conta_demo_id),
+                                  ("real", antes[1], conta_real_id)):
+            if velha is not None and velha != nova and _tem_operacao_aberta(tipo):
+                raise ValueError(f"o portfólio tem operação aberta na conta "
+                                 f"{tipo}: feche a posição antes de trocá-la")
         con.execute("UPDATE portfolios SET conta_demo_id = ?, conta_real_id = ? "
                     "WHERE portfolio_id = ?",
                     [conta_demo_id, conta_real_id, portfolio_id])
@@ -583,7 +637,7 @@ def rastreio(ligacao_id: int, hoje: date | None = None) -> dict:
 
 
 # ------------------------------------- ordens: fase, contratos e envio
-_FASES_ESCOLHA = ("papel", "demo")
+_FASES_ESCOLHA = ("papel", "demo", "real")
 
 
 def _plano_do_membro(con, variante_id):
@@ -622,7 +676,26 @@ def restricoes_para_demo(ligacao_id: int, *, tentativas: int = 40) -> dict:
         return _restricoes(con, ligacao_id)
 
 
-def _restricoes(con, ligacao_id) -> dict:
+def _motivos_conta_real(con, pid) -> list[str]:
+    """Para ir a real: o portfólio tem conta real e ela está pronta para
+    mandar ordem (terminal, login, servidor e limite de perda do dia)."""
+    r = con.execute("SELECT c.terminal, c.login, c.servidor, c.limite_perda_dia "
+                    "FROM portfolios p JOIN contas c "
+                    "ON c.conta_id = p.conta_real_id WHERE p.portfolio_id = ? "
+                    "AND c.arquivada_em IS NULL", [pid]).fetchone()
+    if r is None:
+        return ["escolha uma conta real (não arquivada) para o portfólio "
+                "antes de passar para real"]
+    if not r[0] or r[1] is None or not r[2]:
+        return ["a conta real precisa de terminal, login e servidor cadastrados"]
+    if not (r[3] or 0) > 0:
+        return ["a conta real precisa de limite de perda do dia"]
+    return []
+
+
+def _restricoes(con, ligacao_id, fase: str = "demo") -> dict:
+    """O que impede a ligação de subir para `fase` ("demo" ou "real"). Real
+    exige o que a demo exige (real ⊃ demo) e, além disso, a conta real pronta."""
     pid, vid, *_ = _membro(con, ligacao_id)
     motivos, avisos = [], []
     conta = con.execute("SELECT c.conta_id FROM portfolios p JOIN contas c "
@@ -650,23 +723,25 @@ def _restricoes(con, ligacao_id) -> dict:
                       "de código ou motor: já não valem, mas confira")
     if not _pb.situacao(con, ligacao_id)["pregoes"]:
         avisos.append("nenhum pregão conferido contra o backtest ainda")
+    if fase == "real":
+        motivos.extend(_motivos_conta_real(con, pid))
     return {"motivos": motivos, "avisos": avisos}
 
 
 def mudar_fase(ligacao_id: int, fase: str, *, quando=None,
                tentativas: int = 40) -> None:
-    if fase == "real":
-        raise ValueError("conta real ainda não disponível")
     if fase not in _FASES_ESCOLHA:
-        raise ValueError("fase deve ser 'papel' ou 'demo'")
+        raise ValueError("fase deve ser 'papel', 'demo' ou 'real'")
     with db.connect_write(tentativas=tentativas) as con, db.transacao(con):
         pid, vid, _lig, _rem, _por = _membro(con, ligacao_id)
         atual = con.execute("SELECT fase FROM portfolio_membros WHERE "
                             "ligacao_id = ?", [ligacao_id]).fetchone()[0]
         if atual == fase:
             return
-        if fase == "demo":
-            motivos = _restricoes(con, ligacao_id)["motivos"]
+        # subir (papel→demo, papel→real, demo→real) exige o que a demo exige;
+        # voltar (real→demo, qualquer→papel) não exige nada
+        if fase == "real" or (fase == "demo" and atual == "papel"):
+            motivos = _restricoes(con, ligacao_id, fase)["motivos"]
             if motivos:
                 raise ValueError(motivos[0])
         agora = quando or datetime.now()
@@ -680,12 +755,17 @@ def mudar_fase(ligacao_id: int, fase: str, *, quando=None,
                          para=fase, quando=quando)
 
 
+_COLUNA_CONTRATOS = {"demo": "contratos_demo", "real": "contratos_real"}
+
+
 def definir_contratos(ligacao_id: int, contratos: int | None, *,
-                      tipo: str = "demo", tentativas: int = 40) -> None:
-    """Contratos na conta, no lugar dos do plano (`None` volta ao plano).
-    `tentativas`: a tela espera pouco pelo banco (ocupado = tente de novo)."""
-    if tipo != "demo":
-        raise ValueError("contratos da conta real ainda não disponíveis")
+                      conta: str = "demo", tentativas: int = 40) -> None:
+    """Contratos na conta `conta` ("demo" ou "real"), no lugar dos do plano
+    (`None` volta ao plano). `tentativas`: a tela espera pouco pelo banco
+    (ocupado = tente de novo)."""
+    if conta not in _COLUNA_CONTRATOS:
+        raise ValueError("conta deve ser 'demo' ou 'real'")
+    coluna = _COLUNA_CONTRATOS[conta]
     if contratos is not None and (isinstance(contratos, bool)
                                   or not isinstance(contratos, int)
                                   or contratos < 1):
@@ -693,18 +773,18 @@ def definir_contratos(ligacao_id: int, contratos: int | None, *,
                          "(ou vazio para usar os do plano)")
     with db.connect_write(tentativas=tentativas) as con, db.transacao(con):
         pid, vid, *_ = _membro(con, ligacao_id)
-        antes = con.execute("SELECT contratos_demo FROM portfolio_membros "
+        antes = con.execute(f"SELECT {coluna} FROM portfolio_membros "
                             "WHERE ligacao_id = ?", [ligacao_id]).fetchone()[0]
         if antes == contratos:
             return
-        con.execute("UPDATE portfolio_membros SET contratos_demo = ? "
+        con.execute(f"UPDATE portfolio_membros SET {coluna} = ? "
                     "WHERE ligacao_id = ?", [contratos, ligacao_id])
         diario.registrar(con, "contratos_alterados", "usuario",
                          portfolio_id=pid, ligacao_id=ligacao_id,
                          variante_id=vid,
                          de="plano" if antes is None else antes,
                          para="plano" if contratos is None else contratos,
-                         motivo=tipo)
+                         motivo=conta)
 
 
 def ligar_envio(conta_id: int, ligado: bool, *, tipo: str | None = None,
@@ -754,11 +834,24 @@ def ligar_envio(conta_id: int, ligado: bool, *, tipo: str | None = None,
                           conta_id=conta_id, ligado=True)
 
 
-def custo_de_um_stop(ligacao_id: int, contratos: int, *,
+_LIMITE_DA_CONTA = {
+    "demo": "SELECT c.limite_perda_dia FROM portfolios p JOIN contas c ON "
+            "c.conta_id = p.conta_demo_id WHERE p.portfolio_id = ? "
+            "AND c.arquivada_em IS NULL",
+    "real": "SELECT c.limite_perda_dia FROM portfolios p JOIN contas c ON "
+            "c.conta_id = p.conta_real_id WHERE p.portfolio_id = ? "
+            "AND c.arquivada_em IS NULL",
+}
+
+
+def custo_de_um_stop(ligacao_id: int, contratos: int, *, conta: str = "demo",
                      tentativas: int = 60) -> dict:
     """Quanto custa UM stop com `contratos`, em reais e em % do limite de
-    perda do dia da conta demo do portfólio. Sem distância de stop conhecida
-    (ATR sem operação no papel) ou sem limite, o campo vem `None`."""
+    perda do dia da conta `conta` ("demo" ou "real") do portfólio. Sem
+    distância de stop conhecida (ATR sem operação no papel) ou sem limite, o
+    campo vem `None`."""
+    if conta not in _LIMITE_DA_CONTA:
+        raise ValueError("conta deve ser 'demo' ou 'real'")
     if (isinstance(contratos, bool) or not isinstance(contratos, int)
             or contratos < 1):
         raise ValueError("contratos deve ser um inteiro de 1 em diante")
@@ -778,10 +871,7 @@ def custo_de_um_stop(ligacao_id: int, contratos: int, *,
             pontos = statistics.median(dists) if dists else None
         else:
             pontos = perfil.stop_pontos or None
-        limite = con.execute(
-            "SELECT c.limite_perda_dia FROM portfolios p JOIN contas c ON "
-            "c.conta_id = p.conta_demo_id WHERE p.portfolio_id = ? "
-            "AND c.arquivada_em IS NULL", [pid]).fetchone()
+        limite = con.execute(_LIMITE_DA_CONTA[conta], [pid]).fetchone()
     if pontos is None:
         return {"reais": None, "pct_limite": None}
     valor = float(db.load_instrument_yaml(

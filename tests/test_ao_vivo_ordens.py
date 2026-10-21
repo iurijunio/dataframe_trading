@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import ao_vivo as AV  # noqa: E402
-from core import codigo, comandos, diario, engine  # noqa: E402
+from core import codigo, comandos, diario, diario_ordens, engine  # noqa: E402
 from core import db_manager as db  # noqa: E402
 from core.engine.execution import ExecutionProfile  # noqa: E402
 from tests._cadeia import banco  # noqa: E402,F401
@@ -187,12 +187,93 @@ def test_mudar_para_a_fase_atual_nao_gera_evento(banco):
     assert not diario.eventos(tipo="fase_mudou")
 
 
-def test_fase_real_ainda_nao_existe(banco):
+def test_fase_invalida_recusa(banco):
     f, _ = _montar()
-    with pytest.raises(ValueError, match="conta real ainda não disponível"):
-        AV.mudar_fase(f.lig, "real")
-    with pytest.raises(ValueError, match="fase"):
+    with pytest.raises(ValueError, match="'papel', 'demo' ou 'real'"):
         AV.mudar_fase(f.lig, "qualquer")
+
+
+def _conta_real(nome="real-1", *, terminal="C:/mt5/real/terminal64.exe",
+                login=7777, servidor="Corretora-REAL", limite=800.0):
+    return AV.criar_conta(nome, "real", limite, login=login,
+                          servidor=servidor, terminal=terminal)
+
+
+def _montar_real(nome="v", **kw):
+    """Portfólio com conta demo e conta real prontas; ligação ainda em papel."""
+    f, demo = _montar(nome, **kw)
+    real = _conta_real(f"real-{nome}")
+    AV.definir_contas(f.pf, demo, real)
+    return f, demo, real
+
+
+def test_promover_de_papel_para_real(banco):
+    f, _, _ = _montar_real()
+    quando = datetime(2026, 10, 8, 9, 30)
+    AV.mudar_fase(f.lig, "real", quando=quando)
+    assert _fase(f.lig) == ("real", quando)
+    [e] = diario.eventos(tipo="fase_mudou", ligacao_id=f.lig)
+    assert (e["de"], e["para"]) == ("papel", "real")
+
+
+def test_promover_de_demo_para_real_e_voltar_para_demo(banco):
+    f, _, real = _montar_real()
+    AV.mudar_fase(f.lig, "demo")
+    AV.mudar_fase(f.lig, "real")
+    assert _fase(f.lig)[0] == "real"
+    # voltar à demo não exige a conta real pronta: só sai de operar nela
+    AV.arquivar_conta(real)
+    AV.mudar_fase(f.lig, "demo")
+    assert _fase(f.lig)[0] == "demo"
+    de_para = [(e["de"], e["para"])
+               for e in diario.eventos(tipo="fase_mudou", ligacao_id=f.lig)]
+    assert sorted(de_para) == sorted([("papel", "demo"), ("demo", "real"),
+                                      ("real", "demo")])
+
+
+def test_real_sem_conta_real_no_portfolio_recusa(banco):
+    f, _ = _montar()
+    with pytest.raises(ValueError, match="conta real"):
+        AV.mudar_fase(f.lig, "real")
+    assert _fase(f.lig)[0] == "papel"
+    assert not diario.eventos(tipo="fase_mudou")
+
+
+def test_real_sem_conta_demo_no_portfolio_recusa(banco):
+    f, _ = _montar(com_conta=False)
+    AV.definir_contas(f.pf, None, _conta_real())
+    with pytest.raises(ValueError, match="conta demo"):
+        AV.mudar_fase(f.lig, "real")
+    assert _fase(f.lig)[0] == "papel"
+
+
+@pytest.mark.parametrize("campo", ["terminal", "login", "servidor", "limite"])
+def test_real_conta_real_incompleta_recusa(banco, campo):
+    cadastro = {"terminal": "C:/mt5/real/terminal64.exe", "login": 7777,
+                "servidor": "Corretora-REAL", "limite": 800.0}
+    cadastro[campo] = None
+    f, demo = _montar()
+    real = AV.criar_conta("real-incompleta", "real", cadastro.pop("limite"),
+                          **cadastro)
+    AV.definir_contas(f.pf, demo, real)
+    with pytest.raises(ValueError, match="conta real precisa"):
+        AV.mudar_fase(f.lig, "real")
+    assert _fase(f.lig)[0] == "papel"
+
+
+def test_real_sem_pregao_conferido_ou_stop_recusa_como_a_demo(banco):
+    f, _, _ = _montar_real(stop_pontos=0)
+    with pytest.raises(ValueError, match="stop"):
+        AV.mudar_fase(f.lig, "real")
+    assert _fase(f.lig)[0] == "papel"
+
+
+def test_real_com_falha_do_papel_recusa_como_a_demo(banco):
+    f, _, _ = _montar_real()
+    _conferencia(f.lig, f.plano_id, "rompimento_canal", ok=False)
+    with pytest.raises(ValueError, match="diferiu do backtest"):
+        AV.mudar_fase(f.lig, "real")
+    assert _fase(f.lig)[0] == "papel"
 
 
 def test_fase_de_ligacao_inexistente_recusa(banco):
@@ -241,10 +322,93 @@ def test_definir_contratos_repetido_nao_gera_evento(banco):
     assert len(diario.eventos(tipo="contratos_alterados")) == 1
 
 
-def test_definir_contratos_so_demo_por_enquanto(banco):
+def _contrato_col(lig, coluna):
+    with db.connect(read_only=True) as con:
+        return con.execute(f"SELECT {coluna} FROM portfolio_membros "
+                           "WHERE ligacao_id = ?", [lig]).fetchone()[0]
+
+
+def test_definir_contratos_da_real_grava_so_contratos_real(banco):
+    f, _, _ = _montar_real()
+    AV.definir_contratos(f.lig, 2, conta="real")
+    assert _contrato_col(f.lig, "contratos_real") == 2
+    assert _contrato_col(f.lig, "contratos_demo") is None
+    [e] = diario.eventos(tipo="contratos_alterados", ligacao_id=f.lig)
+    assert (e["de"], e["para"], e["motivo"]) == ("plano", "2", "real")
+
+
+def test_definir_contratos_conta_invalida_recusa(banco):
     f, _ = _montar()
-    with pytest.raises(ValueError, match="real"):
-        AV.definir_contratos(f.lig, 2, tipo="real")
+    with pytest.raises(ValueError, match="conta deve ser"):
+        AV.definir_contratos(f.lig, 2, conta="outra")
+    assert not diario.eventos(tipo="contratos_alterados")
+
+
+# ------------------------- trocar conta, login ou servidor com posição aberta
+def _abrir_na_origem(tipo, ticket, lig=None):
+    """Um ticket aberto no diário das ordens da origem `tipo` (como a
+    automação grava: executada, depois saida_executada quando fecha)."""
+    pasta = Path(diario_ordens.PASTA)
+    if tipo == "real":
+        pasta = pasta / "real"
+    diario_ordens.Diario(pasta, DIA, tipo).registrar(
+        "executada", quando=datetime(2026, 10, 5, 10, 1), ligacao_id=lig,
+        ticket=ticket)
+
+
+def _fechar_na_origem(tipo, ticket):
+    pasta = Path(diario_ordens.PASTA)
+    if tipo == "real":
+        pasta = pasta / "real"
+    diario_ordens.Diario(pasta, DIA, tipo).registrar(
+        "saida_executada", quando=datetime(2026, 10, 5, 11, 1), ticket=ticket)
+
+
+def test_trocar_conta_demo_com_posicao_aberta_recusa(banco):
+    f, _ = _montar()
+    _abrir_na_origem("demo", 111, f.lig)
+    outra = AV.criar_conta("demo-outra", "demo", 500.0)
+    with pytest.raises(ValueError, match="operação aberta"):
+        AV.definir_contas(f.pf, outra, None)
+    _fechar_na_origem("demo", 111)
+    AV.definir_contas(f.pf, outra, None)
+    assert _conta_do_portfolio(f.pf) == (outra, None)
+
+
+def test_trocar_conta_real_com_posicao_aberta_recusa(banco):
+    f, _, real = _montar_real()
+    AV.definir_contas(f.pf, AV.criar_conta("demo-b", "demo", 500.0), real)
+    _abrir_na_origem("real", 222, f.lig)
+    with pytest.raises(ValueError, match="operação aberta"):
+        AV.definir_contas(f.pf, AV.criar_conta("demo-c", "demo", 500.0),
+                          _conta_real("real-nova", login=8888))
+    assert _conta_do_portfolio(f.pf)[1] == real
+
+
+def _conta_do_portfolio(pf):
+    with db.connect(read_only=True) as con:
+        return tuple(con.execute("SELECT conta_demo_id, conta_real_id FROM "
+                                 "portfolios WHERE portfolio_id = ?",
+                                 [pf]).fetchone())
+
+
+def test_trocar_login_ou_servidor_com_posicao_aberta_recusa(banco):
+    f, demo = _montar()
+    _abrir_na_origem("demo", 333, f.lig)
+    with pytest.raises(ValueError, match="operação aberta"):
+        AV.editar_conta(demo, login=999)
+    with pytest.raises(ValueError, match="operação aberta"):
+        AV.editar_conta(demo, servidor="Outra")
+    AV.editar_conta(demo, nome="renomeada")          # não é login: passa
+    _fechar_na_origem("demo", 333)
+    AV.editar_conta(demo, login=999)
+
+
+def test_trocar_login_de_conta_fora_de_portfolio_nao_recusa(banco):
+    f, _ = _montar()
+    _abrir_na_origem("demo", 444, f.lig)
+    solta = AV.criar_conta("demo-solta", "demo", 500.0)
+    AV.editar_conta(solta, login=5, servidor="X")
 
 
 # ------------------------------------------------------------ ligar_envio
@@ -427,6 +591,17 @@ def test_custo_de_um_stop_em_pontos(banco):
     r = AV.custo_de_um_stop(f.lig, 3)
     assert r["reais"] == pytest.approx(180.0)
     assert r["pct_limite"] == pytest.approx(36.0)
+
+
+def test_custo_de_um_stop_usa_o_limite_da_conta_pedida(banco):
+    # mesmo stop, limites de R$ 500 (demo) e R$ 800 (real): o percentual muda
+    f, _, _ = _montar_real(limite=500.0)
+    demo = AV.custo_de_um_stop(f.lig, 3)
+    real = AV.custo_de_um_stop(f.lig, 3, conta="real")
+    assert real["reais"] == pytest.approx(demo["reais"])
+    assert real["pct_limite"] == pytest.approx(demo["pct_limite"] * 500 / 800)
+    with pytest.raises(ValueError, match="conta deve ser"):
+        AV.custo_de_um_stop(f.lig, 3, conta="outra")
 
 
 def test_custo_de_um_stop_sem_conta_demo_nao_tem_percentual(banco):
