@@ -2090,3 +2090,17 @@ body{
 .op-tira .ord-numeros > :nth-child(3){order:4}
 .op-tira .ord-numeros > :nth-child(4){order:5}
 .op-tira #av-op-kpis > :nth-child(2){order:6}
+
+/* ---------------------------------------------------------------------
+   Ao vivo > Estratégias igual ao v2 (contas e Envio). Nova conta e Puxar do
+   MT5 lado a lado, abaixo da tabela; a chave do Envio da real fica apagada
+   (o core ainda recusa o envio da real).
+   ------------------------------------------------------------------ */
+.av-acoes-contas{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px;
+  padding:10px 14px;border-top:1px solid var(--line-soft);}
+.av-acoes-contas .av-nova-conta{flex:0 0 auto;}
+.av-acoes-contas .av-nova-conta[open]{flex-basis:100%;}
+.av-acoes-contas .av-aviso-mt5{flex-basis:100%;align-self:flex-start;}
+.av-acoes-contas .av-aviso-mt5:empty{display:none;}
+.av-tg-indisp{opacity:.45;cursor:not-allowed;}
+.av-chave-off .op-tg{padding:4px 8px;}

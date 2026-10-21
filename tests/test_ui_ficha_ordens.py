@@ -391,17 +391,18 @@ def test_cartao_do_portfolio_mostra_limite_e_envio():
              "envio_ligado": False}
     t = textos(AP.cartao_portfolio(p, [conta], None, 1))
     assert "Limite de perda do dia" in t and "Envio de ordens" in t
-    assert "Ligar envio" in t
+    # a chave não tem texto: o que diz ligar/desligar é o id da ação
+    assert "envio-ligar" in repr(AP.cartao_portfolio(p, [conta], None, 1))
     conta["envio_ligado"] = True
-    t = textos(AP.cartao_portfolio(p, [conta], None, 1))
-    assert "Desligar envio" in t
+    arvore = AP.cartao_portfolio(p, [conta], None, 1)
+    assert "envio-desligar" in repr(arvore) and "op-tg-on" in repr(arvore)
 
 
 def test_cartao_do_portfolio_sem_conta_demo_explica():
     p = {"portfolio_id": 5, "nome": "pf", "ligado": True, "n_membros": 1,
          "conta_demo_id": None, "conta_real_id": None}
-    t = textos(AP.cartao_portfolio(p, [], None, 1))
-    assert "escolha a conta demo" in t.lower()
+    # a explicação está no (?) (atributo data-dica), não no texto visível
+    assert "escolha a conta demo" in repr(AP.cartao_portfolio(p, [], None, 1)).lower()
 
 
 # ------------------------------------------------------ o callback de verdade

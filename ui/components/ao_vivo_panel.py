@@ -18,6 +18,7 @@ iguais na tela inteira: verde = ligado/liberada, cinza = desligado/parada,
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from dash import dcc, html
@@ -137,62 +138,65 @@ def _estrategias() -> list:
         _secao("Contas", "Contas do MT5 onde as ordens vão cair a partir da "
                "fase demo. Na fase papel nada é enviado.",
                html.Div(id="av-contas", className="av-lista-col"),
-               html.Details([
-                   html.Summary([icone("plus", pequeno=True), "Nova conta"],
-                                className="btn-ghost btn-sm av-btn-sec av-nova-conta-btn"),
-                   html.Div([
+               # Nova conta (abre o formulário) e Puxar do MT5 lado a lado, abaixo
+               # da tabela, como no v2. O aviso do Puxar fica fora do formulário:
+               # dentro dele sumiria com o formulário fechado.
+               html.Div([
+                   html.Details([
+                       html.Summary([icone("plus", pequeno=True), "Nova conta"],
+                                    className="btn-ghost btn-sm av-btn-sec av-nova-conta-btn"),
                        html.Div([
-                           _rotulado("Nome da conta", dcc.Input(
-                               id="av-conta-nome", type="text", className="inp",
-                               placeholder="ex.: Demo XP"), classe="av-campo-nome"),
-                           _rotulado("Tipo", dcc.Dropdown(
-                               id="av-conta-tipo", className="dd av-dd-tipo",
-                               clearable=False, value="demo", searchable=False,
-                               options=[{"label": "demo", "value": "demo"},
-                                        {"label": "real", "value": "real"}])),
-                           _rotulado("Limite de perda diária (R$)", dcc.Input(
-                               id="av-conta-limite", type="text",
-                               inputMode="numeric", className="inp",
-                               placeholder="opcional"),
-                               explica="O limite diário da mesa proprietária. "
-                                       "Deixe vazio se a conta não tiver.",
-                               classe="av-campo-limite"),
-                       ], className="av-form-linha"),
-                       html.Div([
-                           _rotulado("Número da conta", dcc.Input(
-                               id="av-conta-login", type="text",
-                               inputMode="numeric", className="inp",
-                               placeholder="ex.: 1234567"),
-                               explica="O número que aparece no MT5, no topo da "
-                                       "janela. A senha não é guardada: você faz "
-                                       "login no próprio MT5.",
-                               classe="av-campo-limite"),
-                           _rotulado("Servidor", dcc.Input(
-                               id="av-conta-servidor", type="text",
-                               className="inp",
-                               placeholder="ex.: ClearInvestimentos-DEMO"),
-                               classe="av-campo-nome"),
-                           _rotulado("Pasta do MT5", dcc.Input(
-                               id="av-conta-terminal", type="text",
-                               className="inp", placeholder="opcional"),
-                               explica="Só se você tiver mais de um MT5 "
-                                       "instalado: aponte o terminal64.exe desta "
-                                       "conta.",
-                               classe="av-campo-largo"),
-                           html.Div(html.Button([icone("download", pequeno=True),
-                                                 "Puxar do MT5"],
-                                                id="av-btn-mt5-puxar",
-                                                n_clicks=0,
-                                                className="btn-ghost btn-sm av-btn-sec"),
+                           html.Div([
+                               _rotulado("Nome da conta", dcc.Input(
+                                   id="av-conta-nome", type="text", className="inp",
+                                   placeholder="ex.: Demo XP"), classe="av-campo-nome"),
+                               _rotulado("Tipo", dcc.Dropdown(
+                                   id="av-conta-tipo", className="dd av-dd-tipo",
+                                   clearable=False, value="demo", searchable=False,
+                                   options=[{"label": "demo", "value": "demo"},
+                                            {"label": "real", "value": "real"}])),
+                               _rotulado("Limite de perda diária (R$)", dcc.Input(
+                                   id="av-conta-limite", type="text",
+                                   inputMode="numeric", className="inp",
+                                   placeholder="opcional"),
+                                   explica="O limite diário da mesa proprietária. "
+                                           "Deixe vazio se a conta não tiver.",
+                                   classe="av-campo-limite"),
+                           ], className="av-form-linha"),
+                           html.Div([
+                               _rotulado("Número da conta", dcc.Input(
+                                   id="av-conta-login", type="text",
+                                   inputMode="numeric", className="inp",
+                                   placeholder="ex.: 1234567"),
+                                   explica="O número que aparece no MT5, no topo da "
+                                           "janela. A senha não é guardada: você faz "
+                                           "login no próprio MT5.",
+                                   classe="av-campo-limite"),
+                               _rotulado("Servidor", dcc.Input(
+                                   id="av-conta-servidor", type="text",
+                                   className="inp",
+                                   placeholder="ex.: ClearInvestimentos-DEMO"),
+                                   classe="av-campo-nome"),
+                               _rotulado("Pasta do MT5", dcc.Input(
+                                   id="av-conta-terminal", type="text",
+                                   className="inp", placeholder="opcional"),
+                                   explica="Só se você tiver mais de um MT5 "
+                                           "instalado: aponte o terminal64.exe desta "
+                                           "conta.",
+                                   classe="av-campo-largo"),
+                           ], className="av-form-linha"),
+                           html.Div(html.Button("Criar conta",
+                                                id="av-btn-conta-criar", n_clicks=0,
+                                                className="btn-ghost av-btn-principal"),
                                     className="av-campo-botao"),
-                           html.Div(id="av-mt5-aviso", className="av-aviso-mt5"),
-                       ], className="av-form-linha"),
-                       html.Div(html.Button("Criar conta",
-                                            id="av-btn-conta-criar", n_clicks=0,
-                                            className="btn-ghost av-btn-principal"),
-                                className="av-campo-botao"),
-                   ], className="av-form"),
-               ], className="av-nova-conta")),
+                       ], className="av-form"),
+                   ], className="av-nova-conta"),
+                   html.Button([icone("download", pequeno=True), "Puxar do MT5"],
+                               id="av-btn-mt5-puxar", n_clicks=0,
+                               className="btn-ghost btn-sm av-btn-sec av-btn-puxar"),
+                   html.Div(id="av-mt5-aviso", className="av-aviso-mt5"),
+               ], className="av-acoes-contas"),
+               ),
         _secao("Arrumação", "Planos gravados que ainda não pertencem a "
                "nenhuma variante. Vincule para poder usá-los num portfólio.",
                html.Div(id="av-arrumacao", className="av-lista-col")),
@@ -418,35 +422,51 @@ def _tabela_contas_pf(p: dict, contas: list[dict], demo, real, armado) -> html.D
     ], className="av-pf-linha")
     rodape = html.Div(_botao("Salvar contas", "pf-contas", pid, armado,
                              "btn-ghost av-btn-sec"), className="av-pf-rodape")
-    return html.Div([cab, linha_demo, linha_real, rodape], className="av-pf-tab")
+    # a real vem primeiro, como no v2
+    return html.Div([cab, linha_real, linha_demo, rodape], className="av-pf-tab")
+
+
+def _chave_envio(acao, alvo, armado):
+    """A chave do Envio de ordens, a mesma da tela Operação: as classes e o
+    "Confirmar?" vêm de `OP.estado_botao`, o nome e o texto dos dois cliques
+    de `OP._NOMES_BOTAO` e `OP._TITULO_ENVIO`. Sem texto na chave: a cor e a
+    bolinha dizem. O id é o da Ao vivo (`av-acao`), e o clique cai no `agir`,
+    que confirma em dois cliques pelo `OPC.acao`."""
+    _rotulo, classe = OP.estado_botao(acao, alvo, armado)
+    nome = OP._NOMES_BOTAO[acao]
+    titulo = OP._TITULO_ENVIO["demo"]["desligar" if acao == "envio-desligar"
+                                       else "ligar"]
+    return html.Button("", n_clicks=0, title=f"{nome}: {titulo}",
+                       className=classe, **{"aria-label": nome},
+                       id={"type": "av-acao", "acao": acao, "id": alvo})
 
 
 def _envio_demo(pid, conta: dict | None, armado):
-    """O Envio da conta demo: uma chave que liga/desliga, em dois cliques.
+    """O Envio da conta demo: a chave de liga/desliga, em dois cliques.
     Os ids levam a CONTA junto ("portfólio:conta"): desligar não depende de
     uma leitura do banco antes de escrever o comando."""
     if conta is None:
-        return html.Span("escolha a conta demo e salve: o limite e o "
-                         "interruptor são dela.", className="av-texto")
-    ligado = bool(conta.get("envio_ligado"))
+        return html.Span(["—", dica("Escolha a conta demo e salve: o limite e "
+                                    "a chave de envio são dela.")],
+                         className="mut")
     alvo = f"{pid}:{conta['conta_id']}"
-    chave = html.Span(className="av-sw av-sw-on" if ligado else "av-sw")
-    if ligado:
-        return _botao("Desligar envio", "envio-desligar", alvo, armado,
-                      "btn-ghost btn-sm av-btn-sec av-chave", prefixo=chave)
-    return _botao("Ligar envio", "envio-ligar", alvo, armado,
-                  "btn-ghost btn-sm av-btn-principal av-chave", prefixo=chave)
+    acao = "envio-desligar" if conta.get("envio_ligado") else "envio-ligar"
+    return _chave_envio(acao, alvo, armado)
 
 
 def _envio_real(conta: dict | None):
-    """A conta real ainda não recebe ordens: a chave aparece apagada e
-    explica, em vez de um botão que o core recusaria.
+    """A conta real ainda não recebe ordens: a chave aparece apagada e não
+    clica, em vez de um botão que o core recusaria.
     # TRAVA: o envio da conta real está bloqueado no core (`ligar_envio`
     # recusa tipo real) até a tarefa que libera o processo da conta real.
     # Quando ela existir, esta chave vira o mesmo interruptor da demo."""
     if conta is None:
         return html.Span("—", className="mut")
-    return html.Span([html.Span(className="av-sw"), "indisponível",
+    nome = OP._NOMES_BOTAO["envio-real-ligar"]
+    return html.Span([html.Button("", n_clicks=0, disabled=True,
+                                  title=f"{nome}: ainda não existe nesta versão",
+                                  className="btn-ghost op-tg op-tg-real av-tg-indisp",
+                                  **{"aria-label": nome}),
                       dica("O envio de ordens para a conta real ainda não "
                            "existe nesta versão.")], className="av-chave-off")
 
@@ -890,6 +910,18 @@ def limite_br(v) -> str:
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _pasta_curta(caminho) -> str:
+    """"C:\\MT5 Terminal - Real\\terminal64.exe" → "…MT5 Terminal - Real": só a
+    última pasta (o terminal64.exe não conta). O caminho inteiro fica no
+    `title` da célula. Vazio → travessão."""
+    if not caminho or not str(caminho).strip():
+        return "—"
+    partes = [p for p in re.split(r"[\\/]+", str(caminho).strip()) if p]
+    if partes and partes[-1].lower().endswith(".exe"):
+        partes = partes[:-1]
+    return f"…{partes[-1]}" if partes else "—"
+
+
 def tabela_contas(contas: list[dict], armado) -> html.Div:
     """A lista de contas: uma linha por conta (Tipo · Nome · Número · Servidor ·
     Pasta do MT5 · Limite · Editar). Editar abre o formulário da própria conta
@@ -931,8 +963,9 @@ def linha_conta(c: dict, armado) -> html.Details:
         html.Span("—" if c.get("login") is None else str(c["login"]),
                   className="av-conta-c mono"),
         html.Span(c.get("servidor") or "—", className="av-conta-c"),
-        html.Span(c.get("terminal") or "—",
-                  className="av-conta-c av-conta-pasta mono"),
+        html.Span(_pasta_curta(c.get("terminal")),
+                  className="av-conta-c av-conta-pasta mono",
+                  title=c.get("terminal") or None),
         html.Span("sem limite" if limite is None else f"R$ {limite_br(limite)}",
                   className="av-conta-c mono"),
         html.Span("Editar ▾", className="btn-ghost btn-sm av-btn-sec av-conta-editar"),
