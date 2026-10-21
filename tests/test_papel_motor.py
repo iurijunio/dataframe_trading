@@ -229,6 +229,8 @@ _NAO_SAO_JANELA = {
     # strategies/saida.py: a posição fecha todo dia, então a virada não
     # carrega estado de um pregão para o outro
     "saida": "modo de saída (0 a 3), não quantidade de barras",
+    # strategies/adx_direcao.py: amplitude do candle em pontos, não barras
+    "amplitude_max": "amplitude do candle em pontos (0 desliga), não barras",
 }
 
 
