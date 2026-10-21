@@ -416,7 +416,7 @@ def _tabela_contas_pf(p: dict, contas: list[dict], demo, real, armado) -> html.D
         html.Div(_campo_dd("conta-real", pid, p["conta_real_id"], real,
                            "escolha…" if real else "nenhuma conta real"),
                  className="av-pf-c"),
-        html.Div(_envio_real(real_c), className="av-pf-c"),
+        html.Div(_envio_real(pid, real_c, armado), className="av-pf-c"),
         html.Div(_limite_conta(pid, real_c, "pf-limite-real", "pf-limite-real",
                                armado), className="av-pf-c"),
     ], className="av-pf-linha")
@@ -434,8 +434,9 @@ def _chave_envio(acao, alvo, armado):
     que confirma em dois cliques pelo `OPC.acao`."""
     _rotulo, classe = OP.estado_botao(acao, alvo, armado)
     nome = OP._NOMES_BOTAO[acao]
-    titulo = OP._TITULO_ENVIO["demo"]["desligar" if acao == "envio-desligar"
-                                       else "ligar"]
+    tipo = "real" if acao.startswith("envio-real-") else "demo"
+    titulo = OP._TITULO_ENVIO[tipo]["desligar" if acao.endswith("-desligar")
+                                    else "ligar"]
     return html.Button("", n_clicks=0, title=f"{nome}: {titulo}",
                        className=classe, **{"aria-label": nome},
                        id={"type": "av-acao", "acao": acao, "id": alvo})
@@ -454,21 +455,16 @@ def _envio_demo(pid, conta: dict | None, armado):
     return _chave_envio(acao, alvo, armado)
 
 
-def _envio_real(conta: dict | None):
-    """A conta real ainda não recebe ordens: a chave aparece apagada e não
-    clica, em vez de um botão que o core recusaria.
-    # TRAVA: o envio da conta real está bloqueado no core (`ligar_envio`
-    # recusa tipo real) até a tarefa que libera o processo da conta real.
-    # Quando ela existir, esta chave vira o mesmo interruptor da demo."""
+def _envio_real(pid, conta: dict | None, armado):
+    """O Envio da conta real: a chave de liga/desliga, em dois cliques, como
+    a da demo. O id leva a conta junto ("portfólio:conta") e a ação
+    `envio-real-*` leva a pasta de comandos da real no core."""
     if conta is None:
         return html.Span("—", className="mut")
-    nome = OP._NOMES_BOTAO["envio-real-ligar"]
-    return html.Span([html.Button("", n_clicks=0, disabled=True,
-                                  title=f"{nome}: ainda não existe nesta versão",
-                                  className="btn-ghost op-tg op-tg-real av-tg-indisp",
-                                  **{"aria-label": nome}),
-                      dica("O envio de ordens para a conta real ainda não "
-                           "existe nesta versão.")], className="av-chave-off")
+    alvo = f"{pid}:{conta['conta_id']}"
+    acao = ("envio-real-desligar" if conta.get("envio_ligado")
+            else "envio-real-ligar")
+    return _chave_envio(acao, alvo, armado)
 
 
 def _limite_conta(pid, conta: dict | None, campo: str, acao: str, armado):
@@ -699,8 +695,8 @@ def bloco_ordens_ficha(l: dict, ordens: dict | None, armado) -> html.Div:
         html.Div([html.Span("Fase", className="av-ord-rot-txt"),
                   dica("Papel: só simula, nada é enviado. Demo: manda ordens à "
                        "conta demo quando o Envio de ordens do portfólio estiver "
-                       "ligado. Real: manda ordens à conta real (o envio dela "
-                       "ainda não existe nesta versão). Voltar encerra a posição "
+                       "ligado. Real: manda ordens à conta real quando o Envio "
+                       "dela estiver ligado. Voltar encerra a posição "
                        "aberta, se houver.")], className="av-ord-rot"),
         html.Div([_trilha(fase), html.Div(acoes, className="av-ord-acoes"),
                   *linhas_restr], className="av-ord-val"),

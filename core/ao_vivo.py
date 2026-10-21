@@ -814,9 +814,6 @@ def ligar_envio(conta_id: int, ligado: bool, *, tipo: str | None = None,
         if tipo is not None and tipo != tipo_banco:
             raise ValueError("o tipo informado não bate com o da conta")
         tipo = tipo_banco
-        if ligado and tipo == "real":
-            # até a parte 5 (processo próprio da conta real) existir
-            raise ValueError("envio na conta real ainda não disponível")
         if ligado and arquivada is not None:
             raise ValueError("a conta está arquivada")
         if ligado and not (limite or 0) > 0:

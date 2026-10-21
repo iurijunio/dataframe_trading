@@ -5,6 +5,7 @@ mais adiante —, então cada recusa e cada sucesso tem o seu teste, contra o
 banco isolado (`banco`), e o arquivo de comando vai para a pasta de teste."""
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -195,6 +196,44 @@ def test_ligar_envio_dois_cliques(banco):
     assert _envio(conta) is False
     armado, _, aviso = CA.acao("envio-ligar", alvo, {}, armado, None)
     assert armado is None and _envio(conta) is True and "ligado" in aviso
+
+
+def test_ligar_envio_real_dois_cliques_e_comando_na_pasta_real(banco):
+    f, demo = _montar()
+    real = AV.criar_conta("real-v", "real", 500.0)
+    AV.definir_contas(f.pf, demo, real)
+    alvo = f"{f.pf}:{real}"
+    armado, _, aviso = CA.acao("envio-real-ligar", alvo, {}, None, None)
+    assert armado == f"envio-real-ligar:{alvo}" and "confirme" in aviso
+    assert _envio(real) is False
+    armado, _, aviso = CA.acao("envio-real-ligar", alvo, {}, armado, None)
+    assert armado is None and _envio(real) is True and "ligado" in aviso
+    assert not list(Path(comandos.PASTA).glob("*.json"))
+    cmds = [json.loads(a.read_text(encoding="utf-8"))
+            for a in Path(comandos.PASTA_REAL).glob("*.json")]
+    assert [(c["conta_id"], c["ligado"]) for c in cmds] == [(real, True)]
+
+
+def test_ligar_envio_real_sem_limite_nao_arma(banco):
+    f, demo = _montar()
+    real = AV.criar_conta("real-v", "real")
+    AV.definir_contas(f.pf, demo, real)
+    alvo = f"{f.pf}:{real}"
+    armado, _, aviso = CA.acao("envio-real-ligar", alvo, {}, None, None)
+    assert armado is None and "cadastre o limite antes" in aviso
+    assert _envio(real) is False
+
+
+def test_chave_do_envio_real_e_clicavel(banco):
+    f, demo = _montar()
+    real = AV.criar_conta("real-v", "real", 500.0)
+    AV.definir_contas(f.pf, demo, real)
+    botao = AP._envio_real(f.pf, {"conta_id": real, "envio_ligado": False}, None)
+    assert not getattr(botao, "disabled", None)
+    assert botao.id == {"type": "av-acao", "acao": "envio-real-ligar",
+                        "id": f"{f.pf}:{real}"}
+    botao = AP._envio_real(f.pf, {"conta_id": real, "envio_ligado": True}, None)
+    assert botao.id["acao"] == "envio-real-desligar"
 
 
 def test_ligar_envio_sem_conta_demo(banco):

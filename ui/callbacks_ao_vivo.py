@@ -136,8 +136,8 @@ _MSG_FASE = {
                  "Envio de ordens do portfólio estiver ligado",
     "fase-papel": "variante de volta ao papel — a posição aberta, se houver, "
                   "é encerrada pela captura",
-    "fase-real": "variante promovida para a real — o envio de ordens para a "
-                 "conta real ainda não existe nesta versão",
+    "fase-real": "variante promovida para a real — as ordens saem quando o "
+                 "Envio de ordens da conta real estiver ligado",
     "fase-voltar-demo": "variante de volta à demo — a posição aberta na real, "
                         "se houver, é encerrada pela captura",
 }
@@ -245,16 +245,18 @@ def _executar(nome, alvo, campos) -> str:
 
 
 def _envio(nome, alvo, armado, posicoes) -> tuple[str | None, str]:
-    """Ligar/desligar o Envio da conta demo do portfólio `pid`. O texto dos
-    dois cliques e as recusas são os da tela Operação (`OPC.acao`): um aviso
-    só, em qualquer das duas telas. Devolve (armado, aviso)."""
+    """Ligar/desligar o Envio da conta demo ou real do portfólio `pid` (o
+    nome diz qual: `envio-*` ou `envio-real-*`). O texto dos dois cliques e
+    as recusas são os da tela Operação (`OPC.acao`): um aviso só, em qualquer
+    das duas telas. Devolve (armado, aviso)."""
     pid, cid = (int(x) for x in str(alvo).split(":"))
-    if nome == "envio-ligar":
+    tipo = "real" if nome.startswith("envio-real-") else "demo"
+    if nome in ("envio-ligar", "envio-real-ligar"):
         # ligar precisa do banco de qualquer jeito; desligar NÃO lê nada
         # antes de escrever o comando (o banco ocupado é justo quando importa)
-        conta = _conta_demo(pid)
+        conta = _conta_do_pf(pid, tipo)
         if conta is None or conta["conta_id"] != cid:
-            return None, ("escolha a conta demo do portfólio antes de mexer "
+            return None, (f"escolha a conta {tipo} do portfólio antes de mexer "
                           "no envio")
         if not (conta["limite"] or 0) > 0:
             # antes de armar: não adianta pedir confirmação de algo que o
@@ -279,7 +281,8 @@ def acao(nome, alvo, campos, armado, aberta, *, posicoes=None,
     if (armado_em is not None and agora_s is not None
             and not 0 <= agora_s - float(armado_em) <= ARMADO_VALE_S):
         armado = None
-    if nome in ("envio-ligar", "envio-desligar"):
+    if nome in ("envio-ligar", "envio-desligar",
+                "envio-real-ligar", "envio-real-desligar"):
         try:
             novo, aviso = _envio(nome, alvo, armado, posicoes)
         except (duckdb.Error, RuntimeError):
@@ -534,6 +537,8 @@ def register(app):
         posicoes = None
         if nome_acao == "envio-desligar":
             posicoes = D.ordens_do_estado(D.estado_captura())["posicoes"]
+        elif nome_acao == "envio-real-desligar":
+            posicoes = D.posicoes_real(D.estado_real())
         armado, aberta, aviso = acao(nome_acao, alvo, campos, armado, aberta,
                                      posicoes=posicoes, armado_em=armado_em,
                                      agora_s=agora_s)

@@ -8,6 +8,35 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Ao vivo, parte 5: conta real** (`ordens_real.py`, `ordens_real.bat`,
+  `core/ponte.py`, `core/comandos.py`, `core/ordens.py`, `core/papel_vivo.py`,
+  `captura.py`, `ui/components/ao_vivo_panel.py`, `ui/components/operacao_panel.py`;
+  desenho em
+  [docs/superpowers/specs/2026-10-19-conta-real-design.md](docs/superpowers/specs/2026-10-19-conta-real-design.md)).
+  - **Processo próprio "Ordens real".** Aberto pelo `iniciar.bat` (agora três
+    janelas: Captura, Ordens real e o app), com um terminal MT5 só para a conta
+    real. Ele lê os desejados que a captura publica e manda ordens só na conta
+    real. A real tem prioridade: a captura escreve a ponte antes de mandar as
+    ordens da demo e espera até 200 ms o ack da real, só quando ela está viva.
+  - **Ponte com batimento.** `data/ao_vivo/desejados.json` é gravado de forma
+    atômica a cada volta; desejado com mais de 5 s é indisponível para a real
+    (ela só protege o que tem).
+  - **Conferência a cada volta.** Login e tipo da conta (`trade_mode`) são
+    conferidos em todo laço nos dois processos. Conta errada gera o chamado
+    `conta_errada` e nada sai.
+  - **Pastas de comando por conta.** `data/ao_vivo/comandos` (demo) e
+    `data/ao_vivo/comandos_real` (real). `zerar_tudo` vai para as duas e não lê
+    o banco. A ordem de teste continua só na demo.
+  - **Banco.** `ordens_eventos.origem` ("demo" ou "real"); os leitores filtram
+    por origem. Quem espelha a real no banco é a captura.
+  - **Envio da conta real liberado.** O interruptor da real é o mesmo de dois
+    cliques da demo, com limite de perda do dia obrigatório, e nasce desligado.
+    Na tela, a chave da real deixou de estar apagada.
+  - **Vigia de stop e alvo (21/10/2026, commits `d987d91`..`cf8540c`).** O papel
+    sai no toque do stop ou do alvo, no candle em formação, sem esperar o fim
+    do candle. A corretora tem 1 s para executar o stop/alvo tocado; passado
+    isso, a automação sai a mercado e abre chamado. Essas execuções ficam
+    marcadas como "fora do mercado" e saem da derrapagem.
 - **Ao vivo, parte 4: ordens na conta demo** (`core/corretora.py`,
   `core/ordens.py`, `core/papel_vivo.py`, `core/diario_ordens.py`,
   `core/comandos.py`, `core/contrato_dia.py`, `core/papel_backtest.py`,

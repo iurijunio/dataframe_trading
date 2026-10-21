@@ -6,7 +6,7 @@
 Plataforma quantitativa em Python (Dash + DuckDB + Numba) para criar, minerar,
 validar e operar estratégias de day trade no Mini Índice (`WIN$N`),
 substituindo o fluxo que antes vivia no MT5. Branch de trabalho:
-`live-trading` (parte 4, ordens), criada do `master` em 08/10/2026 depois
+`live-trading` (partes 4 e 5, ordens e conta real), criada do `master` em 08/10/2026 depois
 de o usuário juntar o `candidata` nele (remoto `origin` no GitHub).
 
 ## O usuário
@@ -237,6 +237,26 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - "Saiu antes" só para ticket que a própria automação não encerrou; a
     entrada sem resposta só casa com negócio depois do 1º envio da operação
     e nunca com ticket de outra operação.
+- **Conta real (parte 5; `ordens_real.py`, `core/ponte.py`, `core/comandos.py`):**
+  - **Um terminal MT5 por processo.** A captura e a Ordens real têm cada uma o
+    seu `mt5.initialize(path=…)`; nunca trocar de conta dentro do mesmo processo.
+  - **A captura só abre o terminal da conta DEMO**; a real só abre o da conta
+    real, pelo caminho cadastrado em `contas.terminal`.
+  - **O tipo da conta é conferido a cada volta** (login e `trade_mode`: DEMO na
+    captura, REAL na real). Conta errada = chamado `conta_errada`, nada sai.
+  - **Ponte `data/ao_vivo/desejados.json`:** escrita atômica, com batimento
+    (`vivo_em`) em toda volta da captura. A real só age com desejado de até 5 s
+    (senão é indisponível: só protege).
+  - **Ack `ack_real.json` de até 200 ms:** a demo espera a real tratar um `seq`
+    novo só quando o processo da real está vivo; sem ele a demo segue sem esperar.
+  - **Pastas de comando por conta:** `data/ao_vivo/comandos` (demo) e
+    `data/ao_vivo/comandos_real` (real). Cada processo lê só a sua.
+  - **`zerar_tudo` vai para as duas pastas**, sem ler o banco.
+  - **`ordens_eventos.origem`** (`demo` ou `real`): todo leitor de eventos filtra
+    por origem. Quem espelha a real no banco é a captura, nunca o processo da real.
+  - **Ordem de teste é só demo**: a real recusa e ela não depende do Envio.
+  - **Dado protegido:** `data/ao_vivo/ordens/real/*.jsonl` nunca se apaga (é o
+    diário write-ahead da conta real, como o da demo).
 - **Nunca passe dicionário (ou qualquer coisa que não seja componente) como
   filho de `html.*`.** O Dash 4 falha ao desenhar e, em silêncio, devolve o
   estado de OUTROS componentes: o menu e as sub-telas voltavam sozinhos para
@@ -258,13 +278,13 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 
 ## Documentos: qual confiar
 
-| Documento | Estado (15/10/2026) |
+| Documento | Estado (21/10/2026) |
 |---|---|
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
 | `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
-| `CHANGELOG.md` | atualizado até a parte 4 do Ao vivo (ordens na demo); **não cobre variantes, portfólio nem gatilho** |
+| `CHANGELOG.md` | atualizado até a parte 5 (conta real, 21/10/2026); **não cobre variantes, portfólio nem gatilho** |
 | `README.md` | atualizado até a parte 4 (papel e demo, `iniciar.bat`); o texto do MVP segue como história |
 | `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 15/10/2026 (incubação, portfólio e demo) |
 
@@ -291,7 +311,7 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    (branch `live-trading`, 16 tarefas). Spec:
    `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md`; decisões em
    `...-ordens-decisoes.md`. O **Envio de ordens nasce desligado** e registra
-   "seria enviada". Conta real fica fora desta parte. Pausar com posição
+   "seria enviada". Conta real ficou para a parte 5. Pausar com posição
    aberta encerra na hora.
    **Situação em 15/10/2026:** o usuário dispensou o ensaio de um pregão
    inteiro. A **ordem de teste** na demo passou (entrada 149 ms, proteção
@@ -322,6 +342,19 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    backup antes; o hash gravado é conferido também pela receita de hash do
    commit antigo. Os planos #5 e #6 foram reassinados assim em 18/10/2026
    (backup em `C:\Users\mrRobot\Documents\Neturna\backups\2026-10-18-antes-resign-hash`).
+5. **Conta real** ✅ **implementada** (21/10/2026). Spec:
+   `docs/superpowers/specs/2026-10-19-conta-real-design.md`. A conta real roda
+   **em paralelo com a demo, com a real primeiro**, pelo processo próprio
+   **"Ordens real"** (`ordens_real.py`, aberto pelo `iniciar.bat`): lê os
+   desejados que a captura publica e manda ordens só na conta real, pelo
+   terminal dela. A captura segue com a demo. O Envio da conta real tem o
+   mesmo interruptor de dois cliques da demo e **nasce desligado**; ligar é
+   decisão do usuário.
+   **Vigia de stop e alvo** (21/10, commits `d987d91`..`cf8540c`): o papel
+   sai no **toque** do stop ou do alvo, no candle em formação, sem esperar o
+   fim do candle. A corretora tem 1 s para executar o stop/alvo tocado; depois
+   disso a automação sai a mercado e abre chamado. Execução assim sai marcada
+   como "fora do mercado" e fica fora da derrapagem.
    Ideias para depois: recursos com LLM fora do caminho da ordem; aba Conta.
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
 
@@ -364,5 +397,11 @@ Depois de qualquer mudança de tela, avise em destaque: **feche e abra o
 feche também a janela **Dataframe - Captura** antes de reabrir o
 `iniciar.bat`: a captura antiga segura a trava e a nova sai calada (código 4),
 então reabrir só o `iniciar.bat` deixa o código velho gravando.
+
+O `iniciar.bat` abre **três** janelas: **Dataframe - Captura** (`captura.bat`),
+**Dataframe - Ordens real** (`ordens_real.bat`) e a do app. Se mudou
+`core/ordens.py`, `core/corretora.py`, `core/papel_vivo.py`, `core/ponte.py`
+ou `ordens_real.py`, feche **as duas** janelas (Captura e Ordens real) antes
+de reabrir o `iniciar.bat`, pelo mesmo motivo da trava.
 
 Só use agente onde ele poupa trabalho real; o resto faça direto.

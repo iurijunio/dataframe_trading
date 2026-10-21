@@ -1981,8 +1981,6 @@ body{
 .av-sw-on::after{left:15px;background:var(--pos);}
 .av-btn-principal .av-sw:not(.av-sw-on)::after{background:var(--accent);}
 .av-chave{display:inline-flex;align-items:center;}
-.av-chave-off{display:inline-flex;align-items:center;gap:0;font-size:var(--fs-sm);color:var(--muted);}
-.av-chave-off .av-sw{opacity:.45;}
 
 /* portfolio: uma linha por conta */
 .av-pf-power{margin-left:auto;padding-left:12px;border-left:1px solid var(--line);
@@ -2102,5 +2100,3 @@ body{
 .av-acoes-contas .av-nova-conta[open]{flex-basis:100%;}
 .av-acoes-contas .av-aviso-mt5{flex-basis:100%;align-self:flex-start;}
 .av-acoes-contas .av-aviso-mt5:empty{display:none;}
-.av-tg-indisp{opacity:.45;cursor:not-allowed;}
-.av-chave-off .op-tg{padding:4px 8px;}
