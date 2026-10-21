@@ -893,3 +893,55 @@ def test_etiquetas_de_execucao_seguem_as_faixas_da_spec():
 def test_confirmar_do_envio_nao_troca_o_nome_da_chave():
     rot, cls = OP.estado_botao("envio-real-desligar", 3, "envio-real-desligar:3")
     assert rot == "Real" and "av-armado" in cls
+
+
+# ------------------------------------ Ordem de teste na conta real (botão)
+def _acoes(botoes):
+    out = []
+
+    def varre(c):
+        if c is None or isinstance(c, (str, int, float)):
+            return
+        if isinstance(c, (list, tuple)):
+            for x in c:
+                varre(x)
+            return
+        idd = getattr(c, "id", None)
+        if isinstance(idd, dict) and idd.get("type") == "av-op-acao":
+            out.append((idd["acao"], idd["id"], c))
+        varre(getattr(c, "children", None))
+    varre(botoes)
+    return out
+
+
+def test_teste_real_so_com_conta_real_no_portfolio():
+    pf = {"portfolio_id": 1, "ligado": True}
+    sem = _acoes(OP.botoes_portfolio(pf, None, conta_id=3, envio=True))
+    assert [a for a, _, _ in sem if a == "teste-real"] == []
+    com = _acoes(OP.botoes_portfolio(pf, None, conta_id=3, envio=True,
+                                     real_id=9, envio_real=True))
+    ordem = [a for a, _, _ in com]
+    # logo depois do Envio Real, antes do Demo
+    assert ordem.index("teste-real") == ordem.index("envio-real-desligar") + 1
+    assert ordem.index("teste-real") < ordem.index("envio-desligar")
+    _, alvo, botao = next(x for x in com if x[0] == "teste-real")
+    assert alvo == 9 and botao.title.startswith("Ordem de teste na conta REAL")
+    assert botao.children == "Teste"
+
+
+def test_teste_real_armado_pede_confirmacao_e_so_grava_na_pasta_real(tmp_path, monkeypatch):
+    from core import comandos
+    from ui import callbacks_operacao as CO
+    monkeypatch.setattr(comandos, "PASTA_REAL", tmp_path / "real")
+    monkeypatch.setattr(comandos, "PASTA", tmp_path / "demo")
+    chave, aviso, feito = CO.acao("teste-real", 9, None)
+    assert chave == "teste-real:9" and not feito and "confirme" in aviso
+    assert not (tmp_path / "real").exists()
+    _, _, feito = CO.acao("teste-real", 9, chave)
+    assert feito
+    arquivos = list((tmp_path / "real").glob("*.json"))
+    assert len(arquivos) == 1
+    import json
+    cmd = json.loads(arquivos[0].read_text(encoding="utf-8"))
+    assert cmd["tipo"] == "ordem_teste" and cmd["conta_id"] == 9
+    assert not (tmp_path / "demo").exists()

@@ -254,7 +254,7 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - **`zerar_tudo` vai para as duas pastas**, sem ler o banco.
   - **`ordens_eventos.origem`** (`demo` ou `real`): todo leitor de eventos filtra
     por origem. Quem espelha a real no banco é a captura, nunca o processo da real.
-  - **Ordem de teste é só demo**: a real recusa e ela não depende do Envio.
+  - **Ordem de teste na conta do processo** (demo ou real, liberada na real em 21/10/2026): botão "Teste" ao lado do Envio da real; confere login, tipo cadastrado e trade_mode do MT5 antes de enviar; não depende do Envio.
   - **Dado protegido:** `data/ao_vivo/ordens/real/*.jsonl` nunca se apaga (é o
     diário write-ahead da conta real, como o da demo).
 - **Nunca passe dicionário (ou qualquer coisa que não seja componente) como

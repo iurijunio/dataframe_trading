@@ -84,6 +84,12 @@ _ACOES = {
                                                     tentativas=TENTATIVAS_BANCO),
                          "Envio de ordens da conta real ligado — as variantes "
                          "na fase real passam a operar na conta real"),
+    # a Ordem de teste da conta real: só grava o comando; quem executa é a
+    # captura real (o Motor da real), na pasta dela
+    "teste-real": (lambda cid: comandos.escrever(comandos.PASTA_REAL, "ordem_teste",
+                                                 conta_id=int(cid)),
+                   "Ordem de teste enviada — a captura real a executa na próxima "
+                   "volta; o resultado vai ao Diário"),
 }
 # os desligamentos do envio (com posições abertas pedem a contagem)
 _DESLIGAR_ENVIO = ("envio-desligar", "envio-real-desligar")
@@ -96,6 +102,8 @@ _CONFIRME = {
                            "ordens da conta real — isso encerra as posições reais",
     "envio-real-ligar": "confirme: clique de novo para LIGAR o envio de ordens na "
                         "conta real",
+    "teste-real": "confirme: clique de novo para mandar a ordem de teste na conta "
+                  "REAL (compra 1 contrato e encerra em ~10 s)",
     "membro-desligar": "confirme: clique de novo em Confirmar? para PAUSAR a variante",
     "membro-ligar": "confirme: clique de novo em Confirmar? para LIGAR a variante",
     "pf-desligar": "confirme: clique de novo em Confirmar? para DESLIGAR o portfólio",

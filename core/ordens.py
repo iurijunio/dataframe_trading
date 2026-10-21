@@ -867,12 +867,10 @@ class Motor:
                 falhou = True
         # 8. a "Ordem de teste": DEPOIS das ações das estratégias, uma etapa
         # por volta — nunca atrasa uma entrada nem uma saída delas
+        # vale na conta do processo (demo ou real): a OrdemTeste confere login,
+        # tipo cadastrado e trade_mode do MT5 contra `self.origem` antes de
+        # enviar (liberado na real a pedido do usuário em 21/10/2026)
         pedidos = [c for c in est.get("comandos") or [] if c.get("tipo") == "ordem_teste"]
-        if pedidos and self.origem == "real":
-            # a ordem de teste é só da conta demo: no processo da real ela é
-            # recusada antes de qualquer pré-condição, e nada sai
-            self.teste.recusar(pedidos, dia, agora, "ordem de teste só na conta demo")
-            pedidos = []
         try:
             self.teste.volta(mt5, foto=foto, dia=dia, agora=agora, pedidos=pedidos,
                              cid=cid, conta=conta, no_pregao=no_pregao,

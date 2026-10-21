@@ -731,14 +731,73 @@ def test_encerramento_para_se_a_conta_deixa_de_ser_demo(tmp_path):
     assert len(c.do_teste()) == n and ticket in c.mt5.posicoes
 
 
-def test_motor_real_recusa_ordem_de_teste_e_nao_envia_nada(tmp_path):
-    # o processo da conta real nunca manda a ordem de teste, nem com a conta
-    # real na mão: recusa com o motivo próprio, antes de qualquer pré-condição
+def test_motor_real_com_conta_real_faz_a_ordem_de_teste(tmp_path):
+    # liberado em 21/10/2026: o processo da real faz o teste na conta REAL
     mt5 = MT5Ordens(trade_mode=2)
     c = Cena(tmp_path, mt5=mt5)
     c.m = Motor(tmp_path, INST, origem="real", mono=c.rel)
     c.m.teste.agora_pc = lambda: PC
-    est = c.passo(comandos_=[pedido()], ret=retrato({2: conta(tipo="real")}))
-    assert not c.do_teste() and not mt5.enviados
-    assert [e["motivo"] for e in c.evs("teste_falhou")] == ["ordem de teste só na conta demo"]
-    assert est["teste"]["situacao"] == "recusado"
+    c.passo(comandos_=[pedido()], ret=retrato({2: conta(tipo="real")}))
+    assert mt5.enviados, "a entrada do teste tem de sair na conta real"
+    assert not [e for e in c.evs("teste_falhou")]
+
+
+def test_motor_real_numa_conta_demo_nao_faz_a_ordem_de_teste(tmp_path):
+    mt5 = MT5Ordens(trade_mode=0)
+    c = Cena(tmp_path, mt5=mt5)
+    c.m = Motor(tmp_path, INST, origem="real", mono=c.rel)
+    c.m.teste.agora_pc = lambda: PC
+    c.passo(comandos_=[pedido()], ret=retrato({2: conta(tipo="real")}))
+    assert not mt5.enviados
+
+
+# ------------------------------------- a conta do processo (demo ou real)
+class _MotorDeOrigem:
+    def __init__(self, origem):
+        self.origem, self.tick = origem, 5.0
+
+    def mono(self):
+        return 0.0
+
+
+def _mt5_da_conta(trade_mode):
+    return NS(account_info=lambda: NS(trade_mode=trade_mode),
+              ACCOUNT_TRADE_MODE_DEMO=0, ACCOUNT_TRADE_MODE_CONTEST=1,
+              ACCOUNT_TRADE_MODE_REAL=2)
+
+
+def _pre(origem, trade_mode, tipo_conta):
+    t = OT.OrdemTeste(_MotorDeOrigem(origem))
+    t.agora_pc = lambda: datetime(2026, 10, 21, 10, 0, 5)
+    foto = NS(algo_ligado=True, parcial=False, posicoes=[], ordens=[])
+    c = {"id": 1, "conta_id": 5, "criado_em": "2026-10-21T10:00:00"}
+    return t._pre_condicao(_mt5_da_conta(trade_mode), c, foto=foto, cid=5,
+                           conta={"tipo": tipo_conta}, no_pregao=True,
+                           simbolo="WINV26", contrato_ok=True, travada=False,
+                           zerar=False)
+
+
+def test_processo_real_aceita_so_conta_real():
+    assert _pre("real", 2, "real") is None
+
+
+def test_processo_real_recusa_conta_demo_no_mt5():
+    assert _pre("real", 0, "real") == "a conta do MT5 não é REAL"
+
+
+def test_processo_real_recusa_conta_nao_cadastrada_como_real():
+    assert _pre("real", 2, "demo") == "a conta logada não está cadastrada como real"
+
+
+def test_processo_demo_continua_exigindo_demo():
+    assert _pre("demo", 0, "demo") is None
+    assert _pre("demo", 2, "demo") == "a conta do MT5 não é DEMO"
+    assert _pre("demo", 0, "real") == "a conta logada não está cadastrada como demo"
+
+
+def test_encerramento_so_mexe_na_conta_do_processo():
+    mt5 = _mt5_da_conta(2)
+    assert OT.OrdemTeste(_MotorDeOrigem("real"))._na_conta_do_processo(mt5)
+    assert not OT.OrdemTeste(_MotorDeOrigem("demo"))._na_conta_do_processo(mt5)
+    assert OT.OrdemTeste(_MotorDeOrigem("demo"))._na_conta_do_processo(_mt5_da_conta(0))
+    assert not OT.OrdemTeste(_MotorDeOrigem("real"))._na_conta_do_processo(_mt5_da_conta(0))

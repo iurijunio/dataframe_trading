@@ -1,4 +1,5 @@
-"""A "Ordem de teste": prova o caminho real de ordem na conta demo.
+"""A "Ordem de teste": prova o caminho real de ordem na conta do processo
+(demo ou real).
 
 Brief: .superpowers/sdd/2026-10-09-ao-vivo-ordens/ordem-teste-brief.md.
 Com o Envio desligado o ensaio só passa o pedido pelo `order_check`; aqui
@@ -68,6 +69,8 @@ class OrdemTeste:
 
     def __init__(self, motor, agora_pc=datetime.now):
         self.m = motor
+        # a conta do processo (demo ou real): a mesma do Motor que a executa
+        self.origem = motor.origem
         # relógio do PC: o mesmo que carimbou o `criado_em` do comando
         self.agora_pc = agora_pc
         self.atual: dict | None = None
@@ -123,18 +126,18 @@ class OrdemTeste:
         if self.atual is not None:
             return "já há um teste em andamento"
         if c.get("conta_id") is None or int(c["conta_id"]) != cid:
-            return "o MT5 não está logado na conta demo deste pedido"
-        if (conta or {}).get("tipo") != "demo":
-            return "a conta logada não está cadastrada como demo"
-        # ACCOUNT_TRADE_MODE_DEMO (mql5.com: constants/environment_state/
+            return f"o MT5 não está logado na conta {self._nome()} deste pedido"
+        if (conta or {}).get("tipo") != self.origem:
+            return f"a conta logada não está cadastrada como {self._nome()}"
+        # ACCOUNT_TRADE_MODE_DEMO / _REAL (mql5.com: constants/environment_state/
         # accountinformation; account_info() traz trade_mode — python_metatrader5/
         # mt5accountinfo_py). Lido agora, não da foto: é a última barreira
         # antes de uma ordem de verdade
         info = mt5.account_info()
         if info is None:
             return "dados da conta ilegíveis"
-        if int(getattr(info, "trade_mode", -1)) != int(mt5.ACCOUNT_TRADE_MODE_DEMO):
-            return "a conta do MT5 não é DEMO"
+        if not self._conta_do_processo(mt5, info):
+            return f"a conta do MT5 não é {self._nome().upper()}"
         if not no_pregao:
             return "fora do pregão"
         if not foto.algo_ligado:
@@ -241,16 +244,25 @@ class OrdemTeste:
             return "espera"
         return "agora"
 
-    def _demo(self, mt5) -> bool:
-        """A conta do MT5 é DEMO agora? Só nela a sequência encerra uma
-        posição com o magic do teste (numa conta real o mesmo número pode ser
-        de outra coisa)."""
+    def _nome(self) -> str:
+        return "real" if self.origem == "real" else "demo"
+
+    def _conta_do_processo(self, mt5, info) -> bool:
+        """`info` é a conta do MT5 agora: o trade_mode tem de ser o da conta do
+        processo (REAL no processo da real, DEMO no da demo)."""
+        esperado = (mt5.ACCOUNT_TRADE_MODE_REAL if self.origem == "real"
+                    else mt5.ACCOUNT_TRADE_MODE_DEMO)
+        return int(getattr(info, "trade_mode", -1)) == int(esperado)
+
+    def _na_conta_do_processo(self, mt5) -> bool:
+        """A conta do MT5 é a do processo agora? Só nela a sequência encerra
+        uma posição com o magic do teste (numa conta de outro tipo o mesmo
+        número pode ser de outra coisa)."""
         try:
             info = mt5.account_info()
         except Exception:
             return False
-        return info is not None and int(getattr(info, "trade_mode", -1)) == int(
-            mt5.ACCOUNT_TRADE_MODE_DEMO)
+        return info is not None and self._conta_do_processo(mt5, info)
 
     def _enviar_com_preenchimento(self, mt5, montar, info):
         """O fallback de preenchimento do caminho real: modo recusado com
@@ -496,8 +508,8 @@ class OrdemTeste:
         if not any(p.magic == MAGIC for p in foto.posicoes) and \
                 not any(o.get("magic") == MAGIC for o in foto.ordens):
             return
-        if not self._demo(mt5):
-            return            # conta não DEMO: o magic não é necessariamente nosso
+        if not self._na_conta_do_processo(mt5):
+            return            # conta fora do processo: o magic não é necessariamente nosso
         tickets = [p.ticket for p in foto.posicoes if p.magic == MAGIC]
         dia.registrar("teste", quando=agora, etapa=0, ticket=tickets[0] if tickets else None,
                       motivo="posição de teste que sobrou: encerrando")
@@ -526,8 +538,8 @@ class OrdemTeste:
             return
         if t["ultimo_envio"] is not None and not self._no_pregao:
             return            # mercado fechado: só a 1ª tentativa; o resto no pregão
-        if not self._demo(mt5):
-            return            # nunca mexe no magic do teste fora da conta DEMO
+        if not self._na_conta_do_processo(mt5):
+            return            # nunca mexe no magic do teste fora da conta do processo
         t["ultimo_envio"] = m
         recusou = False
         for o in ords:

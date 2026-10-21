@@ -253,6 +253,8 @@ _BOTOES = {
     "envio-ligar": ("Demo", "btn-ghost op-tg op-tg-demo"),
     "envio-real-desligar": ("Real", "btn-ghost op-tg op-tg-real op-tg-on"),
     "envio-real-ligar": ("Real", "btn-ghost op-tg op-tg-real"),
+    # a Ordem de teste da conta real: ao lado do Envio Real (dois cliques)
+    "teste-real": ("Teste", "btn-ghost op-bt op-bt-mini"),
 }
 # o nome de cada botão para o mouse e o leitor de tela
 _NOMES_BOTAO = {"membro-desligar": "Pausar variante",
@@ -262,7 +264,8 @@ _NOMES_BOTAO = {"membro-desligar": "Pausar variante",
                 "envio-desligar": "Envio de ordens da conta demo ligado",
                 "envio-ligar": "Envio de ordens da conta demo desligado",
                 "envio-real-desligar": "Envio de ordens da conta real ligado",
-                "envio-real-ligar": "Envio de ordens da conta real desligado"}
+                "envio-real-ligar": "Envio de ordens da conta real desligado",
+                "teste-real": "Ordem de teste na conta real"}
 
 
 def estado_botao(acao, alvo, armado) -> tuple[str, str]:
@@ -1248,13 +1251,32 @@ def _conta_curta(nome: str) -> str:
     return nome
 
 
+_TITULO_TESTE_REAL = ("Ordem de teste na conta REAL: compra 1 contrato, põe stop e "
+                      "alvo a 100 pontos, confere e encerra em ~10 s. Custa a "
+                      "diferença de compra e venda e os custos. Dois cliques.")
+
+
+def botao_teste_real(conta_real_id, armado=None):
+    """Ao lado do Envio Real: a Ordem de teste na conta real (dois cliques).
+    Sem conta real no portfólio: nada."""
+    if conta_real_id is None:
+        return None
+    rotulo, classe = estado_botao("teste-real", conta_real_id, armado)
+    return html.Button(
+        rotulo, n_clicks=0, title=_TITULO_TESTE_REAL, className=classe,
+        **{"aria-label": "Ordem de teste na conta real"},
+        id={"type": "av-op-acao", "acao": "teste-real", "id": conta_real_id})
+
+
 def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None,
                      real_id=None, envio_real=None) -> list:
     """A direita da linha do portfólio: Envio (?), a chave Real (só com conta
-    real no portfólio), a chave Demo, um separador e o power. O power para
-    o papel das duas contas (o title diz isso)."""
+    real no portfólio) e o botão Teste da conta real logo depois dela, a
+    chave Demo, um separador e o power. O power para o papel das duas contas
+    (o title diz isso)."""
     pid = pf["portfolio_id"]
     chaves = [interruptor_envio(real_id, envio_real, armado, tipo="real"),
+              botao_teste_real(real_id, armado),
               interruptor_envio(conta_id, envio, armado)]
     chaves = [c for c in chaves if c is not None]
     antes = []
