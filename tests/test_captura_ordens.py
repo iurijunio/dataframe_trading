@@ -24,6 +24,7 @@ sys.path.insert(0, str(RAIZ))
 
 import captura as P  # noqa: E402
 from core import ao_vivo, diario_ordens, ordens, papel, papel_backtest  # noqa: E402
+from core import ponte  # noqa: E402
 from core import captura as C  # noqa: E402
 from core import db_manager as db  # noqa: E402
 from core import papel_vivo as PV  # noqa: E402
@@ -1055,3 +1056,96 @@ def test_toque_some_quando_o_candle_deixa_de_tocar(cena, mundo, monkeypatch):
     assert vistos[-1][mundo.lig].estado == PV.POSICAO
     assert vistos[-1][mundo.lig].toque_em is None
     assert cena.s._toque_em == {}
+
+
+# ------------------------------------------------------------------ ponte
+def test_ponte_publica_antes_do_passo(cena, monkeypatch):
+    real_escrever, real_passo = ponte.escrever, ordens.Motor.passo
+    linha = []
+
+    def escrever(dados):
+        linha.append("ponte")
+        return real_escrever(dados)
+
+    def passo(self, *a, **k):
+        linha.append("passo")
+        return real_passo(self, *a, **k)
+    monkeypatch.setattr(ponte, "escrever", escrever)
+    monkeypatch.setattr(ordens.Motor, "passo", passo)
+    cena.ir(_as(10, 0, 30))
+    assert "ponte" in linha and "passo" in linha
+    assert linha.index("ponte") < linha.index("passo")
+    assert ponte.ler_arquivo()["seq"] == cena.s._seq_ponte >= 1
+
+
+def test_seq_so_sobe_quando_o_conteudo_muda(cena):
+    cena.ir(_as(10, 0, 30))
+    s = cena.s
+    seq = s._seq_ponte
+    s._publicar_ponte(_as(10, 0, 31))         # mesmo conteúdo: seq parado
+    assert s._seq_ponte == seq and ponte.ler_arquivo()["seq"] == seq
+    s._disponivel = not s._disponivel         # conteúdo mudou: seq sobe
+    s._publicar_ponte(_as(10, 0, 32))
+    assert s._seq_ponte == seq + 1 and ponte.ler_arquivo()["seq"] == seq + 1
+
+
+def test_sem_ack_a_demo_segue_depois_de_200_ms(cena, monkeypatch):
+    monkeypatch.setattr(ponte, "ler_ack", lambda: None)
+    t0 = _time.monotonic()
+    assert cena.s._esperar_ack(5) is False
+    assert 0.19 <= _time.monotonic() - t0 <= 0.5
+
+
+def test_ack_que_ja_chegou_nao_espera(cena, monkeypatch):
+    monkeypatch.setattr(ponte, "ler_ack", lambda: 5)
+    t0 = _time.monotonic()
+    assert cena.s._esperar_ack(5) is True
+    assert _time.monotonic() - t0 < 0.1
+
+
+def test_ponte_quebrada_nao_para_a_volta_da_demo(cena, monkeypatch):
+    def quebra(*a, **k):
+        raise RuntimeError("disco sumiu")
+    monkeypatch.setattr(ponte, "serializar", quebra)
+    linha = []
+    real_passo = ordens.Motor.passo
+
+    def passo(self, *a, **k):
+        linha.append("passo")
+        return real_passo(self, *a, **k)
+    monkeypatch.setattr(ordens.Motor, "passo", passo)
+    cena.ir(_as(10, 0, 30))                   # não levanta
+    assert linha == ["passo"]
+
+
+def test_sem_processo_da_real_publicar_nao_espera(cena, monkeypatch):
+    cena.ir(_as(10, 0, 30))                   # sem real_vivo.json: real inativa
+    cena.s._disponivel = not cena.s._disponivel
+    acks = []
+    monkeypatch.setattr(ponte, "ler_ack", lambda: acks.append(1) or None)
+    t0 = _time.monotonic()
+    cena.s._publicar_ponte(_as(10, 0, 31))    # seq novo, mas sem a real
+    assert _time.monotonic() - t0 < 0.1
+    assert acks == []
+    assert ponte.ler_arquivo()["seq"] == cena.s._seq_ponte
+
+
+def test_real_viva_sem_ack_espera_ate_200_ms(cena, monkeypatch):
+    cena.ir(_as(10, 0, 30))
+    ponte.gravar_vivo_real()
+    cena.s._disponivel = not cena.s._disponivel
+    monkeypatch.setattr(ponte, "ler_ack", lambda: None)
+    t0 = _time.monotonic()
+    cena.s._publicar_ponte(_as(10, 0, 31))
+    assert 0.19 <= _time.monotonic() - t0 <= 0.5
+
+
+def test_real_viva_com_ack_segue_logo(cena, monkeypatch):
+    cena.ir(_as(10, 0, 30))
+    ponte.gravar_vivo_real()
+    cena.s._disponivel = not cena.s._disponivel
+    novo = cena.s._seq_ponte + 1              # o seq que a publicação vai usar
+    monkeypatch.setattr(ponte, "ler_ack", lambda: novo)
+    t0 = _time.monotonic()
+    cena.s._publicar_ponte(_as(10, 0, 31))
+    assert _time.monotonic() - t0 < 0.1

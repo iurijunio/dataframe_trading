@@ -38,13 +38,14 @@ from core import captura as C
 from core import comandos, contrato_dia, diario_ordens, ordens, papel
 from core import corretora as K
 from core import db_manager as db
-from core import papel_backtest, papel_vivo
+from core import papel_backtest, papel_vivo, ponte
 from core import rollovers as roll
 from core.mt5_source import barras_de_taxas
 
 SAIR_SEM_REABRIR = 3      # configuração: reabrir não resolve
 OUTRA_INSTANCIA = 4       # já há uma captura rodando: o .bat sai calado
 PASTA = db.DATA / "ao_vivo"
+ESPERA_ACK_S = 0.2        # quanto a demo espera a real tratar um seq novo (R11)
 
 log = logging.getLogger("captura")
 
@@ -271,7 +272,11 @@ class Servico:
         self._formacao = None           # (máxima, mínima) do minuto em formação
         self._toque_em: dict = {}       # ligação -> hora da primeira volta tocada
         self._disponivel = False
-        self._versao_papel = 0          # sobe quando retrato/aquecimento mudam
+        # ponte com a real: o seq sobe só quando o conteúdo publicado muda
+        # (reinício zera; a real compara "mudou", não "aumentou")
+        self._seq_ponte = 0
+        self._ponte_conteudo = None
+        self._versao_papel = 0         # sobe quando retrato/aquecimento mudam
         self._ordens_dia = None
         self._contrato_falha = None     # último motivo logado (sem repetir no log)
         # O diário das ordens vai ao banco na escrita que a volta já abre;
@@ -1060,6 +1065,12 @@ class Servico:
             self._vigiar_preco(srv)
         self._calcular_desejados(srv)
         self._aplicar_toque(srv)
+        # a ponte sai ANTES da demo: a real vê o que a demo vai fazer. Só
+        # chega aqui uma volta que calculou os desejados; nos retornos
+        # antecipados acima (MT5 fora, fora do pregão sem posição, sem
+        # relógio) nada é publicado e a real vê o arquivo velho, que só a
+        # protege (R9): é de propósito
+        self._publicar_ponte(srv)
         simbolo = (self.contrato_dia or {}).get("simbolo")
         est = self.motor.passo(
             self.mt5, agora_srv=srv, retrato=self.retrato,
@@ -1081,6 +1092,40 @@ class Servico:
         if (est.get("conta") or {}).get("conta_id") is not None:
             self._conta_logada = est["conta"]["conta_id"]
         self.ordens_estado = {**est, **self._ordens_extra()}
+
+    def _publicar_ponte(self, srv) -> None:
+        """Publica os desejados para o processo da conta real (spec
+        conta-real §4.2, R8–R11). O `seq` sobe só quando o conteúdo muda; a
+        falha de escrita não gasta o seq (a próxima volta tenta de novo) e
+        nunca levanta para a volta."""
+        try:
+            dados = ponte.serializar(self._desejados_ordens, self._disponivel,
+                                     self.contrato_dia, self._seq_ponte, srv)
+            conteudo = {k: v for k, v in dados.items()
+                        if k not in ponte.CAMPOS_VIVOS}
+            novo = conteudo != self._ponte_conteudo
+            if novo:
+                dados["seq"] = self._seq_ponte + 1
+            if not ponte.escrever(dados) or not novo:
+                return
+            self._seq_ponte, self._ponte_conteudo = dados["seq"], conteudo
+            # sem o processo da real vivo não há quem responda o ack: a demo
+            # segue sem esperar (um seq novo não pode atrasar a ordem)
+            if ponte.real_ativo():
+                self._esperar_ack(self._seq_ponte)
+        except Exception:
+            log.exception("ponte: não consegui publicar os desejados")
+
+    def _esperar_ack(self, seq) -> bool:
+        """Espera a real tratar o `seq` por até 200 ms (laço de 10 ms). Sem
+        ack a demo segue: a real fora não segura a demo (R11)."""
+        fim = time.monotonic() + ESPERA_ACK_S
+        while True:
+            if ponte.ler_ack() == seq:
+                return True
+            if time.monotonic() >= fim:
+                return False
+            time.sleep(0.01)
 
     def _contrato_motivo(self, srv):
         """Por que o contrato não opera agora (None = opera). Sem contrato

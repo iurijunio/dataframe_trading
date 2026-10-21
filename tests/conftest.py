@@ -23,6 +23,7 @@ import corrigir_base  # noqa: E402
 from core import db_manager as db  # noqa: E402
 from core import comandos  # noqa: E402
 from core import diario_ordens  # noqa: E402
+from core import ponte  # noqa: E402
 from ui import data as ui_data  # noqa: E402
 
 
@@ -48,6 +49,9 @@ def _banco_isolado(tmp_path, monkeypatch):
     # processo da conta real do usuário
     monkeypatch.setattr(comandos, "PASTA_REAL",
                         tmp_path / "ao_vivo" / "comandos_real")
+    # desejados e ack da ponte: a real (processo da conta) le essa pasta; um
+    # teste que escrevesse nela faria a conta real agir sobre o teste
+    monkeypatch.setattr(ponte, "PASTA", tmp_path / "ao_vivo" / "ponte")
     # memoria da ultima leitura: sem zerar, um teste herdaria o estado do outro
     monkeypatch.setattr(ui_data, "_estado_ultimo", None)
     monkeypatch.setattr(ui_data, "_conferencia_vista", None)
