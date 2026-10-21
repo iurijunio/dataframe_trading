@@ -6,6 +6,7 @@ core devolve; nenhum teste lê o banco real nem o estado.json real.
 """
 from __future__ import annotations
 
+import re
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -523,7 +524,8 @@ def _linha_cmp(arvore, rotulo) -> list[str]:
             continue
         cels = tr.children if isinstance(tr.children, list) else [tr.children]
         if cels and textos(cels[0]).startswith(rotulo):
-            return [textos(c) for c in cels[1:]]
+            # a etiqueta bom/atenção/ruim é texto da célula; o valor vem antes
+            return [re.sub(r" (bom|atenção|ruim)$", "", textos(c)) for c in cels[1:]]
     raise AssertionError(rotulo)
 
 
@@ -723,6 +725,9 @@ def test_curva_e_comparativo_usam_o_dia_da_tela(monkeypatch):
     monkeypatch.setattr(PL, "curva_vs_esperado", anota("curva", curva))
     # parte 4: o interruptor do Envio lê a conta demo
     monkeypatch.setattr(PL, "envio_da_conta", lambda con, cid: False)
+    # as operações e o total de cada conta, por variante (painel em partes)
+    monkeypatch.setattr(PL, "operacoes_demo", lambda *a, **k: [])
+    monkeypatch.setattr(PL, "total_por_ligacao", lambda *a, **k: {})
     CO.montar(1, None, None, None)
     CO.ler_curva(1, None)
     CO.ler_curva(1, 1)
@@ -815,3 +820,76 @@ def test_cabecalho_numa_linha_como_o_rascunho():
     assert " ".join(textos(sit).split()).startswith("· papel 14:37:01")
     # todo (?) do cabeçalho continua lá: contrato, conta, operando, pregão
     assert len([x for x in todos(cab) if "dica-mark" in classes(x)]) == 4
+
+
+# --------------------------------------------- variantes em partes (REAL/DEMO)
+def _ids(arvore):
+    return [x.id for x in todos(arvore) if isinstance(getattr(x, "id", None), dict)]
+
+
+def test_variante_real_aparece_nas_duas_partes_com_pausa_so_na_real():
+    v = _var(fase="real", contratos_real=2)
+    est = {"real": {1: {"hoje": 50.0, "n": 1, "acerto": "1/1", "total": 120.0}},
+           "demo": {1: {"hoje": 20.0, "n": 1, "acerto": "1/1", "total": 80.0}}}
+    arv = OP.cartoes_por_conta([v], None, est)
+    partes = [textos(x) for x in arv if "op-var-parte" in classes(x)]
+    assert partes == ["REAL", "DEMO"]
+    ids = _ids(arv)
+    # pausar só na parte REAL (a variante está em real)
+    assert ids.count({"type": "av-op-acao", "acao": "membro-desligar", "id": 1}) == 1
+    # um ✎ por parte, cada um com a conta dele
+    assert {"type": "av-op-ctr-real", "id": 1} in ids
+    assert {"type": "av-op-ord-ctr", "id": 1} in ids
+    # o resultado é o da conta de cada parte
+    t = textos(arv)
+    assert "+R$ 50" in t and "+R$ 20" in t
+
+
+def test_variante_demo_so_na_parte_demo_com_pausa_la():
+    v = _var(fase="demo")
+    arv = OP.cartoes_por_conta([v], None, {"real": {}, "demo": {}})
+    partes = [textos(x) for x in arv if "op-var-parte" in classes(x)]
+    assert partes == ["REAL", "DEMO"]
+    ids = _ids(arv)
+    assert ids.count({"type": "av-op-acao", "acao": "membro-desligar", "id": 1}) == 1
+    assert {"type": "av-op-ctr-real", "id": 1} not in ids
+
+
+def test_estatisticas_por_conta_hoje_op_acerto_e_total():
+    ops = [{"ligacao_id": 1, "situacao": "fechada", "resultado": 30.0},
+           {"ligacao_id": 1, "situacao": "fechada", "resultado": -10.0},
+           {"ligacao_id": 1, "situacao": "aberta", "resultado": 5.0}]
+    st = OP.estatisticas(ops, {1: {"total": 99.0}}, [1, 2])
+    assert st[1] == {"hoje": 25.0, "n": 3, "acerto": "1/2", "total": 99.0}
+    assert st[2] == {"hoje": 0.0, "n": 0, "acerto": None, "total": None}
+
+
+# ----------------------------------------- etiquetas bom/atenção/ruim (§5.2)
+def _celulas_brutas(arvore, rotulo):
+    for tr in todos(arvore):
+        if type(tr).__name__ == "Tr":
+            cels = tr.children if isinstance(tr.children, list) else [tr.children]
+            if cels and textos(cels[0]).startswith(rotulo):
+                return [textos(c) for c in cels[1:]]
+    raise AssertionError(rotulo)
+
+
+def test_etiquetas_de_execucao_seguem_as_faixas_da_spec():
+    demo = {"n": 5, "mesmo_minuto": 0.96, "derrapagem_extra": 1.5,
+            "atraso_ms": 1200, "rejeitadas": 0, "fator_lucro": 1.0, "acerto": 0.5}
+    esperado = {"n": 30, "fator_lucro": 1.0, "acerto": 0.6}
+    arv = OP.tabela_comparativo({"esperado_wfa": esperado, "papel": {"n": 0},
+                                 "demo": demo, "real": None})
+    assert _celulas_brutas(arv, "Sinal no mesmo minuto")[2].endswith("bom")
+    assert _celulas_brutas(arv, "Derrapagem média")[2].endswith("atenção")
+    assert _celulas_brutas(arv, "Atraso médio")[2].endswith("ruim")
+    assert _celulas_brutas(arv, "Ordens rejeitadas")[2].endswith("bom")
+    # 0,5 contra 0,6 esperado: abaixo de 80% do esperado? 0,5 ≥ 0,48 → atenção
+    assert _celulas_brutas(arv, "Acerto")[2].endswith("atenção")
+    # a legenda com as três etiquetas
+    assert "bom" in textos(arv) and "atenção" in textos(arv) and "ruim" in textos(arv)
+
+
+def test_confirmar_do_envio_nao_troca_o_nome_da_chave():
+    rot, cls = OP.estado_botao("envio-real-desligar", 3, "envio-real-desligar:3")
+    assert rot == "Real" and "av-armado" in cls

@@ -314,19 +314,19 @@ def acao_chamado(nome, alvo, armado, escondidos, enviados,
             "stop e o alvo seguem na corretora até lá")
 
 
-def abrir_editor(lig, vars_) -> tuple:
+def abrir_editor(lig, vars_, conta: str = "demo") -> tuple:
     """(estilo, alvo, valor, título, antes) do editor de contratos."""
     v = next((x for x in vars_ or [] if x.get("ligacao_id") == lig), None)
     if v is None:
         raise PreventUpdate
-    proprio = v.get("contratos_demo")
+    proprio = v.get("contratos_real" if conta == "real" else "contratos_demo")
     plano = v.get("contratos")
     return ({"display": "flex"}, lig, "" if proprio is None else str(proprio),
-            f"Contratos na demo · {v.get('nome')}",
+            f"Contratos na {conta} · {v.get('nome')}",
             OR.contratos_antes(proprio, plano))
 
 
-def custo_editor(lig, valor):
+def custo_editor(lig, valor, conta: str = "demo"):
     """O custo de um stop com os contratos digitados, contra o limite."""
     if lig is None:
         return []           # editor fechado
@@ -338,7 +338,8 @@ def custo_editor(lig, valor):
         return html.Span("Vazio: a demo usa os contratos do plano.",
                          className="mut")
     try:
-        custo = AV.custo_de_um_stop(int(lig), n, tentativas=TENTATIVAS_BANCO)
+        custo = AV.custo_de_um_stop(int(lig), n, tentativas=TENTATIVAS_BANCO,
+                                    **_so_real(conta))
     except ValueError as e:
         return html.Span(str(e), className="aviso")
     except (duckdb.Error, RuntimeError):
@@ -347,18 +348,25 @@ def custo_editor(lig, valor):
     return OR.custo_stop_texto(n, custo)
 
 
-def salvar_editor(lig, valor) -> tuple[bool, str]:
+def _so_real(conta: str) -> dict:
+    """O argumento `conta` só vai às funções quando é a real (a demo usa o padrão
+    delas, e assim as chamadas da Estratégias continuam as mesmas)."""
+    return {} if conta == "demo" else {"conta": conta}
+
+
+def salvar_editor(lig, valor, conta: str = "demo") -> tuple[bool, str]:
     """(gravou, mensagem)."""
     if lig is None:
         return False, "nenhuma variante escolhida"
     try:
         n = OR.ler_contratos(valor)
-        AV.definir_contratos(int(lig), n, tentativas=TENTATIVAS_BANCO)
+        AV.definir_contratos(int(lig), n, tentativas=TENTATIVAS_BANCO,
+                             **_so_real(conta))
     except ValueError as e:
         return False, str(e)
     except (duckdb.Error, RuntimeError):
         return False, "banco ocupado, tente de novo"
-    return True, ("contratos da demo gravados — valem a partir da próxima "
+    return True, (f"contratos da {conta} gravados — valem a partir da próxima "
                   "operação" if n is not None else
                   "a demo volta a usar os contratos do plano na próxima operação")
 
@@ -406,7 +414,7 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
         pf = next((p for p in pfs if p["portfolio_id"] == pid), None)
         if pf is None:
             return pfs, None, None, None, None, None, None, None, None, None, \
-                None, None
+                None, None, None
         res = PL.resumo(con, pid, dia)
         vs = PL.variantes(con, pid, dia)
         ops = PL.operacoes_do_dia(con, pid, dia)
@@ -425,11 +433,16 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
         real_c = (res.get("contas") or {}).get("real")
         comp_real = PL.comparativo(con, pid, dia=dia, origem="real")
         envio_real = PL.envio_da_conta(con, real_c["conta_id"]) if real_c else None
+        # as operações de hoje e o total desde o plano, por conta: o painel de
+        # variantes em partes (REAL e DEMO) mostra o resultado de cada uma
+        contas = {origem: (PL.operacoes_demo(con, pid, dia, origem=origem),
+                           PL.total_por_ligacao(con, pid, dia, origem))
+                  for origem in ("demo", "real")}
         return (pfs, pf, res, vs, ops, alertas, comp, c_pf, faixas, envio,
-                comp_real, envio_real)
+                comp_real, envio_real, contas)
 
     (pfs, pf, res, vs, ops, alertas, comp, c_pf, faixas, envio,
-     comp_real, envio_real) = _ler(ler)
+     comp_real, envio_real, contas) = _ler(ler)
     if pf is None:
         msg = ("nenhum portfólio ainda — crie um na tela Portfólio e ligue em "
                "Ao vivo › Estratégias" if not pfs else "escolha um portfólio")
@@ -450,11 +463,15 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
     # contratos e fase vão junto: o editor do ✎ abre sem reler o banco
     vars_ = [{"ligacao_id": v["ligacao_id"], "nome": v["nome"], "cor": v["cor"],
               "contratos": v.get("contratos"),
-              "contratos_demo": v.get("contratos_demo"), "fase": v.get("fase")}
+              "contratos_demo": v.get("contratos_demo"),
+              "contratos_real": v.get("contratos_real"), "fase": v.get("fase")}
              for v in vs]
     filtro = filtro_atual if filtro_atual in [str(l) for l in nomes] else "todas"
     curva = curva_atual if curva_atual in nomes else (vs[0]["ligacao_id"]
                                                       if vs else None)
+    ligs = [v["ligacao_id"] for v in vs]
+    estat = {origem: OP.estatisticas(ops_c, tot_c, ligs)
+             for origem, (ops_c, tot_c) in contas.items()}
     if not vs:
         kpis = [OP._SEM_VARIANTES]
     else:
@@ -462,7 +479,8 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
                     "faixas": faixas, "aviso": c_pf.get("aviso")}
         kpis = OP.kpis(res, ops, esperado, nomes)
     return (cab, botoes, kpis,
-            OP.cabecalho_colunas() if vs else [], OP.cartoes(vs, armado),
+            OP.cabecalho_colunas_conta() if vs else [],
+            OP.cartoes_por_conta(vs, armado, estat),
             OP.risco_dia(res) if vs else [],
             OP.lista_alertas(alertas, nomes),
             OP.tabela_comparativo({**comp, "real": (comp_real or {}).get("demo")}),
@@ -979,19 +997,24 @@ def register(app):
         Output("av-op-ord-ctr-titulo", "children"),
         Output("av-op-ord-ctr-antes", "children"),
         Output("av-op-ord-ctr-erro", "children"),
+        Output("av-op-ord-ctr-conta", "data"),
         Input({"type": "av-op-ord-ctr", "id": ALL}, "n_clicks"),
+        Input({"type": "av-op-ctr-real", "id": ALL}, "n_clicks"),
         Input("av-op-ord-ctr-cancelar", "n_clicks"),
         State("av-op-vars", "data"),
         prevent_initial_call=True,
     )
-    def editor_ctr(_lapis, _cancelar, vars_):
+    def editor_ctr(_lapis, _lapis_real, _cancelar, vars_):
         gat = ctx.triggered_id
         valor = ctx.triggered[0]["value"] if ctx.triggered else None
         if not gat or not valor:
             raise PreventUpdate
         if gat == "av-op-ord-ctr-cancelar":
-            return ({"display": "none"}, None, no_update, no_update, no_update, "")
-        return (*abrir_editor(gat["id"], vars_), "")
+            return ({"display": "none"}, None, no_update, no_update, no_update, "",
+                    no_update)
+        # o ✎ da parte REAL abre o editor da conta real; o da DEMO, o da demo
+        conta = "real" if gat.get("type") == "av-op-ctr-real" else "demo"
+        return (*abrir_editor(gat["id"], vars_, conta), "", conta)
 
     @app.callback(
         Output("av-op-ord-ctr-custo", "children"),
@@ -999,10 +1022,11 @@ def register(app):
         # Input também: abrir outra variante com o mesmo valor no campo
         # não muda o `value`, e o custo ficaria o da anterior
         Input("av-op-ord-ctr-alvo", "data"),
+        State("av-op-ord-ctr-conta", "data"),
         prevent_initial_call=True,
     )
-    def custo_ctr(valor, lig):
-        return custo_editor(lig, valor)
+    def custo_ctr(valor, lig, conta):
+        return custo_editor(lig, valor, conta or "demo")
 
     @app.callback(
         Output("av-op-ord-ctr-pop", "style", allow_duplicate=True),
@@ -1013,12 +1037,13 @@ def register(app):
         State("av-op-ord-ctr-alvo", "data"),
         State("av-op-ord-ctr-valor", "value"),
         State("av-op-acao-versao", "data"),
+        State("av-op-ord-ctr-conta", "data"),
         prevent_initial_call=True,
     )
-    def salvar_ctr(n, lig, valor, versao):
+    def salvar_ctr(n, lig, valor, versao, conta):
         if not n:
             raise PreventUpdate
-        ok, msg = salvar_editor(lig, valor)
+        ok, msg = salvar_editor(lig, valor, conta or "demo")
         if not ok:
             return no_update, msg, no_update, no_update
         # sobe a versão: os cartões redesenham com o número novo

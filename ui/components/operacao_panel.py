@@ -269,6 +269,10 @@ def estado_botao(acao, alvo, armado) -> tuple[str, str]:
     """(rótulo, classe) do botão, armado ou não."""
     rotulo, classe = _BOTOES[acao]
     if armado == f"{acao}:{alvo}":
+        # o interruptor do Envio mantém o nome da conta no rótulo; o
+        # "Confirmar?" sai ao lado dele pelo CSS (`.av-armado`), como no v2
+        if acao.startswith("envio-"):
+            return rotulo, classe + " av-armado"
         return "Confirmar?", classe + " av-armado"
     return rotulo, classe
 
@@ -446,6 +450,148 @@ _SEM_VARIANTES = html.P(["nenhuma variante neste portfólio",
 def cartoes(vs: list[dict], armado) -> list:
     """Só os cartões: a caixa que rola fica fixa no layout (ver `bloco`)."""
     return [cartao_variante(v, armado) for v in vs] if vs else [_SEM_VARIANTES]
+
+
+# ---------------------------------------- variantes em duas partes (REAL/DEMO)
+_ST_VAZIO = {"hoje": 0.0, "n": 0, "acerto": None, "total": None}
+
+
+def estatisticas(ops: list[dict], total: dict | None, ligs: list) -> dict[int, dict]:
+    """Por variante, numa conta: Hoje (fechadas mais a aberta provisória), Op.
+    (executadas hoje), Acerto (ganhadoras sobre as fechadas de hoje) e Total
+    (desde o plano em vigor, de `papel_leitura.total_por_ligacao`). Variante
+    sem nada hoje aparece com zeros."""
+    cont: dict[int, dict] = {}
+    for o in ops or []:
+        s = cont.setdefault(o["ligacao_id"], {"hoje": 0.0, "n": 0, "g": 0, "f": 0})
+        if o.get("situacao") in ("fechada", "aberta"):
+            s["n"] += 1
+        if o.get("resultado") is not None:
+            s["hoje"] += float(o["resultado"])
+        if o.get("situacao") == "fechada":
+            s["f"] += 1
+            s["g"] += int(float(o.get("resultado") or 0) > 0)
+    out = {}
+    for lig in ligs:
+        s = cont.get(lig, {"hoje": 0.0, "n": 0, "g": 0, "f": 0})
+        t = (total or {}).get(lig)
+        out[lig] = {"hoje": s["hoje"], "n": s["n"],
+                    "acerto": f"{s['g']}/{s['f']}" if s["f"] else None,
+                    "total": t["total"] if t else None}
+    return out
+
+
+def _parte_titulo(origem: str, texto: str) -> html.Div:
+    """O título de uma parte do painel: REAL, DEMO ou PAPEL, na cor da conta."""
+    return html.Div(html.Span(texto, className=f"op-acc op-acc-{origem}"),
+                    className="op-var-parte")
+
+
+def _lapis_conta(v: dict, origem: str) -> html.Button:
+    """O ✎ da parte: a conta real tem id próprio (`av-op-ctr-real`) para não
+    repetir o da demo quando a variante aparece nas duas partes."""
+    if origem == "demo":
+        return _lapis(v)
+    return html.Button(icone("pencil", pequeno=True), n_clicks=0,
+                       className="ord-ctr-editar op-bt-mini",
+                       id={"type": "av-op-ctr-real", "id": v["ligacao_id"]},
+                       **{"aria-label": "Mudar contratos na real"},
+                       title="Mudar os contratos desta variante na conta real "
+                             "(o papel segue com os do plano) · contratos real: "
+                             f"{v.get('contratos_real') or 'do plano'}")
+
+
+def linha_da_conta(v: dict, origem: str, st: dict, armado) -> html.Div:
+    """Uma linha de uma parte (REAL, DEMO ou PAPEL): o resultado DA CONTA
+    (`st`), não o do papel. Pausar só na parte da fase da variante (a real
+    pausa a variante inteira); o ✎ muda os contratos daquela conta."""
+    lig = v["ligacao_id"]
+    fase = v.get("fase") or "papel"
+    ligada = bool(v.get("ligada", True))
+    acoes = []
+    if fase == origem:
+        if ligada:
+            acoes.append(_botao("membro-desligar", lig, armado,
+                                "as operações dela deixam de contar a partir de "
+                                "agora (o papel segue calculando, em cinza). "
+                                "Clique duas vezes para confirmar."))
+        else:
+            acoes.append(_botao("membro-ligar", lig, armado,
+                                "as operações dela voltam a contar. Clique duas "
+                                "vezes para confirmar."))
+    if origem in ("real", "demo"):
+        acoes.append(_lapis_conta(v, origem))
+    nome = v["nome"]
+    nome_cel = html.Div([amostra(v.get("cor"), ligada),
+                         html.Span(nome_curto(nome), className="op-nome", title=nome),
+                         *([_etiqueta("pausada", "cinza")] if not ligada else [])],
+                        className="op-var-c-nome")
+    acerto, acerto_title = _acerto(st.get("acerto"))
+    return html.Div([
+        nome_cel,
+        html.Span(_rs(st.get("hoje")), className="op-var-v "
+                  + (_sinal(st.get("hoje")) or "")),
+        html.Span(str(st.get("n") or 0), className="op-var-v"),
+        html.Span(acerto, className="op-var-v", title=acerto_title),
+        html.Span(_rs(st.get("total")) if st.get("total") is not None else "—",
+                  className="op-var-v " + (_sinal(st.get("total")) or "")),
+        html.Div(acoes, className="op-var-c-acao"),
+    ], className="op-var-linha" + ("" if ligada else " op-var-off"))
+
+
+def cartoes_por_conta(vs: list[dict], armado, estat: dict) -> list:
+    """O painel de variantes em partes: REAL (em cima), DEMO e, se houver
+    variante só no papel, PAPEL. Variante em fase real aparece na REAL e na
+    DEMO, cada uma com o resultado da própria conta (`estat`, de
+    `estatisticas`); na parte PAPEL o resultado é o do papel."""
+    if not vs:
+        return [_SEM_VARIANTES]
+    out = []
+    partes = (
+        ("real", "REAL", lambda v: v.get("fase") == "real",
+         "nenhuma variante na fase real"),
+        ("demo", "DEMO", lambda v: v.get("fase") in ("demo", "real"),
+         "nenhuma variante na fase demo"),
+        ("papel", "PAPEL", lambda v: (v.get("fase") or "papel") == "papel", None),
+    )
+    for origem, titulo, filtro, vazio in partes:
+        linhas = [v for v in vs if filtro(v)]
+        if not linhas and vazio is None:
+            continue
+        out.append(_parte_titulo(origem, titulo))
+        if not linhas:
+            out.append(html.P(vazio, className="op-vazio-txt"))
+        for v in linhas:
+            if origem == "papel":
+                st = {"hoje": v.get("hoje"), "n": v.get("n_ops"),
+                      "acerto": v.get("acerto"), "total": v.get("acumulado")}
+            else:
+                st = (estat.get(origem) or {}).get(v["ligacao_id"], _ST_VAZIO)
+            out.append(linha_da_conta(v, origem, st, armado))
+    return out
+
+
+def cabecalho_colunas_conta():
+    """O cabeçalho do painel em partes: Variante · Hoje · Op. · Acerto · Total
+    · ações (o Total é desde o plano em vigor, da conta da parte)."""
+    return html.Div([
+        _rotulo("Variante", "Ordem: posição aberta primeiro, depois o "
+                "resultado do dia. O ponto é a cor da variante no gráfico. Ao "
+                "lado do nome, a fase. No fim da linha: pausar ou ligar (dois "
+                "cliques), na parte da fase da variante, e o ✎, que muda os "
+                "contratos daquela conta."),
+        _rotulo("Hoje", "Resultado de hoje desta conta (fechadas mais a aberta "
+                "provisória). Bom: positivo. Ruim: perda maior que a perda "
+                "média do plano."),
+        _rotulo("Op.", "Operações executadas hoje nesta conta. Bom: perto da "
+                "média por pregão do plano. Atenção: zero num dia com movimento."),
+        _rotulo("Acerto", "Ganhadoras sobre fechadas hoje, em % (o mouse em cima "
+                "mostra quantas de quantas). Um dia sozinho diz pouco."),
+        _rotulo("Total", "Resultado desde o plano em vigor, só operações fechadas, "
+                "líquido dos custos do plano. Bom: positivo e subindo. Ruim: "
+                "negativo e abaixo da faixa esperada."),
+        html.Span(),
+    ], className="op-var-cols")
 
 
 def cabecalho_colunas():
@@ -868,10 +1014,44 @@ def _atraso(ms) -> str:
 _SO_CONTA = ("mesmo_minuto", "derrapagem_extra", "atraso_ms", "rejeitadas")
 
 
+def _tom_execucao(chave: str, m: dict | None, esp: dict | None) -> str | None:
+    """bom | atencao | ruim da linha, pelas faixas da spec §5.2 (no (?) de
+    cada linha): derrapagem ≤1 tick bom, ≤2 atenção; mesmo minuto ≥95% bom,
+    ≥80% atenção; atraso ≤300 ms bom, ≤1000 atenção; rejeitadas 0 bom, ≤2
+    atenção; fator de lucro e acerto ≥ o esperado bom, ≥80% dele atenção."""
+    v = (m or {}).get(chave)
+    if v is None:
+        return None
+    if chave == "mesmo_minuto":
+        return "bom" if v >= .95 else "atencao" if v >= .80 else "ruim"
+    if chave == "derrapagem_extra":
+        return "bom" if v <= 1 else "atencao" if v <= 2 else "ruim"
+    if chave == "atraso_ms":
+        return "bom" if v <= 300 else "atencao" if v <= 1000 else "ruim"
+    if chave == "rejeitadas":
+        return "bom" if v == 0 else "atencao" if v <= 2 else "ruim"
+    if chave in ("fator_lucro", "acerto"):
+        ref = (esp or {}).get(chave)
+        if ref is None:
+            return None
+        if v >= ref:
+            return "bom"
+        return "atencao" if v >= 0.8 * ref else "ruim"
+    return None
+
+
+_TOM_ETIQUETA = {"bom": ("bom", "verde"), "atencao": ("atenção", "ambar"),
+                 "ruim": ("ruim", "rosa")}
+
+
 def tabela_comparativo(c: dict):
-    """Esperado (WFA) × Papel × Demo × Real, por contrato (spec §6.7)."""
+    """Esperado (WFA) × Papel × Demo × Real, por contrato (spec §6.7 e §5.2).
+    Nas colunas de conta, cada linha de execução leva a etiqueta bom/atenção/
+    ruim contra a faixa da spec (o (?) da linha diz a faixa). Cores das
+    colunas: cinza esperado, violeta papel, ciano demo, laranja real."""
     cols = [c.get("esperado_wfa"), c.get("papel"), c.get("demo"), c.get("real")]
     contas = (False, False, True, True)
+    esperado = cols[0]
 
     def val(m, chave, fmt, conta):
         if m is None or chave in _SO_CONTA and not conta:
@@ -906,13 +1086,14 @@ def tabela_comparativo(c: dict):
          "acima. Ruim: negativo, ou menos da metade do esperado depois de "
          "30 operações."),
         ("Fator de lucro", "fator_lucro", _fator,
-         "Ganhos divididos pelas perdas. Bom: acima de 1,3. Ruim: abaixo "
-         "de 1 (perde mais do que ganha)."),
+         "Ganhos divididos pelas perdas. Bom: igual ou acima do esperado. "
+         "Atenção: entre 80% do esperado e o esperado. Ruim: abaixo de 80% "
+         "do esperado (ou abaixo de 1: perde mais do que ganha)."),
         ("Acerto", "acerto", lambda v: pct(v * 100, 0),
-         "Operações ganhadoras sobre o total. Bom: papel a até 5 pontos "
-         "percentuais do esperado. Ruim: 10 pontos ou mais abaixo do "
-         "esperado depois de 30 operações. O valor sozinho não diz se a "
-         "estratégia é boa."),
+         "Operações ganhadoras sobre o total. Bom: igual ou acima do "
+         "esperado. Atenção: entre 80% do esperado e o esperado. Ruim: abaixo "
+         "de 80% do esperado depois de 30 operações. O valor sozinho não diz "
+         "se a estratégia é boa."),
         ("Resultado total", "total", lambda v: _rs(v, 2),
          "Soma com o tamanho real de cada operação. Só fechadas: pode ser "
          "menor que o Acumulado lá em cima, que inclui a aberta."),
@@ -920,20 +1101,22 @@ def tabela_comparativo(c: dict):
         ("Sinal no mesmo minuto", "mesmo_minuto",
          lambda v: pct(v * 100, 0),
          "Entradas executadas no mesmo minuto do sinal do papel, sobre as "
-         "executadas desde o plano em vigor. Bom: 100%. Ruim: abaixo de 90%."),
+         "executadas desde o plano em vigor. Bom: 95% ou mais. Atenção: de "
+         "80% a 95%. Ruim: abaixo de 80%."),
         ("Derrapagem média", "derrapagem_extra",
          lambda v: ("+" if round(v, 1) > 0 else "") + OR._decimal(v) + " tick",
          "Ticks por ponta além do preço do papel (que já desconta a "
          "derrapagem do plano). Negativo = executou melhor que o papel. Bom: "
-         "perto de 0. Ruim: acima de 1 tick — o backtest está otimista."),
+         "até 1 tick. Atenção: de 1 a 2 ticks. Ruim: acima de 2 ticks — o "
+         "backtest está otimista."),
         ("Atraso médio da ordem", "atraso_ms", _atraso,
-         "Tempo entre mandar a entrada e a corretora executar. Bom: menos "
-         "de 1 s. Ruim: acima de 2 s."),
+         "Tempo entre mandar a entrada e a corretora executar. Bom: até 300 ms. "
+         "Atenção: até 1 s. Ruim: acima de 1 s."),
         ("Ordens rejeitadas", "rejeitadas", lambda v: inteiro(int(v)),
          "Ordens que a corretora recusou (entrada, saída, proteção). Conta "
          "cada recusa: uma operação pode somar várias. Recusadas, em Papel × "
-         "demo, conta operações e por isso pode dar menos. Bom: zero. Ruim: "
-         "recusa todo dia."),
+         "demo, conta operações e por isso pode dar menos. Bom: zero. "
+         "Atenção: até 2. Ruim: mais de 2."),
     ]
     corpo = []
     for linha in linhas:
@@ -945,17 +1128,27 @@ def tabela_comparativo(c: dict):
         celulas = [html.Td(_rotulo(rot, explica), className="k")]
         for m, conta in zip(cols, contas):
             texto = val(m, chave, fmt, conta)
-            celulas.append(html.Td(texto,
+            filhos = [texto]
+            tom = _tom_execucao(chave, m, esperado) if conta and texto != "—" else None
+            if tom:
+                rot_tom, cor_tom = _TOM_ETIQUETA[tom]
+                filhos.append(_etiqueta(rot_tom, cor_tom))
+            celulas.append(html.Td(filhos if tom else texto,
                                    className="n" + ("" if texto != "—" else " mut")))
         corpo.append(html.Tr(celulas))
-    # cada coluna com a sua cor (cinza esperado, violeta papel, ciano demo,
-    # laranja real), como no protótipo v2
     cab = html.Tr([html.Th(""), html.Th("Esperado (WFA)", className="n c-esp"),
                    html.Th("Papel", className="n c-pap"),
                    html.Th("Demo", className="n c-dem"),
                    html.Th("Real", className="n c-rea")])
-    return html.Table([html.Thead(cab), html.Tbody(corpo)],
-                      className="op-tabela op-cmp")
+    legenda = html.Div([
+        _etiqueta("bom", "verde"), _etiqueta("atenção", "ambar"),
+        _etiqueta("ruim", "rosa"),
+        html.Span("— faixas no (?) de cada linha; comparação contra o Esperado",
+                  className="mut"),
+    ], className="op-cmp-leg")
+    return html.Div([html.Table([html.Thead(cab), html.Tbody(corpo)],
+                                className="op-tabela op-cmp"), legenda],
+                    className="op-cmp-wrap")
 
 
 # --------------------------------------------------------------- cabeçalho
@@ -1212,6 +1405,8 @@ def bloco():
         dcc.Store(id="av-op-ord-enviados", data=[]),
         # variante cujo editor de contratos está aberto
         dcc.Store(id="av-op-ord-ctr-alvo"),
+        # a conta do editor de contratos aberto ("demo" ou "real")
+        dcc.Store(id="av-op-ord-ctr-conta", data="demo"),
         # o último candle gravado já desenhado (série refeita só com novo)
         dcc.Store(id="av-op-ultimo"),
         # o último candle da série, para o pulso montar o 5/15 min sem banco

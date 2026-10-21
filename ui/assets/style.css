@@ -2074,3 +2074,11 @@ body{
 .op-cmp th.c-pap{color:var(--accent-2);}
 .op-cmp th.c-dem{color:var(--accent);}
 .op-cmp th.c-rea{color:#fbbf24;}
+/* confirmação do Envio: "Confirmar?" ao lado da chave, sem trocar o nome */
+.op-tg.av-armado::after{content:"Confirmar?";margin-left:4px;font:600 var(--fs-sm) var(--sans);color:var(--warn);}
+/* partes do painel de variantes: REAL, DEMO e PAPEL */
+.op-var-parte{display:flex;align-items:center;padding:8px 12px 4px;background:var(--surface);border-top:1px solid var(--line);}
+.op-var-parte .op-acc{margin-right:0;}
+/* legenda das etiquetas bom / atenção / ruim da Avaliação */
+.op-cmp-wrap{display:flex;flex-direction:column;gap:0;}
+.op-cmp-leg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px 12px;font:500 var(--fs-xs) var(--sans);}

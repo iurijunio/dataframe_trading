@@ -76,21 +76,51 @@ def _ligacoes(con, portfolio_id: int, dia: date) -> list[dict]:
     ini, fim = _limites(dia)
     linhas = con.execute(
         "SELECT pm.ligacao_id, pm.variante_id, ev.nome, pm.fase, pm.ligada, "
-        "pm.adicionado_em, pm.removido_em, pm.contratos_demo "
+        "pm.adicionado_em, pm.removido_em, pm.contratos_demo, pm.contratos_real "
         "FROM portfolio_membros pm "
         "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
         "WHERE pm.portfolio_id = ? ORDER BY pm.ligacao_id",
         [portfolio_id]).fetchall()
     out = []
-    for i, (lig, vid, nome, fase, ligada, adic, rem, ctr_demo) in enumerate(linhas):
+    for i, (lig, vid, nome, fase, ligada, adic, rem, ctr_demo, ctr_real) in enumerate(linhas):
         if adic >= fim or (rem is not None and rem < ini):
             continue
-        # contratos_demo NULL = a demo usa os contratos do plano
+        # contratos_demo/real NULL = a conta usa os contratos do plano
         out.append({"ligacao_id": int(lig), "variante_id": int(vid),
                     "nome": nome, "fase": fase, "ligada": bool(ligada),
                     "cor": i, "contratos_demo": None if ctr_demo is None
-                    else int(ctr_demo)})
+                    else int(ctr_demo),
+                    "contratos_real": None if ctr_real is None else int(ctr_real)})
     return out
+
+
+def total_por_ligacao(con, portfolio_id: int, dia: date,
+                      origem: str = "demo") -> dict[int, dict]:
+    """O total de cada variante na conta `origem`, no mesmo recorte da coluna
+    Demo/Real do Esperado × Papel × Demo × Real: só fechadas, desde o plano em
+    vigor, líquidas dos custos do plano. {ligacao_id: métricas}, com `total`,
+    `acerto` e `n`. Variante sem operação fechada nesse recorte não aparece."""
+    planos: dict[int, dict] = {}
+    for l in _ligacoes(con, portfolio_id, dia):
+        gravado = _pregao(con, l["ligacao_id"], dia)[0]
+        p = _plano_do_dia(con, l["variante_id"], dia, gravado)
+        if p is not None:
+            planos[l["ligacao_id"]] = p
+    linhas: dict[int, list] = {}
+    for d, parte in _pregoes_demo(con, portfolio_id, dia, origem):
+        for o in parte[1]:
+            p = planos.get(o["ligacao_id"])
+            if p is None or o.get("plano_id") != int(p["plano_id"]):
+                continue
+            vale = _como_data(p.get("vale_a_partir"))
+            if vale is not None and d < vale:
+                continue
+            if o["situacao"] != "fechada" or o["resultado"] is None:
+                continue
+            ctr = float(o["contratos"] or 0)
+            liq = o["resultado"] - _custo_por_contrato(p) * ctr
+            linhas.setdefault(o["ligacao_id"], []).append((liq, ctr, o["pontos"]))
+    return {lig: _metricas(v) for lig, v in linhas.items()}
 
 
 def _pregao(con, ligacao_id: int, dia: date):
