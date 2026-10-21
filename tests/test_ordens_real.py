@@ -93,6 +93,13 @@ class Cena:
         while self.rel.agora() < hora:
             self.voltas(1)
 
+    def voltas_finas(self, n, dt):
+        """Voltas de 10 ms, como o laço da janela da virada."""
+        for _ in range(n):
+            self.rel.t += dt
+            self.mt5.agora = self.rel.agora()
+            self.servico.volta()
+
 
 def _desejados_no_arquivo(vivo_velho=False, contrato=CONTRATO, seq=1):
     dados = ponte.serializar({4: D}, True, contrato, seq, BASE)
@@ -229,6 +236,53 @@ def test_nenhuma_escrita_no_banco(cena, monkeypatch):
 
 
 # ------------------------------------------------------------- falhas
+def test_janela_sem_seq_novo_passo_ate_10_por_s_e_escrita_ate_2_por_s(cena, monkeypatch):
+    # 09:59:58 do servidor: dentro da janela de 10 ms (58 s a 10 s)
+    cena.rel.inicio = datetime(2026, 10, 9, 9, 59, 58)
+    _desejados_no_arquivo(seq=1)
+    passos, batimentos, estados = [], [], []
+    orig_passo = cena.servico.motor.passo
+    monkeypatch.setattr(cena.servico.motor, "passo",
+                        lambda *a, **k: (passos.append(1), orig_passo(*a, **k))[1])
+    orig_vivo = ponte.gravar_vivo_real
+    monkeypatch.setattr(ponte, "gravar_vivo_real",
+                        lambda: (batimentos.append(1), orig_vivo())[1])
+    orig_estado = R.C.escrever_estado
+    monkeypatch.setattr(R.C, "escrever_estado",
+                        lambda *a, **k: (estados.append(1), orig_estado(*a, **k))[1])
+    cena.voltas_finas(1, 0.01)                    # seq 1 dispara o primeiro passo
+    assert ponte.ler_ack() == 1
+    passos.clear(), batimentos.clear(), estados.clear()
+    cena.voltas_finas(99, 0.01)                   # ~1 s, seq inalterado
+    assert 1 <= len(passos) <= 11
+    assert len(batimentos) <= 2 and len(estados) <= 2
+
+
+def test_seq_novo_dispara_passo_no_proximo_tique(cena, monkeypatch):
+    cena.rel.inicio = datetime(2026, 10, 9, 9, 59, 58)
+    _desejados_no_arquivo(seq=1)
+    cena.voltas_finas(1, 0.01)
+    cena.voltas_finas(50, 0.01)                   # meio segundo sem seq novo
+    passos = []
+    orig_passo = cena.servico.motor.passo
+    monkeypatch.setattr(cena.servico.motor, "passo",
+                        lambda *a, **k: (passos.append(1), orig_passo(*a, **k))[1])
+    _desejados_no_arquivo(seq=2)                  # seq novo: arquivo muda
+    cena.voltas_finas(1, 0.01)
+    assert passos == [1]
+    assert ponte.ler_ack() == 2
+
+
+def test_motor_real_em_conta_demo_nao_envia_nada(cena):
+    # o MT5 está numa conta DEMO, mas o cadastro diz que a real é esta conta:
+    # o Motor da origem "real" recusa (trade_mode) e não manda ordem alguma
+    cena.mt5.trade_mode = 0                       # ACCOUNT_TRADE_MODE_DEMO
+    _desejados_no_arquivo()
+    cena.ate(ENTRADA + timedelta(seconds=2))
+    assert cena.mt5.enviados == []
+    assert entradas(cena.mt5) == []
+
+
 def test_erro_na_volta_nao_derruba_o_processo(cena, monkeypatch):
     def quebra():
         raise RuntimeError("corretora meio fora")

@@ -43,6 +43,10 @@ TIMEOUT_INICIALIZAR_MS = 10_000
 # barra aparece); 0,5 s fora disso
 VOLTA_RAPIDA, VOLTA_LENTA = 0.01, 0.5
 RAPIDA_ANTES_S, RAPIDA_DEPOIS_S = 58, 10
+# o passo das ordens roda no máximo a cada 0,1 s na janela e a cada 0,5 s fora,
+# ou logo que chega um seq novo da ponte; o batimento e o estado saem a cada 0,5 s
+PASSO_RAPIDO_S, PASSO_LENTO_S = 0.1, 0.5
+ESCRITA_S = 0.5
 LOG_REPETIDO_S = 60
 
 log = logging.getLogger("ordens_real")
@@ -87,6 +91,11 @@ class ServicoReal:
         self._guarda_bloqueada = False
         self._disponivel = False
         self._seq_tratado = None          # último seq da ponte que esta conta tratou
+        self._seq_disparado = None        # último seq que já acordou um passo
+        self._seq_arquivo = None          # seq fresco do arquivo, lido só quando muda
+        self._stat_arquivo = None         # (mtime, tamanho) da última leitura
+        self._ult_passo = None            # mono do último passo das ordens
+        self._ult_escrita = None          # mono do último batimento/estado gravado
         self.ordens_estado = None
         self._falhas_log: dict = {}
 
@@ -163,11 +172,37 @@ class ServicoReal:
         if conectado:
             self.relogio.observar(P._hora_do_tick(self.mt5.symbol_info_tick(self.simbolo)), m)
             srv = self.relogio.agora(m)
-        self._ordens(agora, m, conectado, srv)
-        # o batimento sai em toda volta: a captura sabe que esta conta está viva
-        ponte.gravar_vivo_real()
-        self._publicar(agora)
-        return VOLTA_RAPIDA if srv is not None and _perto_da_virada(srv) else VOLTA_LENTA
+        rapida = srv is not None and _perto_da_virada(srv)
+        novo = self._seq_novo()
+        intervalo = PASSO_RAPIDO_S if rapida else PASSO_LENTO_S
+        if novo or self._ult_passo is None or m - self._ult_passo >= intervalo:
+            self._ult_passo = m
+            if novo:
+                self._seq_disparado = self._seq_arquivo
+            self._ordens(agora, m, conectado, srv)
+        # o batimento e o estado saem a cada 0,5 s, e logo depois de um seq novo
+        if novo or self._ult_escrita is None or m - self._ult_escrita >= ESCRITA_S:
+            self._ult_escrita = m
+            ponte.gravar_vivo_real()
+            self._publicar(agora)
+        return VOLTA_RAPIDA if rapida else VOLTA_LENTA
+
+    def _seq_novo(self) -> bool:
+        """Olha o arquivo da ponte só quando ele muda (stat barato a cada volta):
+        um seq fresco e diferente do que já acordou um passo pede passo agora."""
+        arq = ponte.PASTA / ponte.ARQ_DESEJADOS
+        try:
+            st = arq.stat()
+            assinatura = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            assinatura = None
+        if assinatura != self._stat_arquivo:
+            self._stat_arquivo = assinatura
+            d = ponte.ler_arquivo() if assinatura is not None else None
+            self._seq_arquivo = (int(d["seq"]) if d is not None and ponte.fresco(d)
+                                 else None)
+        return (self._seq_arquivo is not None
+                and self._seq_arquivo != self._seq_disparado)
 
     def _ordens(self, agora, m, conectado: bool, srv) -> None:
         """Erro nas ordens vai ao log, ao estado e a um chamado; nunca mata o
