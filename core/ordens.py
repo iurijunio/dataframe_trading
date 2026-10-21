@@ -52,6 +52,9 @@ ZERAR_DESCARTADO = "zerar de outro dia, descartado"
 TRAVA = 0.9               # fração do limite do dia que trava a conta (§5.7)
 TETO_STOP = 1.5            # D1: distância ao stop até 1,5× a do plano
 PAPEL_PARADO_S = 180       # papel indisponível além disso no pregão chama
+# zerado no toque do stop/alvo: a corretora tem este tempo para executar o
+# stop/alvo da operação tocada; depois disso a posição sai a mercado e chama
+CARENCIA_TOQUE_S = 1.0
 
 log = logging.getLogger(__name__)
 
@@ -264,8 +267,21 @@ def planejar(desejados: dict, disponivel: bool, foto, diario, agora_srv,
         vivos = {p.ticket for p in pos}
 
         if d.estado == ZERADO:
+            no_toque = (d.motivo in ("stop no toque", "alvo no toque")
+                        and d.toque_em is not None and d.entry_ts is not None)
+            ticket_toque = diario.ticket(lig, d.entry_ts) if no_toque else None
             for p in pos:
-                sair(p, d.motivo or "papel zerado")
+                if ticket_toque is not None and p.ticket == ticket_toque:
+                    if _seg(agora_srv, d.toque_em) < CARENCIA_TOQUE_S:
+                        continue      # a corretora ainda tem o prazo de executar
+                    motivo = ("stop da corretora não executou"
+                              if d.motivo == "stop no toque"
+                              else "alvo da corretora não executou")
+                    sair(p, motivo)
+                    acoes.append(Acao("chamar", lig, ticket=p.ticket, posicao=p,
+                                      motivo=motivo))
+                else:
+                    sair(p, d.motivo or "papel zerado")
             if estavel and not parcial:
                 for t, ts in diario.tickets_abertos(lig):
                     if t not in vivos and _saiu(foto, t):

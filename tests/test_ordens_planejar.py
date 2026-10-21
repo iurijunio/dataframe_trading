@@ -582,3 +582,64 @@ def test_foto_parcial_orfa_prefere_o_envio_ate_a_abertura(tmp_path):
                                                    aberta=T + timedelta(seconds=6))])),
              diario=d, agora=T + timedelta(seconds=7))
     assert a[0].desejado.stop_px == 188_700
+
+
+# ------------------------------------------- 1 s para a corretora no toque (zerado)
+
+TOQUE = T + timedelta(minutes=10)
+
+
+def _zerado_toque(motivo="stop no toque"):
+    return Desejado(ZERADO, motivo=motivo, entry_ts=T, toque_em=TOQUE)
+
+
+def _diario_operacao(tmp_path, ticket=10):
+    d = Diario(tmp_path, date(2026, 10, 9))
+    d.registrar("executada", quando=T, ligacao_id=4, entry_ts=T, ticket=ticket)
+    return d
+
+
+def test_stop_no_toque_com_0_5_s_nao_sai_da_operacao(tmp_path):
+    d = _diario_operacao(tmp_path)
+    a = plan(tmp_path, {4: _zerado_toque()}, foto([pos(10)]), diario=d,
+             agora=TOQUE + timedelta(seconds=0.5))
+    assert [x for x in a if x.tipo == "sair" and x.ticket == 10] == []
+    assert [x for x in a if x.tipo == "chamar"] == []
+
+
+def test_stop_no_toque_com_1_2_s_sai_e_chama(tmp_path):
+    d = _diario_operacao(tmp_path)
+    a = plan(tmp_path, {4: _zerado_toque()}, foto([pos(10)]), diario=d,
+             agora=TOQUE + timedelta(seconds=1.2))
+    assert [(x.tipo, x.ticket, x.motivo) for x in a] == [
+        ("sair", 10, "stop da corretora não executou"),
+        ("chamar", 10, "stop da corretora não executou")]
+
+
+def test_alvo_no_toque_com_1_2_s_sai_e_chama(tmp_path):
+    d = _diario_operacao(tmp_path)
+    a = plan(tmp_path, {4: _zerado_toque("alvo no toque")}, foto([pos(10)]), diario=d,
+             agora=TOQUE + timedelta(seconds=1.2))
+    assert [(x.tipo, x.ticket, x.motivo) for x in a] == [
+        ("sair", 10, "alvo da corretora não executou"),
+        ("chamar", 10, "alvo da corretora não executou")]
+
+
+def test_toque_outra_posicao_da_ligacao_sai_na_hora(tmp_path):
+    d = _diario_operacao(tmp_path)
+    a = plan(tmp_path, {4: _zerado_toque()}, foto([pos(10), pos(11)]), diario=d,
+             agora=TOQUE + timedelta(seconds=0.5))
+    assert [(x.tipo, x.ticket) for x in a] == [("sair", 11)]
+    assert a[0].motivo == "stop no toque"
+
+
+def test_zerado_sem_toque_igual_a_hoje(tmp_path):
+    a = plan(tmp_path, {4: Desejado(ZERADO, motivo="papel zerado")}, foto([pos(10)]))
+    assert [(x.tipo, x.ticket, x.motivo) for x in a] == [("sair", 10, "papel zerado")]
+
+
+def test_toque_posicao_sumiu_dentro_do_1_s_vira_saiu_antes(tmp_path):
+    d = _diario_operacao(tmp_path)
+    a = plan(tmp_path, {4: _zerado_toque()}, foto(negocios=[saida(10)]), diario=d,
+             agora=TOQUE + timedelta(seconds=0.5))
+    assert tipos(a) == [("saiu_antes", 4, 10)]
