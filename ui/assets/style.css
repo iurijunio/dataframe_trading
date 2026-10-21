@@ -1933,3 +1933,26 @@ body{
   #av-bloco-operacao .op-grade{grid-template-columns:minmax(0,1fr);}
   #av-bloco-operacao .op-tira{grid-template-columns:repeat(4,minmax(0,1fr));}
 }
+
+/* ===================== Conta real (W3-A): saúde REAL/DEMO e chamados ======
+   Medidas do protótipo conta-real-v2 (cabeçalho "Ao vivo"): uma linha de
+   rótulos, uma linha por conta (REAL laranja, DEMO ciano) e, embaixo, o
+   sinal de vida e o último candle comuns às duas. */
+.ord-saude{display:flex;flex-direction:column;}
+.ord-saude-linha{display:grid;grid-template-columns:58px repeat(5,minmax(0,1fr));
+  align-items:center;gap:0 16px;padding:6px 12px;border-top:1px solid var(--line-soft);}
+.ord-saude-cab{border-top:0;}
+.ord-saude-cab .ord-saude-k{font-size:var(--fs-3xs);}
+.ord-saude-comum{display:flex;align-items:center;flex-wrap:wrap;gap:4px 16px;
+  padding:6px 12px;border-top:1px solid var(--line-soft);}
+.ord-saude-comum .ord-saude-k{margin-right:6px;}
+.ord-saude-comum .ord-saude-v{overflow:visible;}
+.ord-conta{justify-self:start;font-family:var(--sans);font-size:var(--fs-2xs);font-weight:600;
+  line-height:1.6;padding:0 8px;border-radius:999px;border:1px solid;white-space:nowrap;}
+.ord-conta-real{color:#fbbf24;border-color:#5a4410;background:#2a2006;}
+.ord-conta-demo{color:var(--accent);border-color:var(--accent-dim);background:rgba(34,228,255,.06);}
+.ord-chamado .ord-conta{align-self:center;}
+.av-topo .ord-saude-linha{gap:0 14px;padding:0;border-top:0;}
+.av-topo .ord-saude-linha .ord-saude-v{font-size:var(--fs-xs);}
+.av-topo .ord-saude-comum{padding:0;border-top:0;justify-content:flex-end;}
+.av-topo .ord-saude-linha+.ord-saude-linha{margin-top:2px;}

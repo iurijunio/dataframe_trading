@@ -110,8 +110,9 @@ def test_saude_mostra_os_sete_itens_com_dica():
     f = OR.faixa_saude(_ordens(), ultimo_candle="2026-10-14T14:36:00",
                        atraso_ms=700, agora=AGORA)
     t = textos(f)
-    for rot in ("MT5", "Algo Trading", "Conta logada", "Margem livre",
-                "Sinal de vida", "Último candle", "Ordem (média)"):
+    # rótulos do protótipo conta-real-v2 (o "Conta logada" virou "Conta")
+    for rot in ("MT5", "Algo Trading", "Conta", "Margem livre",
+                "sinal de vida", "último candle", "Ordem (média)"):
         assert rot in t
     assert "conectado" in t and "ligado" in t and "1193398927" in t
     assert "R$ 8.420" in t and "há 1 s" in t and "14:36" in t and "0,7 s" in t

@@ -118,11 +118,25 @@ def _armado_valido(armado, agora_s) -> str | None:
     return armado["chave"]
 
 
+def _chamados_de(bloco: dict | None, origem: str) -> list[dict]:
+    """Os chamados de uma conta, com a origem ("demo" ou "real"). Os da real
+    ganham prefixo na chave: um chamado da real com a mesma chave de um da
+    demo não pode ser escondido junto com ele ("Manter e acompanhar")."""
+    out = []
+    for c in (bloco or {}).get("chamados") or []:
+        if not isinstance(c, dict):
+            continue
+        chave = c.get("chave") if origem == "demo" else f"real:{c.get('chave')}"
+        out.append({**c, "origem": origem, "chave": chave})
+    return out
+
+
 def pulso_ordens(estado: dict | None, visto_ordens_em, vars_, pid, dados,
                  escondidos, enviados, armado, agora: datetime,
-                 agora_s: float) -> tuple:
+                 agora_s: float, real: dict | None = None) -> tuple:
     """(saúde, chamados, posições, três números, ordens_em) — só a partir
-    do estado.json e dos Stores: nada de banco a cada 2 s.
+    do estado.json, do estado_real.json (`real`, o bloco da conta real) e dos
+    Stores: nada de banco a cada 2 s.
 
     As idades (sinal de vida, saída pendente) usam a hora do SERVIDOR, a dos
     carimbos do estado: o relógio do PC pode andar ~1 min atrás."""
@@ -141,16 +155,23 @@ def pulso_ordens(estado: dict | None, visto_ordens_em, vars_, pid, dados,
     # números do banco de outro portfólio (troca no meio do caminho) não valem
     dados = dados if isinstance(dados, dict) and dados.get("pid") == pid else {}
 
+    # a linha REAL aparece com a conta real cadastrada (o banco diz, no
+    # `dados`) ou com o arquivo da real, mesmo que ele esteja parado
+    com_real = bool(dados.get("real_cadastrada"))
     saude = OR.faixa_saude(o, ultimo_candle=(estado or {}).get("ultimo_salvo"),
-                           atraso_ms=dados.get("atraso_ms"), agora=agora_srv)
+                           atraso_ms=dados.get("atraso_ms"), agora=agora_srv,
+                           real=real, com_real=com_real)
     recentes = [t for t in enviados or []
                 if 0 <= agora_s - float(t) <= COMANDO_RECENTE_S]
     idade = OR._idade_s(o.get("vivo_em"), agora_srv)
     esperando = bool(recentes) and (not ativa or idade is None
                                     or idade > OR.SEM_VIDA_S)
     # com a captura parada os chamados gravados são de quando ela parou e
-    # podem já ter fechado: só o aviso de comando esperando aparece
-    chamados = OR.faixa_chamados(o if ativa else {}, nomes,
+    # podem já ter fechado: só o aviso de comando esperando aparece. O mesmo
+    # vale para a conta real: sem publicar há mais de 10 s, nada dela aparece
+    da_real = [] if OR.real_parada(real, agora_srv) else _chamados_de(real, "real")
+    chamados = OR.faixa_chamados({"chamados": (_chamados_de(o, "demo") if ativa else [])
+                                  + da_real}, nomes,
                                  escondidos=escondidos or [],
                                  armado=_armado_valido(armado, agora_s),
                                  esperando=esperando)
@@ -165,14 +186,16 @@ def pulso_ordens(estado: dict | None, visto_ordens_em, vars_, pid, dados,
             no_update if versao is None or versao == visto_ordens_em else versao)
 
 
-def dados_demo(ops: list[dict], evs: list[dict], pid) -> dict:
+def dados_demo(ops: list[dict], evs: list[dict], pid,
+               real_cadastrada: bool = False) -> dict:
     """O que o pulso precisa do banco para os três números: o realizado da
     demo (bruto), o papel das MESMAS operações executadas no tamanho da demo
-    (bruto também — a mesma base) e o atraso médio da ordem."""
+    (bruto também — a mesma base), o atraso médio da ordem e se o portfólio
+    tem conta real cadastrada (a linha REAL da saúde)."""
     demo = [o for o in ops if o["situacao"] != "seria_enviada"]
     atrasos = [e["atraso_ms"] for e in evs
                if e["tipo"] in ("executada", "parcial") and e.get("atraso_ms") is not None]
-    return {"pid": pid,
+    return {"pid": pid, "real_cadastrada": bool(real_cadastrada),
             "realizado": sum(o["resultado"] or 0 for o in demo
                              if o["situacao"] == "fechada"),
             "papel": sum(o["papel_mesmo_tamanho"] or 0 for o in demo
@@ -188,12 +211,16 @@ def ler_ordens(pid) -> tuple:
     dia = D.dia_do_pregao(estado)
 
     def ler(con):
+        # a conta real cadastrada no portfólio (a linha REAL da saúde)
+        real = con.execute("SELECT conta_real_id FROM portfolios "
+                           "WHERE portfolio_id = ?", [pid]).fetchone()
         return (PL.operacoes_demo(con, pid, dia), PL.eventos_ordens(con, pid, dia),
                 PL.situacao_backtest(con, pid, dia),
-                PL.comparativo_demo(con, pid, dia=dia))
-    ops, evs, sit, cmp = _ler(ler)
+                PL.comparativo_demo(con, pid, dia=dia),
+                bool(real and real[0] is not None))
+    ops, evs, sit, cmp, tem_real = _ler(ler)
     return (OR.operacoes_demo(ops), OR.selo_backtest(sit),
-            OR.tabela_papel_demo(cmp), dados_demo(ops, evs, pid))
+            OR.tabela_papel_demo(cmp), dados_demo(ops, evs, pid, tem_real))
 
 
 def ler_diario(pid, so_problemas: bool):
@@ -425,6 +452,21 @@ def serie_do_dia(pid, tf, ocultas, agora) -> tuple[list, dict | None]:
     return charts.price_series(dados, mk, linhas), base
 
 
+def _conta_do_chamado(alvo) -> str:
+    """A conta de onde vem o ticket de um chamado: "real" só se ele aparece
+    nos chamados da real e não nos da demo. O comando "Encerrar posição" vai
+    para a pasta dessa conta — uma posição da real nunca vai à pasta da demo."""
+    if not isinstance(alvo, int):
+        return "demo"
+    demo = (D.estado_captura() or {}).get("ordens") or {}
+    if any(c.get("ticket") == alvo for c in _chamados_de(demo, "demo")):
+        return "demo"
+    real = D.estado_real()
+    if any(c.get("ticket") == alvo for c in _chamados_de(real, "real")):
+        return "real"
+    return "demo"
+
+
 def register(app):
     @app.callback(
         Output("av-op-situacao", "children"),
@@ -457,7 +499,8 @@ def register(app):
         agora = datetime.now()
         return (*pulso(estado, versao, ultimo, tf, base, agora),
                 *pulso_ordens(estado, ordens_em, vars_, pid, dados, escondidos,
-                              enviados, armado, agora, time.time()))
+                              enviados, armado, agora, time.time(),
+                              real=D.estado_real()))
 
     @app.callback(
         Output("av-op-portfolio", "options"),
@@ -819,7 +862,8 @@ def register(app):
         if not gat or not valor:
             raise PreventUpdate
         return acao_chamado(gat["acao"], gat["id"], armado, escondidos,
-                            enviados, time.time())
+                            enviados, time.time(),
+                            tipo=_conta_do_chamado(gat["id"]))
 
     @app.callback(
         Output({"type": "av-op-ord-acao", "acao": ALL, "id": ALL}, "children"),

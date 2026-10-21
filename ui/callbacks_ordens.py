@@ -53,7 +53,7 @@ def _rotulo_armado(n: int | None) -> str:
 
 
 def zerar(armado_em: float | None, estado: dict | None, agora: datetime,
-          agora_s: float | None = None) -> tuple:
+          agora_s: float | None = None, real: dict | None = None) -> tuple:
     """Um clique no botão. Devolve (armado_em, rótulo, aviso): `armado_em` é
     a hora (time.time) em que o primeiro clique armou, ou None.
 
@@ -61,12 +61,19 @@ def zerar(armado_em: float | None, estado: dict | None, agora: datetime,
     ANTES de tocar o banco — com uma mineração gravando, o arquivo já vale
     na volta seguinte da captura — e depois desliga o Envio de cada conta no
     banco. Sem esse desligar no banco o zerar duraria o dia inteiro: a
-    captura só o dá por cumprido quando o banco mostra o Envio desligado."""
+    captura só o dá por cumprido quando o banco mostra o Envio desligado.
+
+    `real` é o bloco da conta real (`estado_real.json`): as posições dela
+    entram na contagem "encerra N posições", como as da demo."""
     info = D.ordens_do_estado(estado, agora)
+    # a contagem é das duas contas: o comando vai para as duas pastas
+    n = info["posicoes"]
+    if n is not None and real is not None:
+        n += D.posicoes_real(real)
     agora_s = time.time() if agora_s is None else agora_s
     if not armado_em or not 0 <= agora_s - float(armado_em) <= ARMADO_VALE_S:
         # sem armar, ou armado há tempo demais: este clique só (re)arma
-        return (agora_s, _rotulo_armado(info["posicoes"]),
+        return (agora_s, _rotulo_armado(n),
                 "clique de novo em 5 s para confirmar")
 
     # as duas pastas (demo e real), sem banco: o zerar vale mesmo com a
@@ -89,7 +96,7 @@ def zerar(armado_em: float | None, estado: dict | None, agora: datetime,
     if info["selo"] == "sem_captura":
         aviso = ("Comando gravado, esperando a captura voltar — stop e alvo "
                  "seguem na corretora")
-    elif info["posicoes"] == 0:
+    elif n == 0:
         # nada a encerrar: o efeito é o Envio desligado no banco (feito
         # acima). Fora do pregão o comando só é lido na manhã seguinte e lá
         # é descartado (core/ordens.py `_de_outro_dia`)
@@ -154,7 +161,7 @@ def register(app):
         if not n:
             raise PreventUpdate
         armado, rotulo, aviso = zerar(armado, D.estado_captura(),
-                                      datetime.now())
+                                      datetime.now(), real=D.estado_real())
         classe = "ord-zerar" + (" ord-armado" if armado else "")
         return armado, rotulo, classe, aviso
 

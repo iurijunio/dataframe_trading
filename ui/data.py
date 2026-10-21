@@ -81,6 +81,27 @@ def estado_captura() -> dict | None:
     return e
 
 
+# O `estado_real.json` do processo da conta real: o mesmo bloco `ordens` do
+# estado da demo, publicado pelo processo da real. Ausente = esse processo
+# nunca subiu (ou não há conta real): a tela não inventa a conta, só mostra
+# "parado" quando a conta cadastrada não publica.
+ESTADO_REAL = db.DATA / "ao_vivo" / "estado_real.json"
+
+
+def estado_real() -> dict | None:
+    """O bloco `ordens` da conta real, ou None se o arquivo não existe ou não
+    lê (o arquivo é trocado de uma vez, mas uma leitura pega no meio falha)."""
+    if not ESTADO_REAL.exists():
+        return None
+    e = CAP.ler_estado(ESTADO_REAL)
+    return e if isinstance(e, dict) else None
+
+
+def posicoes_real(bloco: dict | None) -> int:
+    """Posições da automação na conta real; 0 sem o arquivo da real."""
+    return _posicoes_da_automacao(bloco) if bloco else 0
+
+
 # Selo das ordens no topo (spec ordens §8). O texto é o que o usuário lê de
 # relance em qualquer aba; a dica (title) leva o resto.
 _SELO_TEXTO = {

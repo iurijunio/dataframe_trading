@@ -59,6 +59,7 @@ def test_chamado_teste_preso_sem_botao_encerrar():
                        "— encerre no MT5", "ticket": None, "chave": "teste_preso"}]}
     f = OR.faixa_chamados(o, {})
     _filhos_sao_componentes_ou_texto(f)
-    botoes = [b for b in f.children[0].children[2].children
+    # a linha do chamado: etiqueta, chip de conta, texto, botões
+    botoes = [b for b in f.children[0].children[3].children
               if isinstance(b, html.Button)]
     assert [b.id["acao"] for b in botoes] == ["manter"]

@@ -55,3 +55,7 @@ def _banco_isolado(tmp_path, monkeypatch):
     # memoria da ultima leitura: sem zerar, um teste herdaria o estado do outro
     monkeypatch.setattr(ui_data, "_estado_ultimo", None)
     monkeypatch.setattr(ui_data, "_conferencia_vista", None)
+    # estado da conta real: um teste não pode ler (nem o processo real pode
+    # ser confundido com) o estado_real.json de verdade
+    monkeypatch.setattr(ui_data, "ESTADO_REAL",
+                        tmp_path / "ao_vivo" / "estado_real.json")
