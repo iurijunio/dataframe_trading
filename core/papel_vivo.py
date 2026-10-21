@@ -249,7 +249,7 @@ def aplicar_toque(desejados: dict, maxima: int | None,
 
     Compra: mínima <= stop zera (stop no toque); senão máxima >= alvo zera
     (alvo no toque). Venda é o espelho. Se stop e alvo forem tocados no mesmo
-    candle, vale o stop. Só mexe em POSICAO com stop e alvo; `maxima`/`minima`
+    candle, vale o stop. Só mexe em POSICAO com stop ou alvo; `maxima`/`minima`
     None não muda nada. O ZERADO mantém os campos da operação para a
     execução saber o que foi tocado.
     """
@@ -257,13 +257,17 @@ def aplicar_toque(desejados: dict, maxima: int | None,
         return dict(desejados)
     out = {}
     for lig, d in desejados.items():
-        if d.estado != POSICAO or d.stop_px is None or d.alvo_px is None:
+        if d.estado != POSICAO or (d.stop_px is None and d.alvo_px is None):
             out[lig] = d
             continue
+        # plano sem alvo (ou sem stop) ainda vigia o outro lado
+        stop, alvo = d.stop_px, d.alvo_px
         if d.lado == 1:
-            stop_toca, alvo_toca = minima <= d.stop_px, maxima >= d.alvo_px
+            stop_toca = stop is not None and minima <= stop
+            alvo_toca = alvo is not None and maxima >= alvo
         elif d.lado == -1:
-            stop_toca, alvo_toca = maxima >= d.stop_px, minima <= d.alvo_px
+            stop_toca = stop is not None and maxima >= stop
+            alvo_toca = alvo is not None and minima <= alvo
         else:
             out[lig] = d
             continue

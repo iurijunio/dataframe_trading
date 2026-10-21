@@ -594,8 +594,8 @@ def test_sem_toque_ou_sem_maxima_minima_nao_mexe():
     assert PV.aplicar_toque({1: d}, 189_300, 189_100)[1] is d
     assert PV.aplicar_toque({1: d}, None, 188_000)[1] is d
     assert PV.aplicar_toque({1: d}, 189_900, None)[1] is d
-    sem_stop = PV.Desejado(PV.POSICAO, lado=1, stop_px=None, alvo_px=189_400)
-    assert PV.aplicar_toque({1: sem_stop}, 189_900, 188_000)[1] is sem_stop
+    sem_nada = PV.Desejado(PV.POSICAO, lado=1, stop_px=None, alvo_px=None)
+    assert PV.aplicar_toque({1: sem_nada}, 189_900, 188_000)[1] is sem_nada
 
 
 def test_outros_estados_nao_mudam():
@@ -612,3 +612,11 @@ def test_toque_nao_altera_o_dict_de_entrada():
     assert entrada == copia and entrada[1].estado == PV.POSICAO
     assert out is not entrada and out[1].estado == PV.ZERADO
     assert PV.Desejado(PV.ZERADO).toque_em is None
+
+
+def test_aplicar_toque_vigia_o_stop_mesmo_sem_alvo():
+    from core.papel_vivo import aplicar_toque, Desejado, POSICAO, ZERADO
+    d = {1: Desejado(POSICAO, lado=1, stop_px=100, alvo_px=None)}
+    assert aplicar_toque(d, 120, 95)[1].estado == ZERADO
+    d = {1: Desejado(POSICAO, lado=-1, stop_px=None, alvo_px=80)}
+    assert aplicar_toque(d, 90, 80)[1].motivo == "alvo no toque"
