@@ -1612,6 +1612,17 @@ class Motor:
         ts = a.desejado.entry_ts if a.desejado else None
         # contratos = o que saiu pelo servidor (o resto, depois de uma parcial)
         extra = {"preco": n.preco, "contratos": n.volume} if n else {}
+        if n and motivo in ("stop na corretora", "alvo na corretora"):
+            # a corretora "executou" o stop/alvo sem negócio nesse preço?
+            try:
+                no_preco = K.negociou_no_preco(
+                    mt5, n.simbolo, n.preco, n.lado, n.quando,
+                    alvo=n.motivo == getattr(mt5, "DEAL_REASON_TP", 5))
+            except Exception:
+                no_preco = None
+            if no_preco is False:
+                extra["fora_do_mercado"] = True
+                motivo += " (fora do mercado)"
         self.diario(agora.date()).registrar(
             "saiu_antes", quando=agora, ligacao_id=a.ligacao_id, entry_ts=ts,
             ticket=a.ticket, motivo=motivo, **extra)

@@ -1026,16 +1026,21 @@ def _uma_operacao_demo(chave, evs: list[dict], papel_op: dict | None,
     pontos = (None if preco_sai is None or preco_ent is None
               else (preco_sai - preco_ent) * lado)
     motivo = fim.get("motivo") or ""
+    # a corretora "executou" o stop/alvo sem negócio nesse preço: o preço da
+    # saída não é de mercado, então não entra na derrapagem
+    fora = any(e.get("fora_do_mercado") for e in saidas)
     linha.update(situacao="fechada", exit_ts=fim["quando"],
                  preco_saida=preco_sai,
-                 derrapagem_saida=_derrapagem(preco_sai, papel_sai, lado, tick,
-                                              "saida"),
+                 derrapagem_saida=None if fora else _derrapagem(
+                     preco_sai, papel_sai, lado, tick, "saida"),
                  pontos=None if pontos is None else round(pontos),
                  resultado=None if pontos is None
                  else round(pontos * contratos * pv, 2),
                  saida_motivo=_MOTIVO_SAIDA.get(motivo, motivo or None))
     envios = [e for e in evs if e["tipo"] == "saida_enviando"]
-    if len(envios) > 1 and fim["tipo"] == "saida_executada":
+    if fora:
+        linha["nota"] = "execução fora do mercado (corretora)"
+    elif len(envios) > 1 and fim["tipo"] == "saida_executada":
         recusa = next((e.get("motivo") for e in reversed(evs)
                        if e["tipo"] == "saida_recusada" and e.get("motivo")), None)
         seg = round((fim["quando"] - envios[0]["quando"]).total_seconds())

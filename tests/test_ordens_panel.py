@@ -1104,3 +1104,17 @@ def test_faixa_de_saude_com_leitura_parcial():
 
 def test_chamado_sem_leitura_tem_explicacao():
     assert "leitura parcial" in OR._SUBTEXTO["sem_leitura"]
+
+
+def test_diario_saiu_antes_fora_do_mercado_diz_a_corretora_executou_sem_negocio():
+    e = {"tipo": "saiu_antes", "motivo": "stop na corretora (fora do mercado)",
+         "preco": 210_905, "fora_do_mercado": True}
+    txt = OR._texto_evento(e)[0]
+    assert "saiu no stop na corretora a" in txt
+    assert "(fora do mercado — a corretora executou sem negócio nesse preço)" in txt
+    assert "(fora do mercado)" not in txt.replace("(fora do mercado — a corretora", "")
+
+
+def test_diario_saiu_antes_normal_nao_muda():
+    e = {"tipo": "saiu_antes", "motivo": "alvo na corretora", "preco": 189_400}
+    assert "fora do mercado" not in OR._texto_evento(e)[0]

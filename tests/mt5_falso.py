@@ -28,6 +28,7 @@ class MT5Ordens:
     ACCOUNT_MARGIN_MODE_RETAIL_HEDGING = 2
     ACCOUNT_TRADE_MODE_DEMO, ACCOUNT_TRADE_MODE_CONTEST, ACCOUNT_TRADE_MODE_REAL = 0, 1, 2
     SYMBOL_TRADE_MODE_FULL = 4
+    COPY_TICKS_TRADE = 2
     TIMEFRAME_M1 = 1
     TIMEFRAME_D1 = 16408
 
@@ -64,6 +65,8 @@ class MT5Ordens:
                             "WINZ26": datetime(2026, 12, 16, 18, 30)}
         self.volumes = {}                  # simbolo -> real_volume do pregão anterior
         self.sem_barras = False            # copy_rates_from_pos -> None
+        self.ticks = None                  # copy_ticks_range: None = um tick por negócio;
+                                           # lista de `last` = ticks programados
         self._ticket = 1000
 
     # ---------------------------------------------------------- leitura
@@ -120,6 +123,22 @@ class MT5Ordens:
         # grupo "WIN*": só o prefixo importa nos testes
         pref = (group or "").rstrip("*")
         return tuple(self.symbol_info(s) for s in self.precos if s.startswith(pref))
+
+    def copy_ticks_range(self, simbolo, de, ate, flags):
+        # como o pacote real: array estruturado; None em erro ou sem tick
+        if self._falha("copy_ticks_range"):
+            return None
+        lo, hi = _epoch(de.replace(tzinfo=None)), _epoch(ate.replace(tzinfo=None))
+        if self.ticks is None:
+            lasts = [float(d.price) for d in self.negocios if lo <= d.time <= hi]
+        else:
+            lasts = [float(x) for x in self.ticks]
+        if not lasts:
+            return None
+        return np.array([(0, 0.0, 0.0, x, 1, 0, 0, 0.0) for x in lasts],
+                        dtype=[("time", "i8"), ("bid", "f8"), ("ask", "f8"), ("last", "f8"),
+                               ("volume", "u8"), ("time_msc", "i8"), ("flags", "u4"),
+                               ("volume_real", "f8")])
 
     def copy_rates_from_pos(self, simbolo, timeframe, inicio, quantidade):
         if self.sem_barras or simbolo not in self.volumes:
@@ -236,13 +255,14 @@ class MT5Ordens:
                                "type": 0 if lado > 0 else 1, "sl": 0.0, "tp": 0.0,
                                "magic": magic}).order
 
-    def stopar(self, ticket, motivo=4):
-        """O servidor executou o SL (4) ou o TP (5)."""
+    def stopar(self, ticket, motivo=4, preco=None):
+        """O servidor executou o SL (4) ou o TP (5), a `preco` (padrão: o do mercado)."""
         p = self.posicoes.pop(ticket)
         self.negocios.append(NS(ticket=self._novo(), order=0, time=_epoch(self.agora),
                                 type=1 - p.type, entry=1, magic=p.magic,
                                 position_id=p.ticket, reason=motivo, volume=p.volume,
-                                price=float(self.preco), commission=0.0, swap=0.0,
+                                price=float(self.preco if preco is None else preco),
+                                commission=0.0, swap=0.0,
                                 fee=0.0, profit=p.profit, symbol=p.symbol))
 
     def executar_pendente(self, ordem):

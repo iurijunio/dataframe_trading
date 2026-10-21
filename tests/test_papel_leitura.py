@@ -864,3 +864,39 @@ def test_comparativo_demo_dia_passado_usa_o_cache(cenario_demo, monkeypatch):
     de_novo = _cmp_demo(dia=amanha, hoje=amanha)["demo"]
     assert de_novo == primeiro and de_novo["n"] == 2
     assert chamadas == []
+
+
+# ------------------------------------- saída fora do mercado sai da derrapagem
+def test_saida_fora_do_mercado_zera_derrapagem_e_pe_nota():
+    lig = {"nome": "V1", "cor": "azul"}
+    evs = [
+        {"tipo": "executada", "lado": 1, "preco": 189_000, "contratos": 1,
+         "quando": datetime(2026, 10, 9, 10, 1), "atraso_ms": 300},
+        {"tipo": "saiu_antes", "motivo": "stop na corretora (fora do mercado)",
+         "preco": 188_500, "contratos": 1, "fora_do_mercado": True,
+         "quando": datetime(2026, 10, 9, 10, 20)},
+    ]
+    papel_op = {"side": 1, "contratos": 1, "liquido": 0.0, "bruto": 0.0,
+                "exit_px": 188_800, "entry_px": 189_000}
+    linha = L._uma_operacao_demo((1, datetime(2026, 10, 9, 10, 1)), evs, papel_op,
+                                 lig, 5, 0.2)
+    assert linha["situacao"] == "fechada"
+    assert linha["derrapagem_saida"] is None
+    assert linha["nota"] == "execução fora do mercado (corretora)"
+    assert linha["resultado"] is not None   # R$ continua o real da conta
+
+
+def test_saida_normal_mantem_derrapagem():
+    lig = {"nome": "V1", "cor": "azul"}
+    evs = [
+        {"tipo": "executada", "lado": 1, "preco": 189_000, "contratos": 1,
+         "quando": datetime(2026, 10, 9, 10, 1), "atraso_ms": 300},
+        {"tipo": "saiu_antes", "motivo": "stop na corretora", "preco": 188_800,
+         "contratos": 1, "quando": datetime(2026, 10, 9, 10, 20)},
+    ]
+    papel_op = {"side": 1, "contratos": 1, "liquido": 0.0, "bruto": 0.0,
+                "exit_px": 188_800, "entry_px": 189_000}
+    linha = L._uma_operacao_demo((1, datetime(2026, 10, 9, 10, 1)), evs, papel_op,
+                                 lig, 5, 0.2)
+    assert linha["derrapagem_saida"] == 0
+    assert linha["nota"] is None

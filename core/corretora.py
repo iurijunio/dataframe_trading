@@ -265,6 +265,32 @@ def _utc(d: datetime) -> datetime:
     return d.replace(tzinfo=timezone.utc)
 
 
+def negociou_no_preco(mt5, simbolo, preco, lado_saida, quando, folga_s=1.0, tick=5,
+                      alvo=False):
+    """A corretora teve negócio no preço do stop/alvo, perto de `quando`?
+    `lado_saida` = lado da saída (-1 venda que encerra compra, 1 compra que
+    encerra venda). `alvo=True` para o alvo (o preço veio do lado oposto
+    ao do stop). Sem negócio no preço = a corretora "executou" fora do
+    mercado. `None` = leitura falhou ou veio vazia: não dá para saber.
+    `quando` é o datetime de `Negocio.quando` (relógio do MT5 sem fuso, ver
+    `_hora`), então vira UTC aware como em `fotografar` (doc oficial:
+    copy_ticks_range pede datetime em UTC)."""
+    try:
+        ini = _utc(quando) - timedelta(seconds=folga_s)
+        fim = _utc(quando) + timedelta(seconds=folga_s)
+        ticks = mt5.copy_ticks_range(simbolo, ini, fim, mt5.COPY_TICKS_TRADE)
+    except Exception:
+        return None
+    if ticks is None or len(ticks) == 0:
+        return None
+    # stop de compra (venda a <= preço) e alvo de venda (venda a >= preço)
+    # são o mesmo teste: o preço tem que ter ido até o nível pelo lado da saída
+    para_baixo = (lado_saida < 0) != alvo
+    if para_baixo:
+        return any(float(t["last"]) <= preco + tick for t in ticks)
+    return any(float(t["last"]) >= preco - tick for t in ticks)
+
+
 class _Falha(Exception):
     pass
 

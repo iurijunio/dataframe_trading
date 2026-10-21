@@ -905,3 +905,57 @@ def test_parcial_orfa_usa_o_stop_da_tentativa_que_abriu_a_posicao(tmp_path):
     volta(m, mt5, {4: D}, agora=T + timedelta(seconds=7))
     [prot] = acoes_de(mt5, 6)
     assert (prot["position"], prot["sl"], prot["tp"]) == (t, 188_800.0, 189_400.0)
+
+
+# ------------------------------------------- execução fora do mercado (stop)
+def test_stop_com_negocio_no_preco_nao_marca_fora_do_mercado(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    mt5.stopar(next(iter(mt5.posicoes)), preco=188_790)   # negócio no próprio preço
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=5))
+    ev = evs(m, "saiu_antes")[0]
+    assert ev["motivo"] == "stop na corretora" and "fora_do_mercado" not in ev
+
+
+def test_stop_sem_negocio_no_preco_marca_fora_do_mercado(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    mt5.ticks = [189_300.0]                  # mercado 500 pontos acima do stop
+    mt5.stopar(next(iter(mt5.posicoes)), preco=188_500)   # "executou" sem negócio
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=5))
+    ev = evs(m, "saiu_antes")[0]
+    assert ev["fora_do_mercado"] is True
+    assert ev["motivo"] == "stop na corretora (fora do mercado)"
+
+
+def test_alvo_sem_negocio_no_preco_marca_fora_do_mercado(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    mt5.ticks = [188_700.0]                  # mercado abaixo do alvo 189_400
+    mt5.stopar(next(iter(mt5.posicoes)), motivo=5, preco=189_400)
+    volta(m, mt5, {4: Desejado(ZERADO)}, agora=T + timedelta(seconds=5))
+    ev = evs(m, "saiu_antes")[0]
+    assert ev["fora_do_mercado"] is True
+    assert ev["motivo"] == "alvo na corretora (fora do mercado)"
+
+
+def test_leitura_de_ticks_falhou_nao_marca(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    mt5.falhar = {"copy_ticks_range"}
+    mt5.stopar(next(iter(mt5.posicoes)), preco=188_500)
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=5))
+    ev = evs(m, "saiu_antes")[0]
+    assert ev["motivo"] == "stop na corretora" and "fora_do_mercado" not in ev
+
+
+def test_excecao_na_leitura_de_ticks_nao_derruba_a_volta(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    def estoura(*a, **k):
+        raise RuntimeError("pacote caiu")
+    mt5.copy_ticks_range = estoura
+    mt5.stopar(next(iter(mt5.posicoes)), preco=188_500)
+    volta(m, mt5, {4: D}, agora=T + timedelta(seconds=5))
+    ev = evs(m, "saiu_antes")[0]
+    assert ev["motivo"] == "stop na corretora" and "fora_do_mercado" not in ev

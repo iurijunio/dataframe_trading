@@ -88,3 +88,52 @@ def test_pedidos_tem_os_campos_da_documentacao():
     assert p == {"action": 6, "symbol": "WINV26", "position": 55, "sl": 188_645.0,
                  "tp": 0.0, "magic": 7_000_004}
     assert K.pedido_cancelar(mt5, ordem=99) == {"action": 8, "order": 99}
+
+
+# ------------------------------------------------ negócio no preço (stop/alvo)
+def _quando():
+    from datetime import datetime
+    return datetime(2026, 10, 9, 10, 1)
+
+
+def test_negociou_no_preco_venda_que_encerra_compra():
+    mt5 = MT5Ordens()
+    mt5.ticks = [188_490.0]                 # negócio abaixo do stop: houve execução
+    assert K.negociou_no_preco(mt5, "WINV26", 188_500, -1, _quando()) is True
+    mt5.ticks = [188_505.0]                 # na borda do tick (preço + 5)
+    assert K.negociou_no_preco(mt5, "WINV26", 188_500, -1, _quando()) is True
+    mt5.ticks = [189_300.0]                 # mercado 800 pontos acima: não houve
+    assert K.negociou_no_preco(mt5, "WINV26", 188_500, -1, _quando()) is False
+
+
+def test_negociou_no_preco_compra_que_encerra_venda():
+    mt5 = MT5Ordens()
+    mt5.ticks = [189_395.0]                 # alvo de venda a 189_400: houve negócio
+    assert K.negociou_no_preco(mt5, "WINV26", 189_400, 1, _quando()) is True
+    mt5.ticks = [189_300.0]                 # mercado abaixo do alvo: não houve
+    assert K.negociou_no_preco(mt5, "WINV26", 189_400, 1, _quando()) is False
+
+
+def test_negociou_no_preco_vazio_ou_falha_devolve_none():
+    mt5 = MT5Ordens()
+    mt5.ticks = []                          # sem tick nenhum na janela
+    assert K.negociou_no_preco(mt5, "WINV26", 188_500, -1, _quando()) is None
+    mt5.ticks = None
+    mt5.falhar = {"copy_ticks_range"}       # leitura falhou
+    assert K.negociou_no_preco(mt5, "WINV26", 188_500, -1, _quando()) is None
+
+
+def test_negociou_no_preco_excecao_devolve_none():
+    mt5 = MT5Ordens()
+    def estoura(*a, **k):
+        raise RuntimeError("pacote caiu")
+    mt5.copy_ticks_range = estoura
+    assert K.negociou_no_preco(mt5, "WINV26", 188_500, -1, _quando()) is None
+
+
+def test_negociou_no_preco_alvo_de_compra_vem_do_lado_oposto():
+    mt5 = MT5Ordens()
+    mt5.ticks = [189_405.0]                 # venda no alvo 189_400: subiu até lá
+    assert K.negociou_no_preco(mt5, "WINV26", 189_400, -1, _quando(), alvo=True) is True
+    mt5.ticks = [188_700.0]                 # mercado abaixo do alvo: não houve
+    assert K.negociou_no_preco(mt5, "WINV26", 189_400, -1, _quando(), alvo=True) is False
