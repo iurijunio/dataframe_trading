@@ -33,7 +33,8 @@ class MT5Ordens:
     TIMEFRAME_D1 = 16408
 
     def __init__(self, *, login=1193398927, servidor="ClearInvestimentos-DEMO",
-                 preco=189_000, agora=datetime(2026, 10, 9, 10, 1, 1)):
+                 preco=189_000, agora=datetime(2026, 10, 9, 10, 1, 1),
+                 trade_mode=0):
         self.login, self.servidor = login, servidor
         self.preco = preco
         self.agora = agora                 # hora dos negócios criados
@@ -48,7 +49,8 @@ class MT5Ordens:
         self.algo = True
         self.conectado = True
         self.hedging = True
-        self.trade_mode = 0                # ACCOUNT_TRADE_MODE_DEMO
+        # ACCOUNT_TRADE_MODE_DEMO por padrão; REAL = 2 para a conta real
+        self.trade_mode = trade_mode
         self.vazio_uma_vez = False         # lista vazia logo após reconectar
         self.erro_leitura = False          # positions_get/orders_get/... -> None
         # só estas leituras falham (nomes dos métodos): a corretora meio

@@ -164,3 +164,13 @@ def test_tipo_de_ordem_fora_de_compra_e_venda_tem_lado_zero():
     for o, t in zip(mt5.ordens.values(), tipos_):
         o.type = t
     assert sorted(o["lado"] for o in K.fotografar(mt5, DIA).ordens) == [-1, 0, 1]
+
+
+def test_fotografia_le_o_tipo_da_conta():
+    # ACCOUNT_TRADE_MODE_DEMO (0) e REAL (2): a conferência de toda volta usa isto
+    mt5 = MT5Ordens()
+    assert K.fotografar(mt5, DIA).trade_mode == 0
+    mt5.trade_mode = 2
+    assert K.fotografar(mt5, DIA).trade_mode == 2
+    mt5.falhar = {"account_info"}
+    assert K.fotografar(mt5, DIA).trade_mode is None

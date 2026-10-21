@@ -959,3 +959,79 @@ def test_excecao_na_leitura_de_ticks_nao_derruba_a_volta(tmp_path):
     volta(m, mt5, {4: D}, agora=T + timedelta(seconds=5))
     ev = evs(m, "saiu_antes")[0]
     assert ev["motivo"] == "stop na corretora" and "fora_do_mercado" not in ev
+
+
+# ------------------------------------------------- conta demo/real em toda volta
+def _passo(m, mt5, desejados, agora=AG, envio=True):
+    from core.papel_vivo import LigacaoViva, Retrato
+    ligs = {i: LigacaoViva(ligacao_id=i, portfolio_id=1, status="rodando", motivo=None,
+                           plano=None, modulo=None, fase="demo", conta_id=2,
+                           ligada=True, desvio=10) for i in desejados}
+    ret = Retrato(dia=DIA, lido_em=agora, ligacoes=ligs,
+                  contas={2: {"login": 1193398927, "servidor": "ClearInvestimentos-DEMO",
+                              "limite": 1e6, "envio": envio}},
+                  portfolio_de={i: 1 for i in ligs})
+    return m.passo(mt5, agora_srv=agora, retrato=ret, desejados=desejados,
+                   disponivel=True, comandos=[], simbolo="WINV26", contrato_ok=True,
+                   conectado_ha_s=60.0)
+
+
+def test_motor_demo_com_conta_real_nao_envia_nada(tmp_path):
+    mt5, m = MT5Ordens(trade_mode=2), Motor(tmp_path, INST)
+    _passo(m, mt5, {4: D})
+    assert mt5.enviados == [] and mt5.posicoes == {}
+    assert "conta_errada" in m.chamados and "real" in m.chamados["conta_errada"]["texto"]
+
+
+def test_motor_real_com_conta_demo_nao_envia_nada(tmp_path):
+    mt5, m = MT5Ordens(trade_mode=0), Motor(tmp_path, INST, origem="real")
+    _passo(m, mt5, {4: D})
+    assert mt5.enviados == [] and mt5.posicoes == {}
+    assert "conta_errada" in m.chamados
+
+
+def test_motor_real_com_conta_real_segue(tmp_path):
+    mt5, m = MT5Ordens(trade_mode=2), Motor(tmp_path, INST, origem="real")
+    _passo(m, mt5, {4: D})
+    assert "conta_errada" not in m.chamados
+    assert mt5.enviados and mt5.enviados[0]["action"] == 1      # a entrada saiu
+
+
+def test_conta_trocada_no_meio_nao_sai_nem_protege(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    _passo(m, mt5, {4: D})                                      # entra na demo
+    assert len(mt5.posicoes) == 1
+    n = len(mt5.enviados)
+    mt5.trade_mode = 2                                          # o MT5 virou a real
+    _passo(m, mt5, {4: Desejado(ZERADO)}, agora=T + timedelta(seconds=5))
+    assert len(mt5.enviados) == n and len(mt5.posicoes) == 1
+    assert "conta_errada" in m.chamados
+
+
+def test_chamado_conta_errada_some_quando_a_conta_volta(tmp_path):
+    mt5, m = MT5Ordens(trade_mode=2), Motor(tmp_path, INST)
+    _passo(m, mt5, {4: D})
+    assert "conta_errada" in m.chamados
+    mt5.trade_mode = 0
+    _passo(m, mt5, {4: D})
+    assert "conta_errada" not in m.chamados
+
+
+def test_foto_parcial_sem_account_info_herda_o_tipo_da_mesma_conexao(tmp_path):
+    mt5 = MT5Ordens(trade_mode=2)
+    m = Motor(tmp_path, INST, origem="real", mono=lambda: 100.0)
+    m._completar_conta(K.fotografar(mt5, datetime(2026, 10, 9)), 60.0)  # completa
+    mt5.falhar = {"account_info"}
+    f = m._completar_conta(K.fotografar(mt5, datetime(2026, 10, 9)), 60.0)
+    assert f.parcial and f.trade_mode == 2 and m._conta_certa(f) is None
+
+
+def test_foto_parcial_de_outra_conexao_nao_herda_o_tipo(tmp_path):
+    clock = [100.0]
+    mt5 = MT5Ordens(trade_mode=2)
+    m = Motor(tmp_path, INST, origem="real", mono=lambda: clock[0])
+    m._completar_conta(K.fotografar(mt5, datetime(2026, 10, 9)), 60.0)
+    mt5.falhar = {"account_info"}
+    clock[0] = 200.0                                            # a conexão caiu antes
+    f = m._completar_conta(K.fotografar(mt5, datetime(2026, 10, 9)), 60.0)
+    assert f.parcial and f.trade_mode is None and m._conta_certa(f) is not None
