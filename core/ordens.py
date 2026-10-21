@@ -528,6 +528,11 @@ def _retcode(res) -> int | None:
     return None if res is None else int(res.retcode)
 
 
+# ACCOUNT_TRADE_MODE_DEMO / _REAL (pacote MetaTrader5 5.0.6180, conferido)
+_TM_DEMO, _TM_REAL = 0, 2
+_NOME_TM = {0: "demo", 1: "concurso", 2: "real"}
+
+
 class Motor:
     """Quem fala com o MT5. Cada envio tem a sua linha `*_enviando` no
     diário ANTES de sair (escrita adiantada): uma queda entre o envio e a
@@ -742,6 +747,16 @@ class Motor:
             self.recusar_testes(comandos, dia, agora,
                                 "o MT5 não está logado numa conta cadastrada")
             return self._estado_fim(est, dia)
+        # 2b. o tipo da conta (demo ou real) tem de ser o da origem do motor:
+        # conta errada não sai nada, nem saída nem proteção nem ordem de teste
+        recusa = self._conta_certa(foto)
+        if recusa:
+            self._condicao("conta_errada", True, recusa, agora)
+            # mesmo texto da "Ordem de teste" para a conta que não é a do motor
+            motivo = ("a conta do MT5 não é " + ("REAL" if self.origem == "real" else "DEMO")
+                      if foto.trade_mode is not None else "conta do MT5 ilegível")
+            self.recusar_testes(comandos, dia, agora, motivo)
+            return self._estado_fim(est, dia)
         self._fechar("conta_errada", agora)
         nao_hedging = self._condicao("nao_hedging", not foto.hedging,
                                      "conta não é hedging", agora)
@@ -863,6 +878,20 @@ class Motor:
         return self._estado_fim(est, dia)
 
     # ---------------------------------------------------- passo: partes
+    def _conta_certa(self, foto) -> str | None:
+        """Motivo de recusa se a conta do MT5 não é a da origem do motor
+        (demo exige ACCOUNT_TRADE_MODE_DEMO; real exige REAL), None se é.
+        Tipo desconhecido (None) recusa: a foto parcial já herdou o tipo da
+        mesma conexão em `_completar_conta`, então o que sobra é não saber."""
+        real = self.origem == "real"
+        nome = "real" if real else "demo"
+        if foto.trade_mode is None:
+            return f"tipo da conta do MT5 desconhecido (motor {nome})"
+        if foto.trade_mode != (_TM_REAL if real else _TM_DEMO):
+            return (f"MT5 numa conta {_NOME_TM.get(foto.trade_mode, foto.trade_mode)} "
+                    f"({foto.login} · {foto.servidor}): motor {nome} não opera aqui")
+        return None
+
     def _completar_conta(self, foto, conectado_ha_s):
         """Foto parcial sem a conta (ou o terminal): vale a última lida numa
         foto completa SE a conexão não caiu desde então (trocar de conta no
@@ -873,13 +902,17 @@ class Motor:
         m = self.mono()
         if not foto.parcial:
             self._conta_vista = (foto.login, foto.servidor, foto.hedging,
-                                 foto.algo_ligado, foto.margem_livre, m)
+                                 foto.algo_ligado, foto.margem_livre, m,
+                                 foto.trade_mode)
             return foto
         v = self._conta_vista
         mesma_conexao = v is not None and conectado_ha_s >= m - v[5]
         if foto.login is None and mesma_conexao:
             foto.login, foto.servidor, foto.hedging, foto.margem_livre = \
                 v[0], v[1], v[2], v[4]
+        if foto.trade_mode is None and mesma_conexao:
+            # sem account_info: o tipo (demo/real) é o último visto na mesma conexão
+            foto.trade_mode = v[6]
         if "dados do terminal" in foto.falhas:
             # Algo Trading desconhecido: o último visto na mesma conexão; sem
             # ele, tenta — Algo desligado volta 10027 e vira chamado, e sair

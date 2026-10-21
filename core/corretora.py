@@ -243,6 +243,8 @@ class Fotografia:
     login: int | None = None
     servidor: str | None = None
     hedging: bool = False
+    # ACCOUNT_TRADE_MODE_DEMO (0), CONTEST (1) ou REAL (2); None = conta ilegível
+    trade_mode: int | None = None
     margem_livre: float = 0.0
     algo_ligado: bool = False
     # ordens do dia, executadas ou não: prova de que uma entrada "sem
@@ -348,6 +350,7 @@ def fotografar(mt5, inicio_dia: datetime, falhas: list | None = None) -> Fotogra
     f = Fotografia(parcial=bool(faltou), falhas=list(faltou))
     if conta is not None:
         f.login, f.servidor = int(conta.login), conta.server
+        f.trade_mode = int(conta.trade_mode)
         f.hedging = int(conta.margin_mode) == mt5.ACCOUNT_MARGIN_MODE_RETAIL_HEDGING
         f.margem_livre = float(conta.margin_free)
     if term is not None:
