@@ -284,7 +284,7 @@ def test_barra_tem_a_marca_dos_90():
 def test_perda_da_conta_aberta_em_tres_partes():
     n = OR.numeros(_ordens(), 0.0, 0.0, portfolio_id=1, ligacoes=[7, 8])
     t = textos(n)
-    assert "Perda do dia" in t and "da CONTA" in dicas_txt(n)
+    assert "perda do dia" in t and "da CONTA" in dicas_txt(n)
     assert "R$ 164" in t and "/ 500" in t
     # a quebra é frase longa: mora no (?) (e no title da nota).
     # este portfólio = o dele no por_portfolio; outros = automação menos ele
@@ -297,7 +297,7 @@ def test_perda_da_conta_aberta_em_tres_partes():
 def test_numeros_resultado_e_posicoes():
     n = OR.numeros(_ordens(), 361.0, 190.0, portfolio_id=1, ligacoes=[7, 8])
     t = textos(n)
-    assert "+R$ 361" in t and "papel no mesmo tamanho +R$ 190" in t
+    assert "+R$ 361" in t and "papel no mesmo tamanho: +R$ 190" in dicas_txt(n)
     # as posições saíram da faixa: a tabela embaixo do gráfico as mostra
     assert "confere" not in t
     assert len(_dicas(n)) == 2
@@ -1045,7 +1045,7 @@ def test_tabela_do_papel_mostra_a_demo_na_mesma_operacao(demo):
     linhas = {textos(x).split()[0]: textos(x) for x in todos(tab)
               if type(x).__name__ == "Tr"}
     assert "2 · 2 ticks" in linhas["10:15"]          # além do plano
-    assert "2 / 1" in linhas["11:05"]                 # papel 2, demo 1
+    assert "2 / — / 1" in linhas["11:05"]                 # papel 2, demo 1
     assert "não executada" in linhas["09:56"]
 
 

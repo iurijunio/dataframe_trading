@@ -67,20 +67,35 @@ _ACOES = {
                  "portfólio ligado — as variantes ligadas voltam a contar"),
     # o Envio espera pouco pelo banco (como o Zerar tudo): desligar já vale
     # pelo comando escrito antes do banco; ligar precisa do banco
-    "envio-desligar": (lambda cid: AV.ligar_envio(cid, False,
+    "envio-desligar": (lambda cid: AV.ligar_envio(cid, False, tipo="demo",
                                                   tentativas=TENTATIVAS_BANCO),
                        "Envio de ordens desligado — a captura encerra as "
                        "posições da automação na próxima volta; o papel segue"),
-    "envio-ligar": (lambda cid: AV.ligar_envio(cid, True,
+    "envio-ligar": (lambda cid: AV.ligar_envio(cid, True, tipo="demo",
                                                tentativas=TENTATIVAS_BANCO),
                     "Envio de ordens ligado — as variantes na fase demo "
                     "passam a operar na conta demo"),
+    "envio-real-desligar": (lambda cid: AV.ligar_envio(cid, False, tipo="real",
+                                                       tentativas=TENTATIVAS_BANCO),
+                            "Envio de ordens da conta real desligado — o "
+                            "processo da real encerra as posições reais; o "
+                            "papel e a demo seguem"),
+    "envio-real-ligar": (lambda cid: AV.ligar_envio(cid, True, tipo="real",
+                                                    tentativas=TENTATIVAS_BANCO),
+                         "Envio de ordens da conta real ligado — as variantes "
+                         "na fase real passam a operar na conta real"),
 }
+# os desligamentos do envio (com posições abertas pedem a contagem)
+_DESLIGAR_ENVIO = ("envio-desligar", "envio-real-desligar")
 _CONFIRME = {
     "envio-desligar": "confirme: clique de novo para DESLIGAR o envio de ordens "
                       "— isso encerra as posições abertas da automação",
     "envio-ligar": "confirme: clique de novo para LIGAR o envio de ordens na "
                    "conta demo",
+    "envio-real-desligar": "confirme: clique de novo para DESLIGAR o envio de "
+                           "ordens da conta real — isso encerra as posições reais",
+    "envio-real-ligar": "confirme: clique de novo para LIGAR o envio de ordens na "
+                        "conta real",
     "membro-desligar": "confirme: clique de novo em Confirmar? para PAUSAR a variante",
     "membro-ligar": "confirme: clique de novo em Confirmar? para LIGAR a variante",
     "pf-desligar": "confirme: clique de novo em Confirmar? para DESLIGAR o portfólio",
@@ -175,12 +190,23 @@ def pulso_ordens(estado: dict | None, visto_ordens_em, vars_, pid, dados,
                                  escondidos=escondidos or [],
                                  armado=_armado_valido(armado, agora_s),
                                  esperando=esperando)
-    posicoes = OR.posicoes_abertas(o, nomes, tick, ponto=ponto, agora=agora_srv)
+    # a conta real só entra viva: parada, o que ela mostra não vale mais
+    real_viva = real if com_real and not OR.real_parada(real, agora_srv) else None
+    posicoes = OR.posicoes_abertas(o, nomes, tick, ponto=ponto, agora=agora_srv,
+                                   real=real_viva)
     aberto = sum(float(p.get("resultado") or 0)
                  for _lig, _l, p in OR._posicoes(o, list(nomes)))
-    numeros = OR.numeros(o, float(dados.get("realizado") or 0) + aberto,
-                         float(dados.get("papel") or 0), portfolio_id=pid,
-                         ligacoes=list(nomes))
+    aberto_real = sum(float(p.get("resultado") or 0)
+                      for _lig, _l, p in OR._posicoes(real_viva or {}, list(nomes)))
+    numeros = OR.numeros(
+        o, float(dados.get("realizado") or 0) + aberto,
+        float(dados.get("papel") or 0), portfolio_id=pid, ligacoes=list(nomes),
+        real=real_viva, com_real=com_real,
+        real_parada=com_real and real_viva is None,
+        resultado_real=(float(dados.get("realizado_real") or 0) + aberto_real
+                        if real_viva is not None else None),
+        total_demo=dados.get("total_demo"), total_real=dados.get("total_real"),
+        pior=dados.get("pior"))
     versao = o.get("ordens_em")
     return (saude, chamados if chamados is not None else [], posicoes, numeros,
             no_update if versao is None or versao == visto_ordens_em else versao)
@@ -214,20 +240,47 @@ def ler_ordens(pid) -> tuple:
         # a conta real cadastrada no portfólio (a linha REAL da saúde)
         real = con.execute("SELECT conta_real_id FROM portfolios "
                            "WHERE portfolio_id = ?", [pid]).fetchone()
+        comp = PL.comparativo(con, pid, dia=dia)
+        comp_real = PL.comparativo(con, pid, dia=dia, origem="real")
         return (PL.operacoes_demo(con, pid, dia), PL.eventos_ordens(con, pid, dia),
                 PL.situacao_backtest(con, pid, dia),
                 PL.comparativo_demo(con, pid, dia=dia),
-                bool(real and real[0] is not None))
-    ops, evs, sit, cmp, tem_real = _ler(ler)
+                bool(real and real[0] is not None),
+                PL.operacoes_demo(con, pid, dia, origem="real"),
+                comp_real, comp, PL.resumo(con, pid, dia)["pior_momento"])
+    ops, evs, sit, cmp, tem_real, ops_real, comp_real, comp, pior = _ler(ler)
+    dados = dados_demo(ops, evs, pid, tem_real)
+    # o que a tira de números precisa do banco: o realizado da real, os
+    # totais desde o plano (demo e real) e o pior momento do dia
+    dados.update(realizado_real=sum(o["resultado"] or 0 for o in ops_real
+                                    if o["situacao"] == "fechada"),
+                 total_demo=(comp.get("demo") or {}).get("total"),
+                 total_real=(comp_real.get("demo") or {}).get("total"),
+                 pior=pior)
     return (OR.operacoes_demo(ops), OR.selo_backtest(sit),
-            OR.tabela_papel_demo(cmp), dados_demo(ops, evs, pid, tem_real))
+            OR.tabela_papel_demo(cmp), dados,
+            OR.operacoes_demo(ops_real, origem="real") if tem_real
+            else OR._vazio("sem conta real neste portfólio",
+                           "Sem conta real cadastrada no portfólio, a tabela "
+                           "fica vazia. Cadastre-a na tela Estratégias › Contas."),
+            OR.tabela_papel_demo(comp_real, "real") if tem_real
+            else OR._vazio("sem conta real neste portfólio",
+                           "Sem conta real cadastrada no portfólio não há o que "
+                           "comparar com o papel."))
 
 
 def ler_diario(pid, so_problemas: bool):
+    """O diário das duas contas, do mais antigo para o mais novo (a tela
+    inverte): cada evento leva a origem ("real" ou "demo") para a coluna
+    Conta."""
     estado = D.estado_captura()
     dia = D.dia_do_pregao(estado)
-    evs, nomes = _ler(lambda con: (PL.eventos_ordens(con, pid, dia),
-                                   PL.nomes(con, pid)))
+    demo, real, nomes = _ler(lambda con: (PL.eventos_ordens(con, pid, dia),
+                                          PL.eventos_ordens(con, pid, dia, "real"),
+                                          PL.nomes(con, pid)))
+    evs = ([{**e, "origem": "demo"} for e in demo]
+           + [{**e, "origem": "real"} for e in real])
+    evs.sort(key=lambda e: str(e.get("quando") or ""))
     return OR.diario_do_dia(evs, nomes, so_problemas=so_problemas)
 
 
@@ -317,7 +370,7 @@ def acao(nome, alvo, armado, posicoes: int | None = None
     chave = f"{nome}:{alvo}"
     if armado != chave:
         aviso = _CONFIRME[nome]
-        if nome == "envio-desligar" and posicoes is not None:
+        if nome in _DESLIGAR_ENVIO and posicoes is not None:
             aviso = ("confirme: clique de novo para DESLIGAR o envio de ordens "
                      + ("(nenhuma posição aberta)" if posicoes == 0 else
                         f"— isso encerra {posicoes} "
@@ -329,7 +382,7 @@ def acao(nome, alvo, armado, posicoes: int | None = None
     except ValueError as e:
         return None, str(e), False
     except RuntimeError:
-        if nome == "envio-desligar":
+        if nome in _DESLIGAR_ENVIO:
             # o comando foi escrito ANTES do banco: a captura já desliga
             return (None, "comando enviado — a captura desliga o envio na "
                     "próxima volta; o banco será atualizado depois", False)
@@ -352,7 +405,8 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
         pfs = PL.portfolios_com_papel(con)
         pf = next((p for p in pfs if p["portfolio_id"] == pid), None)
         if pf is None:
-            return pfs, None, None, None, None, None, None, None, None, None
+            return pfs, None, None, None, None, None, None, None, None, None, \
+                None, None
         res = PL.resumo(con, pid, dia)
         vs = PL.variantes(con, pid, dia)
         ops = PL.operacoes_do_dia(con, pid, dia)
@@ -367,9 +421,15 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
                   for v in vs]
         demo = (res.get("contas") or {}).get("demo")
         envio = PL.envio_da_conta(con, demo["conta_id"]) if demo else None
-        return pfs, pf, res, vs, ops, alertas, comp, c_pf, faixas, envio
+        # a conta real: o comparativo dela (coluna Real) e o Envio da chave
+        real_c = (res.get("contas") or {}).get("real")
+        comp_real = PL.comparativo(con, pid, dia=dia, origem="real")
+        envio_real = PL.envio_da_conta(con, real_c["conta_id"]) if real_c else None
+        return (pfs, pf, res, vs, ops, alertas, comp, c_pf, faixas, envio,
+                comp_real, envio_real)
 
-    pfs, pf, res, vs, ops, alertas, comp, c_pf, faixas, envio = _ler(ler)
+    (pfs, pf, res, vs, ops, alertas, comp, c_pf, faixas, envio,
+     comp_real, envio_real) = _ler(ler)
     if pf is None:
         msg = ("nenhum portfólio ainda — crie um na tela Portfólio e ligue em "
                "Ao vivo › Estratégias" if not pfs else "escolha um portfólio")
@@ -381,8 +441,11 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
     cab = OP.cabecalho(pf, res, contrato=ordens.get("contrato_dia")
                        or ordens.get("contrato"), dia=dia)
     demo = (res.get("contas") or {}).get("demo")
+    real_c = (res.get("contas") or {}).get("real")
     botoes = OP.botoes_portfolio(pf, armado, conta_id=demo and demo["conta_id"],
-                                 envio=envio)
+                                 envio=envio,
+                                 real_id=real_c and real_c["conta_id"],
+                                 envio_real=envio_real)
     nomes = {v["ligacao_id"]: v["nome"] for v in vs}
     # contratos e fase vão junto: o editor do ✎ abre sem reler o banco
     vars_ = [{"ligacao_id": v["ligacao_id"], "nome": v["nome"], "cor": v["cor"],
@@ -401,22 +464,27 @@ def montar(pid, armado, filtro_atual, curva_atual) -> tuple:
     return (cab, botoes, kpis,
             OP.cabecalho_colunas() if vs else [], OP.cartoes(vs, armado),
             OP.risco_dia(res) if vs else [],
-            OP.lista_alertas(alertas, nomes), OP.tabela_comparativo(comp), vars_,
+            OP.lista_alertas(alertas, nomes),
+            OP.tabela_comparativo({**comp, "real": (comp_real or {}).get("demo")}),
+            vars_,
             _opcoes_filtro(vars_), filtro,
             [{"label": v["nome"], "value": v["ligacao_id"]} for v in vars_],
             curva)
 
 
-def juntar_demo(ops: list[dict], demo: list[dict]) -> list[dict]:
-    """Põe em cada operação do papel o que a demo fez nela (mesma chave
+def juntar_demo(ops: list[dict], demo: list[dict],
+                chave: str = "demo") -> list[dict]:
+    """Põe em cada operação do papel o que a conta fez nela (mesma chave
     `(ligacao_id, entry_ts)`): contratos executados e a derrapagem além do
-    plano por ponta — a coluna "Papel × demo" da tabela do papel."""
+    plano por ponta — as colunas "Papel × demo" e "Papel × real" da tabela
+    do papel. `chave` diz em que campo a operação da conta vai ("demo" ou
+    "real")."""
     por = {(o["ligacao_id"], o["entry_ts"]): o for o in demo
            if o["situacao"] != "seria_enviada"}
     out = []
     for o in ops:
         d = por.get((o["ligacao_id"], o["entry_ts"]))
-        out.append({**o, "demo": d} if d else o)
+        out.append({**o, chave: d} if d else o)
     return out
 
 
@@ -579,11 +647,13 @@ def register(app):
         lig = None if filtro in (None, "todas") else int(filtro)
         dia = D.dia_do_pregao(D.estado_captura())
         try:
-            ops, demo = _ler(lambda con: (PL.operacoes_do_dia(con, pid, dia, lig),
-                                          PL.operacoes_demo(con, pid, dia)))
+            ops, demo, real = _ler(lambda con: (
+                PL.operacoes_do_dia(con, pid, dia, lig),
+                PL.operacoes_demo(con, pid, dia),
+                PL.operacoes_demo(con, pid, dia, origem="real")))
         except (duckdb.Error, RuntimeError):
             raise PreventUpdate
-        return OP.tabela_operacoes(juntar_demo(ops, demo))
+        return OP.tabela_operacoes(juntar_demo(juntar_demo(ops, demo), real, "real"))
 
     @app.callback(
         Output("av-op-curva", "series"),
@@ -668,6 +738,8 @@ def register(app):
         posicoes = None
         if gat["acao"] == "envio-desligar":
             posicoes = D.ordens_do_estado(D.estado_captura())["posicoes"]
+        elif gat["acao"] == "envio-real-desligar":
+            posicoes = D.posicoes_real(D.estado_real())
         armado, aviso, feito = acao(gat["acao"], gat["id"], armado, posicoes)
         if not feito:
             return armado, no_update, aviso, no_update
@@ -811,6 +883,8 @@ def register(app):
         Output("av-op-ord-selo", "children"),
         Output("av-op-ord-cmp", "children"),
         Output("av-op-ord-dados", "data"),
+        Output("av-op-real-operacoes", "children"),
+        Output("av-op-ord-cmp-real", "children"),
         # o diário das ordens só muda quando `ordens_em` muda; o papel (o
         # par de cada operação) quando `av-op-versao` muda — nunca o pulso
         Input("av-op-ord-versao", "data"),

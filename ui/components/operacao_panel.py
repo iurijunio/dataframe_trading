@@ -124,7 +124,7 @@ def _lado_pos(p: int) -> tuple[str, str]:
 
 # ------------------------------------------------------------------- KPIs
 def _kpi(rotulo, explica, valor, nota=None, sinal=None, barra=None,
-         nota_title=None):
+         nota_title=None, ordem=None):
     filhos = [_rotulo(rotulo, explica, "op-kpi-r"),
               html.Span(valor, className="op-kpi-v"
                         + (f" {sinal}" if sinal else ""))]
@@ -133,7 +133,9 @@ def _kpi(rotulo, explica, valor, nota=None, sinal=None, barra=None,
                                 title=nota_title or ""))
     if barra is not None:
         filhos.append(barra)
-    return html.Div(filhos, className="op-kpi")
+    # a ordem na tira de seis números (REAL, DEMO, PAPEL, perdas, esperado)
+    estilo = {"order": ordem} if ordem is not None else None
+    return html.Div(filhos, className="op-kpi", style=estilo)
 
 
 def _barra(uso_pct: float):
@@ -146,51 +148,16 @@ def _barra(uso_pct: float):
 
 def kpis(resumo: dict, ops: list[dict], esperado: dict,
          nomes: dict | None = None) -> list:
-    """Os cinco números do papel na faixa do topo (spec §6.2; a demo põe
-    os dois dela na mesma faixa, pelo pulso). `ops` é a tabela do dia
-    (para contar); `esperado` = {"diferenca": papel − soma das medianas,
-    "faixas": faixa atual de cada variante}; `nomes` = ligação → nome.
+    """Os dois números do papel na tira (protótipo v2, Operação): PAPEL hoje,
+    com o total desde o plano em vigor embaixo, e Contra o esperado. Os
+    números das contas (REAL e DEMO hoje, as perdas do dia) saem do pulso
+    (`ordens_panel.numeros`) e entram na mesma tira pela ordem CSS.
 
-    Nota de uma linha: o que não cabe nela vai para o `title` (o mouse em
-    cima mostra a frase inteira)."""
-    nomes = nomes or {}
-    contam = [o for o in ops if o.get("conta")]
-    abertas = sum(1 for o in contam if o.get("situacao") == "aberta")
-    n = len(contam)
-    nota_hoje = f"{n} {'operação' if n == 1 else 'operações'}"
-    if abertas:
-        nota_hoje += f", {abertas} aberta{'s' if abertas > 1 else ''}"
+    `esperado` = {"diferenca": papel − soma das medianas, "faixas": faixa
+    atual de cada variante}. `ops` e `nomes` ficam na assinatura: o
+    redesenho os passa e a tela usa só o resumo."""
     hoje = resumo.get("resultado_hoje") or 0.0
-
-    pos = resumo.get("posicao") or {}
-    liq = int(pos.get("liquida") or 0)
-    lado, _ = _lado_pos(liq)
-    quem = [f"{nomes.get(l, f'#{l}')} {p:+d}"
-            for l, p in (pos.get("por_ligacao") or {}).items() if p]
-    nota_pos = f"papel {abs(liq)} · demo —"
-    title_pos = (" · ".join(quem) + " · " if quem else "") + nota_pos + " contratos"
-
-    pior = resumo.get("pior_momento") or {}
-    valor_pior = pior.get("valor")
-    limite = resumo.get("limite_dia")
-    demo = (resumo.get("contas") or {}).get("demo")
-    partes_pior = ([f"às {_hora(pior.get('quando'))}"]
-                   if pior.get("quando") else [])
-    barra = None
-    if limite:
-        uso = max(0.0, -(valor_pior or 0.0)) / limite * 100
-        partes_pior.append(f"limite R$ {inteiro(int(round(limite)))}")
-        barra = _barra(uso)
-    elif demo:
-        partes_pior.append("sem limite cadastrado")
-    else:
-        partes_pior.append("sem conta demo")
-    nota_pior = " · ".join(partes_pior)
-
     acum = resumo.get("acumulado") or {}
-    nota_acum = f"{acum.get('pregoes', 0)} pregões · {acum.get('operacoes', 0)} op."
-    title_acum = (f"{acum.get('pregoes', 0)} pregões e {acum.get('operacoes', 0)} "
-                  "operações desde o plano em vigor")
 
     dif = (esperado or {}).get("diferenca")
     faixas = [f for f in (esperado or {}).get("faixas") or [] if f]
@@ -216,34 +183,21 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
                         else f"{dentro} de {len(faixas)} dentro da faixa")
         title_esp = " · ".join(partes)
 
+    total = acum.get("valor")
+    pregoes = acum.get("pregoes", 0)
+    operacoes = acum.get("operacoes", 0)
+    explica_papel = (
+        "Soma do papel de hoje das variantes: operações fechadas mais a aberta "
+        "pelo preço do último candle (provisório). Operação fora do período em "
+        "que a variante estava ligada não entra. Bom: positivo. Ruim: perto do "
+        "limite de perda do dia. O total embaixo é o acumulado do papel desde o "
+        "plano em vigor (recomeça quando o plano muda), com a operação aberta "
+        "pelo valor provisório: "
+        f"{pregoes} {'pregão' if pregoes == 1 else 'pregões'} e "
+        f"{operacoes} {'operação' if operacoes == 1 else 'operações'}. Bom: "
+        "dentro ou acima da faixa esperada. Ruim: abaixo do p10.")
     return [
-        _kpi("Papel hoje",
-             "Soma do papel de hoje das variantes: operações fechadas mais a "
-             "aberta pelo preço do último candle (provisório). Operação fora "
-             "do período em que a variante estava ligada não entra. Bom: "
-             "positivo. Ruim: perto do limite de perda do dia.",
-             _rs(hoje), nota_hoje, _sinal(hoje)),
-        _kpi("Posição agora",
-             "Contratos em aberto agora, somando as variantes (comprado "
-             "soma, vendido subtrai). Bom: no máximo a soma dos contratos "
-             "dos planos. Atenção: variantes em lados opostos se anulam "
-             "aqui — o mouse em cima da nota mostra quem está posicionado.",
-             lado, nota_pos, "acc" if liq else None,
-             nota_title=title_pos),
-        _kpi("Pior momento",
-             "O ponto mais baixo do resultado de hoje, minuto a minuto "
-             "(fechadas mais a aberta pelo preço de cada minuto), contra o "
-             "limite de perda diária da conta demo. Bom: abaixo de 50% do "
-             "limite. Ruim: acima de 80% — a mesa encerraria o dia.",
-             _rs(valor_pior), nota_pior, _sinal(valor_pior), barra,
-             nota_title=nota_pior),
-        _kpi("Acumulado papel",
-             "Tudo o que o papel fez desde que o plano atual de cada variante "
-             "passou a valer (recomeça quando o plano muda). Inclui a "
-             "operação aberta pelo valor provisório. Bom: dentro ou acima da "
-             "faixa esperada. Ruim: abaixo do p10.",
-             _rs(acum.get("valor")), nota_acum, _sinal(acum.get("valor")),
-             nota_title=title_acum),
+        _kpi_papel(hoje, total, explica_papel),
         _kpi("Contra o esperado",
              "Papel acumulado menos a soma das medianas que a Candidata "
              "prometeu para o mesmo número de pregões. Por variante, a faixa "
@@ -251,8 +205,23 @@ def kpis(resumo: dict, ops: list[dict], esperado: dict,
              "resultado ficou abaixo disso. Bom: entre p10 e p90. Ruim: "
              "abaixo do p10 — o papel está pior que 9 em 10 cenários.",
              valor_esp, nota_esp, "aviso" if "abaixo_p10" in faixas
-             else sinal_esp, nota_title=title_esp),
+             else sinal_esp, nota_title=title_esp, ordem=6),
     ]
+
+
+def _kpi_papel(hoje, total, explica) -> html.Div:
+    """PAPEL hoje: o resultado do dia do papel e, embaixo, o total desde o
+    plano em vigor (verde ou vermelho)."""
+    rot = html.Span([html.Span("PAPEL", className="op-acc op-acc-papel"),
+                     " hoje", dica(explica)], className="op-kpi-r")
+    return html.Div([
+        rot,
+        html.Span(_rs(hoje), className="op-kpi-v"
+                  + (f" {_sinal(hoje)}" if _sinal(hoje) else "")),
+        html.Span(["total ", html.B(_rs(total, 2),
+                                    className=_sinal(total) or "")],
+                  className="op-kpi-n"),
+    ], className="op-kpi op-kpi-conta", style={"order": 3})
 
 
 # -------------------------------------------------------------- variantes
@@ -277,17 +246,23 @@ _BOTOES = {
     "membro-ligar": ("", "btn-ghost op-bt op-bt-ic op-bt-mini op-bt-play"),
     "pf-desligar": ("", "btn-ghost op-bt op-bt-ic op-bt-power"),
     "pf-ligar": ("Ligar portfólio", "btn-ghost op-bt op-bt-principal op-bt-power"),
-    # o interruptor do Envio de ordens da conta demo (o rótulo diz o estado)
-    "envio-desligar": ("Envio ligado", "btn-ghost op-bt op-bt-on op-bt-send"),
-    "envio-ligar": ("Envio desligado", "btn-ghost op-bt op-bt-send"),
+    # os interruptores do Envio de ordens (protótipo v2): sem texto de
+    # ligado/desligado — a cor e a bolinha dizem; a classe `op-tg-*` desenha
+    # a chave (CSS), e o rótulo é só o nome da conta
+    "envio-desligar": ("Demo", "btn-ghost op-tg op-tg-demo op-tg-on"),
+    "envio-ligar": ("Demo", "btn-ghost op-tg op-tg-demo"),
+    "envio-real-desligar": ("Real", "btn-ghost op-tg op-tg-real op-tg-on"),
+    "envio-real-ligar": ("Real", "btn-ghost op-tg op-tg-real"),
 }
 # o nome de cada botão para o mouse e o leitor de tela
 _NOMES_BOTAO = {"membro-desligar": "Pausar variante",
                 "membro-ligar": "Ligar variante",
                 "pf-desligar": "Desligar portfólio",
                 "pf-ligar": "Ligar portfólio",
-                "envio-desligar": "Envio de ordens ligado",
-                "envio-ligar": "Envio de ordens desligado"}
+                "envio-desligar": "Envio de ordens da conta demo ligado",
+                "envio-ligar": "Envio de ordens da conta demo desligado",
+                "envio-real-desligar": "Envio de ordens da conta real ligado",
+                "envio-real-ligar": "Envio de ordens da conta real desligado"}
 
 
 def estado_botao(acao, alvo, armado) -> tuple[str, str]:
@@ -592,13 +567,15 @@ def linha_operacao(o: dict) -> html.Tr:
         _cel(var, "t"),
         _cel(html.Span("COMPRA" if compra else "VENDA",
                        className="op-lado " + ("op-c" if compra else "op-v"))),
-        _cel(f"{o.get('contratos')} / {_ctr_demo(o.get('demo'))}", "n"),
+        _cel(f"{o.get('contratos')} / {_ctr_demo(o.get('real'))} / "
+             f"{_ctr_demo(o.get('demo'))}", "n"),
         _cel(_preco(o.get("entry_px")), "n"),
         preco_saida,
         _cel(("+" if pts > 0 else "-" if pts < 0 else "") + inteiro(abs(pts)),
              "n " + (_sinal(pts) or "")),
         _cel(resultado, "n " + (_sinal(o.get("liquido")) or "")),
         _papel_x_demo(o.get("demo")),
+        _papel_x_demo(o.get("real")),
     ], className=classe)
 
 
@@ -635,10 +612,10 @@ def tabela_operacoes(ops: list[dict]):
                        className="n" if n else "")
     cab = html.Tr([
         th("Entrada"), th("Saída"), th("Variante"), th("Lado"),
-        th("Contr.", "Contratos da operação: papel / demo. O papel usa os do "
-           "plano; a demo tem a tabela própria, acima. Bom: os dois iguais "
-           "ao plano. Ruim: demo com mais contratos que o plano (risco maior "
-           "que o medido).", True),
+        th("Contr. papel / real / demo", "Contratos da operação em cada "
+           "lugar: papel, conta real e conta demo. O papel usa os do plano. "
+           "Bom: os três iguais ao plano. Ruim: real ou demo com mais "
+           "contratos que o plano (risco maior que o medido).", True),
         th("Preço entrada", n=True), th("Preço saída", n=True),
         th("Pontos", "Pontos a favor (+) ou contra (−) por contrato, já com a "
            "derrapagem do plano. Bom: ganhos maiores que as perdas na média "
@@ -649,6 +626,10 @@ def tabela_operacoes(ops: list[dict]):
         th("Papel × demo", "Derrapagem da demo além da que o plano supõe, na "
            "mesma operação, por ponta (entrada · saída), em ticks. Bom: perto "
            "de 0. Ruim: acima de 2 ticks (âmbar). \"não executada\" = a demo "
+           "não entrou nesta operação.", True),
+        th("Papel × real", "Derrapagem da conta real além da que o plano supõe, "
+           "na mesma operação, por ponta (entrada · saída), em ticks. Bom: perto "
+           "de 0. Ruim: acima de 2 ticks (âmbar). \"não executada\" = a real "
            "não entrou nesta operação.", True),
     ])
     # sem a caixa que rola: ela fica fixa no layout (`av-op-operacoes`),
@@ -967,28 +948,45 @@ def tabela_comparativo(c: dict):
             celulas.append(html.Td(texto,
                                    className="n" + ("" if texto != "—" else " mut")))
         corpo.append(html.Tr(celulas))
-    cab = html.Tr([html.Th(""), html.Th("Esperado (WFA)", className="n"),
-                   html.Th("Papel", className="n"), html.Th("Demo", className="n"),
-                   html.Th("Real", className="n")])
+    # cada coluna com a sua cor (cinza esperado, violeta papel, ciano demo,
+    # laranja real), como no protótipo v2
+    cab = html.Tr([html.Th(""), html.Th("Esperado (WFA)", className="n c-esp"),
+                   html.Th("Papel", className="n c-pap"),
+                   html.Th("Demo", className="n c-dem"),
+                   html.Th("Real", className="n c-rea")])
     return html.Table([html.Thead(cab), html.Tbody(corpo)],
                       className="op-tabela op-cmp")
 
 
 # --------------------------------------------------------------- cabeçalho
-def interruptor_envio(conta_id, envio: bool | None, armado):
-    """O Envio de ordens da conta demo, com a confirmação de dois cliques
-    (desligar encerra as posições da automação). Sem conta demo: nada."""
+_TITULO_ENVIO = {
+    "demo": {"desligar": "Desliga o envio de ordens desta conta: a automação "
+                         "encerra as posições dela e para de mandar ordens (o "
+                         "papel continua). Clique duas vezes para confirmar.",
+             "ligar": "Liga o envio de ordens desta conta: as variantes na fase "
+                      "demo passam a operar de verdade na conta demo. Precisa do "
+                      "limite de perda do dia cadastrado. Clique duas vezes."},
+    "real": {"desligar": "Desliga o envio de ordens da conta real: a automação "
+                         "encerra as posições reais e para de mandar ordens (o "
+                         "papel e a demo continuam). Clique duas vezes.",
+             "ligar": "Liga o envio de ordens da conta real: as variantes na fase "
+                      "real passam a operar de verdade na conta real. Clique "
+                      "duas vezes para confirmar."},
+}
+
+
+def interruptor_envio(conta_id, envio: bool | None, armado, tipo: str = "demo"):
+    """O Envio de ordens de uma conta (chave real laranja ou demo ciano), com
+    a confirmação de dois cliques: desligar encerra as posições da automação
+    dela. Sem conta: nada. O `tipo` escolhe a ação (`envio-real-*` ou
+    `envio-*`) e a pasta de comandos."""
     if conta_id is None or envio is None:
         return None
+    pre = "envio-real-" if tipo == "real" else "envio-"
+    titulos = _TITULO_ENVIO[tipo]
     if envio:
-        return _botao("envio-desligar", conta_id, armado,
-                      "Desliga o envio de ordens desta conta: a automação "
-                      "encerra as posições dela e para de mandar ordens (o "
-                      "papel continua). Clique duas vezes para confirmar.")
-    return _botao("envio-ligar", conta_id, armado,
-                  "Liga o envio de ordens desta conta: as variantes na fase "
-                  "demo passam a operar de verdade na conta demo. Precisa do "
-                  "limite de perda do dia cadastrado. Clique duas vezes.")
+        return _botao(f"{pre}desligar", conta_id, armado, titulos["desligar"])
+    return _botao(f"{pre}ligar", conta_id, armado, titulos["ligar"])
 
 
 def cabecalho(pf: dict, resumo: dict, *, contrato=None, dia=None) -> list:
@@ -1007,6 +1005,7 @@ def cabecalho(pf: dict, resumo: dict, *, contrato=None, dia=None) -> list:
         contrato = None
     pregao = f"{dia:%d/%m}" if isinstance(dia, (date, datetime)) else "—"
     nome_demo = str(demo["nome"]) if demo and demo.get("nome") else None
+    nome_real = str(real["nome"]) if real and real.get("nome") else None
     ligado = bool(pf.get("ligado"))
     return [
         # ponto verde + "ligado" (cinza + "desligado"), como no rascunho v4
@@ -1019,9 +1018,14 @@ def cabecalho(pf: dict, resumo: dict, *, contrato=None, dia=None) -> list:
                  "gráfico mostra o WIN$N, a série contínua). Troca sozinho na "
                  "rolagem."),
             _sep(),
+            # a conta real só aparece com ela cadastrada no portfólio
+            *([_seg(["real ", html.B(_conta_curta(nome_real))],
+                    "A conta real onde as variantes na fase real mandam ordens. "
+                    "Antes de ligar o envio dela, confira o MT5 e o limite de "
+                    "perda do dia.",
+                    title=f"conta real {nome_real}"), _sep()] if nome_real else []),
             _seg(["demo ", html.B(_conta_curta(nome_demo) if nome_demo else "—")],
-                 "A conta demo onde as variantes na fase demo mandam ordens. "
-                 f"Conta real: {real['nome'] if real else 'nenhuma ainda'}.",
+                 "A conta demo onde as variantes na fase demo mandam ordens.",
                  title=f"conta demo {nome_demo}" if nome_demo else None),
             _sep(),
             _seg([html.B("—" if cap is None
@@ -1047,17 +1051,32 @@ def _conta_curta(nome: str) -> str:
     return nome
 
 
-def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None) -> list:
+def botoes_portfolio(pf: dict, armado, *, conta_id=None, envio=None,
+                     real_id=None, envio_real=None) -> list:
+    """A direita da linha do portfólio: Envio (?), a chave Real (só com conta
+    real no portfólio), a chave Demo, um separador e o power. O power para
+    o papel das duas contas (o title diz isso)."""
     pid = pf["portfolio_id"]
-    sw = interruptor_envio(conta_id, envio, armado)
-    antes = [sw] if sw is not None else []
+    chaves = [interruptor_envio(real_id, envio_real, armado, tipo="real"),
+              interruptor_envio(conta_id, envio, armado)]
+    chaves = [c for c in chaves if c is not None]
+    antes = []
+    if chaves:
+        antes = [html.Span(["Envio", dica("Envio de ordens por conta. Ligado: a "
+                                          "automação manda ordens nesta conta para "
+                                          "as variantes na fase dela. Desligado: só "
+                                          "o papel. Bom: ligado nas contas em uso. "
+                                          "Ruim: ligado sem limite de perda do dia "
+                                          "cadastrado (a automação não liga).")],
+                           className="op-envlb"), *chaves,
+                 html.Span(className="op-vsep")]
     if pf.get("ligado"):
         return antes + [_botao("pf-desligar", pid, armado,
-                               "Para o portfólio inteiro: as operações deixam de "
-                               "contar a partir de agora. Clique duas vezes.")]
+                               "para o papel de todas as variantes deste portfólio "
+                               "(real e demo param junto). Dois cliques.")]
     return antes + [_botao("pf-ligar", pid, armado,
                            "Libera as variantes ligadas do portfólio para o papel. "
-                           "Clique duas vezes.")]
+                           "Clique duas vezes para confirmar.")]
 
 
 # -------------------------------------------------------------------- bloco
@@ -1114,7 +1133,14 @@ ABAS = (("operacoes", "Operações", "list"), ("diario", "Diário", "scroll-text
 
 
 def _aba_operacoes():
+    """Três tabelas, nessa ordem (protótipo v2): Real, Demo e Papel. A real
+    e a demo vêm do banco pelo mesmo callback (`ordens_op`); o papel tem o
+    filtro de variante."""
     return html.Section([
+        OR.subtitulo("Real", "Operações do dia na conta real, com a mesma régua "
+                     "da demo. Derrapagem = diferença para o preço do papel, por "
+                     "ponta, em ticks."),
+        html.Div(id="av-op-real-operacoes", className="op-tabela-caixa ord-caixa"),
         OR.subtitulo("Demo", "Operações do dia na conta demo. Derrapagem = "
                      "diferença para o preço do papel, por ponta, em ticks."),
         html.Div(id="av-op-ord-operacoes", className="op-tabela-caixa ord-caixa"),
@@ -1125,10 +1151,6 @@ def _aba_operacoes():
                                   options=[{"label": "Todas as variantes",
                                             "value": "todas"}])),
         html.Div(id="av-op-operacoes", className="op-operacoes op-tabela-caixa"),
-        OR.subtitulo("Real", "A conta real ainda não está ligada ao "
-                     "Dataframe: as variantes operam no papel e na conta "
-                     "demo."),
-        html.P("sem conta real", className="op-vazio-txt"),
     ], className="op-pane op-pane-operacoes")
 
 
@@ -1152,7 +1174,7 @@ def _aba_diario():
                          {"label": "Só problemas", "value": "problemas"}]),
         ], className="op-dia-barra"),
         html.Div([
-            html.Div([html.Span("Hora"), html.Span("Variante"),
+            html.Div([html.Span("Hora"), html.Span("Conta · variante"),
                       html.Span(["O que aconteceu",
                                  dica("Tudo o que a automação fez hoje na "
                                       "conta demo, do mais novo para o mais "
@@ -1233,7 +1255,7 @@ def bloco():
             # retorno das ações (clique duplo): some quando vazio
             html.Div(id="av-op-aviso", className="av-aviso"),
         ], className="panel op-topo"),
-        # uma faixa só com os sete números: as células dos dois callbacks
+        # uma faixa só com os seis números: as células dos dois callbacks
         # (demo pelo pulso, papel pelo redesenho) viram itens da mesma grade
         html.Div([
             html.Div(id="av-op-ord-numeros", className="ord-numeros-caixa"),
@@ -1289,8 +1311,12 @@ def bloco():
             ], className="panel op-painel-grafico"),
         ], className="op-grade"),
         html.Section([
-            _sec_head("Posições abertas", "Posições na corretora agora, "
-                      "conferidas com o que o papel quer.", ic="crosshair"),
+            _sec_head("Posições abertas", "Posições na corretora agora, da conta "
+                      "real e da demo (a coluna Conta diz qual), conferidas com o "
+                      "que o papel quer. Posição agora = contratos em aberto "
+                      "somando as variantes: comprado soma, vendido subtrai. "
+                      "Variantes em lados opostos se anulam aqui.",
+                      ic="crosshair"),
             html.Div(id="av-op-ord-posicoes", className="op-tabela-caixa ord-caixa"),
         ], className="panel op-painel-pos"),
         html.Section([

@@ -98,41 +98,41 @@ def _kpi(cartoes, rotulo):
     return next(c for c in cartoes if rotulo in textos(c))
 
 
-def test_cinco_indicadores_do_papel_cada_um_com_dica():
-    # a faixa tem sete: os dois da demo vêm do pulso (OR.numeros)
+def test_dois_indicadores_do_papel_cada_um_com_dica():
+    # a tira tem seis: os de conta vêm do pulso (OR.numeros); estes dois são do papel
     cartoes = OP.kpis(_resumo(), [_op()], {"diferenca": 120.0, "faixas": []})
-    assert len(cartoes) == 5
+    assert len(cartoes) == 2
     for c in cartoes:
         assert any("dica-mark" in classes(x) for x in todos(c)), textos(c)
 
 
-def test_pior_momento_com_limite_mostra_a_barra():
-    c = _kpi(OP.kpis(_resumo(), [], {}), "Pior momento")
-    t = textos(c)
-    assert "-R$ 164" in t and "11:08" in t and "R$ 500" in t
-    barra = [x for x in todos(c) if "op-barra-uso" in classes(x)]
+def test_pior_momento_fica_no_cartao_da_perda_com_barra():
+    # o pior momento saiu da tira: mora no (?) da perda da demo, e a barra
+    # até a trava é a do cartão
+    from ui.components import ordens_panel as OR
+    c = OR.perda_do_dia({"perda": {"total": 164.0}, "limite": 500.0}, None,
+                        origem="demo",
+                        extra="Pior momento de hoje: -R$ 164 às 11:08.")
+    assert "R$ 164" in textos(c) and "33%" in textos(c)
+    assert "11:08" in dicas_txt(c)
+    barra = [x for x in todos(c) if "ord-barra-uso" in classes(x)]
     assert barra and barra[0].style["width"] == "33%"
 
 
-def test_pior_momento_sem_limite_esconde_a_barra():
-    c = _kpi(OP.kpis(_resumo(limite_dia=None), [], {}), "Pior momento")
-    assert not [x for x in todos(c) if "op-barra" in classes(x)]
+def test_pior_momento_sem_limite_nao_desenha_barra():
+    from ui.components import ordens_panel as OR
+    c = OR.perda_do_dia({"perda": {"total": 0.0}, "limite": None}, None)
+    assert not [x for x in todos(c) if "ord-barra" in classes(x)]
     assert "sem limite" in textos(c)
-
-
-def test_posicao_agora_diz_o_lado_e_os_contratos():
-    c = _kpi(OP.kpis(_resumo(posicao={"liquida": -2, "por_ligacao": {}}),
-                     [], {}), "Posição agora")
-    t = textos(c)
-    assert "vendido" in t and "papel 2" in t and "demo —" in t
 
 
 def test_resultado_hoje_conta_so_o_que_conta():
     ops = [_op(), _op(op_id=2, conta=False),
            _op(op_id=3, situacao="aberta", aberta=True, exit_ts=None)]
-    t = textos(_kpi(OP.kpis(_resumo(), ops, {}), "Papel hoje"))
+    t = textos(_kpi(OP.kpis(_resumo(), ops, {}), "PAPEL"))
     assert "+R$ 286" in t
-    assert "2 operações" in t and "1 aberta" in t
+    # o total embaixo é o acumulado desde o plano em vigor (2.418,00)
+    assert "2.418,00" in t
 
 
 def test_contra_o_esperado_sem_expectativa_e_travessao():
@@ -247,14 +247,6 @@ def test_cartao_traduz_a_fase():
     assert "real mínimo" in t and "real_minimo" not in t
 
 
-def test_pior_momento_sem_hora_nao_comeca_com_separador():
-    c = _kpi(OP.kpis(_resumo(pior_momento={"valor": 0.0, "quando": None}),
-                     [], {}), "Pior momento")
-    nota = next(x for x in todos(c) if "op-kpi-n" in classes(x))
-    assert not nota.children.startswith(" ·")
-    assert nota.children.startswith("limite R$ 500")
-
-
 def _com_dica(arvore, rotulo):
     for x in todos(arvore):
         filhos = getattr(x, "children", None)
@@ -271,7 +263,8 @@ def test_colunas_da_variante_tem_dica():
 
 def test_cabecalho_da_tabela_tem_dica_nas_metricas():
     arvore = OP.tabela_operacoes([_op()])
-    for rot in ("Contr.", "Pontos", "Resultado", "Papel × demo"):
+    for rot in ("Contr. papel / real / demo", "Pontos", "Resultado",
+                "Papel × demo"):
         assert _com_dica(arvore, rot), rot
 
 

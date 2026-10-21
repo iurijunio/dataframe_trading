@@ -2038,3 +2038,39 @@ body{
 .av-so-icone{padding:6px 8px;line-height:0;}
 .av-ord-grade .av-kv{padding:0;}
 .av-ord-grade .av-alerta,.av-ord-grade .av-texto{margin:0;}
+/* ---------------------------------------------------------------------
+   Operação com a conta real (protótipo v2, Operação). Cores: laranja =
+   real (#fbbf24), ciano = demo (--accent), violeta = papel (--accent-2).
+   ------------------------------------------------------------------ */
+/* etiquetas REAL / DEMO / PAPEL das células e das tabelas */
+.op-acc{display:inline-flex;align-items:center;font:600 var(--fs-2xs) var(--sans);
+  padding:0 6px;margin-right:4px;border-radius:999px;border:1px solid;line-height:1.6;}
+.op-acc-real{color:#fbbf24;border-color:#5a4410;}
+.op-acc-demo{color:var(--accent);border-color:#0e4552;}
+.op-acc-papel{color:var(--accent-2);border-color:#3b2a63;}
+/* tira de números: seis células na mesma linha, na ordem do protótipo */
+#av-bloco-operacao .op-tira{grid-template-columns:repeat(6,minmax(0,1fr));}
+#av-bloco-operacao .op-kpi-conta .op-kpi-n b{font-weight:600;}
+#av-bloco-operacao .op-kpi-conta .op-kpi-n b.pos{color:var(--pos);}
+#av-bloco-operacao .op-kpi-conta .op-kpi-n b.neg{color:var(--neg);}
+/* a chave do Envio (Real laranja, Demo ciano); a bolinha é o próprio desenho */
+.op-envlb{display:inline-flex;align-items:center;font:500 var(--fs-sm) var(--sans);
+  color:var(--muted);margin-right:2px;}
+.op-tg{display:inline-flex;align-items:center;gap:7px;padding:4px 8px;
+  font:500 var(--fs) var(--sans);color:var(--muted);}
+.op-tg::before{content:"";flex:0 0 auto;width:30px;height:16px;border-radius:999px;
+  box-sizing:border-box;border:1px solid var(--line);background-color:var(--surface-3);
+  background-image:radial-gradient(circle at 8px 50%,var(--muted) 5px,transparent 5.5px);
+  background-repeat:no-repeat;}
+.op-tg-real.op-tg-on{color:#fbbf24;}
+.op-tg-real.op-tg-on::before{border-color:#fbbf24;background-color:#3a2c08;
+  background-image:radial-gradient(circle at 22px 50%,#fbbf24 5px,transparent 5.5px);}
+.op-tg-demo.op-tg-on{color:var(--accent);}
+.op-tg-demo.op-tg-on::before{border-color:var(--accent);background-color:#06222a;
+  background-image:radial-gradient(circle at 22px 50%,var(--accent) 5px,transparent 5.5px);}
+.op-vsep{width:1px;height:22px;background:var(--line);margin:0 4px;flex:0 0 auto;}
+/* colunas do Esperado × Papel × Demo × Real, cada uma com a sua cor */
+.op-cmp th.c-esp{color:var(--muted);}
+.op-cmp th.c-pap{color:var(--accent-2);}
+.op-cmp th.c-dem{color:var(--accent);}
+.op-cmp th.c-rea{color:#fbbf24;}

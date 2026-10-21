@@ -431,12 +431,20 @@ def _th(texto, explica=None, n=False):
                    className="n" if n else "")
 
 
+def _chip_conta(origem: str) -> html.Span:
+    """"real" (laranja) ou "demo" (ciano): a conta de onde é a posição."""
+    return html.Span(origem, className=f"ord-conta ord-conta-{origem}")
+
+
 def posicoes_abertas(ordens: dict | None, nomes: dict, tick: int, *,
-                     ponto: float = 0.2, agora: datetime | None = None):
+                     ponto: float = 0.2, agora: datetime | None = None,
+                     real: dict | None = None):
     """O que está na corretora agora, de ESTE portfólio (`nomes` = as
-    ligações dele), conferido com o que o papel quer."""
+    ligações dele), conferido com o que o papel quer. A coluna Conta diz
+    de qual conta é cada posição: as da demo (`ordens`) e, se `real` vier
+    (a conta real está viva), as da real, na mesma tabela."""
     cab = html.Tr([
-        _th("Variante"), _th("Lado"),
+        _th("Conta"), _th("Variante"), _th("Lado"),
         _th("Contr.", "Contratos na corretora; entre parênteses o que o papel "
             "quer, quando difere. Bom: iguais. Ruim: diferentes — vira "
             "\"diferente\" e a automação corrige.", True),
@@ -454,7 +462,9 @@ def posicoes_abertas(ordens: dict | None, nomes: dict, tick: int, *,
             "chamado); indisponível = sem o papel agora, a automação só protege; "
             "diferente = a corretora tem outra coisa."),
     ])
-    pos = _posicoes(ordens, list(nomes))
+    pos = [("demo", *x) for x in _posicoes(ordens, list(nomes))]
+    if real is not None:
+        pos += [("real", *x) for x in _posicoes(real, list(nomes))]
     if not pos:
         o = ordens or {}
         if o.get("n_demo") == 0:
@@ -467,12 +477,12 @@ def posicoes_abertas(ordens: dict | None, nomes: dict, tick: int, *,
             explica = "Nenhuma posição da automação aberta na corretora agora."
         # a tabela fica, com o cabeçalho e uma linha só (rascunho v4)
         vazia = html.Tr(html.Td(["nenhuma na corretora", dica(explica)],
-                                colSpan=8, className="op-td-vazio"))
+                                colSpan=9, className="op-td-vazio"))
         return html.Table([html.Thead(cab), html.Tbody(vazia)],
                           className="op-tabela ord-tabela")
     tick = int(tick or 1)
     linhas = []
-    for lig, l, p in pos:
+    for origem, lig, l, p in pos:
         lado = int(p.get("lado") or 0)
         vol = float(p.get("volume") or 0)
         preco = float(p.get("preco") or 0)
@@ -506,6 +516,7 @@ def posicoes_abertas(ordens: dict | None, nomes: dict, tick: int, *,
                          else round((atual - preco) * lado / tick))
         sit, tom = _situacao_posicao(l, p, agora)
         linhas.append(html.Tr([
+            html.Td(_chip_conta(origem), className="t"),
             html.Td(_nome_tab(_nome(nomes, lig)), className="t"),
             html.Td(_lado(lado)),
             html.Td(ctr, className="n" + (" neg" if len(ctr) > 1 else "")),
@@ -562,29 +573,48 @@ def _quebra(perda: dict, portfolio_id) -> tuple[float, float, float]:
     return este, automacao - este, float(perda.get("fora") or 0)
 
 
-def numeros(ordens: dict | None, resultado_portfolio: float,
-            papel_portfolio: float, *, portfolio_id=None,
-            ligacoes=None) -> html.Div:
-    """Demo hoje (deste portfólio) e a perda do dia DA CONTA × o limite
-    (D2): as duas primeiras células da faixa de números. As posições
-    abertas não entram: a tabela embaixo do gráfico já as mostra.
-    `ligacoes` fica na assinatura porque o pulso a passa (é dele o filtro
-    das posições)."""
-    o = ordens or {}
-    tem = bool(o) and o.get("n_demo") != 0
-    resultado = _kpi(
-        "Demo hoje",
-        "Fechadas na demo hoje mais o resultado aberto das posições, só deste "
-        "portfólio, antes dos custos. Embaixo, o papel das mesmas operações "
-        "executadas, no tamanho da demo e também antes dos custos — a mesma "
-        "base. A coluna Demo do Esperado × Papel × Demo, na Avaliação, já "
-        "desconta os custos e por isso fica menor. Bom: perto do papel (a "
-        "execução custa pouco). Ruim: bem abaixo do papel todo dia.",
-        _rs(resultado_portfolio) if tem else "—",
-        f"papel no mesmo tamanho {_rs(papel_portfolio)}" if tem
-        else "sem demo hoje",
-        _sinal(resultado_portfolio) if tem else "")
+def _total(v) -> str:
+    """O total desde o plano em vigor, com centavos: "+R$ 147,00"."""
+    if v is None:
+        return "—"
+    corpo = num(abs(float(v)), 2)
+    if round(float(v), 2) == 0:
+        return f"R$ {corpo}"
+    return f"{'+' if v > 0 else '-'}R$ {corpo}"
 
+
+def _celula_conta(origem: str, rotulo_extra: str, valor: str, sinal: str,
+                  explica: str, nota: list, ordem: int) -> html.Div:
+    """Uma célula da tira de números de uma conta: a etiqueta REAL/DEMO, o
+    valor grande e a linha de baixo (`nota`, já com os trechos coloridos)."""
+    rot = html.Span([html.Span(origem.upper(), className=f"op-acc op-acc-{origem}"),
+                     f" {rotulo_extra}", dica(explica)], className="op-kpi-r")
+    return html.Div([rot,
+                     html.Span(valor, className="op-kpi-v" + (f" {sinal}" if sinal else "")),
+                     html.Span(nota, className="op-kpi-n")],
+                    className="op-kpi op-kpi-conta", style={"order": ordem})
+
+
+def _cel_hoje(origem, resultado, total, ordem, explica, sem=None) -> html.Div:
+    """REAL hoje / DEMO hoje: o resultado do dia da conta (fechadas mais a
+    aberta) e, embaixo, o total desde o plano em vigor."""
+    if sem is not None:
+        valor, nota = "—", [sem]
+        sinal = ""
+    else:
+        valor = _rs(resultado)
+        sinal = _sinal(resultado)
+        nota = ["total ", html.B(_total(total), className=_sinal(total))]
+    return _celula_conta(origem, "hoje", valor, sinal, explica, nota, ordem)
+
+
+def perda_do_dia(o: dict | None, portfolio_id=None, *, origem: str = "demo",
+                 ordem: int = 5, extra: str | None = None,
+                 parada: bool = False) -> html.Div:
+    """Perda do dia DA CONTA × o limite (D2), a barra até a trava. `o` é o
+    bloco `ordens` da conta (demo: o estado.json; real: estado_real.json).
+    `extra` vai para o (?) (ex.: o pior momento do dia)."""
+    o = o or {}
     perda = o.get("perda") or {}
     limite = o.get("limite")
     explica_perda = (
@@ -592,39 +622,108 @@ def numeros(ordens: dict | None, resultado_portfolio: float,
         "abertas), contra o limite de perda do dia cadastrado. A 90% a automação "
         "encerra tudo e não entra mais até amanhã. Bom: abaixo de 60% (cinza). "
         "Atenção: 60–85% (âmbar). Ruim: 85% ou mais (rosa).")
+    if extra:
+        explica_perda += f" {extra}"
+    rot = html.Span([html.Span(origem.upper(), className=f"op-acc op-acc-{origem}"),
+                     " · perda do dia", dica(explica_perda)], className="op-kpi-r")
+    if parada:
+        return html.Div([rot, html.Span("—", className="op-kpi-v"),
+                         html.Span("conta parada", className="op-kpi-n")],
+                        className="op-kpi op-kpi-conta", style={"order": ordem})
     if not perda:
-        bloco_perda = _kpi("Perda do dia", explica_perda, "—",
-                           "sem leitura da conta")
+        return html.Div([rot, html.Span("—", className="op-kpi-v"),
+                         html.Span("sem leitura da conta", className="op-kpi-n")],
+                        className="op-kpi op-kpi-conta", style={"order": ordem})
+    total = float(perda.get("total") or 0)
+    este, outros, fora = _quebra(perda, portfolio_id)
+    abertura = (f"este portfólio {_parte(este)} · outros portfólios "
+                f"{_parte(outros)} · fora da automação {_parte(fora)}")
+    if este + outros + fora < 0:
+        abertura += " · dia no ganho: a barra conta só perdas"
+    # a quebra é frase longa: vai para o (?) e para o title da nota
+    explica = f"{explica_perda} Agora: {abertura}."
+    if limite:
+        pct = total / float(limite) * 100
+        barra = html.Div([
+            html.Span(className=f"ord-barra-uso ord-barra-{tom_da_perda(pct)}",
+                      style={"width": f"{min(100, round(pct))}%"}),
+            html.Span(className="ord-barra-marca", style={"left": f"{TRAVA_PCT}%"}),
+        ], className="ord-barra")
+        # "R$ 0 / 500", como no rascunho v4
+        valor = [_reais(total), html.Span(f" / {inteiro(int(round(float(limite))))}",
+                                          className="ord-kpi-de",
+                                          title=f"de {_reais(limite)}")]
+        nota = f"{round(pct)}% · trava em {TRAVA_PCT}%"
+        explica += (f" A trava encerra tudo em "
+                    f"{_reais(float(limite) * TRAVA_PCT / 100)}.")
     else:
-        total = float(perda.get("total") or 0)
-        este, outros, fora = _quebra(perda, portfolio_id)
-        abertura = (f"este portfólio {_parte(este)} · outros portfólios "
-                    f"{_parte(outros)} · fora da automação {_parte(fora)}")
-        if este + outros + fora < 0:
-            abertura += " · dia no ganho: a barra conta só perdas"
-        # a quebra é frase longa: vai para o (?) e para o title da nota
-        explica = f"{explica_perda} Agora: {abertura}."
-        if limite:
-            pct = total / float(limite) * 100
-            barra = html.Div([
-                html.Span(className=f"ord-barra-uso ord-barra-{tom_da_perda(pct)}",
-                          style={"width": f"{min(100, round(pct))}%"}),
-                html.Span(className="ord-barra-marca", style={"left": f"{TRAVA_PCT}%"}),
-            ], className="ord-barra")
-            # "R$ 0 / 500", como no rascunho v4
-            valor = [_reais(total), html.Span(f" / {inteiro(int(round(float(limite))))}",
-                                              className="ord-kpi-de",
-                                              title=f"de {_reais(limite)}")]
-            nota = f"{round(pct)}% · trava em {TRAVA_PCT}%"
-            explica += (f" A trava encerra tudo em "
-                        f"{_reais(float(limite) * TRAVA_PCT / 100)}.")
+        barra = None
+        valor = _reais(total)
+        nota = "sem limite cadastrado"
+    rot = html.Span([html.Span(origem.upper(), className=f"op-acc op-acc-{origem}"),
+                     " · perda do dia", dica(explica)], className="op-kpi-r")
+    filhos = [rot, html.Span(valor, className="op-kpi-v"),
+              html.Span(nota, className="op-kpi-n", title=abertura)]
+    if barra is not None:
+        filhos.append(barra)
+    return html.Div(filhos, className="op-kpi op-kpi-conta", style={"order": ordem})
+
+
+def numeros(ordens: dict | None, resultado_portfolio: float,
+            papel_portfolio: float, *, portfolio_id=None,
+            ligacoes=None, real: dict | None = None, com_real: bool = False,
+            real_parada: bool = False, resultado_real: float | None = None,
+            total_demo: float | None = None, total_real: float | None = None,
+            pior: dict | None = None) -> html.Div:
+    """As células de conta da tira de números (spec parte 5, Operação):
+    REAL hoje e Perda do dia · real (só com conta real cadastrada), DEMO
+    hoje e Perda do dia · demo. A ordem vem no `style` (1 a 5) e o CSS as
+    põe lado a lado com o PAPEL hoje e o Contra o esperado da faixa de
+    cima. A demo hoje é deste portfólio (fechadas mais a aberta, antes dos
+    custos); o total embaixo é desde o plano em vigor. `pior` (o pior
+    momento do dia) vai para o (?) da perda da demo. `ligacoes` fica na
+    assinatura porque o pulso a passa (é dele o filtro das posições)."""
+    o = ordens or {}
+    tem = bool(o) and o.get("n_demo") != 0
+    celulas = []
+    if com_real:
+        if real_parada or not real:
+            celulas.append(_cel_hoje("real", None, None, 1,
+                                     "Fechadas na conta real hoje mais o "
+                                     "resultado aberto. Vazio quando a captura "
+                                     "da conta real parou.",
+                                     sem="conta real parada"))
         else:
-            barra = None
-            valor = _reais(total)
-            nota = "sem limite cadastrado"
-        bloco_perda = _kpi("Perda do dia", explica, valor, nota, extra=barra,
-                           title=abertura)
-    return html.Div([resultado, bloco_perda], className="ord-numeros")
+            celulas.append(_cel_hoje(
+                "real", resultado_real, total_real, 1,
+                "Fechadas na conta real hoje mais o resultado aberto das "
+                "posições, só deste portfólio, antes dos custos. Embaixo, o "
+                "total desde o plano em vigor, líquido dos custos do plano. "
+                "Bom: positivo. Ruim: perda perto do limite de perda do dia."))
+    explica_demo = (
+        "Fechadas na demo hoje mais o resultado aberto das posições, só deste "
+        "portfólio, antes dos custos. Embaixo, o total desde o plano em vigor. "
+        "O papel das mesmas operações executadas fica no (?) da linha de "
+        "Papel × demo, na Avaliação. Bom: perto do papel (a execução custa "
+        "pouco). Ruim: bem abaixo do papel todo dia.")
+    if tem:
+        celulas.append(_cel_hoje("demo", resultado_portfolio, total_demo, 2,
+                                 explica_demo + f" Hoje o papel no mesmo "
+                                 f"tamanho: {_rs(papel_portfolio)}."))
+    else:
+        celulas.append(_cel_hoje("demo", None, None, 2, explica_demo,
+                                 sem="sem demo hoje"))
+    if com_real:
+        celulas.append(perda_do_dia(real, portfolio_id, origem="real", ordem=4,
+                                    parada=real_parada or not real))
+    texto_pior = None
+    if pior and pior.get("valor") is not None:
+        quando = pior.get("quando")
+        hora = f" às {_hora(quando)}" if quando else ""
+        texto_pior = (f"Pior momento de hoje: {_rs(pior['valor'])}{hora}.")
+    celulas.append(perda_do_dia(o, portfolio_id, origem="demo", ordem=5,
+                                extra=texto_pior))
+    return html.Div(celulas, className="ord-numeros")
 
 
 # ====================================================== operações da demo
@@ -699,12 +798,14 @@ def _derrap(l: dict) -> str:
     return f"{_decimal(e)} · {_decimal(s)}"
 
 
-def operacoes_demo(linhas: list[dict]):
-    """A tabela "Operações do dia" da demo. A derrapagem vai por ponta
+def operacoes_demo(linhas: list[dict], origem: str = "demo"):
+    """A tabela "Operações do dia" da conta (demo, ou real com
+    `origem="real"`; a mesma régua nas duas). A derrapagem vai por ponta
     (entrada · saída), em ticks, ALÉM da que o plano supõe (o preço do papel
     já a inclui), positivo = pior."""
     if not linhas:
-        return _vazio("nenhuma operação na demo hoje",
+        nome = "real" if origem == "real" else "demo"
+        return _vazio(f"nenhuma operação na {nome} hoje",
                       "Com as variantes só no papel esta tabela fica vazia; as "
                       "operações do papel estão logo abaixo, em Papel.")
     corpo = []
@@ -875,9 +976,12 @@ def diario_do_dia(eventos: list[dict], nomes: dict | None, *,
         if t is None:
             continue
         texto, tom = t
+        # a coluna Conta: o chip real/demo vai antes do nome da variante
         linhas.append(html.Div([
             html.Span(_hora(e.get("quando"), segundos=True), className="ord-ev-h"),
-            _nome_tab(_nome(nomes, e.get("ligacao_id")), "ord-ev-quem"),
+            html.Span([_chip_conta(e.get("origem") or "demo"),
+                       _nome_tab(_nome(nomes, e.get("ligacao_id")), "op-nome-tab")],
+                      className="ord-ev-quem op-ev-conta"),
             html.Span(texto, className="ord-ev-t" + (f" {tom}" if tom else "")),
         ], className="ord-ev" + (" ord-ev-problema" if e.get("tipo") in PROBLEMAS
                                  else "")))
@@ -934,14 +1038,17 @@ def _fator(v):
     return num(v, 2)
 
 
-def tabela_papel_demo(cmp: dict | None):
-    """Papel × Demo por contrato, nos mesmos pregões."""
+def tabela_papel_demo(cmp: dict | None, origem: str = "demo"):
+    """Papel × Demo (ou Papel × Real, com `origem="real"`) por contrato, nos
+    mesmos pregões. A conta real usa a mesma tabela e a mesma régua."""
     c = cmp or {}
     p, d = c.get("papel"), c.get("demo")
+    nome = "real" if origem == "real" else "demo"
     if not c.get("pregoes") or d is None:
-        return _vazio("nenhum pregão na demo ainda",
-                      "Quando uma variante for para a demo, esta tabela compara "
-                      "a execução da demo com o papel, por contrato.")
+        return _vazio(f"nenhum pregão na {nome} ainda",
+                      "Quando uma variante for para a "
+                      f"{nome}, esta tabela compara a execução da {nome} com o "
+                      "papel, por contrato.")
     p = p or {}
 
     def dif(a, b, fmt):
@@ -1009,18 +1116,19 @@ def tabela_papel_demo(cmp: dict | None):
             html.Td(vdif, className="n" + (f" {tom}" if tom else "")),
         ]))
     cab = html.Tr([html.Th(""), html.Th("Papel", className="n"),
-                   html.Th("Demo", className="n"),
+                   html.Th(nome.capitalize(), className="n"),
                    html.Th("Diferença", className="n")])
     return html.Table([html.Thead(cab), html.Tbody(corpo)],
                       className="op-tabela op-cmp")
 
 
 def avaliacao(situacao_backtest: dict | None, comparativo_demo: dict | None,
-              curva=None, comparativo=None) -> html.Section:
+              curva=None, comparativo=None,
+              comparativo_real: dict | None = None) -> html.Section:
     """A aba Avaliação: Esperado × Papel × Demo × Real (`comparativo`, a
-    caixa que o redesenho preenche), a curva Papel × esperado, a tabela
-    Papel × demo por contrato e o selo papel = backtest. Dois por linha,
-    na ordem de leitura."""
+    caixa que o redesenho preenche), a curva Papel × esperado, as tabelas
+    Papel × real e Papel × demo por contrato e o selo papel = backtest.
+    Dois por linha, na ordem de leitura."""
     def bloco(*filhos):
         return html.Div(list(filhos), className="op-aval-bloco")
     return html.Section(html.Div([
@@ -1030,6 +1138,11 @@ def avaliacao(situacao_backtest: dict | None, comparativo_demo: dict | None,
                         "fizeram. Cada linha tem o (?) com a faixa boa e a ruim."),
               comparativo if comparativo is not None else []),
         bloco(curva if curva is not None else []),
+        bloco(subtitulo("Papel × real", "Mesmos pregões, por contrato, com a "
+                        "conta real: quanto a execução de verdade custa contra "
+                        "o papel."),
+              html.Div(tabela_papel_demo(comparativo_real, "real"),
+                       id="av-op-ord-cmp-real", className="op-cmp-caixa")),
         bloco(subtitulo("Papel × demo", "Mesmos pregões, por contrato: quanto a "
                         "execução de verdade custa contra o papel."),
               html.Div(tabela_papel_demo(comparativo_demo), id="av-op-ord-cmp",
