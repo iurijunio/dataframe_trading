@@ -1107,3 +1107,30 @@ def test_captura_so_abre_o_terminal_da_conta_demo(base):
     AV.criar_conta("real", "real", 500.0, login=2, servidor="S-REAL",
                    terminal=r"C:\real\terminal64.exe")
     assert cap._terminal_da_conta() == r"C:\demo\terminal64.exe"
+
+
+def test_banco_fora_no_terminal_levanta_e_nao_devolve_none(base, monkeypatch):
+    # banco que não responde não pode virar "sem caminho": o MT5 abriria o
+    # terminal padrão, que pode ser o da conta real
+    import captura as cap
+
+    def fora(*a, **k):
+        raise OSError("banco preso")
+    monkeypatch.setattr(cap.db, "connect", fora)
+    with pytest.raises(RuntimeError, match="terminal da conta"):
+        cap._terminal_da_conta()
+
+
+def test_main_com_banco_fora_nao_inicia_o_servico_e_sai_com_erro_comum(base, monkeypatch):
+    import captura as cap
+
+    def fora(*a, **k):
+        raise OSError("banco preso")
+    monkeypatch.setattr(cap, "PASTA", base / "ao_vivo")
+    monkeypatch.setattr(cap.db, "connect", fora)
+
+    def nao_deve_iniciar(**k):
+        raise AssertionError("o serviço não pode subir sem caminho do terminal")
+    monkeypatch.setattr(cap, "Servico", nao_deve_iniciar)
+    with pytest.raises(RuntimeError):      # erro comum: o captura.bat reabre
+        cap.main([])

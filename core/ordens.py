@@ -826,16 +826,28 @@ class Motor:
                         | dia.ligacoes_abertas()) - set(finais):
                 finais[lig] = Desejado(ZERADO, motivo=geral or "envio desligado")
 
-        # 6. planejar e a régua de cada entrada
-        acoes = planejar(finais, (disponivel and not antigo) or zera_tudo, foto, dia,
-                         agora_srv, self.tick, conectado_ha_s)
-        acoes = self._encerrar_pedidos(acoes, foto, encerrar, dia, agora_srv)
-        seria = []
-        if not envio and not geral and not antigo and not foto.parcial:
-            seria = self._seria_enviadas(desejados, retrato, cid, dia, agora_srv,
-                                         disponivel, conectado_ha_s)
-        pode_entrar = self._regua(mt5, foto, retrato, perda, limite, simbolo, contrato_ok,
-                                  dia, desejados, agora, contrato_motivo)
+        # 6. planejar e a régua de cada entrada. Se isso estoura, a proteção
+        # ainda sai (7): posição sem stop não pode ficar esperando o erro
+        # passar. Nesse caminho nunca há entrada.
+        try:
+            acoes = planejar(finais, (disponivel and not antigo) or zera_tudo, foto, dia,
+                             agora_srv, self.tick, conectado_ha_s)
+            acoes = self._encerrar_pedidos(acoes, foto, encerrar, dia, agora_srv)
+            seria = []
+            if not envio and not geral and not antigo and not foto.parcial:
+                seria = self._seria_enviadas(desejados, retrato, cid, dia, agora_srv,
+                                             disponivel, conectado_ha_s)
+            pode_entrar = self._regua(mt5, foto, retrato, perda, limite, simbolo,
+                                      contrato_ok, dia, desejados, agora, contrato_motivo)
+        except Exception as erro:
+            log.exception("planejar das ordens falhou")
+            self._chamar("ordens_falhou", "ordens_falhou", f"erro nas ordens: {erro}", agora)
+            falhou = True
+            acoes = []
+            for lig in sorted({p.ligacao_id for p in foto.posicoes if p.ligacao_id}):
+                acoes += _so_protecao(foto, dia, lig, agora_srv)
+            seria = []
+            pode_entrar = lambda a: (False, "planejar falhou")
 
         # 7. executar: saídas primeiro, entradas à parte — uma falha nas
         # entradas não impede as saídas desta volta (e vice-versa)
@@ -856,6 +868,11 @@ class Motor:
         # 8. a "Ordem de teste": DEPOIS das ações das estratégias, uma etapa
         # por volta — nunca atrasa uma entrada nem uma saída delas
         pedidos = [c for c in est.get("comandos") or [] if c.get("tipo") == "ordem_teste"]
+        if pedidos and self.origem == "real":
+            # a ordem de teste é só da conta demo: no processo da real ela é
+            # recusada antes de qualquer pré-condição, e nada sai
+            self.teste.recusar(pedidos, dia, agora, "ordem de teste só na conta demo")
+            pedidos = []
         try:
             self.teste.volta(mt5, foto=foto, dia=dia, agora=agora, pedidos=pedidos,
                              cid=cid, conta=conta, no_pregao=no_pregao,

@@ -1568,7 +1568,11 @@ def _configurar_log() -> None:
 
 
 def _terminal_da_conta() -> str | None:
-    """Com dois MT5 instalados, o caminho cadastrado na conta diz qual abrir."""
+    """Com dois MT5 instalados, o caminho cadastrado na conta diz qual abrir.
+
+    Banco que não responde NÃO devolve None: sem o caminho, o MT5 abriria o
+    terminal padrão, que pode ser o da conta real. Levanta exceção comum (não
+    ErroDeConfiguracao) para o .bat reabrir daqui a 10 s."""
     try:
         with db.connect(read_only=True, tentativas=4) as con:
             linha = con.execute(
@@ -1577,8 +1581,9 @@ def _terminal_da_conta() -> str | None:
                 "SELECT terminal FROM contas WHERE arquivada_em IS NULL "
                 "AND terminal IS NOT NULL AND tipo = 'demo' "
                 "ORDER BY conta_id DESC LIMIT 1").fetchone()
-    except Exception:
-        return None
+    except Exception as erro:
+        raise RuntimeError(
+            f"não consegui ler o banco para achar o terminal da conta: {erro}") from erro
     return linha[0] if linha else None
 
 
@@ -1611,7 +1616,14 @@ def main(argv=None) -> int:
         _estado_de_erro(msg)
         return SAIR_SEM_REABRIR
 
-    terminal = args.terminal or _terminal_da_conta()
+    try:
+        terminal = args.terminal or _terminal_da_conta()
+    except RuntimeError as erro:
+        # sem caminho do terminal não se inicializa o MT5: sai com erro comum,
+        # e o captura.bat reabre em 10 s
+        log.error("%s", erro)
+        trava.close()
+        raise
     servico = Servico(mt5=mt5, simbolo=args.simbolo, terminal=terminal, pasta=PASTA)
     log.info("captura iniciada: %s, terminal %s", args.simbolo, terminal or "padrão")
     try:

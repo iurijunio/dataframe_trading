@@ -729,3 +729,16 @@ def test_encerramento_para_se_a_conta_deixa_de_ser_demo(tmp_path):
     n = len(c.do_teste())
     c.passo(1.0)
     assert len(c.do_teste()) == n and ticket in c.mt5.posicoes
+
+
+def test_motor_real_recusa_ordem_de_teste_e_nao_envia_nada(tmp_path):
+    # o processo da conta real nunca manda a ordem de teste, nem com a conta
+    # real na mão: recusa com o motivo próprio, antes de qualquer pré-condição
+    mt5 = MT5Ordens(trade_mode=2)
+    c = Cena(tmp_path, mt5=mt5)
+    c.m = Motor(tmp_path, INST, origem="real", mono=c.rel)
+    c.m.teste.agora_pc = lambda: PC
+    est = c.passo(comandos_=[pedido()], ret=retrato({2: conta(tipo="real")}))
+    assert not c.do_teste() and not mt5.enviados
+    assert [e["motivo"] for e in c.evs("teste_falhou")] == ["ordem de teste só na conta demo"]
+    assert est["teste"]["situacao"] == "recusado"

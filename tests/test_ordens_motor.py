@@ -1035,3 +1035,23 @@ def test_foto_parcial_de_outra_conexao_nao_herda_o_tipo(tmp_path):
     clock[0] = 200.0                                            # a conexão caiu antes
     f = m._completar_conta(K.fotografar(mt5, datetime(2026, 10, 9)), 60.0)
     assert f.parcial and f.trade_mode is None and m._conta_certa(f) is not None
+
+
+def test_planejar_que_levanta_ainda_protege_a_posicao_sem_stop(tmp_path, monkeypatch):
+    # o stop sumiu da corretora e o planejar estoura: a proteção sai mesmo
+    # assim, e nenhuma entrada é enviada nesse caminho
+    import core.ordens as O
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    t = evs(m, "executada")[0]["ticket"]
+    mt5.posicoes[t].sl = 0
+    enviados = len(mt5.enviados)
+
+    def estoura(*a, **k):
+        raise RuntimeError("falha no planejar")
+    monkeypatch.setattr(O, "planejar", estoura)
+    _passo(m, mt5, {4: D}, agora=T + timedelta(seconds=2))
+    novos = mt5.enviados[enviados:]
+    assert [r["action"] for r in novos] == [6] and novos[0]["sl"] == 188_800
+    assert mt5.posicoes[t].sl == 188_800
+    assert evs(m, "protecao") and "ordens_falhou" in m.chamados

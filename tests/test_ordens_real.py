@@ -288,3 +288,12 @@ def test_erro_na_volta_nao_derruba_o_processo(cena, monkeypatch):
         raise RuntimeError("corretora meio fora")
     monkeypatch.setattr(cena.servico, "volta", quebra)
     assert cena.servico.passo_seguro() == R.VOLTA_LENTA
+
+
+def test_conftest_desvia_a_pasta_da_conta_real_e_seus_arquivos(tmp_path):
+    # estado, trava, log e retrato da conta real saem do data/ real na suíte
+    from ui import data as ui_data
+    assert str(R.PASTA).startswith(str(tmp_path))
+    assert str(R._pasta_retrato()).startswith(str(tmp_path))
+    assert str(ui_data.ESTADO_REAL).startswith(str(tmp_path))
+    assert str((R.PASTA / R.ARQ_ESTADO)).startswith(str(tmp_path))
