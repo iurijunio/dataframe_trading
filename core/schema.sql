@@ -471,6 +471,11 @@ CREATE TABLE IF NOT EXISTS ordens_eventos (
     motivo      VARCHAR,
     dados       JSON
 );
+-- origem do evento ("demo" ou "real"): é o prefixo do evento_id. Os leitores
+-- filtram por ela, para a demo e a real nunca se misturarem. O UPDATE só
+-- preenche o que ainda está vazio, pelo prefixo (idempotente).
+ALTER TABLE ordens_eventos ADD COLUMN IF NOT EXISTS origem VARCHAR;
+UPDATE ordens_eventos SET origem = split_part(evento_id, '-', 1) WHERE origem IS NULL;
 
 -- conferência diária papel × backtest (spec §8): o papel conferido de um
 -- dia, comparado operação a operação com o backtest do plano nos mesmos

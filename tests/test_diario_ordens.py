@@ -256,3 +256,33 @@ def test_protecao_pendente_desde_e_registrada():
     assert d.protecao_pendente_desde(7) is None
     assert d.protecao_registrada(7) == (-1, 99, 90)
     assert d.ligacoes_abertas() == {4}
+
+
+def test_espelho_grava_a_origem_do_evento_e_nao_mistura(tmp_path):
+    # pastas separadas, como na produção (demo e real nunca dividem o arquivo)
+    pasta_demo, pasta_real = tmp_path / "demo", tmp_path / "real"
+    Diario(pasta_demo, DIA).registrar("seria_enviada", quando=Q, ligacao_id=5)
+    Diario(pasta_real, DIA, "real").registrar("enviando", quando=Q, ligacao_id=6,
+                                              entry_ts=T, lado=1, contratos=1)
+    with db.connect_write() as con:
+        db.init_schema(con)
+        assert Diario(pasta_demo, DIA).espelhar(con) == 1
+        assert Diario(pasta_real, DIA, "real").espelhar(con) == 1
+        r = con.execute("SELECT evento_id, origem, ligacao_id FROM ordens_eventos "
+                        "ORDER BY evento_id").fetchall()
+    assert [(e.partition("-")[0], o) for e, o, _ in r] == [("demo", "demo"),
+                                                           ("real", "real")]
+    assert {lig for _, _, lig in r} == {5, 6}
+
+
+def test_espelhar_pendentes_aceita_lista_de_pastas(tmp_path):
+    pasta_demo, pasta_real = tmp_path / "demo", tmp_path / "real"
+    Diario(pasta_demo, DIA).registrar("seria_enviada", quando=Q)
+    Diario(pasta_real, DIA, "real").registrar("seria_enviada", quando=Q)
+    with db.connect_write() as con:
+        db.init_schema(con)
+        assert espelhar_pendentes([pasta_demo, pasta_real], con, dias=5, hoje=DIA) == 2
+        assert espelhar_pendentes([pasta_demo, pasta_real], con, dias=5, hoje=DIA) == 0
+        origens = con.execute("SELECT origem FROM ordens_eventos ORDER BY origem"
+                              ).fetchall()
+    assert origens == [("demo",), ("real",)]
