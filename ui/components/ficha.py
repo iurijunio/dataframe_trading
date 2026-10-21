@@ -59,6 +59,9 @@ def formatar(campo: str, formato: str, v) -> str:
         return brl(float(v))
     if formato == "pct_alvo":
         return f"{valor(v)}% do alvo"
+    if formato == "pct_preco":
+        # duas casas sempre: "0,50%" é o passo do campo, e "0,5%" leria diferente
+        return f"{num(float(v), 2)}%"
     if formato == "ticks":
         return f"{valor(v)} tick" + ("" if v == 1 else "s")
     if formato == "sim_nao":

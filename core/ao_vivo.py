@@ -651,6 +651,8 @@ def _tem_stop(plano: dict) -> bool:
         # ATR com multiplicador ou período zero não coloca stop nenhum
         return ((perfil.stop_atr_mult or 0) > 0
                 and (perfil.stop_atr_periodo or 0) > 0)
+    if perfil.stop_tipo == "percentual":
+        return (perfil.stop_pct or 0) > 0
     return (perfil.stop_pontos or 0) > 0
 
 
@@ -859,7 +861,9 @@ def custo_de_um_stop(ligacao_id: int, contratos: int, *, conta: str = "demo",
         if plano is None:
             return {"reais": None, "pct_limite": None}
         _, perfil = papel.perfil_do_plano(plano)
-        if perfil.stop_tipo == "atr":
+        if perfil.stop_tipo in ("atr", "percentual"):
+            # stop sem tamanho fixo em pontos: a mediana vem do stop real
+            # de cada entrada, como no ATR
             dists = [r[0] for r in con.execute(
                 "SELECT abs(entry_px - stop_ini_px) FROM papel_operacoes "
                 "WHERE ligacao_id = ? AND plano_id = ? "

@@ -56,6 +56,7 @@ CAMPOS_EXECUCAO_NOMES = ("alvo_pontos", "stop_pontos", "breakeven_pct",
                         "trailing_pontos", "alvo_razao",
                         "alvo_atr_periodo", "alvo_atr_mult",
                         "stop_atr_periodo", "stop_atr_mult",
+                        "alvo_pct", "stop_pct",
                         # filtro de mercado (ADX): o MODO (filtro_adx) fica
                         # de fora de propósito - ele nao e numero e vai no
                         # dicionario do perfil, junto de alvo_tipo

@@ -19,8 +19,10 @@ OPCOES = {
     "direcao": [("compra e venda", "ambas"), ("só compra", "compra"),
                 ("só venda", "venda")],
     "alvo_tipo": [("pontos fixos", "pontos"), ("múltiplo de ATR", "atr"),
-                  ("múltiplo do stop", "multiplicador")],
-    "stop_tipo": [("pontos fixos", "pontos"), ("múltiplo de ATR", "atr")],
+                  ("múltiplo do stop", "multiplicador"),
+                  ("porcentagem do preço", "percentual")],
+    "stop_tipo": [("pontos fixos", "pontos"), ("múltiplo de ATR", "atr"),
+                  ("porcentagem do preço", "percentual")],
     "modo_posicao": [("contratos fixos", "contratos_fixos"),
                      ("risco fixo", "risco_fixo")],
     # o rotulo ja diz a regua inteira: o value e so a chave do motor
@@ -44,7 +46,7 @@ GRUPOS = ["Filtro de mercado", "Janela", "Gestão", "Proteções",
 # campo -> (grupo, rótulo, formato[, (campo, valor) em que ele vale])
 #
 # formatos: texto · int · num · opcao · dias · brl · desliga (0 = desligado)
-#           · brl_desliga · pct_alvo · ticks · sim_nao (0/1 = não/sim)
+#           · brl_desliga · pct_alvo · pct_preco · ticks · sim_nao (0/1 = não/sim)
 CAMPOS: dict[str, tuple] = {
     "filtro_adx": ("Filtro de mercado", "ADX · régua", "opcao"),
     "adx_periodo": ("Filtro de mercado", "ADX · período", "desliga"),
@@ -70,10 +72,14 @@ CAMPOS: dict[str, tuple] = {
     "alvo_atr_mult": ("Gestão", "alvo · ATR multiplicador", "num", ("alvo_tipo", "atr")),
     "alvo_razao": ("Gestão", "alvo · vezes o stop", "num",
                    ("alvo_tipo", "multiplicador")),
+    "alvo_pct": ("Gestão", "alvo · % do preço de entrada", "pct_preco",
+                 ("alvo_tipo", "percentual")),
     "stop_tipo": ("Gestão", "tipo de stop", "opcao"),
     "stop_pontos": ("Gestão", "stop (pontos)", "int", ("stop_tipo", "pontos")),
     "stop_atr_periodo": ("Gestão", "stop · ATR período", "int", ("stop_tipo", "atr")),
     "stop_atr_mult": ("Gestão", "stop · ATR multiplicador", "num", ("stop_tipo", "atr")),
+    "stop_pct": ("Gestão", "stop · % do preço de entrada", "pct_preco",
+                 ("stop_tipo", "percentual")),
 
     "breakeven_pct": ("Proteções", "breakeven · gatilho", "pct_alvo"),
     "step_gatilho_pct": ("Proteções", "stop móvel · gatilho", "pct_alvo"),

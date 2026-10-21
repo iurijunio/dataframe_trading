@@ -241,6 +241,8 @@ def execucao():
                            5.0, 0.1, 0.1,
                            "risco:retorno — 2,0 = alvo a duas vezes o stop"),
                      id="blk-alvo-razao", style={"display": "none"}),
+            html.Div(_opt("alvo_pct", "Alvo (%)", 1.0, 0.5, 0.5, 3.0, 0.01, 0),
+                     id="blk-alvo-pct", style={"display": "none"}),
 
             _field("tipo de stop", dcc.Dropdown(
                 id="e-stop-tipo", value="pontos", clearable=False, className="dd",
@@ -252,6 +254,8 @@ def execucao():
                 _opt("stop_atr_mult", "ATR multiplicador", 1.5, 1.0, 0.1,
                      4.0, 0.1, 0.1),
             ], className="grid-2", id="blk-stop-atr", style={"display": "none"}),
+            html.Div(_opt("stop_pct", "Stop (%)", 0.5, 0.25, 0.25, 2.0, 0.01, 0),
+                     id="blk-stop-pct", style={"display": "none"}),
 
             html.H3("Proteções", className="grp"),
             _opt("breakeven_pct", "Breakeven — gatilho (% do alvo)", 0, 0, 10, 100,
@@ -302,7 +306,7 @@ def execucao():
 CAMPOS_EXECUCAO = ["alvo_pontos", "stop_pontos", "breakeven_pct",
                    "step_gatilho_pct", "step_distancia_pct", "trailing_pontos",
                    "alvo_razao", "alvo_atr_periodo", "alvo_atr_mult",
-                   "stop_atr_periodo", "stop_atr_mult",
+                   "alvo_pct", "stop_atr_periodo", "stop_atr_mult", "stop_pct",
                    "adx_periodo", "adx_limiar", "adx_filtro_di",
                    "adx_subindo"]
 
