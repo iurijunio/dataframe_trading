@@ -94,7 +94,12 @@ def estado_real() -> dict | None:
     if not ESTADO_REAL.exists():
         return None
     e = CAP.ler_estado(ESTADO_REAL)
-    return e if isinstance(e, dict) else None
+    if not isinstance(e, dict):
+        return None
+    # o arquivo é o estado inteiro do processo; quem usa quer o bloco
+    # `ordens` (vivo_em, conta, chamados…) — o mesmo do estado.json da demo
+    bloco = e.get("ordens")
+    return bloco if isinstance(bloco, dict) else None
 
 
 def posicoes_real(bloco: dict | None) -> int:

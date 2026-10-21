@@ -90,7 +90,7 @@ def test_estado_real_ausente_e_none():
 def test_estado_real_le_o_bloco_da_real():
     D.ESTADO_REAL.parent.mkdir(parents=True, exist_ok=True)
     import json
-    D.ESTADO_REAL.write_text(json.dumps(_bloco(), ensure_ascii=False), encoding="utf-8")
+    D.ESTADO_REAL.write_text(json.dumps({"pid": 1, "ordens": _bloco()}, ensure_ascii=False), encoding="utf-8")
     assert D.estado_real()["conta"]["login"] == 1014062283
 
 
@@ -179,3 +179,15 @@ def test_zerar_escreve_nas_duas_pastas(monkeypatch):
     CZ.zerar(98.0, _estado(_bloco()), AGORA, agora_s=100.0, real=_bloco())
     assert any(comandos.PASTA.glob("*"))
     assert any(comandos.PASTA_REAL.glob("*"))
+
+
+def test_estado_real_devolve_o_bloco_ordens_do_arquivo(tmp_path, monkeypatch):
+    # bug de 21/10: o arquivo é o estado inteiro; sem pegar o bloco
+    # `ordens` a linha REAL ficava sempre "parado"
+    import json
+    from ui import data as D
+    arq = tmp_path / "estado_real.json"
+    arq.write_text(json.dumps({"pid": 1, "ordens": {"vivo_em": "2026-10-21T13:00:00",
+                                                    "conta": {"login": 7}}}), encoding="utf-8")
+    monkeypatch.setattr(D, "ESTADO_REAL", arq)
+    assert D.estado_real()["vivo_em"] == "2026-10-21T13:00:00"
