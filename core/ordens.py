@@ -499,7 +499,8 @@ def n_demo(retrato) -> int | None:
     vem vazia mesmo com demo ligada."""
     if retrato is None:
         return None
-    return sum(1 for lv in retrato.ligacoes.values() if lv.fase == "demo")
+    # real ⊃ demo: no retrato de cada conta, "real" também opera nela
+    return sum(1 for lv in retrato.ligacoes.values() if lv.fase in ("demo", "real"))
 
 
 def _conta_logada(retrato, foto):
@@ -739,7 +740,7 @@ class Motor:
                 # errada": o chamado `sem_leitura` já diz o que falha
                 self.recusar_testes(comandos, dia, agora, "conta do MT5 ilegível")
                 return self._estado_fim(est, dia)
-            demo = bool(retrato) and any(lv.fase == "demo"
+            demo = bool(retrato) and any(lv.fase in ("demo", "real")
                                          for lv in retrato.ligacoes.values())
             self._condicao("conta_errada", demo,
                            f"MT5 logado em outra conta ({foto.login} · {foto.servidor})",
