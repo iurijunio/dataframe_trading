@@ -13,7 +13,7 @@ estar zerada) e INDISPONIVEL (não dá para saber; a automação só protege).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 
 import numpy as np
@@ -36,6 +36,7 @@ class Desejado:
     alvo_px: int | None = None
     contratos: int = 0
     motivo: str | None = None
+    toque_em: datetime | None = None
 
 
 @dataclass
@@ -239,6 +240,40 @@ def _hoje_velho(hoje: dict, agora_srv: datetime) -> bool:
         return True
     minuto = np.datetime64(agora_srv.replace(second=0, microsecond=0), "ns")
     return hoje["ts"][-1] < minuto - np.timedelta64(_ATRASO_MAX)
+
+
+def aplicar_toque(desejados: dict, maxima: int | None,
+                  minima: int | None) -> dict:
+    """Zera no toque a posição cujo stop ou alvo já foi tocado pelo candle
+    em formação (máxima e mínima dele até agora). Devolve um dict NOVO.
+
+    Compra: mínima <= stop zera (stop no toque); senão máxima >= alvo zera
+    (alvo no toque). Venda é o espelho. Se stop e alvo forem tocados no mesmo
+    candle, vale o stop. Só mexe em POSICAO com stop e alvo; `maxima`/`minima`
+    None não muda nada. O ZERADO mantém os campos da operação para a
+    execução saber o que foi tocado.
+    """
+    if maxima is None or minima is None:
+        return dict(desejados)
+    out = {}
+    for lig, d in desejados.items():
+        if d.estado != POSICAO or d.stop_px is None or d.alvo_px is None:
+            out[lig] = d
+            continue
+        if d.lado == 1:
+            stop_toca, alvo_toca = minima <= d.stop_px, maxima >= d.alvo_px
+        elif d.lado == -1:
+            stop_toca, alvo_toca = maxima >= d.stop_px, minima <= d.alvo_px
+        else:
+            out[lig] = d
+            continue
+        if stop_toca:
+            out[lig] = replace(d, estado=ZERADO, motivo="stop no toque")
+        elif alvo_toca:
+            out[lig] = replace(d, estado=ZERADO, motivo="alvo no toque")
+        else:
+            out[lig] = d
+    return out
 
 
 def desejados(retrato: Retrato | None, aquecimento: Aquecimento | None,

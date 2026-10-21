@@ -994,3 +994,54 @@ def test_posicao_de_teste_que_sobrou_fora_do_pregao_e_encerrada(cena):
     t = cena.mt5.abrir_manual(1, magic=K.MAGIC_TESTE)
     cena.ir(_as(18, 40))
     assert t not in cena.mt5.posicoes
+
+
+# ------------------------------------------------- zerado no toque (formação)
+def test_toque_no_candle_em_formacao_zera_pro_motor_e_guarda_a_hora(
+        cena, mundo, monkeypatch):
+    real = ordens.Motor.passo
+    vistos = []
+
+    def espiao(self, *a, **k):
+        vistos.append(k["desejados"])
+        return real(self, *a, **k)
+    monkeypatch.setattr(ordens.Motor, "passo", espiao)
+    cena.ir(_as(10, 0, 30))
+    cena.ir(_as(10, 1, 1))
+    cena.ir(_as(10, 1, 30))
+    stop = cena.s._desejados[mundo.lig].stop_px
+    # o minuto 10:02 em formação já tocou o stop (mínima abaixo dele)
+    cena.mt5.barras[_as(10, 2)] = (PRECO, PRECO + 10, stop - 10, PRECO)
+    cena.ir(_as(10, 2, 20))
+    d = vistos[-1][mundo.lig]
+    assert (d.estado, d.motivo, d.lado) == (PV.ZERADO, "stop no toque", 1)
+    assert (d.stop_px, d.entry_ts) == (stop, ENTRADA)
+    assert d.toque_em == _as(10, 2, 20)
+    # o desejado base (o do papel) segue em posição
+    assert cena.s._desejados[mundo.lig].estado == PV.POSICAO
+    # a hora é a da primeira volta: continua tocada, não muda
+    cena.ir(_as(10, 2, 40))
+    assert vistos[-1][mundo.lig].toque_em == _as(10, 2, 20)
+    assert cena.s._toque_em == {mundo.lig: _as(10, 2, 20)}
+
+
+def test_toque_some_quando_o_candle_deixa_de_tocar(cena, mundo, monkeypatch):
+    real = ordens.Motor.passo
+    vistos = []
+
+    def espiao(self, *a, **k):
+        vistos.append(k["desejados"])
+        return real(self, *a, **k)
+    monkeypatch.setattr(ordens.Motor, "passo", espiao)
+    cena.ir(_as(10, 0, 30))
+    cena.ir(_as(10, 1, 1))
+    cena.ir(_as(10, 1, 30))
+    stop = cena.s._desejados[mundo.lig].stop_px
+    cena.mt5.barras[_as(10, 2)] = (PRECO, PRECO + 10, stop - 10, PRECO)
+    cena.ir(_as(10, 2, 20))
+    assert vistos[-1][mundo.lig].estado == PV.ZERADO
+    cena.mt5.barras[_as(10, 2)] = (PRECO, PRECO + 10, PRECO - 50, PRECO)
+    cena.ir(_as(10, 2, 30))
+    assert vistos[-1][mundo.lig].estado == PV.POSICAO
+    assert vistos[-1][mundo.lig].toque_em is None
+    assert cena.s._toque_em == {}

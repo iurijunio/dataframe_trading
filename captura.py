@@ -24,6 +24,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from datetime import datetime, time as hora, timedelta, timezone
 from decimal import Decimal
 from logging.handlers import RotatingFileHandler
@@ -264,6 +265,11 @@ class Servico:
         # de 0,1 s não pode refazer o papel dez vezes por segundo.
         self._minuto_calculado = None
         self._desejados: dict = {}
+        # o que vai ao motor: `_desejados` com o zerado no toque do stop/alvo
+        # pelo candle em formação (`_aplicar_toque`, a cada volta)
+        self._desejados_ordens: dict = {}
+        self._formacao = None           # (máxima, mínima) do minuto em formação
+        self._toque_em: dict = {}       # ligação -> hora da primeira volta tocada
         self._disponivel = False
         self._versao_papel = 0          # sobe quando retrato/aquecimento mudam
         self._ordens_dia = None
@@ -1050,10 +1056,11 @@ class Servico:
             self._escolher_contrato(srv, diario)
             self._vigiar_preco(srv)
         self._calcular_desejados(srv)
+        self._aplicar_toque(srv)
         simbolo = (self.contrato_dia or {}).get("simbolo")
         est = self.motor.passo(
             self.mt5, agora_srv=srv, retrato=self.retrato,
-            desejados=self._desejados, disponivel=self._disponivel,
+            desejados=self._desejados_ordens, disponivel=self._disponivel,
             # a pasta é lida agora (o conftest a desvia); cada comando vai ao
             # diário antes de o arquivo sumir
             comandos=comandos.PASTA, simbolo=simbolo,
@@ -1098,6 +1105,7 @@ class Servico:
         self.guarda = contrato_dia.GuardaPreco(self.motor.tick)
         self._guarda_bloqueada = False
         self._minuto_calculado, self._desejados, self._disponivel = None, {}, False
+        self._desejados_ordens, self._formacao, self._toque_em = {}, None, {}
 
     def _automacao_posicionada(self, diario) -> bool:
         """Há posição com o magic da automação (na corretora ou aberta no
@@ -1293,6 +1301,7 @@ class Servico:
         o minuto em formação como `provisoria = (ts, abertura)`."""
         zero = datetime.combine(srv.date(), hora())
         df = self._taxas(zero, srv + timedelta(days=1))
+        self._formacao = None
         if df is None:
             return _HOJE_VAZIO, None
         df = df.filter(pl.col("ts").dt.date() == srv.date())
@@ -1301,7 +1310,25 @@ class Servico:
         if prontos.height < df.height:
             u = df.sort("ts").row(-1, named=True)
             provisoria = (u["ts"], int(round(u["open"])))
+            self._formacao = (int(round(u["high"])), int(round(u["low"])))
         return papel_vivo.barras_de_hoje(prontos), provisoria
+
+    def _aplicar_toque(self, srv) -> None:
+        """Zera no toque o desejado cujo stop/alvo a máxima ou a mínima do
+        minuto em formação já tocou (só leitura de memória, a cada volta). A
+        hora do toque é a da PRIMEIRA volta em que a ligação ficou tocada;
+        some quando deixa de estar."""
+        maxima, minima = self._formacao or (None, None)
+        com = papel_vivo.aplicar_toque(self._desejados, maxima, minima)
+        novo, tocados = {}, {}
+        for lig, d in com.items():
+            era = self._desejados.get(lig)
+            if d.estado == papel_vivo.ZERADO and era is not None                     and era.estado == papel_vivo.POSICAO:
+                tocados[lig] = self._toque_em.get(lig, srv)
+                d = replace(d, toque_em=tocados[lig])
+            novo[lig] = d
+        self._toque_em = tocados
+        self._desejados_ordens = novo
 
     def _calcular_desejados(self, srv) -> None:
         if srv is None:

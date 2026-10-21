@@ -549,3 +549,66 @@ def test_aquecimento_insuficiente_so_para_quem_precisa_de_mais(lig, mods, inst):
     des, _ = _desejados(ret, inst, aquec=PV.Aquecimento(AQUEC, 5))
     assert des[outra.lig].estado == PV.POSICAO
     assert des[lig.lig].estado == PV.POSICAO
+
+# ------------------------------------------------------- zerado no toque
+def _pos(lado, stop=189_000, alvo=189_400, entrada=189_200):
+    return PV.Desejado(PV.POSICAO, lado=lado, entry_ts=ENTRADA,
+                       entry_px=entrada, stop_px=stop, alvo_px=alvo,
+                       contratos=2)
+
+
+def test_toque_compra_stop_zera_com_motivo_e_campos():
+    d = _pos(1)
+    out = PV.aplicar_toque({1: d}, maxima=189_250, minima=189_000)
+    assert out[1] == PV.Desejado(PV.ZERADO, lado=1, entry_ts=ENTRADA,
+                                 entry_px=189_200, stop_px=189_000,
+                                 alvo_px=189_400, contratos=2,
+                                 motivo="stop no toque")
+    assert out[1].toque_em is None
+
+
+def test_toque_compra_alvo_zera():
+    out = PV.aplicar_toque({1: _pos(1)}, maxima=189_400, minima=189_100)
+    assert out[1].estado == PV.ZERADO and out[1].motivo == "alvo no toque"
+    assert out[1].alvo_px == 189_400
+
+
+def test_toque_venda_stop_e_alvo():
+    venda = _pos(-1, stop=189_400, alvo=189_000, entrada=189_200)
+    out = PV.aplicar_toque({1: venda}, maxima=189_400, minima=189_100)
+    assert (out[1].estado, out[1].motivo) == (PV.ZERADO, "stop no toque")
+    out = PV.aplicar_toque({1: venda}, maxima=189_300, minima=189_000)
+    assert (out[1].estado, out[1].motivo) == (PV.ZERADO, "alvo no toque")
+
+
+def test_toque_stop_tem_prioridade_sobre_alvo():
+    out = PV.aplicar_toque({1: _pos(1)}, maxima=189_500, minima=188_900)
+    assert out[1].motivo == "stop no toque"
+    venda = _pos(-1, stop=189_400, alvo=189_000)
+    out = PV.aplicar_toque({1: venda}, maxima=189_500, minima=188_900)
+    assert out[1].motivo == "stop no toque"
+
+
+def test_sem_toque_ou_sem_maxima_minima_nao_mexe():
+    d = _pos(1)
+    assert PV.aplicar_toque({1: d}, 189_300, 189_100)[1] is d
+    assert PV.aplicar_toque({1: d}, None, 188_000)[1] is d
+    assert PV.aplicar_toque({1: d}, 189_900, None)[1] is d
+    sem_stop = PV.Desejado(PV.POSICAO, lado=1, stop_px=None, alvo_px=189_400)
+    assert PV.aplicar_toque({1: sem_stop}, 189_900, 188_000)[1] is sem_stop
+
+
+def test_outros_estados_nao_mudam():
+    zer = PV.Desejado(PV.ZERADO, motivo="desligada")
+    ind = PV.Desejado(PV.INDISPONIVEL, motivo="falha")
+    out = PV.aplicar_toque({1: zer, 2: ind}, 190_000, 188_000)
+    assert out == {1: zer, 2: ind}
+
+
+def test_toque_nao_altera_o_dict_de_entrada():
+    entrada = {1: _pos(1)}
+    copia = dict(entrada)
+    out = PV.aplicar_toque(entrada, 189_250, 189_000)
+    assert entrada == copia and entrada[1].estado == PV.POSICAO
+    assert out is not entrada and out[1].estado == PV.ZERADO
+    assert PV.Desejado(PV.ZERADO).toque_em is None
