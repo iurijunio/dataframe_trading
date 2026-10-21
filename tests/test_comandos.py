@@ -60,3 +60,42 @@ def test_arquivo_ilegivel_e_descartado_sem_travar_os_outros(tmp_path):
 
 def test_conftest_desvia_a_pasta_real(tmp_path):
     assert str(comandos.PASTA).startswith(str(tmp_path))
+
+
+def test_conftest_desvia_a_pasta_real_da_conta_real(tmp_path):
+    # a pasta da conta real nunca pode ser a do usuário durante um teste
+    assert str(comandos.PASTA_REAL).startswith(str(tmp_path))
+    assert comandos.PASTA_REAL != comandos.PASTA
+
+
+def test_pasta_do_tipo_roteia_demo_e_real(tmp_path, monkeypatch):
+    monkeypatch.setattr(comandos, "PASTA", tmp_path / "demo")
+    monkeypatch.setattr(comandos, "PASTA_REAL", tmp_path / "real")
+    assert comandos.pasta_do_tipo("demo") == tmp_path / "demo"
+    assert comandos.pasta_do_tipo("real") == tmp_path / "real"
+
+
+def test_pasta_do_tipo_le_a_constante_na_hora(tmp_path, monkeypatch):
+    # o conftest desvia as pastas depois do import: nada pode ficar preso
+    monkeypatch.setattr(comandos, "PASTA", tmp_path / "outra")
+    assert comandos.pasta_do_tipo("demo") == tmp_path / "outra"
+
+
+def test_pasta_do_tipo_desconhecido_recusa():
+    with pytest.raises(ValueError):
+        comandos.pasta_do_tipo("mesa")
+
+
+def test_zerar_tudo_grava_nas_duas_pastas_sem_tocar_no_banco(tmp_path, monkeypatch):
+    monkeypatch.setattr(comandos, "PASTA", tmp_path / "demo")
+    monkeypatch.setattr(comandos, "PASTA_REAL", tmp_path / "real")
+
+    def explode(*a, **k):
+        raise AssertionError("zerar não pode tocar no banco")
+    monkeypatch.setattr(comandos.db, "connect", explode)
+    monkeypatch.setattr(comandos.db, "connect_write", explode)
+    ids = comandos.escrever_zerar_tudo()
+    assert len(ids) == 2
+    for pasta in (tmp_path / "demo", tmp_path / "real"):
+        [cmd] = comandos.consumir(pasta)
+        assert cmd["tipo"] == "zerar_tudo"

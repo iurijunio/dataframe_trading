@@ -69,7 +69,9 @@ def zerar(armado_em: float | None, estado: dict | None, agora: datetime,
         return (agora_s, _rotulo_armado(info["posicoes"]),
                 "clique de novo em 5 s para confirmar")
 
-    comandos.escrever(comandos.PASTA, "zerar_tudo")
+    # as duas pastas (demo e real), sem banco: o zerar vale mesmo com a
+    # mineração segurando a escrita
+    comandos.escrever_zerar_tudo()
     ocupado = False
     try:
         contas = _contas_ativas()

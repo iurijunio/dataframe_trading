@@ -44,6 +44,10 @@ def _banco_isolado(tmp_path, monkeypatch):
     # comandos da tela: um teste que escrevesse na pasta real seria consumido
     # pela captura do usuario (ex.: um "zerar_tudo" de verdade)
     monkeypatch.setattr(comandos, "PASTA", tmp_path / "ao_vivo" / "comandos")
+    # a conta real tem a sua pasta: um teste não pode deixar comando para o
+    # processo da conta real do usuário
+    monkeypatch.setattr(comandos, "PASTA_REAL",
+                        tmp_path / "ao_vivo" / "comandos_real")
     # memoria da ultima leitura: sem zerar, um teste herdaria o estado do outro
     monkeypatch.setattr(ui_data, "_estado_ultimo", None)
     monkeypatch.setattr(ui_data, "_conferencia_vista", None)

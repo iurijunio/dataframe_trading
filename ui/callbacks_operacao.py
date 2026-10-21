@@ -205,7 +205,7 @@ def ler_diario(pid, so_problemas: bool):
 
 
 def acao_chamado(nome, alvo, armado, escondidos, enviados,
-                 agora_s: float) -> tuple:
+                 agora_s: float, tipo: str = "demo") -> tuple:
     """Um clique na faixa de chamados. Devolve (armado, escondidos,
     enviados, aviso).
 
@@ -225,7 +225,9 @@ def acao_chamado(nome, alvo, armado, escondidos, enviados,
     if _armado_valido(armado, agora_s) != chave:
         return ({"chave": chave, "em": agora_s}, escondidos, enviados,
                 "clique de novo em 5 s para encerrar a posição a mercado")
-    comandos.escrever(comandos.PASTA, "encerrar_posicao", ticket=int(alvo))
+    # a pasta é a da conta de origem da posição (hoje sempre a demo)
+    comandos.escrever(comandos.pasta_do_tipo(tipo), "encerrar_posicao",
+                      ticket=int(alvo))
     enviados.append(agora_s)
     return (None, escondidos, enviados,
             "Encerrar posição enviado: a captura encerra na próxima volta — o "

@@ -24,6 +24,25 @@ TIPOS = frozenset({"zerar_tudo", "encerrar_posicao", "envio", "ordem_teste"})
 # comando para a captura real do usuário consumir. Quem usa lê
 # `comandos.PASTA` na hora (nunca `from ... import PASTA`).
 PASTA = db.DATA / "ao_vivo" / "comandos"
+# a conta real tem processo próprio (parte 5): cada processo lê só a sua
+# pasta, então um comando da demo nunca chega à real e vice-versa
+PASTA_REAL = db.DATA / "ao_vivo" / "comandos_real"
+
+
+def pasta_do_tipo(tipo: str) -> Path:
+    """A pasta de comandos da conta `tipo`. Lê as constantes na hora: o
+    conftest as desvia depois do import."""
+    if tipo == "demo":
+        return PASTA
+    if tipo == "real":
+        return PASTA_REAL
+    raise ValueError(f"tipo de conta desconhecido: {tipo!r}")
+
+
+def escrever_zerar_tudo() -> list[str]:
+    """"Zerar tudo" vai para as duas pastas e nunca toca no banco: com uma
+    mineração segurando a escrita ele já precisa valer."""
+    return [escrever(PASTA, "zerar_tudo"), escrever(PASTA_REAL, "zerar_tudo")]
 
 
 def escrever(pasta, tipo: str, **dados) -> str:

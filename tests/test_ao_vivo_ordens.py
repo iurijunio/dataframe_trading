@@ -51,6 +51,14 @@ def _comandos():
             for a in sorted(pasta.glob("*.json"))]
 
 
+def _comandos_em(pasta):
+    pasta = Path(pasta)
+    if not pasta.exists():
+        return []
+    return [json.loads(a.read_text(encoding="utf-8"))
+            for a in sorted(pasta.glob("*.json"))]
+
+
 def _conferencia(lig, plano_id, estrategia, *, ok, hash_=..., motor=...):
     """Um pregão conferido do papel e a linha do papel × backtest."""
     with db.connect_write() as con:
@@ -312,6 +320,54 @@ def test_ligar_envio_nao_escreve_comando_se_o_banco_falha(banco, monkeypatch):
     with pytest.raises(RuntimeError):
         AV.ligar_envio(conta, True)
     assert _comandos() == []
+
+
+def test_envio_da_demo_vai_so_para_a_pasta_demo(banco):
+    conta = AV.criar_conta("c", "demo", 500.0)
+    AV.ligar_envio(conta, True, tipo="demo")
+    AV.ligar_envio(conta, False, tipo="demo")
+    assert len(_comandos_em(comandos.PASTA)) == 2
+    assert _comandos_em(comandos.PASTA_REAL) == []
+
+
+def test_desligar_envio_da_real_vai_so_para_a_pasta_real(banco):
+    conta = AV.criar_conta("real", "real", 500.0)
+    with db.connect_write() as con:   # a trava não deixa ligar a real: o
+        con.execute("UPDATE contas SET envio_ligado = true "  # teste põe o
+                    "WHERE conta_id = ?", [conta])            # envio ligado
+    AV.ligar_envio(conta, False, tipo="real")
+    assert _comandos_em(comandos.PASTA) == []
+    [cmd] = _comandos_em(comandos.PASTA_REAL)
+    assert (cmd["tipo"], cmd["conta_id"], cmd["ligado"]) == ("envio", conta, False)
+
+
+def test_desligar_envio_sem_tipo_grava_nas_duas_pastas_sem_banco(banco, monkeypatch):
+    conta = AV.criar_conta("c", "demo", 500.0)
+    AV.ligar_envio(conta, True)
+    for pasta in (comandos.PASTA, comandos.PASTA_REAL):
+        for a in Path(pasta).glob("*.json"):
+            a.unlink()
+
+    def ocupado(*a, **k):
+        raise RuntimeError("banco ocupado")
+    monkeypatch.setattr(db, "connect_write", ocupado)
+    with pytest.raises(RuntimeError, match="ocupado"):
+        AV.ligar_envio(conta, False)
+    for pasta in (comandos.PASTA, comandos.PASTA_REAL):
+        [cmd] = _comandos_em(pasta)
+        assert cmd["ligado"] is False and cmd["conta_id"] == conta
+
+
+def test_apagar_limite_da_real_grava_so_na_pasta_real(banco):
+    conta = AV.criar_conta("real", "real", 500.0)
+    with db.connect_write() as con:
+        con.execute("UPDATE contas SET envio_ligado = true "
+                    "WHERE conta_id = ?", [conta])
+    AV.editar_conta(conta, limite_perda_dia=None)
+    assert _envio(conta) is False
+    assert _comandos_em(comandos.PASTA) == []
+    [cmd] = _comandos_em(comandos.PASTA_REAL)
+    assert (cmd["tipo"], cmd["conta_id"], cmd["ligado"]) == ("envio", conta, False)
 
 
 def test_ligar_envio_de_conta_inexistente_recusa(banco):

@@ -856,6 +856,18 @@ def test_encerrar_posicao_dois_cliques_escreve_o_comando(monkeypatch, tmp_path):
     assert [(c["tipo"], c["ticket"]) for c in cmds] == [("encerrar_posicao", 222)]
 
 
+def test_encerrar_posicao_da_real_vai_so_para_a_pasta_real(monkeypatch, tmp_path):
+    from core import comandos
+    from ui import callbacks_operacao as CO
+    monkeypatch.setattr(comandos, "PASTA", tmp_path / "demo")
+    monkeypatch.setattr(comandos, "PASTA_REAL", tmp_path / "real")
+    armado, *_ = CO.acao_chamado("encerrar", 333, None, [], [], 100.0, tipo="real")
+    CO.acao_chamado("encerrar", 333, armado, [], [], 104.0, tipo="real")
+    assert comandos.consumir(tmp_path / "demo") == []
+    cmds = comandos.consumir(tmp_path / "real")
+    assert [(c["tipo"], c["ticket"]) for c in cmds] == [("encerrar_posicao", 333)]
+
+
 def test_manter_so_esconde_sem_comando(monkeypatch, tmp_path):
     from core import comandos
     from ui import callbacks_operacao as CO

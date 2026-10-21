@@ -124,7 +124,7 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
     for k in ("servidor", "terminal"):
         if k in novos:
             novos[k] = _texto_ou_none(novos[k])
-    desligou_envio = False
+    desligou_envio = None
     with db.connect_write(tentativas=tentativas) as con, db.transacao(con):
         r = con.execute(f"SELECT {', '.join(_CAMPOS_EDITAVEIS)} FROM contas "
                         "WHERE conta_id = ?", [conta_id]).fetchone()
@@ -163,11 +163,16 @@ def editar_conta(conta_id, *, nome=_NADA, tipo=_NADA, limite_perda_dia=_NADA,
                             "WHERE conta_id = ?", [conta_id])
                 diario.registrar(con, "envio_desligado", "usuario",
                                  conta_id=conta_id, motivo="limite apagado")
-                desligou_envio = True
+                # o tipo antes e depois da edição: se a troca de tipo veio
+                # junto, o comando vai para as duas pastas em jogo
+                desligou_envio = (atual["tipo"],
+                                  novos.get("tipo", atual["tipo"]))
     if desligou_envio:
-        # a captura não lê o banco para saber disso: vai por comando
-        comandos.escrever(comandos.PASTA, "envio", conta_id=conta_id,
-                          ligado=False)
+        # a captura não lê o banco para saber disso: vai por comando, para a
+        # pasta da conta (o processo da real não lê a demo e vice-versa)
+        for tipo in dict.fromkeys(desligou_envio):
+            comandos.escrever(comandos.pasta_do_tipo(tipo), "envio",
+                              conta_id=conta_id, ligado=False)
 
 
 def arquivar_conta(conta_id) -> None:
@@ -702,23 +707,33 @@ def definir_contratos(ligacao_id: int, contratos: int | None, *,
                          motivo=tipo)
 
 
-def ligar_envio(conta_id: int, ligado: bool, *, tentativas: int = 40,
-                espera: float = 0.25) -> None:
+def ligar_envio(conta_id: int, ligado: bool, *, tipo: str | None = None,
+                tentativas: int = 40, espera: float = 0.25) -> None:
     """Interruptor do envio de ordens da conta. Desligar escreve o comando
     ANTES do banco: com ele ocupado (uma mineração), o desligar já vale.
     `tentativas`/`espera`: quem já garantiu o comando (o "Zerar tudo") não
-    precisa segurar a tela 10 s esperando o banco."""
+    precisa segurar a tela 10 s esperando o banco.
+
+    `tipo` diz a pasta de comandos da conta ("demo"/"real"). Sem ele, o
+    desligar não lê o banco e vai para as DUAS pastas (o processo que não é
+    dona da conta ignora). Ligar sempre lê o tipo do banco: o `tipo` passado
+    precisa bater com ele."""
     ligado = bool(ligado)
     if not ligado:
-        comandos.escrever(comandos.PASTA, "envio", conta_id=conta_id,
-                          ligado=False)
+        pastas = ([comandos.pasta_do_tipo(tipo)] if tipo is not None
+                  else [comandos.PASTA, comandos.PASTA_REAL])
+        for pasta in pastas:
+            comandos.escrever(pasta, "envio", conta_id=conta_id, ligado=False)
     with db.connect_write(tentativas=tentativas, espera=espera) as con,             db.transacao(con):
         r = con.execute("SELECT limite_perda_dia, coalesce(envio_ligado, "
                         "false), arquivada_em, tipo FROM contas WHERE conta_id = ?",
                         [conta_id]).fetchone()
         if r is None:
             raise ValueError(f"conta #{conta_id} não existe")
-        limite, atual, arquivada, tipo = r
+        limite, atual, arquivada, tipo_banco = r
+        if tipo is not None and tipo != tipo_banco:
+            raise ValueError("o tipo informado não bate com o da conta")
+        tipo = tipo_banco
         if ligado and tipo == "real":
             # até a parte 5 (processo próprio da conta real) existir
             raise ValueError("envio na conta real ainda não disponível")
@@ -735,8 +750,8 @@ def ligar_envio(conta_id: int, ligado: bool, *, tentativas: int = 40,
                              conta_id=conta_id)
     if ligado:
         # a captura usa o comando para soltar um desligamento forçado do dia
-        comandos.escrever(comandos.PASTA, "envio", conta_id=conta_id,
-                          ligado=True)
+        comandos.escrever(comandos.pasta_do_tipo(tipo), "envio",
+                          conta_id=conta_id, ligado=True)
 
 
 def custo_de_um_stop(ligacao_id: int, contratos: int, *,
