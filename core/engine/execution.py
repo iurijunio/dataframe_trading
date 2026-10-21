@@ -55,17 +55,20 @@ class ExecutionProfile:
     sem_entrada2: str = ""
     sem_entrada3: str = ""
 
-    # gestao: pontos fixos, multiplo de ATR ou multiplicador do stop
-    alvo_tipo: str = "pontos"           # pontos | atr | multiplicador
+    # gestao: pontos fixos, multiplo de ATR, multiplicador do stop ou
+    # porcentagem do preco de entrada
+    alvo_tipo: str = "pontos"           # pontos | atr | multiplicador | percentual
     alvo_pontos: int = 600
     alvo_atr_periodo: int = 20
     alvo_atr_mult: float = 3.0
     alvo_razao: float = 2.0             # alvo / stop quando tipo = multiplicador
+    alvo_pct: float = 1.0               # % do preco de entrada, tipo = percentual
 
-    stop_tipo: str = "pontos"
+    stop_tipo: str = "pontos"           # pontos | atr | percentual
     stop_pontos: int = 300
     stop_atr_periodo: int = 20
     stop_atr_mult: float = 1.5
+    stop_pct: float = 0.5               # % do preco de entrada, tipo = percentual
 
     # filtro de mercado (ADX) - camada 4, vale para toda estrategia.
     # 0 em periodo OU limiar desliga o filtro por completo, e o zero ser
@@ -343,6 +346,20 @@ def _nivel(bars_tf, vela, tipo, pontos, periodo, mult, n_m1) -> np.ndarray:
     return out
 
 
+def _nivel_pct(open_, pct, tick) -> np.ndarray:
+    """Distancia em pontos de um stop/alvo em porcentagem do preco de entrada,
+    por barra M1. A entrada sai na abertura da barra (o slippage e somado
+    pelo kernel depois), entao a abertura e a referencia do preco.
+
+    Arredonda para LONGE da entrada: primeiro ao inteiro, depois ao tick
+    para cima. Para baixo, o stop ficaria mais apertado que o pedido, como
+    o `protecao` da corretora nunca faz."""
+    if not pct:
+        return np.zeros(len(open_), dtype=np.int64)
+    bruta = np.rint(np.asarray(open_, dtype=np.float64) * float(pct) / 100.0)
+    return (np.ceil(bruta / tick) * tick).astype(np.int64)
+
+
 # ------------------------------------------------------------- sessao
 @dataclass
 class SessionArrays:
@@ -446,11 +463,14 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         else:
             bars_tf, fechada, _ = resample(bars, passo)
     vela = vela_do_nivel(fechada)
-
-    sl = _nivel(bars_tf, vela, profile.stop_tipo, profile.stop_pontos,
-                profile.stop_atr_periodo, profile.stop_atr_mult, n)
-    sl = _override(sl, _ao_abrir(signals.sl_points), n)
     tick = int(instrument.get("tick_size", 1)) or 1
+
+    if profile.stop_tipo == "percentual":
+        sl = _nivel_pct(bars["open"], profile.stop_pct, tick)
+    else:
+        sl = _nivel(bars_tf, vela, profile.stop_tipo, profile.stop_pontos,
+                    profile.stop_atr_periodo, profile.stop_atr_mult, n)
+    sl = _override(sl, _ao_abrir(signals.sl_points), n)
     if profile.alvo_tipo == "multiplicador":
         # o alvo e o stop VIGENTE x razao, por barra; stop 0 nao ha o que
         # multiplicar, e o kernel ja trata alvo 0 como 'sem alvo'.
@@ -459,6 +479,8 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         # nao negocia (1 ponto a menos em cada ganho)
         tp = (np.rint(sl * float(profile.alvo_razao) / tick)
               * tick).astype(np.int64)
+    elif profile.alvo_tipo == "percentual":
+        tp = _nivel_pct(bars["open"], profile.alvo_pct, tick)
     else:
         tp = _nivel(bars_tf, vela, profile.alvo_tipo, profile.alvo_pontos,
                     profile.alvo_atr_periodo, profile.alvo_atr_mult, n)

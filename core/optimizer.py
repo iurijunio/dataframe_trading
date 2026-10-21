@@ -111,9 +111,11 @@ _SO_VALE_COM = {
     "alvo_atr_periodo": ("alvo_tipo", ("atr",)),
     "alvo_atr_mult": ("alvo_tipo", ("atr",)),
     "alvo_razao": ("alvo_tipo", ("multiplicador",)),
+    "alvo_pct": ("alvo_tipo", ("percentual",)),
     "stop_pontos": ("stop_tipo", ("pontos",)),
     "stop_atr_periodo": ("stop_tipo", ("atr",)),
     "stop_atr_mult": ("stop_tipo", ("atr",)),
+    "stop_pct": ("stop_tipo", ("percentual",)),
     "adx_filtro_di": ("filtro_adx", ("tendencia",)),
     "adx_subindo": ("filtro_adx", ("tendencia",)),
 }

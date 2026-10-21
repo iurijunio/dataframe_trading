@@ -117,6 +117,9 @@ _SCHEMA_EXECUCAO_META = {
     "alvo_atr_mult": {"default": 3.0, "step": 0.1, "tipo": "float"},
     "stop_atr_periodo": {"default": 20, "step": 1, "tipo": "int"},
     "stop_atr_mult": {"default": 1.5, "step": 0.1, "tipo": "float"},
+    # porcentagem do preco de entrada: passo de centesimo de ponto percentual
+    "alvo_pct": {"default": 1.0, "step": 0.01, "tipo": "float"},
+    "stop_pct": {"default": 0.5, "step": 0.01, "tipo": "float"},
     # filtro de mercado (ADX): 0 = desligado, e o zero ser mineravel e o
     # que deixa medir ligado x desligado na mesma varredura
     "adx_periodo": {"default": 0, "step": 1, "tipo": "int"},
@@ -320,16 +323,19 @@ def register(app):
     # --------------------------- so o bloco do tipo escolhido fica na tela
     @app.callback(
         Output("blk-alvo-pontos", "style"), Output("blk-alvo-atr", "style"),
-        Output("blk-alvo-razao", "style"),
+        Output("blk-alvo-razao", "style"), Output("blk-alvo-pct", "style"),
         Output("blk-stop-pontos", "style"), Output("blk-stop-atr", "style"),
+        Output("blk-stop-pct", "style"),
         Input("e-alvo-tipo", "value"), Input("e-stop-tipo", "value"),
     )
     def tipos(alvo, stop):
         return (VISIVEL if alvo == "pontos" else OCULTO,
                 VISIVEL if alvo == "atr" else OCULTO,
                 VISIVEL if alvo == "multiplicador" else OCULTO,
-                OCULTO if stop == "atr" else VISIVEL,
-                VISIVEL if stop == "atr" else OCULTO)
+                VISIVEL if alvo == "percentual" else OCULTO,
+                OCULTO if stop in ("atr", "percentual") else VISIVEL,
+                VISIVEL if stop == "atr" else OCULTO,
+                VISIVEL if stop == "percentual" else OCULTO)
 
     # ------------------------------------------------- backtest ou mineração
     @app.callback(
@@ -597,10 +603,11 @@ def register(app):
             alvo_tipo=alvo_tipo, alvo_pontos=v.get("alvo_pontos") or 0,
             alvo_atr_periodo=v.get("alvo_atr_periodo") or 20,
             alvo_atr_mult=v.get("alvo_atr_mult") or 0,
-            alvo_razao=razao,
+            alvo_razao=razao, alvo_pct=v.get("alvo_pct") or 0,
             stop_tipo=stop_tipo, stop_pontos=v.get("stop_pontos") or 0,
             stop_atr_periodo=v.get("stop_atr_periodo") or 20,
             stop_atr_mult=v.get("stop_atr_mult") or 0,
+            stop_pct=v.get("stop_pct") or 0,
             breakeven_pct=v.get("breakeven_pct") or 0,
             step_gatilho_pct=v.get("step_gatilho_pct") or 0,
             step_distancia_pct=v.get("step_distancia_pct") or 0,
@@ -793,8 +800,10 @@ def register(app):
             alvo_tipo=alvo_tipo,
             alvo_atr_periodo=v.get("alvo_atr_periodo") or 20,
             alvo_atr_mult=v.get("alvo_atr_mult") or 0, stop_tipo=stop_tipo,
+            alvo_pct=v.get("alvo_pct") or 0,
             stop_atr_periodo=v.get("stop_atr_periodo") or 20,
             stop_atr_mult=v.get("stop_atr_mult") or 0,
+            stop_pct=v.get("stop_pct") or 0,
             max_barras=max_barras or 0,
             limite_ganho_contrato=lim_ganho or 0, limite_perda_contrato=lim_perda or 0,
             max_trades_dia=max_trades or 0, max_prejuizos_dia=max_loss or 0,
