@@ -196,6 +196,70 @@ def test_zerado_quando_fase_nao_e_demo(base, mods, inst):
     assert ok and des[f.lig] == PV.Desejado(PV.ZERADO, motivo="fase papel")
 
 
+def _config_real(f):
+    """Portfólio com conta demo (3 contratos no plano da demo) e conta real
+    (5 contratos só na real). Devolve (id da demo, id da real)."""
+    demo = ao_vivo.criar_conta("demo-r", "demo", 500.0, login=4321,
+                               servidor="Corretora-DEMO")
+    real = ao_vivo.criar_conta("real-r", "real", 800.0, login=7777,
+                               servidor="Corretora-REAL",
+                               terminal="C:/mt5/real/terminal64.exe")
+    ao_vivo.definir_contas(f.pf, demo, real)
+    with db.connect_write() as con:
+        con.execute("UPDATE portfolio_membros SET contratos_real = 5 "
+                    "WHERE ligacao_id = ?", [f.lig])
+    return demo, real
+
+
+def _retrato_de(tipo):
+    with db.connect(read_only=True) as con:
+        return PV.ler_retrato(con, DIA, AGORA, {}, tipo=tipo)
+
+
+def test_fase_real_segue_o_papel_como_a_demo(base, mods, inst):
+    f = _ligacao("vivo-real", fase="real")
+    demo, _ = _config_real(f)
+    ret = _retrato()
+    lv = ret.ligacoes[f.lig]
+    assert (lv.fase, lv.conta_id, lv.contratos_conta) == ("real", demo, 3)
+    des, ok = _desejados(ret, inst)
+    assert ok and des[f.lig].estado == PV.POSICAO
+    assert des[f.lig].entry_ts == ENTRADA
+
+
+def test_retrato_da_real_le_conta_e_contratos_reais(base, mods, inst):
+    f = _ligacao("vivo-real", fase="real")
+    demo, real = _config_real(f)
+    ret = _retrato_de("real")
+    lv = ret.ligacoes[f.lig]
+    assert (lv.fase, lv.conta_id, lv.contratos_conta) == ("real", real, 5)
+    assert ret.portfolio_de == {f.lig: f.pf}
+    des, ok = _desejados(ret, inst)
+    assert ok and des[f.lig].estado == PV.POSICAO and des[f.lig].contratos == 5
+    # a demo continua lendo a sua conta e os seus contratos
+    lv_demo = _retrato_de("demo").ligacoes[f.lig]
+    assert (lv_demo.fase, lv_demo.conta_id, lv_demo.contratos_conta) == (
+        "real", demo, 3)
+
+
+def test_retrato_da_real_zera_ligacao_que_nao_esta_em_real(base, mods, inst):
+    f = _ligacao("vivo-demo", fase="demo")
+    _config_real(f)
+    ret = _retrato_de("real")
+    assert ret.ligacoes[f.lig].fase == "papel"
+    des, ok = _desejados(ret, inst)
+    assert ok and des[f.lig] == PV.Desejado(PV.ZERADO, motivo="fase papel")
+    # e a demo, com a mesma ligação em fase demo, segue como antes
+    des, _ = _desejados(_retrato_de("demo"), inst)
+    assert des[f.lig].estado == PV.POSICAO
+
+
+def test_retrato_tipo_invalido_recusa(base, mods):
+    with db.connect(read_only=True) as con:
+        with pytest.raises(ValueError, match="tipo"):
+            PV.ler_retrato(con, DIA, AGORA, {}, tipo="papel")
+
+
 def test_zerado_quando_a_entrada_nao_conta(lig, inst):
     # desligada às 09:30 e religada às 10:01:30: a entrada das 10:01 caiu no
     # buraco — o papel a tem aberta, mas ela não é da ligação
