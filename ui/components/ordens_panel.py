@@ -941,6 +941,9 @@ def _texto_evento(e: dict) -> tuple[str, str] | None:
         "saida_executada": (f"saída executada a {_preco(e.get('preco'))}"
                             + (f" ({motivo})" if motivo else ""), ""),
         "saida_parcial": (f"saída executada em parte a {_preco(e.get('preco'))}", ""),
+        "preco_confirmado": (("entrada" if e.get("ponta") == "entrada" else "saída")
+                             + f" confirmada na corretora a {_preco(e.get('preco'))}",
+                             ""),
         "saida_recusada": (f"saída recusada: {motivo} · tentando de novo"
                            if motivo else "saída recusada · tentando de novo",
                            "ambar"),

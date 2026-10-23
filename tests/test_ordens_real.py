@@ -209,6 +209,22 @@ def test_ligacao_desligada_nao_entra_na_real(cena):
     assert entradas(cena.mt5) == []
 
 
+def test_bolsa_sem_preco_na_resposta_confirma_pelo_negocio(cena):
+    # a conta real (bolsa) devolve price 0 no order_send: o preço vem do negócio
+    cena.mt5.bolsa = True
+    _desejados_no_arquivo()
+    cena.ate(ENTRADA + timedelta(seconds=3))
+    evs = eventos_reais()
+    ex = next(e for e in evs if e["tipo"] == "executada")
+    assert ex["preco"] is None
+    conf = [e for e in evs if e["tipo"] == "preco_confirmado"]
+    assert [(c["ponta"], c["preco"], c["ticket"]) for c in conf] == [
+        ("entrada", 189_000.0, ex["ticket"])]
+    assert conf[0]["ligacao_id"] == 4 and conf[0]["entry_ts"] == ENTRADA
+    cena.voltas(3)                      # um só por ticket e ponta
+    assert len([e for e in eventos_reais() if e["tipo"] == "preco_confirmado"]) == 1
+
+
 def test_arquivo_velho_nao_entra_e_protege(cena):
     _desejados_no_arquivo(vivo_velho=True)
     cena.ate(ENTRADA + timedelta(seconds=2))

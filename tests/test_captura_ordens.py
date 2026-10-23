@@ -537,6 +537,20 @@ def test_espelho_so_na_escrita_que_a_volta_ja_abre_e_em_autocommit(cena, monkeyp
     assert {"enviando", "executada"} <= tipos
 
 
+def test_captura_espelha_o_diario_da_real_na_subida_e_a_cada_candle(cena):
+    # o processo da real nunca escreve no banco: a captura leva ordens/real
+    real = Diario(diario_ordens.PASTA / "real", date(2026, 10, 9), "real")
+    real.registrar("rolagem", quando=_as(9, 0), simbolo="WINV26")
+    cena.ir(_as(10, 0, 30))           # subida: espelha tudo, real inclusive
+    real.registrar("enviando", quando=_as(10, 0, 45), ligacao_id=4,
+                   entry_ts=_as(10, 0), lado=1, contratos=1)
+    cena.ir(_as(10, 1, 1))            # candle novo: o dia da real também
+    with db.connect(read_only=True) as con:
+        linhas = con.execute("SELECT tipo FROM ordens_eventos WHERE origem = 'real' "
+                             "ORDER BY evento_id").fetchall()
+    assert [r[0] for r in linhas] == ["rolagem", "enviando"]
+
+
 # ---------------------------------------------------- papel × backtest
 def test_papel_backtest_so_fora_do_pregao(cena, mundo, monkeypatch):
     feitos, listados = [], []

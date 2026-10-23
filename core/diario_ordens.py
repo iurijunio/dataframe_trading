@@ -36,6 +36,8 @@ TIPOS = frozenset({
     "protecao_enviando", "protecao", "protecao_recusada", "cancelada",
     "incerta", "cancelar_enviando", "cancelar_recusada",
     "chamado", "chamado_fechado", "conta_travada", "rolagem", "comando",
+    # o preço que a bolsa não devolve na resposta da ordem (ordens._confirmar_precos)
+    "preco_confirmado",
     # "Ordem de teste" (core/ordem_teste.py): cada etapa e o desfecho. Tipos
     # próprios de propósito — nenhuma conta derivada acima (ticket aberto,
     # saída pendente, proteção) pode confundir a posição de teste com a de

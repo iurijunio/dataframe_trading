@@ -58,6 +58,9 @@ class MT5Ordens:
         self.falhar: set = set()
         self.erro_check = None             # order_check -> None com este last_error
         self.check_retcode = None          # order_check devolve este retcode
+        # bolsa (conta real): a resposta da ordem volta com price 0; o preço
+        # só existe no negócio
+        self.bolsa = False
         self.check_comment = ""
         self.filling = 3                   # máscara FOK|IOC
         self.parcial_volume = 1.0
@@ -224,8 +227,8 @@ class MT5Ordens:
                                     commission=0.0, swap=0.0, fee=0.0,
                                     profit=p.profit, symbol=p.symbol))
             return NS(retcode=10010 if parcial and vol < req["volume"] else 10009,
-                      order=deal, deal=deal, volume=vol, price=float(self.preco),
-                      comment="")
+                      order=deal, deal=deal, volume=vol,
+                      price=0.0 if self.bolsa else float(self.preco), comment="")
         vol = self.parcial_volume if parcial else req["volume"]
         t = self._novo()
         if registrar:
@@ -249,7 +252,8 @@ class MT5Ordens:
                                 time_setup=_epoch(self.agora), type=req["type"],
                                 req=dict(req, volume=req["volume"] - vol))
         return NS(retcode=10010 if parcial else 10009, order=t, deal=deal,
-                  volume=vol, price=float(self.preco), comment="")
+                  volume=vol, price=0.0 if self.bolsa else float(self.preco),
+                  comment="")
 
     # ------------------------------------------------------- cenários
     def abrir_manual(self, lado, volume=1.0, magic=0, simbolo="WINV26"):

@@ -918,7 +918,7 @@ def _derrapagem(preco_demo, preco_papel, lado, tick, ponta: str):
 def _preco_medio(saidas: list[dict]):
     """Preço médio das saídas (parciais e a final), pesado pelos contratos."""
     com = [(float(e["preco"]), float(e.get("contratos") or 0)) for e in saidas
-           if e.get("preco") is not None]
+           if e.get("preco")]          # 0 = sem preço (bolsa, diário antigo)
     if not com:
         return None
     peso = sum(c for _, c in com)
@@ -1028,7 +1028,12 @@ def _uma_operacao_demo(chave, evs: list[dict], papel_op: dict | None,
     ent = entradas[0]
     contratos = sum(float(e.get("contratos") or 0) for e in entradas
                     if e["tipo"] != "adotada") or float(ent.get("contratos") or 0)
-    preco_ent = float(ent["preco"]) if ent.get("preco") is not None else None
+    # bolsa (conta real): a resposta da ordem vem sem preço; o motor grava o
+    # do negócio depois, em `preco_confirmado` (um por ponta)
+    conf = {e.get("ponta"): float(e["preco"]) for e in evs
+            if e["tipo"] == "preco_confirmado" and e.get("preco")}
+    # (0 = sem preço: o diário de antes do `preco_confirmado` gravou assim)
+    preco_ent = float(ent["preco"]) if ent.get("preco") else conf.get("entrada")
     papel_ent = (papel_op["entry_px"] if papel_op is not None
                  else ent.get("preco_papel"))
     if papel_op is not None and papel_op.get("bruto") is not None \
@@ -1049,8 +1054,11 @@ def _uma_operacao_demo(chave, evs: list[dict], papel_op: dict | None,
         linha["situacao"] = "aberta"
         return linha
     fim = finais[-1]
-    saidas = [e for e in evs if e["tipo"] in ("saida_parcial", "saida_executada",
-                                              "saiu_antes")]
+    saidas = [dict(e, preco=conf["saida"])
+              if not e.get("preco") and e["tipo"] != "saiu_antes" and "saida" in conf
+              else e
+              for e in evs if e["tipo"] in ("saida_parcial", "saida_executada",
+                                            "saiu_antes")]
     preco_sai = _preco_medio(saidas)
     papel_sai = (papel_op["exit_px"] if papel_op is not None
                  and papel_op.get("exit_px") is not None else None)

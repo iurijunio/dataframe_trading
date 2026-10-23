@@ -1055,3 +1055,56 @@ def test_planejar_que_levanta_ainda_protege_a_posicao_sem_stop(tmp_path, monkeyp
     assert [r["action"] for r in novos] == [6] and novos[0]["sl"] == 188_800
     assert mt5.posicoes[t].sl == 188_800
     assert evs(m, "protecao") and "ordens_falhou" in m.chamados
+
+
+# ------------------------------------------------- bolsa: preço confirmado
+def _confirmar(m, mt5, agora):
+    m._confirmar_precos(mt5, K.fotografar(mt5, datetime(2026, 10, 9)), m.diario(DIA),
+                        agora)
+    return [(e["ponta"], e["preco"]) for e in evs(m, "preco_confirmado")]
+
+
+def test_bolsa_entrada_e_saida_sem_preco_confirmam_pelos_negocios(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.bolsa = True
+    volta(m, mt5, {4: D})
+    assert evs(m, "executada")[0]["preco"] is None
+    assert _confirmar(m, mt5, AG) == [("entrada", 189_000.0)]
+    mt5.preco = 189_300
+    volta(m, mt5, {4: Desejado(ZERADO)}, agora=T + timedelta(seconds=10))
+    assert evs(m, "saida_executada")[0]["preco"] is None
+    assert _confirmar(m, mt5, T + timedelta(seconds=11)) == [
+        ("entrada", 189_000.0), ("saida", 189_300.0)]
+    # um só por ticket e ponta
+    assert len(_confirmar(m, mt5, T + timedelta(seconds=12))) == 2
+
+
+def test_bolsa_entrada_sem_negocio_ainda_usa_o_preco_da_posicao(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.bolsa = True
+    volta(m, mt5, {4: D})
+    mt5.negocios.clear()
+    assert _confirmar(m, mt5, AG) == [("entrada", 189_000.0)]
+
+
+def test_com_preco_na_resposta_nada_a_confirmar(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    volta(m, mt5, {4: D})
+    assert evs(m, "executada")[0]["preco"] == 189_000.0
+    assert _confirmar(m, mt5, AG) == []
+
+
+def test_bolsa_saida_parcial_so_confirma_com_o_ticket_encerrado(tmp_path):
+    mt5, m = MT5Ordens(), Motor(tmp_path, INST)
+    mt5.bolsa = True
+    volta(m, mt5, {4: D})
+    z = {4: Desejado(ZERADO)}
+    mt5.roteiro, mt5.preco = [10010], 189_100
+    volta(m, mt5, z, agora=T + timedelta(seconds=10))
+    assert _confirmar(m, mt5, T + timedelta(seconds=11)) == [("entrada", 189_000.0)]
+    mt5.preco = 189_300
+    volta(m, mt5, z, agora=T + timedelta(seconds=12))
+    # 1 a 189.100 e 1 a 189.300: o médio da saída inteira
+    assert _confirmar(m, mt5, T + timedelta(seconds=13)) == [
+        ("entrada", 189_000.0), ("saida", 189_200.0)]
+

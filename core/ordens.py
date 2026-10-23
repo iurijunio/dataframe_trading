@@ -525,6 +525,13 @@ _ORDEM_ACOES = {"cancelar": 0, "sair": 1, "adotar": 2, "proteger": 3,
 _METODO = {"chamar": "_chamado_do_plano"}     # `_chamar` é quem abre o chamado
 
 
+def _preco_res(res) -> float | None:
+    """O preço da resposta do `order_send`; 0 (bolsa: o preço vem no negócio,
+    depois) = None, e o `preco_confirmado` completa."""
+    preco = float(getattr(res, "price", 0) or 0)
+    return preco or None
+
+
 def _retcode(res) -> int | None:
     return None if res is None else int(res.retcode)
 
@@ -767,6 +774,12 @@ class Motor:
             self.recusar_testes(comandos, dia, agora, "conta não é hedging"
                                 if nao_hedging else "Algo Trading desligado no MT5")
             return self._estado_fim(est, dia)
+
+        try:
+            self._confirmar_precos(mt5, foto, dia, agora)
+        except Exception:
+            # só a tela perde o preço: comandos, zerar e trava seguem
+            log.exception("preço confirmado falhou")
 
         # 3. comandos: primeiro no diário, depois apagados; zerar e o
         # desligar forçado são derivados do diário (sobrevivem a reinício)
@@ -1301,6 +1314,59 @@ class Motor:
         if erros:
             raise erros[0]
 
+    # ---------------------------------------------------- preço confirmado
+    def _confirmar_precos(self, mt5, foto, dia, agora) -> None:
+        """Na bolsa (conta real) o `order_send` volta com `price` 0: o preço
+        só existe no negócio, que aparece depois (doc do MqlTradeResult:
+        "deal price, confirmed by broker"). Execução sem preço ganha UM
+        `preco_confirmado` por ticket e ponta, com o preço médio dos negócios
+        da posição (a entrada cai no `price_open` da posição se o negócio
+        ainda não veio). Saída pelo stop/alvo da corretora não conta: tem o
+        próprio `saiu_antes` com preço."""
+        if foto.parcial:
+            return
+        # saída só com o ticket encerrado: a parcial sozinha gravaria o preço
+        # dela para a saída inteira
+        fechados = {int(e["ticket"]) for e in dia.eventos if e.get("ticket")
+                    and e["tipo"] in ("saida_executada", "saiu_antes")}
+        faltam = {}
+        for e in dia.eventos:
+            t = e.get("ticket")
+            if not t:
+                continue
+            if e["tipo"] == "preco_confirmado":
+                faltam[(int(t), e.get("ponta"))] = None
+                continue
+            ponta = ("entrada" if e["tipo"] in ("executada", "parcial") else
+                     "saida" if e["tipo"] in ("saida_executada", "saida_parcial")
+                     else None)
+            # 0 também: o diário de antes desta correção gravou o price cru
+            if ponta == "saida" and int(t) not in fechados:
+                continue
+            if ponta and not e.get("preco"):
+                faltam.setdefault((int(t), ponta), e)
+        corretora = {getattr(mt5, "DEAL_REASON_SL", 4),
+                     getattr(mt5, "DEAL_REASON_TP", 5)}
+        for (t, ponta), e in faltam.items():
+            if e is None:
+                continue
+            negs = [n for n in foto.negocios if n.posicao == t
+                    and n.entrada == (ponta == "entrada")
+                    and (ponta == "entrada" or n.motivo not in corretora)]
+            peso = sum(n.volume for n in negs)
+            if negs and peso > 0:
+                preco = sum(n.preco * n.volume for n in negs) / peso
+            elif ponta == "entrada":
+                p = next((p for p in foto.posicoes if p.ticket == t), None)
+                if p is None or not p.preco:
+                    continue
+                preco = p.preco
+            else:
+                continue
+            dia.registrar("preco_confirmado", quando=agora, ticket=t, ponta=ponta,
+                          preco=float(preco), ligacao_id=e.get("ligacao_id"),
+                          entry_ts=e.get("entry_ts"))
+
     # ---------------------------------------------------------- entrar
     def _entrar(self, mt5, a, *, agora, simbolo, desvio, pode_entrar, envio,
                 conta_id, **_):
@@ -1444,7 +1510,7 @@ class Motor:
             vol = float(res.volume) if getattr(res, "volume", 0) else float(d.contratos)
             atraso = int((quando - d.entry_ts).total_seconds() * 1000)
             dia.registrar("executada" if classe == K.OK else "parcial", quando=quando,
-                          ticket=ticket, preco=float(res.price), atraso_ms=atraso,
+                          ticket=ticket, preco=_preco_res(res), atraso_ms=atraso,
                           retcode=rc, motivo=texto, **dict(base, contratos=vol))
             # o que vem depois da resposta usa a hora de depois dela: o diário
             # fica em ordem de tempo (e a proteção pendente conta daqui)
@@ -1607,11 +1673,11 @@ class Motor:
             feito = dict(campos, contratos=float(getattr(res, "volume", 0) or 0)) \
                 if res is not None else campos
             if classe == K.OK:
-                dia.registrar("saida_executada", quando=quando, preco=float(res.price),
+                dia.registrar("saida_executada", quando=quando, preco=_preco_res(res),
                               retcode=rc, motivo=motivo, **feito)
             elif classe == K.PARCIAL:
                 # a posição segue viva com o resto: a saída continua pendente
-                dia.registrar("saida_parcial", quando=quando, preco=float(res.price),
+                dia.registrar("saida_parcial", quando=quando, preco=_preco_res(res),
                               retcode=rc, motivo=motivo, **feito)
             elif classe == K.JA_SAIU:
                 # NÃO é saida_executada: esconderia a saída real do servidor

@@ -355,18 +355,39 @@ class Servico:
         o banco é espelho e pode atrasar (spec ordens §7.2)."""
         if self.motor is None:
             return
-        try:
-            if tudo or self._espelhar_tudo:
-                diario_ordens.espelhar_pendentes(
-                    diario_ordens.PASTA, con, hoje=(self.agora_srv or agora).date())
-                self._espelhar_tudo = False
+        hoje = (self.agora_srv or agora).date()
+        # o processo da real nunca escreve no banco: quem espelha o diário
+        # dela (ordens/real) é a captura (spec conta real R6)
+        real = diario_ordens.PASTA / "real"
+        todos = tudo or self._espelhar_tudo
+
+        def demo():
+            if todos:
+                diario_ordens.espelhar_pendentes(diario_ordens.PASTA, con, hoje=hoje)
             elif self.motor._diario is not None:
                 self.motor._diario.espelhar(con)
-        except Exception as e:
-            # o espelho não pode custar o candle que acabou de ser gravado
-            self._falha("não consegui espelhar o diário das ordens no banco", e)
-        else:
-            self._sem_falha("não consegui espelhar o diário das ordens no banco")
+
+        def da_real():
+            if todos:
+                diario_ordens.espelhar_pendentes(real, con, origem="real", hoje=hoje)
+            elif (real / f"{hoje.isoformat()}.jsonl").exists():
+                diario_ordens.Diario(real, hoje, "real").espelhar(con)
+
+        ok = True
+        # uma origem que falha não segura a outra
+        for espelho, texto in ((demo, "não consegui espelhar o diário das ordens no banco"),
+                               (da_real, "não consegui espelhar o diário da conta real "
+                                         "no banco")):
+            try:
+                espelho()
+            except Exception as e:
+                # o espelho não pode custar o candle que acabou de ser gravado
+                self._falha(texto, e)
+                ok = False
+            else:
+                self._sem_falha(texto)
+        if ok:
+            self._espelhar_tudo = False
 
     def _garantir_schema(self, agora) -> None:
         """As tabelas que a captura usa e o app cria na subida (papel_*).

@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import math
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -900,6 +900,40 @@ def test_saida_normal_mantem_derrapagem():
                                  lig, 5, 0.2)
     assert linha["derrapagem_saida"] == 0
     assert linha["nota"] is None
+
+
+def test_bolsa_sem_preco_usa_o_preco_confirmado():
+    # conta real: a resposta da ordem vem sem preço; o confirmado completa
+    lig = {"nome": "V1", "cor": "azul"}
+    t0 = datetime(2026, 10, 9, 10, 1)
+    evs = [
+        {"tipo": "executada", "lado": 1, "preco": None, "contratos": 1,
+         "ticket": 7, "quando": t0, "atraso_ms": 180},
+        {"tipo": "preco_confirmado", "ponta": "entrada", "preco": 189_000.0,
+         "ticket": 7, "quando": t0},
+        {"tipo": "saida_executada", "preco": None, "contratos": 1, "ticket": 7,
+         "motivo": "papel zerado", "quando": t0 + timedelta(minutes=5)},
+        {"tipo": "preco_confirmado", "ponta": "saida", "preco": 189_300.0,
+         "ticket": 7, "quando": t0 + timedelta(minutes=5)},
+    ]
+    linha = L._uma_operacao_demo((1, t0), evs, None, lig, 5, 0.2)
+    assert (linha["preco_entrada"], linha["preco_saida"]) == (189_000.0, 189_300.0)
+    assert linha["pontos"] == 300 and linha["resultado"] == 60.0
+
+
+def test_bolsa_alvo_na_corretora_usa_o_preco_do_saiu_antes():
+    lig = {"nome": "V1", "cor": "azul"}
+    t0 = datetime(2026, 10, 23, 11, 54)
+    evs = [
+        {"tipo": "executada", "lado": 1, "preco": 0.0, "contratos": 1,
+         "ticket": 7, "quando": t0, "atraso_ms": 184},
+        {"tipo": "preco_confirmado", "ponta": "entrada", "preco": 207_855.0,
+         "ticket": 7, "quando": t0},
+        {"tipo": "saiu_antes", "motivo": "alvo na corretora", "preco": 208_155.0,
+         "contratos": 1, "ticket": 7, "quando": t0 + timedelta(minutes=8)},
+    ]
+    linha = L._uma_operacao_demo((1, t0), evs, None, lig, 5, 0.2)
+    assert linha["preco_entrada"] == 207_855.0 and linha["resultado"] == 60.0
 
 
 def test_leitores_por_origem_nao_misturam_demo_e_real(cenario_demo):
