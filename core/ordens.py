@@ -1309,6 +1309,9 @@ class Motor:
         op = {"ligacao_id": lig, "entry_ts": d.entry_ts}
         if self.so_encerrar.get(simbolo):
             ok, motivo = False, K.TEXTOS[CLOSE_ONLY]
+        elif not d.contratos or d.contratos <= 0:
+            # volume zero a corretora recusa ("volume inválido"): nem pede
+            ok, motivo = False, "sem contratos"
         else:
             ok, motivo = pode_entrar(a)
         if not ok and motivo in PASSAGEIRAS:

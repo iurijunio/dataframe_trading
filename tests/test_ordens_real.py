@@ -171,10 +171,42 @@ def test_arquivo_fresco_com_posicao_envia_entrada_na_real_e_grava_ack(cena):
     cena.ate(ENTRADA + timedelta(seconds=2))
     envios = entradas(cena.mt5)
     assert envios and envios[0]["magic"] == K.magic(4)
+    # o arquivo não leva contratos: vale o da conta real no retrato próprio
+    assert envios[0]["volume"] == 2
     assert ponte.ler_ack() == 1
     ev = [e for e in eventos_reais() if e["tipo"] == "executada"]
     assert ev and ev[0]["evento_id"].startswith("real-")
     assert cena.mt5.inits == [TERMINAL_REAL]
+
+
+def test_contratos_da_real_caem_no_plano_sem_contratos_da_conta(cena):
+    cena.ret["atual"].ligacoes[4].contratos_conta = None
+    cena.ret["atual"].ligacoes[4].plano = {"contratos": 3}
+    _desejados_no_arquivo()
+    cena.ate(ENTRADA + timedelta(seconds=2))
+    assert [e["volume"] for e in entradas(cena.mt5)] == [3]
+
+
+def test_sem_contratos_nao_vai_a_corretora(cena):
+    cena.ret["atual"].ligacoes[4].contratos_conta = None
+    _desejados_no_arquivo()
+    cena.ate(ENTRADA + timedelta(seconds=2))
+    assert entradas(cena.mt5) == []
+
+
+def test_ligacao_fora_da_fase_real_nao_entra_na_real(cena):
+    # real ⊃ demo: a captura publica a de fase demo, a real a zera
+    cena.ret["atual"].ligacoes[4].fase = "papel"
+    _desejados_no_arquivo()
+    cena.ate(ENTRADA + timedelta(seconds=2))
+    assert entradas(cena.mt5) == []
+
+
+def test_ligacao_desligada_nao_entra_na_real(cena):
+    cena.ret["atual"].ligacoes[4].ligada = False
+    _desejados_no_arquivo()
+    cena.ate(ENTRADA + timedelta(seconds=2))
+    assert entradas(cena.mt5) == []
 
 
 def test_arquivo_velho_nao_entra_e_protege(cena):

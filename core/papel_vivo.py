@@ -388,3 +388,26 @@ def desejados(retrato: Retrato | None, aquecimento: Aquecimento | None,
                             alvo_px=alvo,
                             contratos=lv.contratos_conta or int(lv.plano["contratos"]))
     return out, True
+
+
+def na_conta_real(desejados: dict, retrato: Retrato | None) -> dict:
+    """Os desejados da ponte (sem `contratos`) no processo da real (spec da
+    conta real R1/R8): vale o mais restritivo entre o arquivo e o retrato
+    próprio. Fora da fase real ou desligada = ZERADO; posição recebe os
+    contratos da conta real; sem contratos conhecidos, só protege."""
+    out = {}
+    for lig, d in desejados.items():
+        lv = retrato.ligacoes.get(lig) if retrato is not None else None
+        if lv is None:
+            out[lig] = Desejado(INDISPONIVEL, motivo="fora do retrato da real")
+        elif lv.fase != "real":
+            out[lig] = Desejado(ZERADO, motivo=f"fase {lv.fase}")
+        elif not lv.ligada:
+            out[lig] = Desejado(ZERADO, motivo="desligada")
+        elif d.estado != POSICAO:
+            out[lig] = d
+        else:
+            n = lv.contratos_conta or int((lv.plano or {}).get("contratos") or 0)
+            out[lig] = (replace(d, contratos=n) if n > 0 else
+                        Desejado(INDISPONIVEL, motivo="sem contratos na conta real"))
+    return out

@@ -278,7 +278,7 @@ class ServicoReal:
             return {}, None, None
         desejados, disponivel, contrato, seq, _ = ponte.ler(d)
         self._disponivel = disponivel
-        return desejados, contrato, seq
+        return papel_vivo.na_conta_real(desejados, self.retrato), contrato, seq
 
     def _checar_contrato(self, contrato, simbolo):
         """(pode operar, motivo). O contrato precisa estar negociável no
