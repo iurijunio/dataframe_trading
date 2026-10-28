@@ -30,12 +30,12 @@ Candidatas, portfólios) continuam com **resultado idêntico, número a número*
 | D10 | Portfólio que misture moedas (WIN em R$ com micro em US$) fica **bloqueado** | Somar real com dólar dá número errado; conversão de moeda fica para quando houver portfólio misto. |
 | D11 | Arquivos protegidos `rompimento_abertura.py` e `ui/components/controls.py` podem ser alterados no mínimo necessário | Autorizado pelo usuário em 28/10 ("se precisar mexer em algum arquivo que precise de permissão, eu permito"). |
 
-Decisões de Claude (o usuário pode mudar ao ler):
+Decisões de Claude (C1 confirmada pelo usuário; C2 decidida por ele):
 
 | # | Decisão | Por quê |
 |---|---------|---------|
 | C1 | Parâmetros e faixas em pontos são **inteiros** também nos micros (stop de 12 pontos, não 12,25) | A grade, a validação e a vizinhança da mineração tratam esses campos como inteiros; 1 ponto de passo é fino o bastante (4 ticks). Quem quiser precisão fina usa stop/alvo em porcentagem, que já arredonda ao tick. |
-| C2 | `rompimento_ema_abertura`, **antes das 09:30**, mede a distância a partir da abertura do pregão (18:00); depois das 09:30, a partir da barra das 09:30 | O usuário quer operar o pregão inteiro; bloquear a noite tiraria isso desta estratégia. O `rompimento_abertura` naturalmente só sinaliza depois de formar o range das 09:30. |
+| C2 | `rompimento_ema_abertura` **só sinaliza a partir da abertura de referência** (09:30 NY nos micros), medindo a distância a partir da barra das 09:30 | Decisão do usuário em 28/10: "se é abertura, deve ser trabalhado na abertura". O `rompimento_abertura` já se comporta assim (só sinaliza depois de formar o range das 09:30). |
 
 ## Os dados (London Strategic Edge)
 
@@ -245,7 +245,7 @@ None`, todas as funções são identidade. Um teste afirma isso para cada uma.
   depois das 09:30; em tempos gráficos que não dividem 09:30 (H1, M7, M9…) ela
   começa um pouco depois — documentado no (?) do parâmetro. Com
   `abertura_min = None` (WIN), é a primeira barra do dia, exatamente como hoje.
-- `rompimento_ema_abertura` antes da abertura de referência: decisão C2.
+- `rompimento_ema_abertura` antes da abertura de referência: nenhum sinal (decisão C2). Com `abertura_min = None` (WIN) não há corte, como hoje.
 - Parâmetros em pontos ganham `"unidade": "pontos"` no `params_schema`
   (`filtro_amplitude`, `distancia_abertura`, `amplitude_max` etc.), e continuam
   `"tipo": "int"` (decisão C1).
