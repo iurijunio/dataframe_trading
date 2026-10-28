@@ -1,6 +1,7 @@
 # Ativos da CME na pesquisa (MES e MNQ) — desenho
 
-Data: 28/10/2026 · Branch: `new-strategies` · Status: aprovado em conversa, aguardando revisão do documento
+Data: 28/10/2026 · Branch: `new-strategies` · Status: aprovado em conversa;
+revisado por agente (14 achados incorporados); aguardando leitura do usuário
 
 ## Objetivo
 
@@ -27,6 +28,14 @@ Candidatas, portfólios) continuam com **resultado idêntico, número a número*
 | D8 | **Faixas de mineração por ativo**, na ficha; Claude propõe, o usuário ajusta | As faixas de hoje são do WIN (stop de 150 pontos é absurdo no MES). |
 | D9 | Custo inicial: **US$ 0,60 por contrato por lado + 1 tick de derrapagem**, editável | Sem corretora ainda; ordem de grandeza típica de micro (corretagem + bolsa + NFA). |
 | D10 | Portfólio que misture moedas (WIN em R$ com micro em US$) fica **bloqueado** | Somar real com dólar dá número errado; conversão de moeda fica para quando houver portfólio misto. |
+| D11 | Arquivos protegidos `rompimento_abertura.py` e `ui/components/controls.py` podem ser alterados no mínimo necessário | Autorizado pelo usuário em 28/10 ("se precisar mexer em algum arquivo que precise de permissão, eu permito"). |
+
+Decisões de Claude (o usuário pode mudar ao ler):
+
+| # | Decisão | Por quê |
+|---|---------|---------|
+| C1 | Parâmetros e faixas em pontos são **inteiros** também nos micros (stop de 12 pontos, não 12,25) | A grade, a validação e a vizinhança da mineração tratam esses campos como inteiros; 1 ponto de passo é fino o bastante (4 ticks). Quem quiser precisão fina usa stop/alvo em porcentagem, que já arredonda ao tick. |
+| C2 | `rompimento_ema_abertura`, **antes das 09:30**, mede a distância a partir da abertura do pregão (18:00); depois das 09:30, a partir da barra das 09:30 | O usuário quer operar o pregão inteiro; bloquear a noite tiraria isso desta estratégia. O `rompimento_abertura` naturalmente só sinaliza depois de formar o range das 09:30. |
 
 ## Os dados (London Strategic Edge)
 
@@ -39,11 +48,12 @@ O site limita cada download a ~2,5 milhões de linhas; por isso cada ativo vem e
 partes que se complementam. Conferido:
 
 - Colunas: `time` (timestamp com fuso, **UTC**), `open`, `high`, `low`, `close`,
-  `volume` (double), `trades` (inteiro). Os arquivos antigos do ES/NQ têm outro
-  formato (`ts`, `symbol`, sem `trades`) — o importador aceita os dois.
+  `volume` (double), `trades` (inteiro).
+- `time` é o **início** do minuto (mesma convenção do MT5): a primeira barra de
+  domingo é 22:00 UTC no verão americano = 18:00 NY, e a última do dia é
+  20:59 UTC = 16:59 NY. Um teste trava isso.
 - Candles de 1 minuto, de 05/05/2019 (lançamento dos micros) até 28/10/2026;
-  ~2,6 milhões por ativo. Só existem minutos com negócio (minuto sem negócio não
-  vem).
+  ~2,6 milhões por ativo. Só existem minutos com negócio.
 - Preço **sem ajuste** (série contínua com o preço real de cada contrato, como o
   `WIN$N`). A opção "Adjusted for splits" do site não altera futuros.
 - Partes emendam sem falha (MNQ: 1.352 minutos sobrepostos, idênticos; MES: uma
@@ -56,8 +66,24 @@ partes que se complementam. Conferido:
   véspera de Natal), funeral do Carter (09/01/2025), paradas por queda em março
   de 2020. Saltos grandes reais: 12/01/2023 e 14/10/2026, às 08:30 NY (dado
   econômico).
+- O último pregão de cada download é parcial (o arquivo acaba no meio do dia).
 
 ## Arquitetura
+
+### Regra de unidades (vale para tudo abaixo)
+
+Existem três unidades, e cada lugar usa só uma:
+
+| Unidade | Exemplo MES | Onde vive |
+|---------|-------------|-----------|
+| **Humana** (pontos e hora de NY, como o usuário lê) | stop 12 pontos; janela 09:30 | Tela, ficha YAML, **tudo o que é salvo como parâmetro ou perfil**: `params`/`profile` de minerações, Walk-Forwards, Candidatas, planos, `execution_profiles`. |
+| **Guardada** (preço × 10^`price_decimals`, relógio de pregão) | 543225; 15:30 | `bars_m1`, Parquet, **dentro do motor**, e **tudo o que é registro de trade**: `points`, `mae`, `mfe`, `entry_px`, `exit_px`, `sl_at_entry`, `wfa_trades` (`core/wfa_store.py:~110`), trades de mineração/Candidata. |
+| **Dinheiro** (moeda do ativo) | US$ | Resultados, custos, `tick_value`, `point_value` da ficha. |
+
+A conversão humana → guardada acontece **só dentro de `run_strategy`**
+(`core/engine/execution.py:~211-222`), numa cópia local. A conversão guardada →
+humana acontece **só na tela**, via `core/ativo.py`. Para o WIN as duas
+conversões são identidade (escala 1, deslocamento 0).
 
 ### 1. Ficha do ativo (camada 1) — `configs/instruments/mes.yaml`, `mnq.yaml`
 
@@ -79,25 +105,21 @@ rollover_policy: "none"    # serie continua da fonte; day trade
 # novos
 sessao_abertura: "18:00"   # hora local (NY) em que o pregao comeca
 abertura_referencia: "09:30"
-faixas: { ... }            # faixas de mineracao por parametro (ver secao 6)
-custos_padrao: { corretagem: 0.60, emolumentos: 0.0, slippage_ticks: 1 }
+perfil_padrao:             # preenche a camada 4 ao escolher o ativo (secao 7)
+  inicio: "18:00"
+  fim: "16:30"             # ultima entrada
+  fechamento: "16:50"      # fechamento forcado, antes da pausa das 17:00
+  corretagem: 0.60         # US$ por contrato por lado
+  emolumentos: 0.0
+  slippage_ticks: 1
+  stop_pontos: (medido na etapa 4)
+  alvo_pontos: (medido na etapa 4)
+faixas: { ... }            # faixas de mineracao por parametro (secao 6)
 ```
 
-`tick_size` passa a aceitar fração **na ficha**; dentro do sistema tudo continua
-inteiro (ver 3). Todo leitor de `tick_size` e `point_value` que multiplica ou
-compara com **diferença de preço guardada** passa a receber os valores em
-unidades guardadas (`tick_unid`: WIN 5, MES 25; `valor_por_unid`: WIN 0,20,
-MES 0,05), via `core/ativo.py` (seção 4). Leitores mapeados:
-`core/engine/execution.py:~466, ~496, ~555`, `core/metrics.py:~38, ~49`,
-`core/portfolio.py:~199`, `core/tamanho.py` (incluindo `trava_do_indice`, que
-usa o preço do índice), `core/robustez.py:~449`, `ui/callbacks.py:~243`. O plano
-confere a lista completa com `grep`. `tick_value` (dinheiro por tick) não muda de
-unidade.
-
-A tabela `instruments` ganha as colunas novas (`sessao_abertura`,
-`abertura_referencia`) com `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, nulas para
-o WIN. `faixas` e `custos_padrao` são lidos direto do YAML
-(`load_instrument_yaml`), não vão para o banco.
+Na tabela `instruments` (`core/schema.sql:~9`), `tick_size` é INTEGER: grava-se
+`tick_unid` (MES: 25), não 0,25. Nenhuma coluna nova no banco — os campos novos
+são lidos direto do YAML por `load_instrument_yaml`.
 
 ### 2. Relógio de pregão (caminho A)
 
@@ -111,139 +133,204 @@ UTC  →  hora de Nova York (com horário de verão, via zoneinfo)
 
 Resultado: o pregão de 18:00 (NY, véspera) até 17:00 (NY) vira **00:00–23:00 da
 mesma data**. Todo o código que hoje deriva o dia de `ts.astype("datetime64[D]")`
-ou `CAST(ts AS DATE)` (~25 lugares: limite diário, fechamento forçado, janela,
-`dias_semana`, calendário, Walk-Forward, métricas, gráficos por dia) passa a
-enxergar a **data do pregão** sem nenhuma mudança. A noite de domingo cai na
-segunda (correto na CME). Velas H1–H4 alinham com o início do pregão.
+ou `CAST(ts AS DATE)` (limite diário, `day_id` do kernel, fechamento forçado,
+`dias_semana`, `resample`, `trading_days`, Walk-Forward, métricas, gráficos por
+dia) passa a enxergar a **data do pregão** sem mudança. A noite de domingo cai na
+segunda (correto na CME). As viradas de horário de verão americano acontecem no
+domingo de madrugada, com o mercado fechado — não há hora repetida nem pulada
+dentro de um pregão. Para o WIN o deslocamento é zero.
 
-O deslocamento é fixo em relação a Nova York; o horário de verão já foi resolvido
-na conversão UTC→NY. Para o WIN o deslocamento é zero (campo ausente), então
-nada muda.
+**Datas:** os seletores de período (Walk-Forward, filtros, gráfico) trabalham com
+a **data do pregão**. A lista de trades mostra data e hora do **calendário de
+NY** — um trade de domingo 19:00 aparece com "domingo 19:00" e pertence ao
+pregão de segunda. O (?) da lista explica isso.
 
 **A regra de ouro:** o relógio de pregão nunca aparece para o usuário. Toda tela
-que mostra ou recebe hora passa por duas funções do módulo `core/ativo.py`:
+que mostra ou recebe hora passa por `core/ativo.py`:
 
-- `hora_para_exibir(ts, ficha)` — relógio de pregão → hora de NY (subtrai o
-  deslocamento; a data mostrada é a do calendário de NY, não a do pregão).
+- `hora_para_exibir(ts, ficha)` — relógio de pregão → hora e data de NY.
 - `hora_para_motor("09:30", ficha)` — hora de NY digitada → relógio de pregão
-  (`09:30` → `15:30`).
+  (`09:30` → `15:30`). Chamada **só** dentro de `run_strategy` (perfil) e nos
+  callbacks que filtram/posicionam o gráfico — nunca sobre um valor já
+  convertido.
 
-Lugares que exibem/recebem hora (lista mínima, a conferir no plano):
+Lugares que exibem/recebem hora (o plano confere a lista completa com `grep`):
 
-- gráfico de candles e marcas de trade (`ui/data.py`, `ui/components/charts.py`);
+- gráfico de candles e marcas de trade (`ui/data.py:~265-290`,
+  `ui/components/charts.py`);
+- `store-window` de/até, que dá zoom no gráfico (`ui/callbacks.py:~691, ~717`);
 - listas de trades e detalhes (`core/detalhes.py`, catálogo, ficha);
-- histograma por hora (`core/analytics.py`);
+- histograma por hora e por dia da semana (`core/analytics.py:~64-70`);
 - campos de horário do perfil — início/fim da janela, fechamento, `sem_entrada`
-  (`ui/components/controls.py`, `ui/callbacks.py`) e seus padrões
-  `09:00/17:00/17:30`, que passam a vir da ficha do ativo;
-- `catalogo.py` filtro por hora.
+  (`ui/components/controls.py:~203-209`, `ui/callbacks.py:~592, ~790`);
+- filtro por hora do catálogo (`catalogo.py`).
+
+**Janela que atravessa a pausa:** uma janela 16:00→19:00 NY vira 22:00→01:00 no
+relógio de pregão e ficaria vazia em silêncio. A tela valida início ≤ fim **na
+ordem do pregão** (18:00 é o começo) e recusa com mensagem.
 
 ### 3. Preço com centavos
 
 `bars_m1` continua `BIGINT`. O preço é guardado como `preço × 10^price_decimals`
-(MES: 5432,25 → 543225). Para o WIN `price_decimals = 0`, nada muda.
+(MES: 5432,25 → 543225). Para o WIN `price_decimals = 0`, nada muda. A tela
+divide por `escala` em todo lugar que mostra **preço ou diferença de preço**:
+OHLC do gráfico, grade de resultados, Detalhes, MAE/MFE, pontos do trade,
+textos de sugestão (`core/analytics.py:~223-240`).
 
-Dentro do motor tudo trabalha em **unidades guardadas** (inteiras). As unidades
-humanas (pontos, com fração) só existem na tela, na ficha e no que fica salvo:
-os parâmetros e o perfil salvos guardam o que o usuário digitou (ex.: stop de
-12,5 pontos), e a conversão acontece numa fronteira única (seção 4).
+### 4. Fronteira única de tradução — `core/ativo.py` (novo) dentro de `run_strategy`
 
-Consequência: `stop_pontos`, `alvo_pontos`, `trailing_pontos` e parâmetros de
-estratégia em pontos passam a aceitar fração **na tela** quando o ativo tem
-decimais; o motor recebe inteiros em unidades guardadas.
-
-### 4. Fronteira única de tradução — `core/ativo.py` (novo)
-
-Um módulo pequeno, a única peça que conhece "unidade humana × unidade guardada ×
-relógio":
+`core/ativo.py` é a única peça que conhece "humana × guardada × relógio":
 
 - `Ficha` — dataclass com os campos do YAML e os derivados: `escala =
   10**price_decimals`, `tick_unid = round(tick_size * escala)`,
-  `valor_por_unid = point_value / escala`, `deslocamento_min`.
+  `valor_por_unid = point_value / escala`, `deslocamento_min`,
+  `abertura_min` (minuto do pregão da abertura de referência, ou `None`).
 - `ficha(symbol) -> Ficha` — carrega via `load_instrument_yaml`.
 - `params_para_motor(params, schema, ficha)` — multiplica por `escala` os
-  parâmetros marcados com `"unidade": "pontos"` no `params_schema` da estratégia,
-  e arredonda ao tick.
-- `perfil_para_motor(perfil, ficha)` — converte pontos (stop, alvo, trailing) e
-  horários (janela, fechamento, `sem_entrada`) do perfil.
+  parâmetros marcados com `"unidade": "pontos"` no `params_schema`.
+- `perfil_para_motor(perfil, ficha)` — converte pontos (stop, alvo, trailing,
+  meta) e horários (janela, fechamento, `sem_entrada`) do perfil, com
+  `dataclasses.replace`.
+- `instrumento_para_motor(instr, ficha)` — `tick_size = tick_unid`,
+  `point_value = valor_por_unid`.
 - `hora_para_exibir`, `hora_para_motor`, `preco_para_exibir`.
 
-Ponto de entrada no motor: `core/engine/execution.py`, na chamada única
-`estrategia.signals(bars_tf, params)` (~linha 219) e na montagem do
-`ExecutionProfile`. A conversão de `stop_dia`/`meta_dia` (dinheiro → pontos,
-`execution.py:~497`) passa a usar `valor_por_unid`, mantendo o `int(round())` do
-WIN.
+**Onde roda:** só em `run_strategy` (`core/engine/execution.py:~211-222`), que
+é o caminho comum de todos: `optimizer.py`, `wfa_runner.py`,
+`candidata_runner.py`, `aleatorio.py:~474`, `ui/callbacks.py:~665`.
+`run_strategy`:
 
-**Garantia do WIN:** com `escala = 1` e `deslocamento = 0`, todas as funções são
-identidade. Um teste afirma isso para cada uma.
+1. converte perfil, parâmetros e instrumento numa cópia local;
+2. faz o `resample` como hoje;
+3. cria **uma cópia** de `bars_tf` e acrescenta `bars["tick"] = tick_unid` e
+   `bars["abertura_min"]` — **depois** do `resample`, nunca no dicionário M1
+   (o `resample` monta um dicionário novo sem chaves extras,
+   `execution.py:~138-145`, e o `aleatorio.py:~470` fatia todas as chaves do
+   M1 como vetores);
+4. chama `estrategia.signals(bars_tf, params_motor)`;
+5. devolve `res.profile` **em unidades humanas** (o original) e `res.instrument`
+   já convertido.
+
+Com isso `metrics.py:~38, ~49` e `execution.py:~466, ~496, ~555` não mudam: já
+leem o instrumento convertido. A conversão de `stop_dia`/`meta_dia` (dinheiro →
+pontos, `execution.py:~497`) passa a usar o `point_value` convertido, mantendo o
+`int(round())` do WIN.
+
+**Fora de `run_strategy`, quem lê unidade:**
+
+- `core/tamanho.py:~123-129` (`dia_ruim`, chamado em
+  `ui/callbacks_candidata.py:~204`) multiplica o `stop_pontos` **salvo (humano)**
+  pelo `point_value` **humano** da ficha — fica como está.
+- `ui/callbacks.py:~229` compara `sl_at_entry` (guardada) com
+  `perfil.stop_pontos` (humana) e alimenta `analytics.sugestoes`: dividir
+  `sl_at_entry` por `escala` antes de comparar.
+- `core/portfolio.py:~199`: ver seção 8.
+
+**Garantia do WIN:** com `escala = 1`, `deslocamento = 0`, `abertura_min =
+None`, todas as funções são identidade. Um teste afirma isso para cada uma.
 
 ### 5. Estratégias
 
-- `signals(bars, params)` continua com a mesma assinatura. O motor passa a
-  incluir no dicionário `bars` duas chaves: `bars["tick"]` (tick em unidades
-  guardadas) e `bars["abertura_min"]` (minuto do pregão da abertura de
-  referência, ou `None`).
-- `TICK = 5` fixo sai de `rompimento_canal.py` e `rompimento_abertura.py`
-  (arquivo protegido — autorizado pelo usuário): `folga = folga_ticks *
-  bars.get("tick", 5)`.
-- **Abertura de referência:** `rompimento_abertura.py` e
-  `rompimento_ema_abertura.py` passam a contar a abertura a partir da primeira
-  barra do pregão com minuto ≥ `abertura_min`. Com `abertura_min = None` (WIN),
-  é a primeira barra do dia, exatamente como hoje. O range da abertura do MES
-  começa às 09:30 NY; o limite diário continua começando às 18:00.
+- `signals(bars, params)` mantém a assinatura. `bars` (cópia do `bars_tf`) traz
+  `bars["tick"]` e `bars["abertura_min"]` (seção 4). Sem as chaves, valem os
+  padrões do WIN (`tick` 5, `abertura_min` `None`).
+- `TICK = 5` fixo sai de `rompimento_canal.py` e `rompimento_abertura.py`:
+  `folga = folga_ticks * bars.get("tick", 5)`.
+- **Abertura de referência** em `rompimento_abertura.py` e
+  `rompimento_ema_abertura.py`: a abertura é a primeira barra do pregão cujo
+  **minuto de início** é ≥ `abertura_min`. Minuto de início, não o `ts` da barra
+  agregada — o `resample` carimba a barra com o `ts` do **fim** do grupo
+  (`execution.py:~139`), e no H1 isso faria a barra de 09:00–09:59 NY passar por
+  "09:30". Fora do M1, a barra da abertura é a primeira que **começa** em ou
+  depois das 09:30; em tempos gráficos que não dividem 09:30 (H1, M7, M9…) ela
+  começa um pouco depois — documentado no (?) do parâmetro. Com
+  `abertura_min = None` (WIN), é a primeira barra do dia, exatamente como hoje.
+- `rompimento_ema_abertura` antes da abertura de referência: decisão C2.
 - Parâmetros em pontos ganham `"unidade": "pontos"` no `params_schema`
-  (`filtro_amplitude`, `distancia_abertura`, `amplitude_max` etc.).
+  (`filtro_amplitude`, `distancia_abertura`, `amplitude_max` etc.), e continuam
+  `"tipo": "int"` (decisão C1).
 - `aquecimento` e a checagem de colisão de nomes com o perfil continuam valendo
   (checklist de estratégia nova).
 
 ### 6. Faixas de mineração por ativo
 
 `faixas` na ficha sobrepõe `min/max/step/default` do `params_schema` e das faixas
-da camada 4 (sliders de alvo/stop/trailing em `controls.py`, meta de varredura em
-`callbacks.py`), por estratégia e parâmetro, **em pontos humanos**. Parâmetro sem
-faixa na ficha usa a do schema. Para o WIN não há `faixas`, então nada muda.
+da camada 4 (sliders de alvo/stop/trailing em `controls.py:~233-267`, meta de
+varredura em `callbacks.py:~108-114`), por estratégia e parâmetro, **em pontos
+humanos inteiros**. Parâmetro sem faixa na ficha usa a do schema. Para o WIN não
+há `faixas`, então nada muda.
+
+Um único "schema efetivo" (schema da estratégia + faixas da ficha) é usado em
+**todos** os lugares que hoje leem o schema: montagem da grade
+(`optimizer.py:~42-98`), `validate` (`strategies/base.py:~77`,
+`callbacks.py:~585`) e vizinhança/robustez.
 
 Claude propõe as faixas iniciais a partir do movimento típico de cada micro
 (amplitude do pregão e da abertura, medida nos dados importados) e apresenta ao
 usuário numa tabela antes de gravar.
 
-### 7. Moeda
+### 7. Perfil de execução por ativo
+
+Os padrões de hoje são do WIN (`ExecutionProfile` em `execution.py:~47-68`,
+`_PADRAO_PERFIL` em `optimizer.py:~37`, `DEFAULT_PROFILE` em
+`db_manager.py:~215`, padrões da tela em `controls.py:~203-209` e
+`callbacks.py:~592, ~790`). Mudanças:
+
+- Ao escolher um ativo na tela, a camada 4 é preenchida com `perfil_padrao` da
+  ficha (horários de NY, custos em US$, stop/alvo). Ativo sem `perfil_padrao`
+  (WIN) usa os padrões de hoje.
+- `execution_profiles` ganha a coluna `symbol` (nula = WIN, os perfis de hoje).
+  A lista de perfis salvos mostra só os do ativo em foco; um perfil salvo leva o
+  ativo junto.
+
+### 8. Moeda
 
 - `ui/components/cartao.py`: `brl()` vira `dinheiro(valor, moeda="BRL")`;
-  `brl` continua existindo como atalho para não mexer em quem não precisa. As
-  ~30 chamadas no caminho da pesquisa passam a moeda do ativo em foco.
-- Rótulos fixos "R$" no caminho da pesquisa (`mine_charts.py`, catálogo, ficha,
-  Candidata) passam a vir da moeda.
-- `core/candidata.py` — texto "no mini índice" do portão de custo passa a usar a
-  descrição do ativo.
+  `brl` continua existindo como atalho. As chamadas no caminho da pesquisa
+  passam a moeda do ativo em foco.
+- Rótulos fixos "R$" no caminho da pesquisa (`mine_charts.py:~23`, catálogo,
+  ficha, Candidata) passam a vir da moeda.
+- `core/candidata.py:~532-545` — texto "no mini índice" do portão de custo passa
+  a usar a descrição do ativo.
 - `core/portfolio.py` — ao montar ou calcular portfólio com variantes de moedas
   diferentes, recusa com mensagem clara. Variantes da mesma moeda (MES + MNQ)
-  funcionam; para ponto padrão, ativo ausente continua usando R$1.
+  funcionam. O `point_value` lido em `portfolio.py:~199` multiplica `points` de
+  trades (guardados): passa a usar `valor_por_unid`.
 
-### 8. Importação — `core/importar_lse.py` (novo) + subcomando no `cli.py`
+### 9. Importação — `core/importar_lse.py` (novo) + subcomando no `cli.py`
 
 `python cli.py importar-lse --symbol MES ativos_temp/MICROSP500_*.parquet`
 
-1. Lê todas as partes; aceita os dois formatos (`time` ou `ts`).
+1. Lê todas as partes (formato `time/open/high/low/close/volume/trades`).
 2. Junta e tira duplicados por minuto (nas sobreposições, exige que sejam
    idênticos; se divergirem, para e avisa).
-3. Arredonda OHLC ao tick e converte para unidades guardadas.
+3. Arredonda OHLC ao tick e multiplica por `escala`.
 4. UTC → NY → relógio de pregão (seção 2).
-5. **Pregões com falha da fonte:** um pregão com um vazio interno de mais de
-   60 minutos fora da pausa diária (17:00–18:00 NY) é tratado como falha e
-   **não é gravado** — fica como se fosse feriado, e o backtest não opera em
-   cima de dado faltando. Fechamentos antecipados (vazio no final) e paradas
-   curtas não contam. A lista de pregões descartados sai no relatório da
-   importação e fica gravada em `ingest_log`. Esperado: os de 02/03 e 03/03/2020,
-   21/06/2022 e 12/10/2026.
-6. Grava em `bars_m1` e no Parquet (`data/parquet/<sym>/`), refaz
-   `trading_days` e registra a proveniência em `ingest_log`, reaproveitando o
-   que `core/ingest.py` já faz.
-7. O volume é guardado como inteiro; `trades` é descartado (o banco não tem
-   coluna para ele e nenhuma estratégia usa).
+5. Colunas para o formato de `core/ingest.py`: `trades → tick_volume`,
+   `volume → real_volume`, `spread` nulo. Chama `ingest_df` com
+   `price_decimals=0` (os preços já chegam inteiros em unidades guardadas; é o
+   caso em que `ingest.py:~159-167` os aceita como inteiros).
+6. **Pregões com falha da fonte** — um pregão é suspeito se tiver:
+   - vazio interno de mais de 60 minutos fora da pausa diária, ou
+   - começo tardio: primeira barra mais de 60 minutos depois das 18:00 NY.
 
-Reimportar com arquivos novos (próximo download) acrescenta e confere a
-sobreposição, como o caminho do MT5 faz hoje.
+   Fechamento antecipado (vazio no final) não conta. Os suspeitos são comparados
+   com uma **lista esperada** (na ficha, `pregoes_descartados`, com a data do
+   pregão e o motivo): os da lista **não são gravados** (ficam como feriado); um
+   suspeito fora da lista faz a importação **parar** e mostrar o pregão para o
+   usuário decidir (descartar ou manter, e a lista é atualizada). Lista inicial:
+   pregões de 02/03/2020, 03/03/2020, 21/06/2022 e 12/10/2026 — a primeira
+   importação confirma se a regra acha exatamente esses (madrugadas de pouco
+   negócio de 2019 e o limite de queda de março/2020 podem aparecer e vão para a
+   decisão do usuário).
+7. **Último pregão do arquivo:** se o arquivo termina antes das 16:59 NY daquele
+   pregão, o pregão não é gravado; o próximo download o completa.
+8. Grava em `bars_m1` e no Parquet (`data/parquet/<sym>/`), refaz
+   `trading_days` e registra a proveniência e os pregões descartados em
+   `ingest_log`, reaproveitando `core/ingest.py`.
+
+Reimportar com arquivos novos acrescenta e confere a sobreposição, como o
+caminho do MT5 faz hoje.
 
 `core/rollovers.py`: `"none"` já é aceito. `unexplained_gaps` e
 `CONFIRM_GAP_POINTS` (pontos do WIN) não rodam para ativos com `"none"`.
@@ -255,19 +342,19 @@ sobreposição, como o caminho do MT5 faz hoje.
 - Portfólio misto em moedas diferentes (só o bloqueio).
 - Plano de operação para ativos da CME (`proximo_dia_util` sem feriados
   americanos) — só quando houver operação.
-- ES/NQ (minis) e outros ativos (ouro, moedas): a estrutura serve, mas só MES e
-  MNQ são cadastrados agora.
+- ES/NQ (minis), formato antigo de arquivo (`ts`/`symbol`) e outros ativos
+  (ouro, moedas): a estrutura serve, mas só MES e MNQ são cadastrados agora.
 - Política de rolagem trimestral da CME (a série vem contínua da fonte).
 
 ## Garantia do WIN — a "foto"
 
-Antes da etapa 1, grava-se em `tests/fixtures/foto_win/` (ou equivalente) o
-resultado atual de:
+Antes da etapa 1, grava-se em `tests/fixtures/foto_win/` o resultado atual de:
 
 - cada plano salvo (`planos_operacao`): métricas e lista de trades;
 - um backtest de cada estratégia registrada com parâmetros padrão;
 - uma mineração pequena (grade de ~20 combinações) de uma estratégia;
-- um Walk-Forward curto.
+- um Walk-Forward curto;
+- uma rodada da Candidata (inclui o `aleatorio.py`).
 
 Um teste compara número a número ao fim de **cada etapa**. Se não bater, a
 etapa não é entregue.
@@ -277,20 +364,21 @@ etapa não é entregue.
 Cada etapa termina com testes passando, revisor, teste de mutação e a foto do
 WIN batendo.
 
-1. **Fichas e importação** — `mes.yaml`, `mnq.yaml`, `core/ativo.py` (parte de
-   relógio e preço), `core/importar_lse.py`, subcomando do `cli.py`, colunas
-   novas em `instruments`; gráfico mostrando hora de NY e preço com centavos.
+1. **Fichas e importação** — `mes.yaml`, `mnq.yaml`, `core/ativo.py` (relógio e
+   preço), `core/importar_lse.py`, subcomando do `cli.py`; gráfico mostrando
+   hora de NY e preço com centavos.
    *Pronto quando:* MES e MNQ aparecem no seletor "ativo", o gráfico abre em
-   hora de NY, e o relatório de importação lista os pregões descartados
-   esperados.
-2. **Motor e estratégias** — `params_para_motor`, `perfil_para_motor`,
-   `bars["tick"]`, `bars["abertura_min"]`, `TICK` lido do ativo, abertura de
-   referência, `stop_dia`/`meta_dia`, padrões de horário vindos da ficha.
+   hora de NY, e o relatório de importação lista os pregões descartados,
+   conferidos com o usuário.
+2. **Motor e estratégias** — conversão em `run_strategy`, `bars["tick"]`,
+   `bars["abertura_min"]`, `TICK` lido do ativo, abertura de referência,
+   `stop_dia`/`meta_dia`, perfil padrão por ativo, `execution_profiles.symbol`,
+   validação da janela, telas de trades/detalhes em unidades humanas.
    *Pronto quando:* backtest de cada estratégia roda no MES e no MNQ, com os
-   horários de NY na tela.
+   horários de NY e preços em pontos na tela.
 3. **Moeda** — `dinheiro()`, rótulos, portão de custo da Candidata, bloqueio do
    portfólio misto.
-4. **Faixas de mineração** — `faixas` na ficha, aplicadas na mineração, na
+4. **Faixas de mineração** — `faixas` e "schema efetivo" na mineração, na
    camada 4, no Walk-Forward e na Candidata. Claude mede e propõe; o usuário
    aprova.
    *Pronto quando:* mineração, Walk-Forward e Candidata rodam nos micros.
@@ -300,25 +388,32 @@ WIN batendo.
 - **Foto do WIN** (acima), em toda etapa.
 - **Identidade:** cada função de `core/ativo.py` é identidade para a ficha do
   WIN.
+- **Sem dupla conversão:** rodar `run_strategy` duas vezes com o mesmo perfil dá
+  o mesmo resultado; `res.profile` sai igual ao que entrou.
+- **Chaves extras:** `bars["tick"]` chega à estratégia em M1 e em H1; o
+  `aleatorio.py` continua fatiando o M1 sem erro.
 - **Relógio:** conversões nas duas mudanças de horário de verão americano
-  (março e novembro), domingo 18:00 NY caindo na segunda, pregão de fechamento
-  antecipado, e ida-e-volta `hora_para_motor`/`hora_para_exibir`.
-- **Telas:** cada tela da lista da seção 2 mostra hora de NY para o MES e hora
-  de Brasília para o WIN.
+  (março e novembro), domingo 18:00 NY caindo na segunda, `time` como início do
+  minuto (primeira barra de domingo = 18:00 NY), pregão de fechamento
+  antecipado, ida-e-volta `hora_para_motor`/`hora_para_exibir`, janela que
+  atravessa a pausa recusada.
+- **Telas:** cada tela da lista da seção 2 mostra hora de NY e preço em pontos
+  para o MES, e hora de Brasília para o WIN.
 - **Importação:** com recortes pequenos dos arquivos reais em
   `tests/fixtures/`: emenda de partes, sobreposição divergente (deve parar),
-  ruído de arredondamento, pregão com vazio > 60 min (descartado), fechamento
-  antecipado (mantido), os dois formatos de coluna.
-- **Estratégias:** abertura de referência às 09:30 NY no MES; `folga` com tick
-  0,25; WIN idêntico.
+  ruído de arredondamento, vazio interno > 60 min e começo tardio (suspeitos),
+  suspeito fora da lista (para), fechamento antecipado (mantido), último pregão
+  parcial (não gravado).
+- **Estratégias:** abertura de referência às 09:30 NY no MES em M1 e H1;
+  `folga` com tick 0,25; C2 na EMA; WIN idêntico.
 - **Moeda:** US$ no MES, R$ no WIN; portfólio misto recusado.
 
 ## Riscos
 
 | Risco | Como se cobre |
 |-------|---------------|
-| Alguma tela esquece a conversão e mostra 6 h a mais | Funções únicas em `core/ativo.py`; teste por tela; conferência no app antes de entregar. |
-| Conversão de pontos aplicada duas vezes (ou nenhuma) | Fronteira única no motor; parâmetros salvos sempre em pontos humanos; teste de ida e volta. |
+| Alguma tela esquece a conversão e mostra 6 h a mais ou preço ×100 | Funções únicas em `core/ativo.py`; teste por tela; conferência no app antes de entregar. |
+| Conversão aplicada duas vezes (ou nenhuma) | Conversão só em `run_strategy`, em cópia; registros salvos com unidade fixa (regra de unidades); teste de dupla execução. |
 | Mudança no motor altera o WIN | Foto do WIN em toda etapa; funções identidade para o WIN. |
-| Regra de "pregão com falha" descartar dia bom | Relatório lista cada descarte com o motivo; o usuário confere na primeira importação. |
-| Arquivo protegido `rompimento_abertura.py` | Autorizado; mudança mínima (tick e abertura de referência), WIN idêntico pela foto. |
+| Regra de "pregão com falha" descartar dia bom | Lista esperada; qualquer suspeito fora dela para a importação e vai para o usuário. |
+| Arquivos protegidos | Autorizados (D11); mudança mínima, WIN idêntico pela foto. |
