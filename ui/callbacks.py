@@ -23,7 +23,7 @@ from dash.exceptions import PreventUpdate
 
 from dash import html
 
-from core import analytics, candidata, codigo, detalhes, metrics, robustez
+from core import analytics, ativo as ativo_mod, candidata, codigo, detalhes, metrics, robustez
 from core import mineracao_stats as MS
 from core import wfa
 from core import wfa_store
@@ -53,11 +53,9 @@ from .components import mine_criterios as CR
 from .components import robustez_cards as RC
 
 def _simbolo(valor: str | None) -> str:
-    """O ativo escolhido na tela, com o primeiro do banco como rede."""
-    if valor:
-        return valor
-    lista = D.instrumentos()
-    return lista[0]["symbol"] if lista else "WIN$N"
+    """O ativo escolhido na tela, com o padrao de arranque como rede."""
+    return valor or D.simbolo_padrao()
+
 _runs: dict[str, dict] = {}
 
 
@@ -1992,7 +1990,8 @@ def register(app):
 
         de = datetime.fromisoformat(janela["de"])
         ate = datetime.fromisoformat(janela["ate"])
-        dados = D.candles(_simbolo(ativo), de, ate, tf or "auto")
+        simbolo = _simbolo(ativo)
+        dados = D.candles(simbolo, de, ate, tf or "auto")
         if not dados["candles"]:
             return [], no_update, "sem barras nesta janela", ""
 
@@ -2009,14 +2008,17 @@ def register(app):
             else:
                 nota = f"{len(marcas) // 2} operações nesta janela"
 
-        info = (f"{de:%d/%m/%Y %H:%M} — {ate:%d/%m/%Y %H:%M}"
+        ficha = ativo_mod.ficha(simbolo)
+        de_x = ativo_mod.hora_para_exibir(de, ficha)
+        ate_x = ativo_mod.hora_para_exibir(ate, ficha)
+        info = (f"{de_x:%d/%m/%Y %H:%M} — {ate_x:%d/%m/%Y %H:%M}"
                 + (f" · {nota}" if nota else ""))
         # enquadra a janela que acabou de ser carregada, em vez de herdar o
         # zoom da anterior; o nonce e a propria janela, entao trocar de faixa
         # ou de timeframe reenquadra
         enquadrar = {"action": "fitContent",
                      "nonce": f"{janela['de']}|{janela['ate']}|{tf}"}
-        return (charts.price_series(dados, marcas, linhas), enquadrar, info,
+        return (charts.price_series(dados, marcas, linhas, simbolo), enquadrar, info,
                 f"{dados['timeframe']} · {len(dados['candles'])} candles")
 
     from ui import callbacks_candidata

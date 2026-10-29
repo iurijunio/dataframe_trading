@@ -14,18 +14,36 @@ from __future__ import annotations
 
 import numpy as np
 
+from core import ativo
+
 from .. import theme as T
 from ..data import to_epoch
 
 
+def opcoes_candle(simbolo: str | None) -> dict:
+    """As opcoes do candle com o formato de preco do ativo (MES mostra
+    centavos). Sem simbolo, ou no WIN, devolve o tema como sempre foi."""
+    if not simbolo:
+        return T.CANDLE_OPTIONS
+    f = ativo.ficha(simbolo)
+    passo = f.tick_size
+    if float(passo).is_integer():
+        passo = int(passo)
+    fmt = {"type": "price", "precision": f.price_decimals, "minMove": passo}
+    if fmt == T.CANDLE_OPTIONS["priceFormat"]:
+        return T.CANDLE_OPTIONS
+    return {**T.CANDLE_OPTIONS, "priceFormat": fmt}
+
+
 def price_series(dados: dict, markers: list | None = None,
-                 price_lines: list | None = None) -> list[dict]:
+                 price_lines: list | None = None,
+                 simbolo: str | None = None) -> list[dict]:
     return [
         {
             "id": "preco",
             "type": "candlestick",
             "data": dados["candles"],
-            "options": T.CANDLE_OPTIONS,
+            "options": opcoes_candle(simbolo),
             "markers": markers or [],
             "priceLines": price_lines or [],
             "pane": 0,

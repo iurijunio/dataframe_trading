@@ -25,15 +25,6 @@ from ui.components import (analytics_charts, ao_vivo_panel, candidata_panel,
                            estrategias_panel, mining, portfolio_panel,
                            results_grid, stats_cards, wfa_panel)
 
-# O simbolo NAO mora mais no codigo: vem do banco. Este e so o padrao de
-# arranque: o WIN$N (o ativo principal) quando ele tem barras; senao o primeiro
-# instrumento com barras. Nao pode ser so "o mais populoso": o MNQ passou o WIN.
-def _padrao() -> str:
-    lista = D.instrumentos()
-    if any(i["symbol"] == "WIN$N" for i in lista):
-        return "WIN$N"
-    return lista[0]["symbol"] if lista else "WIN$N"
-
 # As fontes moram em ui/assets/fontes (fontes.css): sem rede no pregão a tela
 # não pode trocar de fonte. O preload existe por causa dos gráficos: o
 # lightweight-charts desenha o texto em canvas e não redesenha quando a fonte
@@ -263,7 +254,7 @@ def sidebar(inicio, fim):
 
 
 def build() -> Dash:
-    simbolo = _padrao()
+    simbolo = D.simbolo_padrao()
     inicio, fim = D.span(simbolo)
 
     app = Dash(__name__, title="Dataframe", update_title=None,

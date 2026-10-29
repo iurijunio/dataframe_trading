@@ -361,3 +361,13 @@ def m1_fechados(symbol: str, inicio: datetime, fim: datetime) -> list[dict]:
             [symbol, inicio, fim]).fetchall()
     return [{"ts": ts, "open": o, "high": h, "low": l, "close": c}
             for ts, o, h, l, c in linhas]
+
+
+def simbolo_padrao() -> str:
+    """O ativo de arranque: o WIN$N (principal) quando tem barras; senao o
+    primeiro instrumento com barras. Nao pode ser so "o mais populoso": o MNQ
+    passou o WIN em numero de barras."""
+    lista = instrumentos()
+    if any(i["symbol"] == "WIN$N" for i in lista):
+        return "WIN$N"
+    return lista[0]["symbol"] if lista else "WIN$N"

@@ -232,3 +232,25 @@ def test_cli_importar_lse_sucesso_e_suspeito(monkeypatch, capsys):
     assert e.value.code == 1
     out = capsys.readouterr().out
     assert "2020-03-03" in out and "pregoes_descartados" in out
+
+
+def test_descartar_apaga_a_barra_ja_gravada_so_do_simbolo(monkeypatch):
+    con = _con()
+    lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
+    dia = "2020-03-04"
+    # WIN com barra no mesmo dia: nao pode ser tocado
+    con.execute("INSERT INTO instruments (symbol, description) VALUES ('WIN$N','w') "
+                "ON CONFLICT DO NOTHING")
+    con.execute("INSERT INTO bars_m1 (symbol, ts, open, high, low, close, volume, src_ingest_id) "
+                "VALUES ('WIN$N', TIMESTAMP '2020-03-04 10:00:00', 1,1,1,1,1, 1)")
+    antes = con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES' "
+                        "AND CAST(ts AS DATE)=?", [dia]).fetchone()[0]
+    assert antes > 0
+    cfg = db.load_instrument_yaml("MES")
+    cfg = {**cfg, "pregoes_descartados": {**cfg.get("pregoes_descartados", {}), dia: "teste"}}
+    monkeypatch.setattr(lse, "_ficha", lambda s: ativo.ficha_de(cfg))
+    lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
+    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES' "
+                       "AND CAST(ts AS DATE)=?", [dia]).fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES'").fetchone()[0] > 0
+    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='WIN$N'").fetchone()[0] == 1

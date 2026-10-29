@@ -220,6 +220,14 @@ def importar(con, symbol: str, paths: list[Path]) -> ResultadoLSE:
     ini, fim = str(prep_ini), str(prep_fim)
     descartados = {d: m for d, m in f.pregoes_descartados.items() if ini <= d <= fim}
 
+    # O filtro acima so tira do que chega; a barra do pregao descartado que ja
+    # estava gravada (de importacao anterior, antes de ele entrar na lista)
+    # precisa sair tambem, senao as reconstrucoes e o parquet a mantem.
+    if descartados:
+        con.execute("DELETE FROM bars_m1 WHERE symbol = ? "
+                    "AND strftime(CAST(ts AS DATE), '%Y-%m-%d') IN (SELECT unnest(?))",
+                    [symbol, list(descartados)])
+
     sha = hashlib.sha256("".join(ing.sha256_of(p) for p in paths).encode()).hexdigest()
     origem = "lse:" + ";".join(p.name for p in paths)
     res = ing.ingest_df(con, df, symbol, origem, sha, price_decimals=0)

@@ -3,7 +3,7 @@ from core import db_manager as db
 from tests.fabrica_ao_vivo import inserir_barras
 import numpy as np
 
-from ui import app
+from ui import callbacks, data as D
 
 
 def _barras(n: int) -> dict:
@@ -23,15 +23,21 @@ def _semear(simbolos: dict[str, int]) -> None:
 
 def test_padrao_e_win_mesmo_com_outro_ativo_mais_populoso():
     _semear({"WIN$N": 5, "MNQ": 20})
-    assert app._padrao() == "WIN$N"
+    assert D.simbolo_padrao() == "WIN$N"
 
 
 def test_padrao_sem_win_usa_o_primeiro():
     _semear({"MES": 5, "MNQ": 20})
-    assert app._padrao() == "MNQ"
+    assert D.simbolo_padrao() == "MNQ"
 
 
 def test_padrao_sem_instrumentos_e_win():
     with db.connect() as con:
         db.init_schema(con)
-    assert app._padrao() == "WIN$N"
+    assert D.simbolo_padrao() == "WIN$N"
+
+
+def test_simbolo_sem_valor_na_tela_cai_no_padrao_win():
+    _semear({"WIN$N": 5, "MNQ": 20})
+    assert callbacks._simbolo(None) == "WIN$N"
+    assert callbacks._simbolo("MES") == "MES"
