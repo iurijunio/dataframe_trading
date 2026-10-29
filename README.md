@@ -7,8 +7,8 @@ de estratégias — começando pelo Mini Índice (WIN).
 dashboard · F3 mineração · F4 dispersão) mais Walk-Forward, Candidata,
 Estratégias, Portfólio e a tela **Ao vivo** (captura, papel e ordens na conta
 demo e real). Na pesquisa também há os micros da CME, **MES** e **MNQ**
-(horário de Nova York, preço em pontos); moeda e faixas de mineração por ativo
-ainda faltam.
+(horário de Nova York, preço em pontos, dinheiro em US$); as faixas de
+mineração por ativo ainda faltam.
 
 ```bash
 iniciar.bat                            # abre o app e o serviço de captura
@@ -195,7 +195,7 @@ core/importar_lse.py       importação dos candles da CME (cli.py importar-lse)
 configs/instruments/       win.yaml, mes.yaml, mnq.yaml
 scripts/foto_win.py        foto do WIN: prova resultado idêntico após mexer no motor
 scripts/reassinar_codigo.py  reassina o hash de planos quando o código muda sem mudar trades
-tests/                     2.568 testes
+tests/                     2.654 testes
 ```
 
 ## O dashboard

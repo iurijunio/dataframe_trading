@@ -21,7 +21,7 @@ substituindo o fluxo que antes vivia no MT5. Branch de trabalho:
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.568 testes coletados em 29/10/2026)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.654 testes coletados em 29/10/2026)
 ```
 
 - Para ver o app: rode `ui/app.py` e abra http://127.0.0.1:8050. Quem tiver
@@ -278,8 +278,18 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
     `codigo_hash` a cada ciclo: troque só fora do pregão, com o app e a
     captura fechados. Planos 5, 6 e 7 reassinados em 29/10/2026, trades
     idênticos (backup em `backups/2026-10-29-antes-reassinar/`).
-  - **Até as etapas 3 e 4, não salve planos em MES/MNQ**, e os rótulos ainda
-    dizem "R$" nos micros (os valores já estão em US$).
+  - **Até a etapa 4, não salve planos em MES/MNQ** (faixas de mineração ainda
+    são as do WIN).
+  - **Dinheiro na tela: sempre `cartao.dinheiro(v, moeda)`**, com a moeda de
+    `ativo.moeda_de(simbolo)`. Componentes recebem `moeda="BRL"` como padrão.
+  - **Mexeu em tela da pesquisa? Rode `scripts/referencia_telas.py conferir`**
+    (obrigatório; o WIN tem de dar idêntico). Só regrave a referência a partir
+    do código de antes da mudança.
+  - **Portfólio recusa moedas misturadas** (`MoedaMista`), também quando o
+    plano ativo de uma variante troca de ativo.
+  - **Ids de rótulo de moeda: um `type` por tela** (`moeda-c4`, `moeda-cand`).
+  - **Textos de (?) de layout fixo ficam em R$** (lista na spec, "Estado depois
+    da etapa 3"); não tente trocar um por um.
 - **Nunca passe dicionário (ou qualquer coisa que não seja componente) como
   filho de `html.*`.** O Dash 4 falha ao desenhar e, em silêncio, devolve o
   estado de OUTROS componentes: o menu e as sub-telas voltavam sozinhos para
@@ -307,8 +317,8 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
 | `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
-| `docs/superpowers/specs/2026-10-28-ativos-cme-design.md` + `plans/2026-10-28-ativos-cme-etapa1.md`, `2026-10-29-ativos-cme-etapa2.md` | ativos da CME; as seções "Herança da etapa 1" e "Estado depois da etapa 2" dizem o que ficou |
-| `CHANGELOG.md` | atualizado até os ativos da CME, etapas 1 e 2 (29/10/2026); **não cobre variantes, portfólio nem gatilho** |
+| `docs/superpowers/specs/2026-10-28-ativos-cme-design.md` + `plans/2026-10-28-ativos-cme-etapa1.md`, `2026-10-29-ativos-cme-etapa2.md` | ativos da CME; as seções "Herança da etapa 1", "Estado depois da etapa 2" e "Estado depois da etapa 3" dizem o que ficou |
+| `CHANGELOG.md` | atualizado até os ativos da CME, etapas 1 a 3 (29/10/2026); **não cobre variantes, portfólio nem gatilho** |
 | `README.md` | atualizado até os ativos da CME (29/10/2026); o texto do MVP segue como história |
 | `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 29/10/2026 |
 
@@ -410,11 +420,14 @@ corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
   pausa; vale também para o WIN), trades, marcadores, Detalhes e Walk-Forward
   em hora de NY e pontos. A EMA de abertura só sinaliza depois da barra de
   abertura.
-- **Etapa 3 (moeda) ❌:** `dinheiro()`, rótulos R$/US$, portão de custo da
-  Candidata, bloqueio de portfólio com moedas misturadas.
+- **Etapa 3 (moeda) ✅ (29/10/2026):** `cartao.dinheiro`, rótulos na moeda do
+  ativo, Walk-Forward/Candidata/ficha/Portfólio/linha de comando, risco diário
+  do portfólio na escala do ativo, capital "10.000" = dez mil, referência das
+  telas do WIN (`scripts/referencia_telas.py`). O portão "Aguenta custo
+  maior?" só vale para moeda BRL.
 - **Etapa 4 (faixas de mineração por ativo) ❌:** as faixas ainda são as do
   WIN; stop/alvo padrão do MES (10/20) e do MNQ (40/80) são provisórios.
-- Pendências pequenas em "Estado depois da etapa 2" da spec.
+- Pendências pequenas em "Estado depois da etapa 2" e "Estado depois da etapa 3" da spec.
 
 Também entraram em 21–23/10: stop e alvo em porcentagem do preço de entrada
 (`7d1d272`) e a estratégia `adx_direcao` (`cdb74bc`, `8eaca51`: parâmetros

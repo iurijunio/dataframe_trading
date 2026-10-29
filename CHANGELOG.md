@@ -8,13 +8,13 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
-- **Ativos da CME na pesquisa: MES e MNQ, etapas 1 e 2** (`core/ativo.py`,
+- **Ativos da CME na pesquisa: MES e MNQ, etapas 1 a 3** (`core/ativo.py`,
   `core/importar_lse.py`, `configs/instruments/mes.yaml` e `mnq.yaml`,
   `core/engine/execution.py`, `strategies/*.py`, `scripts/foto_win.py`,
   `scripts/reassinar_codigo.py`; desenho em
   [docs/superpowers/specs/2026-10-28-ativos-cme-design.md](docs/superpowers/specs/2026-10-28-ativos-cme-design.md)).
   Só pesquisa: a operação ao vivo continua só no WIN (ainda não há corretora
-  para os micros). Suíte: 2.568 testes.
+  para os micros).
   - **Etapa 1: fichas e importação.** Fichas dos micros (tick, valor do ponto,
     abertura de referência 09:30 de Nova York) e `core/ativo.py` (ficha,
     relógio de pregão, escala de preço). `cli.py importar-lse --symbol MES
@@ -35,9 +35,23 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
     backtests, mineração curta, Walk-Forward curto e Candidata num banco
     congelado (`data/foto_win/<nome>.duckdb`). Deu idêntico em toda tarefa.
     Os planos 5, 6 e 7 foram reassinados em 29/10 com trades idênticos.
-  - **Falta:** etapa 3 (moeda: rótulos ainda "R$" nos micros, com valores em
-    US$; portfólio misto) e etapa 4 (faixas de mineração por ativo). Até lá,
-    não salvar planos em MES/MNQ.
+  - **Etapa 3: moeda por ativo** (`core/ativo.py`, `ui/components/cartao.py`,
+    `core/portfolio.py`, `scripts/referencia_telas.py`, `tests/dados/telas_win/`).
+    Todo valor em dinheiro da pesquisa sai na moeda do ativo, em formato
+    brasileiro ("US$ 1.234,56", "-US$ 57.056,00"): backtest, Detalhes,
+    Robustez, gráficos, trades, mineração (segue o ativo da mineração, não o
+    seletor), Walk-Forward, Candidata, ficha, Portfólio e linha de comando. Os
+    4 rótulos de dinheiro da camada 4 seguem o ativo. O portfólio recusa
+    misturar moedas (`MoedaMista`), inclusive quando o plano ativo de uma
+    variante troca de ativo depois, e o risco diário usa a escala do ativo
+    (`point_value / 10**price_decimals`). O capital digitado lê o ponto como
+    milhar ("10.000" = dez mil), só quando separa grupos de 3 dígitos que não
+    começam por zero ("0.5" e "0.500" seguem decimais). Os textos de (?) de
+    layout fixo ficam em R$ (decisão do usuário). Garantia do WIN: referência
+    das telas gravada antes da etapa e idêntica no fim; a foto do motor também.
+    Suíte: 2.654 testes.
+  - **Falta:** etapa 4 (faixas de mineração por ativo). Até lá, não salvar
+    planos em MES/MNQ.
 - **Estratégia `adx_direcao`** (`strategies/adx_direcao.py`): candle mais ADX
   subindo/caindo, com filtro de amplitude. Parâmetros próprios `di_periodo` e
   `adx_suavizacao`; um teste trava colisão de nome com o perfil
