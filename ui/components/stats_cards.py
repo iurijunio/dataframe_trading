@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dash import html
 
-from .cartao import brl, card, inteiro, num, sinal_de
+from .cartao import brl, card, dinheiro, inteiro, num, simbolo_moeda, sinal_de
 from .cartao import vazio as _vazio
 
 # reexportados: results_grid e robustez_cards importam daqui desde antes
@@ -28,7 +28,8 @@ def vazio(mensagem="Rode um backtest para ver as métricas."):
     return _vazio(mensagem)
 
 
-def cartoes(m: dict, dicas: dict[str, str] | None = None) -> dict[str, html.Div]:
+def cartoes(m: dict, dicas: dict[str, str] | None = None,
+            moeda: str = "BRL") -> dict[str, html.Div]:
     """Os cartões, chaveados pelo rótulo e na ordem de leitura.
 
     `m` é o dicionário de `metrics.resumo` (ou de `compute`, que o contém).
@@ -41,14 +42,17 @@ def cartoes(m: dict, dicas: dict[str, str] | None = None) -> dict[str, html.Div]
     """
     return {i["rotulo"]: card(i["rotulo"], i["valor"], i["explica"],
                               i["sinal"], i["nota"], largo=i["largo"])
-            for i in itens(m, dicas)}
+            for i in itens(m, dicas, moeda)}
 
 
-def itens(m: dict, dicas: dict[str, str] | None = None) -> list[dict]:
+def itens(m: dict, dicas: dict[str, str] | None = None,
+          moeda: str = "BRL") -> list[dict]:
     """Os mesmos números dos cartões, como dados: rótulo, valor, explicação,
     sinal, nota e largura. É o que a tela Candidata usa para montar a sua
     tabela — os textos do (?) ficam num lugar só."""
     dicas = dicas or {}
+    brl = lambda v: dinheiro(v, moeda)  # noqa: E731 — a moeda do ativo
+    S = simbolo_moeda(moeda)
     saida: list[dict] = []
 
     def c(rotulo, valor, explica=None, sinal=None, nota=None, largo=False):
@@ -91,7 +95,7 @@ def itens(m: dict, dicas: dict[str, str] | None = None) -> list[dict]:
       f"{num(m.get('max_drawdown_pct_capital', 0), 1)}% do capital",
       largo=True)
     c("profit factor", pf_txt,
-      "Quanto se ganha para cada R$ 1 perdido. Abaixo de 1,0 a "
+      f"Quanto se ganha para cada {S} 1 perdido. Abaixo de 1,0 a "
       "estratégia perde dinheiro. De 1,2 a 1,6 é o normal de um "
       "sistema real de day trade; acima de 2,0 com poucos trades "
       "costuma ser sobreajuste, não descoberta.",
@@ -106,8 +110,8 @@ def itens(m: dict, dicas: dict[str, str] | None = None) -> list[dict]:
       "acerto, qualquer payoff acima de 1,0 lucra antes do custo.")
     c("expectativa", brl(m["expectativa"]),
       "Quanto a estratégia devolve, em média, por operação, já "
-      "líquido. É o número que multiplica pelo giro: R$ 5 por "
-      "trade com 2.000 trades é um sistema; R$ 80 com 12 trades é "
+      f"líquido. É o número que multiplica pelo giro: {S} 5 por "
+      f"trade com 2.000 trades é um sistema; {S} 80 com 12 trades é "
       "uma amostra.",
       _sinal(m["expectativa"]), "por trade", largo=True)
     c("fator recuperação", num(m["fator_recuperacao"]),
@@ -131,7 +135,7 @@ def itens(m: dict, dicas: dict[str, str] | None = None) -> list[dict]:
     return saida
 
 
-def render(m: dict) -> html.Div:
+def render(m: dict, moeda: str = "BRL") -> html.Div:
     if not m or not m.get("trades"):
         return vazio("Nenhum trade no período e nas condições atuais.")
-    return html.Div(list(cartoes(m).values()), className="cards")
+    return html.Div(list(cartoes(m, moeda=moeda).values()), className="cards")

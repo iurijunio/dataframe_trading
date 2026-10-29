@@ -17,6 +17,7 @@ import plotly.graph_objects as go
 from dash import dcc, html
 
 from .. import theme as T
+from .cartao import simbolo_moeda
 
 BASE = dict(
     paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,
@@ -45,12 +46,14 @@ def _cores(vals):
     return [T.POS if v > 0 else T.NEG for v in vals]
 
 
-def barras(dados: dict, titulo: str, com_expectativa=True) -> go.Figure:
+def barras(dados: dict, titulo: str, com_expectativa=True,
+           moeda: str = "BRL") -> go.Figure:
     if not dados or not dados["chaves"]:
         return _vazio()
 
-    hover = [f"<b>{k}</b><br>líquido R$ {v:,.0f}<br>{n} trades<br>"
-             f"R$ {e:,.1f}/trade · {w:.0f}% acerto<extra></extra>"
+    S = simbolo_moeda(moeda)
+    hover = [f"<b>{k}</b><br>líquido {S} {v:,.0f}<br>{n} trades<br>"
+             f"{S} {e:,.1f}/trade · {w:.0f}% acerto<extra></extra>"
              for k, v, n, e, w in zip(dados["chaves"], dados["liquido"],
                                       dados["trades"], dados["expectativa"],
                                       dados["win_rate"])]
@@ -68,16 +71,16 @@ def barras(dados: dict, titulo: str, com_expectativa=True) -> go.Figure:
     fig.update_layout(
         **BASE, title={**TITULO, "text": titulo},
         xaxis=dict(**EIXO, type="category"),
-        yaxis=dict(**EIXO, title=dict(text="R$", font=dict(size=10))),
+        yaxis=dict(**EIXO, title=dict(text=S, font=dict(size=10))),
         yaxis2=dict(overlaying="y", side="right", showgrid=False,
                     tickfont=dict(color=T.ACCENT, size=9),
-                    title=dict(text="R$/trade", font=dict(size=9, color=T.ACCENT))),
+                    title=dict(text=f"{S}/trade", font=dict(size=9, color=T.ACCENT))),
         bargap=.25,
     )
     return fig
 
 
-def ganho_perda(dados: dict, titulo: str) -> go.Figure:
+def ganho_perda(dados: dict, titulo: str, moeda: str = "BRL") -> go.Figure:
     """Ganho bruto ao lado do prejuízo bruto, por grupo.
 
     O saldo sozinho engana: um horário que fecha em zero pode ter girado
@@ -87,8 +90,9 @@ def ganho_perda(dados: dict, titulo: str) -> go.Figure:
     if not dados or not dados["chaves"]:
         return _vazio()
 
-    hover = [f"<b>{k}</b><br>ganho R$ {g:,.0f} · prejuízo R$ {p:,.0f}"
-             f"<br>saldo R$ {v:,.0f} · {n} trades<br>{w:.0f}% acerto<extra></extra>"
+    S = simbolo_moeda(moeda)
+    hover = [f"<b>{k}</b><br>ganho {S} {g:,.0f} · prejuízo {S} {p:,.0f}"
+             f"<br>saldo {S} {v:,.0f} · {n} trades<br>{w:.0f}% acerto<extra></extra>"
              for k, g, p, v, n, w in zip(dados["chaves"], dados["ganhos"],
                                          dados["perdas"], dados["liquido"],
                                          dados["trades"], dados["win_rate"])]
@@ -110,7 +114,7 @@ def ganho_perda(dados: dict, titulo: str) -> go.Figure:
     fig.update_layout(
         **BASE, title={**TITULO, "text": titulo}, barmode="group", bargap=.22,
         xaxis=dict(**EIXO, type="category"),
-        yaxis=dict(**EIXO, title=dict(text="R$", font=dict(size=10))),
+        yaxis=dict(**EIXO, title=dict(text=S, font=dict(size=10))),
     )
     return fig
 
@@ -137,14 +141,16 @@ def escala_no_zero(valores) -> tuple[list, float, float]:
              [min(t + 1e-4, 1.0), "#7BE8B6"], [1.0, T.POS]], lo, hi)
 
 
-def calendario(dados: dict, titulo="Lucro por mês") -> go.Figure:
+def calendario(dados: dict, titulo="Lucro por mês",
+               moeda: str = "BRL") -> go.Figure:
     if not dados or not dados["anos"]:
         return _vazio()
     escala, lo, hi = escala_no_zero(dados["valores"])
     fig = go.Figure(go.Heatmap(
         z=dados["valores"], x=dados["meses"], y=dados["anos"],
         colorscale=escala, zmin=lo, zmax=hi, xgap=2, ygap=2,
-        hovertemplate="%{y} %{x}<br>R$ %{z:,.0f}<extra></extra>",
+        hovertemplate=f"%{{y}} %{{x}}<br>{simbolo_moeda(moeda)} %{{z:,.0f}}"
+                      "<extra></extra>",
         colorbar=dict(thickness=8, outlinewidth=0,
                       tickfont=dict(color=T.MUTED, size=9)),
     ))
@@ -154,7 +160,8 @@ def calendario(dados: dict, titulo="Lucro por mês") -> go.Figure:
     return fig
 
 
-def histograma(dados: dict, titulo="Distribuição dos resultados") -> go.Figure:
+def histograma(dados: dict, titulo="Distribuição dos resultados",
+               moeda: str = "BRL") -> go.Figure:
     """Quantos trades caíram em cada faixa de resultado.
 
     Barras coladas (bargap 0) e largura de balde redonda: assim a silhueta da
@@ -175,8 +182,9 @@ def histograma(dados: dict, titulo="Distribuição dos resultados") -> go.Figure
     if not dados or not dados["centros"]:
         return _vazio()
 
+    S = simbolo_moeda(moeda)
     total = sum(dados["contagem"]) or 1
-    hover = [f"R$ {c:,.0f} a R$ {c + dados['largura']:,.0f}"
+    hover = [f"{S} {c:,.0f} a {S} {c + dados['largura']:,.0f}"
              f"<br>{n} trades · {n / total * 100:.1f}%<extra></extra>"
              for c, n in zip(dados["centros"], dados["contagem"])]
 
@@ -187,7 +195,7 @@ def histograma(dados: dict, titulo="Distribuição dos resultados") -> go.Figure
                hovertemplate=hover),
         go.Scatter(x=dados["centros"], y=acumulado, yaxis="y2", mode="lines",
                    line=dict(color=T.ACCENT, width=1.4),
-                   hovertemplate="até R$ %{x:,.0f}<br>%{y:.0f}% dos trades"
+                   hovertemplate=f"até {S} %{{x:,.0f}}<br>%{{y:.0f}}% dos trades"
                                  "<extra></extra>"),
     ])
     # so quando o zero cai DENTRO da faixa: fora dela, a linha estica o eixo
@@ -199,9 +207,9 @@ def histograma(dados: dict, titulo="Distribuição dos resultados") -> go.Figure
         fig.add_vline(x=valor, line=dict(color=cor, width=1, dash="dot"))
 
     legenda = (f"<span style='color:{T.ACCENT}'>mediana</span> "
-               f"R$ {dados['mediana']:,.0f} · "
+               f"{S} {dados['mediana']:,.0f} · "
                f"<span style='color:{T.ACCENT_2}'>média</span> "
-               f"R$ {dados['media']:,.0f}")
+               f"{S} {dados['media']:,.0f}")
     fora = dados["fora_esq"] + dados["fora_dir"]
     if fora:
         legenda += f" · {fora} fora da faixa"
@@ -212,7 +220,7 @@ def histograma(dados: dict, titulo="Distribuição dos resultados") -> go.Figure
         **{**BASE, "margin": dict(l=10, r=10, t=44, b=10)},
         title={**TITULO, "text": titulo}, bargap=0,
         xaxis=dict(**EIXO, title=dict(
-            text=f"resultado do trade · baldes de R$ {dados['largura']:,.0f}",
+            text=f"resultado do trade · baldes de {S} {dados['largura']:,.0f}",
             font=dict(size=10))),
         yaxis=dict(**EIXO, title=dict(text="trades", font=dict(size=10))),
         yaxis2=dict(overlaying="y", side="right", showgrid=False, range=[0, 100],
@@ -224,7 +232,7 @@ def histograma(dados: dict, titulo="Distribuição dos resultados") -> go.Figure
     return fig
 
 
-def mae_mfe(diag: dict, stop: int, alvo: int) -> go.Figure:
+def mae_mfe(diag: dict, stop: int, alvo: int, moeda: str = "BRL") -> go.Figure:
     """MAE × MFE, um ponto por trade.
 
     As linhas de stop e alvo cortam o gráfico: pontos à direita da linha de
@@ -240,7 +248,8 @@ def mae_mfe(diag: dict, stop: int, alvo: int) -> go.Figure:
         marker=dict(size=5, color=cor, opacity=.55, line=dict(width=0)),
         customdata=diag["liquido"],
         hovertemplate="contra %{x:.0f} pts · a favor %{y:.0f} pts"
-                      "<br>R$ %{customdata:,.2f}<extra></extra>",
+                      f"<br>{simbolo_moeda(moeda)} %{{customdata:,.2f}}"
+                      "<extra></extra>",
     ))
     if stop:
         fig.add_vline(x=stop, line=dict(color=T.NEG, width=1, dash="dash"),

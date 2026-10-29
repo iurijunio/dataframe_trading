@@ -15,13 +15,17 @@ core/detalhes.py e não sabe que existe tela.
 
 from __future__ import annotations
 
+from functools import partial
+
 from dash import dcc, html
 
-from .cartao import brl, card, faixa, inteiro, num, secao, vazio
+from .cartao import (card, dinheiro, faixa, inteiro, nome_moeda, num, secao,
+                     vazio)
 
 
 # ------------------------------------------------------------- sequências
-def _sequencias(s):
+def _sequencias(s, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     if not s:
         return None
     fora = [
@@ -127,7 +131,8 @@ def _eficiencia(e, casas=0):
 
 
 # ---------------------------------------------------------- risco por trade
-def _risco(r):
+def _risco(r, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     if not r:
         return None
     fora = [
@@ -174,13 +179,14 @@ def _risco(r):
              "conta que a aba Robustez usa para dizer se o resultado é real."),
     ]
     return secao(
-        "Risco por trade", "O tamanho do risco de UMA operação, em reais. É "
+        "Risco por trade", f"O tamanho do risco de UMA operação, em {nome_moeda(moeda)}. É "
         "daqui que sai o número de contratos: não do lucro que a estratégia "
         "promete, e sim da perda que ela é capaz de entregar.", fora)
 
 
 # ------------------------------------------------------------ exposição
-def _ritmo(r, fig_volume):
+def _ritmo(r, fig_volume, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     if not r:
         return None
     fora = [
@@ -270,9 +276,10 @@ def _motor(m):
 
 
 # ------------------------------------------------------------------ render
-def render(m, seq, ef, risco, rit, fig_volume=None, casas=0) -> html.Div:
+def render(m, seq, ef, risco, rit, fig_volume=None, casas=0,
+           moeda="BRL") -> html.Div:
     if not m or not m.get("trades"):
         return vazio("Rode um backtest para ver os detalhes.")
-    blocos = [b for b in (_sequencias(seq), _eficiencia(ef, casas), _risco(risco),
-                          _ritmo(rit, fig_volume), _motor(m)) if b]
+    blocos = [b for b in (_sequencias(seq, moeda), _eficiencia(ef, casas),
+                          _risco(risco, moeda), _ritmo(rit, fig_volume, moeda), _motor(m)) if b]
     return html.Div(blocos, className="aba-detalhes")

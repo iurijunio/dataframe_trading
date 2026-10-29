@@ -11,10 +11,12 @@ difícil. O molde do cartão e do balão vem de cartao.py.
 
 from __future__ import annotations
 
+from functools import partial
+
 from dash import dash_table, html
 
 from .. import theme as T
-from .cartao import brl, dica as _dica, faixa as _faixa, inteiro, num
+from .cartao import dica as _dica, dinheiro, faixa as _faixa, inteiro, nome_moeda, num
 from .cartao import card as _card
 from .cartao import vazio as _vazio
 
@@ -24,7 +26,8 @@ def vazio(msg="Rode um backtest para avaliar a robustez."):
 
 
 # ------------------------------------------------------------------ blocos
-def _sequencia(mc):
+def _sequencia(mc, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     if not mc:
         return []
     pior = mc["dd_p95"] / mc["dd_observado"] if mc["dd_observado"] else 0
@@ -57,7 +60,8 @@ def _sequencia(mc):
     ]
 
 
-def _significancia(sig, runs, lr):
+def _significancia(sig, runs, lr, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     fora = []
     if sig:
         conclusivo = sig["p"] < 0.05
@@ -112,7 +116,8 @@ def _significancia(sig, runs, lr):
     return fora
 
 
-def _fragilidade(conc):
+def _fragilidade(conc, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     if not conc:
         return []
     sem5 = conc["sem"].get(5)
@@ -144,7 +149,7 @@ def _fragilidade(conc):
     return fora
 
 
-def _ranking(um, sqn=None):
+def _ranking(um, sqn=None, moeda="BRL"):
     if not um:
         return []
     fora = []
@@ -162,7 +167,7 @@ def _ranking(um, sqn=None):
             "limitado a 100 por regra de Tharp: sem o teto, dez mil trades "
             "medíocres bateriam quinhentos excelentes só pelo volume. "
             "Ressalva: Tharp define o SQN sobre R-múltiplos (resultado ÷ "
-            "risco de cada trade), e aqui ele sai dos reais. Com stop fixo e "
+            f"risco de cada trade), e aqui ele sai dos {nome_moeda(moeda)}. Com stop fixo e "
             "contratos fixos dá no mesmo; com stop por ATR o risco varia de "
             "trade para trade e os dois números divergem — o suficiente, às "
             "vezes, para cruzar a fronteira de uma faixa.",
@@ -188,7 +193,8 @@ def _ranking(um, sqn=None):
     ]
 
 
-def _meses(m):
+def _meses(m, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     if not m:
         return []
     return [
@@ -208,7 +214,8 @@ def _meses(m):
     ]
 
 
-def _custo(c):
+def _custo(c, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     if not c:
         return []
     folga = c.get("folga_pct")
@@ -244,7 +251,8 @@ COLUNAS_DD = [
 ]
 
 
-def tabela_drawdowns(lista):
+def tabela_drawdowns(lista, moeda="BRL"):
+    brl = partial(dinheiro, moeda=moeda)
     if not lista:
         return html.Div()
     linhas = [{
@@ -290,10 +298,12 @@ def tabela_drawdowns(lista):
     ], className="bloco-dd")
 
 
-def render(mc, sig, runs, lr, conc, um, mes, custo, lista_dd, sqn=None) -> html.Div:
-    cartoes = (_significancia(sig, runs, lr) + _fragilidade(conc)
-               + _sequencia(mc) + _ranking(um, sqn) + _meses(mes) + _custo(custo))
+def render(mc, sig, runs, lr, conc, um, mes, custo, lista_dd, sqn=None,
+           moeda="BRL") -> html.Div:
+    cartoes = (_significancia(sig, runs, lr, moeda) + _fragilidade(conc, moeda)
+               + _sequencia(mc, moeda) + _ranking(um, sqn, moeda) + _meses(mes, moeda)
+               + _custo(custo, moeda))
     if not cartoes:
         return vazio("Poucos trades para avaliar robustez.")
     return html.Div([html.Div(cartoes, className="cards cards-robustez"),
-                     tabela_drawdowns(lista_dd)], className="aba-robustez")
+                     tabela_drawdowns(lista_dd, moeda)], className="aba-robustez")

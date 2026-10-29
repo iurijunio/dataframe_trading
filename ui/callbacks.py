@@ -247,6 +247,7 @@ def _detalhes(res, run, liq, f=None):
         folga = int(p.slippage_ticks * int(res.instrument.get("tick_size", 1)))
     else:
         folga = p.slippage_ticks * f.tick_size
+    moeda = getattr(f, "currency", "BRL")
     t = ativo_mod.trades_para_exibir(t, f)
     tp_ent = ativo_mod.pontos_para_exibir(res.tp_at_entry, f)
     sl_ent = ativo_mod.pontos_para_exibir(res.sl_at_entry, f)
@@ -261,8 +262,9 @@ def _detalhes(res, run, liq, f=None):
         detalhes.ritmo(res.trades["entry_ts"], liq, int(t["bars_held"].sum()),
                        res.n_bars, run["pregoes"]),
         AC.barras(detalhes.resultado_por_volume(res.trades["entry_ts"], liq),
-                  "Resultado por nº de trades no pregão"),
+                  "Resultado por nº de trades no pregão", moeda=moeda),
         casas=0 if ativo_mod._identidade(f) else f.price_decimals,
+        moeda=moeda,
     )
 
 
@@ -279,6 +281,7 @@ def _robustez(res, run, liq):
                .astype(int))
     dinheiro = run["dinheiro"]
     custo_ponta = p.corretagem_por_contrato + p.emolumentos_por_contrato
+    moeda = ativo_mod.moeda_de(run.get("simbolo"))
 
     return RC.render(
         robustez.monte_carlo(liq, capital),
@@ -292,6 +295,7 @@ def _robustez(res, run, liq):
                                 dinheiro["contratos"], custo_ponta),
         robustez.drawdowns(t["entry_ts"], liq, capital),
         porteira.sqn(liq),
+        moeda=moeda,
     )
 
 
@@ -572,6 +576,7 @@ def register(app):
         Output("store-run", "data"),
         Output("cards", "children"),
         Output("grid-trades", "rowData"),
+        Output("grid-trades", "columnDefs"),
         Output("chart-capital", "series"),
         Output("chart-capital", "timeScaleAction"),
         Output("store-window", "data"),
@@ -616,7 +621,7 @@ def register(app):
             params = validate(mod.params_schema,
                               {k: v.get(k) for k in mod.params_schema})
         except ValueError as erro:
-            return no_update, stats_cards.vazio(str(erro)), [], [], no_update, "", no_update
+            return no_update, stats_cards.vazio(str(erro)), [], no_update, [], no_update, "", no_update
 
         profile = ExecutionProfile(
             timeframe=tf or "M1",
@@ -659,7 +664,7 @@ def register(app):
                                               ativo_mod.ficha(simbolo),
                                               profile.fechamento)
         if erro_janela:
-            return no_update, stats_cards.vazio(erro_janela), [], [], no_update, "", no_update
+            return no_update, stats_cards.vazio(erro_janela), [], no_update, [], no_update, "", no_update
         todas = D.bars(simbolo)
         de_dt, ate_dt = _dt(de), _dt(ate, True)
 
@@ -694,13 +699,13 @@ def register(app):
         corte = (todas["ts"] >= np.datetime64(de_dt)) & (todas["ts"] <= np.datetime64(ate_dt))
         bars = {k: val[corte] for k, val in todas.items()}
         if not len(bars["open"]):
-            return no_update, stats_cards.vazio("Sem barras no período."), [], [], no_update, "", no_update
+            return no_update, stats_cards.vazio("Sem barras no período."), [], no_update, [], no_update, "", no_update
 
         t0 = time.perf_counter()
         try:
             res = run_strategy(bars, mod, params, profile, D.instrument(simbolo))
         except ValueError as erro:
-            return no_update, stats_cards.vazio(str(erro)), [], [], no_update, "", no_update
+            return no_update, stats_cards.vazio(str(erro)), [], no_update, [], no_update, "", no_update
         dinheiro = metrics.monetize(res)
         m = metrics.compute(res)
         ms = (time.perf_counter() - t0) * 1000
@@ -733,8 +738,10 @@ def register(app):
         # deixando o gráfico no zoom que você tinha dado no anterior.
         enquadrar = {"action": "fitContent", "nonce": token}
 
-        return ({"token": token, "n_trades": res.n_trades}, stats_cards.render(m),
-                linhas, equity, enquadrar, janela,
+        moeda = ativo_mod.moeda_de(simbolo)
+        return ({"token": token, "n_trades": res.n_trades},
+                stats_cards.render(m, moeda), linhas,
+                results_grid.colunas(moeda), equity, enquadrar, janela,
                 f"{ms:.0f} ms · {tf} · {len(bars['open']):,}".replace(",", ".") + " barras")
 
     # -------------------------------------------------------------- navegacao
@@ -1994,6 +2001,7 @@ def register(app):
         res, liq = run["res"], run["dinheiro"]["liquido"]
         p = run["profile"]
         f = ativo_mod.ficha(run.get("simbolo") or _simbolo(None))
+        moeda = ativo_mod.moeda_de(run.get("simbolo"))
         t = ativo_mod.trades_para_exibir(res.trades, f)
 
         diag = analytics.calor_mae_mfe(t["mae"], t["mfe"], liq)
@@ -2002,19 +2010,22 @@ def register(app):
 
         return (
             AC.ganho_perda(analytics.por_hora(res.trades["entry_ts"], liq, f),
-                           "Lucro × prejuízo por hora de entrada"),
+                           "Lucro × prejuízo por hora de entrada", moeda),
             AC.ganho_perda(analytics.por_dia_semana(res.trades["entry_ts"], liq),
-                           "Lucro × prejuízo por dia da semana"),
+                           "Lucro × prejuízo por dia da semana", moeda),
             AC.ganho_perda(analytics.por_mes(res.trades["entry_ts"], liq),
-                           "Lucro × prejuízo por mês do ano"),
-            AC.calendario(analytics.calendario_mensal(res.trades["entry_ts"], liq)),
-            AC.mae_mfe(diag, stop_ref, alvo_ref),
+                           "Lucro × prejuízo por mês do ano", moeda),
+            AC.calendario(analytics.calendario_mensal(res.trades["entry_ts"], liq),
+                          moeda=moeda),
+            AC.mae_mfe(diag, stop_ref, alvo_ref, moeda),
             AC.barras(analytics.por_duracao(t["bars_held"], liq,
                                             TIMEFRAMES.get(p.timeframe, 1)),
-                      f"Lucro por tempo em posição (barras {p.timeframe})"),
+                      f"Lucro por tempo em posição (barras {p.timeframe})",
+                      moeda=moeda),
             AC.barras(analytics.por_motivo(t["reason"], liq, K.EXIT_LABELS),
-                      "Lucro por motivo de saída", com_expectativa=False),
-            AC.histograma(analytics.distribuicao(liq)),
+                      "Lucro por motivo de saída", com_expectativa=False,
+                      moeda=moeda),
+            AC.histograma(analytics.distribuicao(liq), moeda=moeda),
             [html.P(d, className="dica") for d in dicas],
             _detalhes(res, run, liq, f),
             _robustez(res, run, liq),

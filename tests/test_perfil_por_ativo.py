@@ -144,7 +144,7 @@ def test_callback_aplica_perfil_do_ativo(app):
     assert tuple(win) == ("09:00", "17:00", "17:30", 0.50, 0.27, 1, 300, 600)
 
 
-def test_rodar_param_invalido_devolve_sete_saidas(app):
+def test_rodar_param_invalido_devolve_oito_saidas(app):
     rodar = _callback(app, "store-run.data")
     n = len(rodar.__code__.co_varnames[:rodar.__code__.co_argcount])
     args = [None] * n
@@ -153,5 +153,5 @@ def test_rodar_param_invalido_devolve_sete_saidas(app):
     nome, meta = next((k, m) for k, m in mod.params_schema.items() if m.get("min") is not None)
     args[5], args[6] = [meta["min"] - 1], [{"type": "val", "p": nome}]  # abaixo do minimo
     r = rodar(*args)
-    assert len(r) == 7
+    assert len(r) == 8
     assert r[1] is not no_update

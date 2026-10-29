@@ -12,6 +12,8 @@ import numpy as np
 from core import ativo
 from core.engine import kernel as K
 
+from .cartao import simbolo_moeda
+
 # Formato brasileiro: 1.234,56. O d3.format padrao devolveria 1,234.56.
 BRL = {
     "function": "params.value == null ? '' : params.value.toLocaleString('pt-BR', "
@@ -27,31 +29,37 @@ PONTOS = {"function": "params.value == null ? '' : (params.data && params.data.d
                       "params.value.toLocaleString('pt-BR', {minimumFractionDigits: params.data.dec, "
                       "maximumFractionDigits: params.data.dec}) : params.value)"}
 
-COLUNAS = [
-    {"field": "n", "headerName": "#", "width": 78, "pinned": "left"},
-    {"field": "entrada", "headerName": "entrada", "width": 145},
-    {"field": "saida", "headerName": "saída", "width": 145},
-    {"field": "lado", "headerName": "lado", "width": 84,
-     "cellClassRules": {"lado-c": "params.value == 'compra'",
-                        "lado-v": "params.value == 'venda'"}},
-    {"field": "preco_ent", "headerName": "preço ent.", "width": 110,
-     "type": "numericColumn", "valueFormatter": PRECO},
-    {"field": "preco_sai", "headerName": "preço saí.", "width": 110,
-     "type": "numericColumn", "valueFormatter": PRECO},
-    {"field": "pontos", "headerName": "pontos", "width": 100, "type": "numericColumn",
-     "valueFormatter": PONTOS,
-     "cellClassRules": {"pos": "params.value > 0", "neg": "params.value < 0"}},
-    {"field": "liquido", "headerName": "líquido R$", "width": 120, "type": "numericColumn",
-     "valueFormatter": BRL,
-     "cellClassRules": {"pos": "params.value > 0", "neg": "params.value < 0"}},
-    {"field": "contratos", "headerName": "ctr", "width": 76, "type": "numericColumn"},
-    {"field": "motivo", "headerName": "saída por", "width": 130},
-    {"field": "barras", "headerName": "barras", "width": 92, "type": "numericColumn"},
-    {"field": "mae", "headerName": "MAE", "width": 92, "type": "numericColumn",
-     "valueFormatter": PONTOS},
-    {"field": "mfe", "headerName": "MFE", "width": 92, "type": "numericColumn",
-     "valueFormatter": PONTOS},
-]
+
+def colunas(moeda: str = "BRL") -> list[dict]:
+    """A coluna de dinheiro leva o símbolo da moeda do ativo."""
+    return [
+        {"field": "n", "headerName": "#", "width": 78, "pinned": "left"},
+        {"field": "entrada", "headerName": "entrada", "width": 145},
+        {"field": "saida", "headerName": "saída", "width": 145},
+        {"field": "lado", "headerName": "lado", "width": 84,
+         "cellClassRules": {"lado-c": "params.value == 'compra'",
+                            "lado-v": "params.value == 'venda'"}},
+        {"field": "preco_ent", "headerName": "preço ent.", "width": 110,
+         "type": "numericColumn", "valueFormatter": PRECO},
+        {"field": "preco_sai", "headerName": "preço saí.", "width": 110,
+         "type": "numericColumn", "valueFormatter": PRECO},
+        {"field": "pontos", "headerName": "pontos", "width": 100, "type": "numericColumn",
+         "valueFormatter": PONTOS,
+         "cellClassRules": {"pos": "params.value > 0", "neg": "params.value < 0"}},
+        {"field": "liquido", "headerName": f"líquido {simbolo_moeda(moeda)}", "width": 120, "type": "numericColumn",
+         "valueFormatter": BRL,
+         "cellClassRules": {"pos": "params.value > 0", "neg": "params.value < 0"}},
+        {"field": "contratos", "headerName": "ctr", "width": 76, "type": "numericColumn"},
+        {"field": "motivo", "headerName": "saída por", "width": 130},
+        {"field": "barras", "headerName": "barras", "width": 92, "type": "numericColumn"},
+        {"field": "mae", "headerName": "MAE", "width": 92, "type": "numericColumn",
+         "valueFormatter": PONTOS},
+        {"field": "mfe", "headerName": "MFE", "width": 92, "type": "numericColumn",
+         "valueFormatter": PONTOS},
+    ]
+
+
+COLUNAS = colunas("BRL")
 
 
 def rows(trades: dict, dinheiro: dict, f=None) -> list[dict]:
