@@ -90,6 +90,22 @@ def ficha(symbol: str) -> Ficha:
     return ficha_de(load_instrument_yaml(symbol))
 
 
+# Como a tela escreve a moeda do ativo (o código ISO vem de `Ficha.currency`).
+# Código fora da tabela aparece como o próprio código ("EUR 1,00").
+SIMBOLOS_MOEDA = {"BRL": "R$", "USD": "US$"}
+NOMES_MOEDA = {"BRL": "reais", "USD": "dólares"}
+
+
+def moeda_de(simbolo: str | None) -> str:
+    """Moeda do ativo; BRL quando não há ativo ou ele não tem YAML."""
+    if not simbolo:
+        return "BRL"
+    try:
+        return ficha(simbolo).currency
+    except FileNotFoundError:
+        return "BRL"
+
+
 def utc_para_pregao(col: pl.Expr, f: Ficha) -> pl.Expr:
     """UTC -> hora local do ativo -> relogio de pregao (+ deslocamento)."""
     return (

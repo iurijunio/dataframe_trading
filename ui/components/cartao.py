@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from dash import html
 
+from core.ativo import NOMES_MOEDA, SIMBOLOS_MOEDA
+
 
 # Fase da variante na tela (o banco guarda o código). Aqui porque as
 # sub-telas Estratégias e Operação mostram a mesma fase com o mesmo nome.
@@ -26,9 +28,27 @@ FASES = {"papel": "papel", "demo": "demo", "real_minimo": "real mínimo",
 
 
 # ------------------------------------------------------------- formatação
-def brl(v: float) -> str:
+def simbolo_moeda(moeda: str | None) -> str:
+    """"USD" -> "US$"; sem moeda é BRL; código desconhecido fica como veio."""
+    moeda = moeda or "BRL"
+    return SIMBOLOS_MOEDA.get(moeda, moeda)
+
+
+def nome_moeda(moeda: str | None) -> str:
+    """Por extenso, para os textos do (?): "USD" -> "dólares"."""
+    moeda = moeda or "BRL"
+    return NOMES_MOEDA.get(moeda, moeda)
+
+
+def dinheiro(v: float, moeda: str | None = "BRL") -> str:
+    """Número no formato brasileiro com o símbolo da moeda: "US$ 1.234,56";
+    negativo "-US$ 57.056,00"."""
     s = f"{abs(v):,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
-    return f"{'-' if v < 0 else ''}R$ {s}"
+    return f"{'-' if v < 0 else ''}{simbolo_moeda(moeda)} {s}"
+
+
+def brl(v: float) -> str:
+    return dinheiro(v, "BRL")
 
 
 def num(v: float, casas=2) -> str:
