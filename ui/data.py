@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 import duckdb
 import numpy as np
 
+from core import ativo
 from core import captura as CAP
 from core import db_manager as db
 from core.engine.execution import prepare_bars
@@ -290,15 +291,25 @@ def candles(symbol: str, inicio: datetime, fim: datetime, tf: str = "auto") -> d
             [symbol, inicio, fim],
         ).fetchall()
 
+    # Saida no relogio de parede do ativo e em pontos; a entrada segue o relogio
+    # de pregao. No D1 o rotulo e o dia do pregao, sem deslocamento.
+    f = ativo.ficha(symbol)
+
+    def hora(t):
+        return t if passo is None else ativo.hora_para_exibir(t, f)
+
+    def px(v):
+        return ativo.preco_para_exibir(v, f)
+
     return {
         "timeframe": tf,
         "candles": [
-            {"time": to_epoch(r[0]), "open": r[1], "high": r[2],
-             "low": r[3], "close": r[4]}
+            {"time": to_epoch(hora(r[0])), "open": px(r[1]), "high": px(r[2]),
+             "low": px(r[3]), "close": px(r[4])}
             for r in rows
         ],
         "volume": [
-            {"time": to_epoch(r[0]), "value": int(r[5]),
+            {"time": to_epoch(hora(r[0])), "value": int(r[5]),
              "color": "rgba(72,190,146,.35)" if r[4] >= r[1] else "rgba(229,128,110,.35)"}
             for r in rows
         ],
