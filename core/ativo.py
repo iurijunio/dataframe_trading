@@ -8,10 +8,11 @@ Para o WIN (sem campos novos) todas as conversoes daqui sao identidade.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from functools import lru_cache
 
+import numpy as np
 import polars as pl
 
 from core.db_manager import load_instrument_yaml
@@ -40,6 +41,7 @@ class Ficha:
     abertura_referencia: str | None = None
     pregoes_descartados: dict[str, str] = field(default_factory=dict)
     pregoes_mantidos: dict[str, str] = field(default_factory=dict)
+    perfil_padrao: dict | None = field(default=None, hash=False, compare=False)
 
     @property
     def escala(self) -> int:
@@ -79,6 +81,7 @@ def ficha_de(cfg: dict) -> Ficha:
         abertura_referencia=cfg.get("abertura_referencia"),
         pregoes_descartados={str(k): v for k, v in (cfg.get("pregoes_descartados") or {}).items()},
         pregoes_mantidos={str(k): v for k, v in (cfg.get("pregoes_mantidos") or {}).items()},
+        perfil_padrao=cfg.get("perfil_padrao"),
     )
 
 
@@ -109,3 +112,78 @@ def hora_para_motor(hhmm: str, f: Ficha) -> str:
 
 def preco_para_exibir(v: int, f: Ficha) -> int | float:
     return v if f.escala == 1 else v / f.escala
+
+
+def _identidade(f: Ficha | None) -> bool:
+    return f is None or (f.escala == 1 and f.deslocamento_min == 0)
+
+
+def ficha_do_instrumento(instr: dict) -> Ficha | None:
+    """Ficha do dicionario do instrumento; None se for de teste/WIN antigo ou ja convertido."""
+    if instr.get("_unidade") == "guardada":
+        return None
+    if "price_decimals" not in instr and "sessao_abertura" not in instr:
+        return None
+    return ficha_de(instr)
+
+
+def instrumento_para_motor(instr: dict, f: Ficha | None) -> dict:
+    if _identidade(f):
+        return instr
+    return {**instr, "tick_size": f.tick_unid, "point_value": f.valor_por_unid,
+            "_unidade": "guardada"}
+
+
+def perfil_para_motor(p: "ExecutionProfile", f: Ficha | None) -> "ExecutionProfile":
+    if _identidade(f):
+        return p
+    mudancas: dict = {
+        c: int(round(getattr(p, c) * f.escala))
+        for c in ("alvo_pontos", "stop_pontos", "trailing_pontos")
+    }
+    for c in ("entrada_inicio", "entrada_fim", "fechamento",
+              "sem_entrada1", "sem_entrada2", "sem_entrada3"):
+        v = getattr(p, c)
+        if v:
+            mudancas[c] = hora_para_motor(v, f)
+    return replace(p, **mudancas)
+
+
+def params_para_motor(params: dict, schema: dict, f: Ficha | None) -> dict:
+    if _identidade(f):
+        return params
+    out = dict(params)
+    for k, v in params.items():
+        if (schema.get(k) or {}).get("unidade") == "pontos":
+            out[k] = int(round(v * f.escala))
+    return out
+
+
+def trades_para_exibir(trades: dict, f: Ficha | None) -> dict:
+    if _identidade(f):
+        return trades
+    out = dict(trades)
+    desl = np.timedelta64(f.deslocamento_min, "m")
+    for k in ("entry_ts", "exit_ts"):
+        if k in out:
+            out[k] = out[k] - desl
+    for k in ("entry_px", "exit_px", "points", "mae", "mfe"):
+        if k in out:
+            out[k] = np.asarray(out[k], dtype=float) / f.escala
+    return out
+
+
+def pontos_para_exibir(v, f: Ficha | None):
+    if _identidade(f) or f.escala == 1:
+        return v
+    return v / f.escala
+
+
+def hora_do_pregao_para_exibir(h: int, f: Ficha | None) -> int:
+    if f is None:
+        return h
+    return (h - f.deslocamento_min // 60) % 24
+
+
+def perfil_padrao(f: Ficha) -> dict | None:
+    return f.perfil_padrao
