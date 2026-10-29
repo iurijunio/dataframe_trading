@@ -313,12 +313,12 @@ Os padrões de hoje são do WIN (`ExecutionProfile` em `execution.py:~47-68`,
 6. **Pregões com falha da fonte** — um pregão é suspeito se tiver:
    - vazio interno de mais de 60 minutos fora da pausa diária, ou
    - começo tardio: primeira barra mais de 60 minutos depois das 18:00 NY.
-   - fim precoce: última barra antes das 16:59 NY, exceto entre 12:59 e 13:14
+   - fim precoce: última barra antes das 16:59 NY, exceto entre 12:59 e 13:15
      NY (fechamentos antecipados oficiais da CME, 13:00 e 13:15). O último
      pregão do arquivo fica com a regra do item 7.
    - pregão ausente: dia útil (seg–sex) entre o primeiro e o último pregão do
      arquivo sem nenhuma barra, exceto Ano Novo, Sexta-feira Santa e Natal
-     (sábado vale a sexta anterior; domingo, a segunda seguinte).
+     (Natal em sábado vale a sexta anterior; Natal ou Ano Novo em domingo, a segunda seguinte).
 
    Fechamento antecipado (vazio no final) não conta. Os suspeitos são comparados
    com uma **lista esperada** (na ficha, `pregoes_descartados`, com a data do

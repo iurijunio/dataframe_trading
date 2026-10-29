@@ -11,7 +11,7 @@ entre barras, comeca mais de 60 min depois da abertura, termina antes das
 16:59 NY ou nem existe (dia util sem nenhuma barra, fora os feriados de
 fechamento total). O limite do comeco e estrito: comecar no minuto 60 nao e
 suspeito (o recorte de teste comeca ali). Fim cedo nao conta quando a ultima
-barra cai entre 12:59 e 13:14 NY: sao os fechamentos antecipados oficiais da
+barra cai entre 12:59 e 13:15 NY: sao os fechamentos antecipados oficiais da
 CME (13:00 e 13:15). O ultimo pregao do arquivo fica de fora, porque o
 download pode ter cortado no meio dele (veja `pregao_incompleto`).
 """
@@ -29,7 +29,7 @@ _COLUNAS = ["time", "open", "high", "low", "close", "volume", "trades"]
 _COMPARAR = ["open", "high", "low", "close", "volume"]
 _FIM_DO_PREGAO = 22 * 60 + 59  # 16:59 NY no relogio de pregao
 _FIM_CHEIO = "16:59"
-_FECHAMENTO_ANTECIPADO = ("12:59", "13:14")  # ultima barra de 13:00 e 13:15 NY
+_FECHAMENTO_ANTECIPADO = ("12:59", "13:15")  # ultima barra: 13:15 NY (fecha 13:00 ou 13:15)
 _LIMITE_VAZIO_MIN = 60
 
 
@@ -100,18 +100,16 @@ def _pascoa(ano: int) -> date:
 def feriados_de_fechamento_total(ano: int) -> set[date]:
     """Dias uteis em que a CME nao abre: Ano Novo, Sexta-feira Santa e Natal.
 
-    Ano Novo e Natal em sabado fecham na sexta anterior; em domingo, na
-    segunda seguinte. Os outros feriados dos EUA tem pregao curto (ou normal),
+    Natal em sabado fecha na sexta anterior; Natal e Ano Novo em domingo, na
+    segunda seguinte. Ano Novo em sabado nao desloca nada (a CME abre em 31/12). Os outros feriados dos EUA tem pregao curto (ou normal),
     entao o pregao existe e nao entra aqui.
     """
-    def observado(d: date) -> date:
-        if d.weekday() == 5:
-            return d - timedelta(days=1)
-        if d.weekday() == 6:
-            return d + timedelta(days=1)
-        return d
-    return {observado(date(ano, 1, 1)), _pascoa(ano) - timedelta(days=2),
-            observado(date(ano, 12, 25))}
+    def domingo_vira_segunda(d: date) -> date:
+        return d + timedelta(days=1) if d.weekday() == 6 else d
+    natal = domingo_vira_segunda(date(ano, 12, 25))
+    if natal.weekday() == 5:
+        natal -= timedelta(days=1)
+    return {domingo_vira_segunda(date(ano, 1, 1)), _pascoa(ano) - timedelta(days=2), natal}
 
 
 def pregoes_suspeitos(df: pl.DataFrame, f: Ficha) -> dict[str, str]:
@@ -138,16 +136,16 @@ def pregoes_suspeitos(df: pl.DataFrame, f: Ficha) -> dict[str, str]:
                ativo.hora_para_minuto(_FECHAMENTO_ANTECIPADO[1]) + desl)
     out: dict[str, str] = {}
     for r in por_dia.iter_rows(named=True):
+        motivos = []
         if r["maior_salto"] is not None and r["maior_salto"] > _LIMITE_VAZIO_MIN:
             inicio = r["fim_do_salto"] - timedelta(minutes=r["maior_salto"] - 1)
-            motivo = f"vazio de {r['maior_salto'] - 1} min a partir de {_hhmm_ny(inicio, f)} NY"
-        elif r["min_ini"] > _LIMITE_VAZIO_MIN:
-            motivo = f"comecou as {_hhmm_ny(r['primeira'], f)} NY"
-        elif r["min_fim"] < fim_cheio and not cedo_ok[0] <= r["min_fim"] <= cedo_ok[1]:
-            motivo = f"terminou as {_hhmm_ny(r['ultima'], f)} NY"
-        else:
-            continue
-        out[str(r["dia"])] = motivo
+            motivos.append(f"vazio de {r['maior_salto'] - 1} min a partir de {_hhmm_ny(inicio, f)} NY")
+        if r["min_ini"] > _LIMITE_VAZIO_MIN:
+            motivos.append(f"comecou as {_hhmm_ny(r['primeira'], f)} NY")
+        if r["min_fim"] < fim_cheio and not cedo_ok[0] <= r["min_fim"] <= cedo_ok[1]:
+            motivos.append(f"terminou as {_hhmm_ny(r['ultima'], f)} NY")
+        if motivos:
+            out[str(r["dia"])] = "; ".join(motivos)
 
     # Pregao que nao tem nenhuma barra nao aparece no group_by acima.
     presentes = set(d["dia"].unique().to_list())

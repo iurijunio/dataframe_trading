@@ -98,3 +98,31 @@ def test_feriados_de_fechamento_total():
     assert date(2021, 12, 24) in lse.feriados_de_fechamento_total(2021)   # Natal no sabado
     assert date(2023, 1, 2) in lse.feriados_de_fechamento_total(2023)     # Ano Novo no domingo
     assert date(2024, 12, 25) in lse.feriados_de_fechamento_total(2024)
+    assert date(2021, 12, 31) not in lse.feriados_de_fechamento_total(2021)  # CME abre em 31/12
+    assert date(2021, 12, 31) not in lse.feriados_de_fechamento_total(2022)
+
+
+def _corta_pregao_26_depois_de(hora: int, minuto: int):
+    df = lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES)
+    ts = pl.col("ts")
+    dia = (ts >= pl.datetime(2024, 12, 26)) & (ts < pl.datetime(2024, 12, 27))
+    return df.filter(~(dia & (ts > pl.datetime(2024, 12, 26, hora, minuto))))  # relogio de pregao = NY + 6h
+
+
+def test_fechamento_as_13h15_nao_e_suspeito_mas_13h16_e():
+    ok = lse.pregoes_suspeitos(_corta_pregao_26_depois_de(19, 15), MES)   # ultima barra 13:15 NY
+    assert "2024-12-26" not in ok
+    ruim = lse.pregoes_suspeitos(_corta_pregao_26_depois_de(19, 16), MES)  # ultima barra 13:16 NY
+    assert "terminou as 13:16 NY" in ruim["2024-12-26"]
+
+
+def test_todos_os_motivos_aparecem():
+    df = lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES)
+    ts = pl.col("ts")
+    dia = (ts >= pl.datetime(2024, 12, 26)) & (ts < pl.datetime(2024, 12, 27))
+    # fura o meio do dia e corta o comeco e o fim do pregao
+    q = df.filter(~(dia & (((ts >= pl.datetime(2024, 12, 26, 3)) & (ts < pl.datetime(2024, 12, 26, 9)))
+                          | (ts < pl.datetime(2024, 12, 26, 2))
+                          | (ts >= pl.datetime(2024, 12, 26, 17)))))
+    m = lse.pregoes_suspeitos(q, MES)["2024-12-26"]
+    assert m.count(";") == 2 and "vazio" in m and "comecou" in m and "terminou" in m

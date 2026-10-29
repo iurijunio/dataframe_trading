@@ -17,7 +17,7 @@
 - Relógio de pregão: UTC → `America/New_York` → `+ (24:00 − sessao_abertura)`; `sessao_abertura: "18:00"` → +360 min.
 - Preço guardado = round(preço / tick) × tick × 10^`price_decimals`, inteiro (MES 5432,25 → 543225).
 - `instruments.tick_size` (INTEGER) recebe `tick_unid` (MES 25), nunca 0,25.
-- Pregão suspeito: vazio interno > 60 min; ou primeira barra > 60 min depois das 18:00 NY; ou última barra antes das 16:59 NY, exceto entre 12:59 e 13:14 NY (fechamentos antecipados oficiais da CME, 13:00/13:15); ou pregão ausente (dia útil entre o primeiro e o último pregão sem barras, fora Ano Novo, Sexta-feira Santa e Natal, com a regra de sábado/domingo). O último pregão do arquivo é tratado pela regra do incompleto, não por esta.
+- Pregão suspeito: vazio interno > 60 min; ou primeira barra > 60 min depois das 18:00 NY; ou última barra antes das 16:59 NY, exceto entre 12:59 e 13:15 NY (fechamentos antecipados oficiais da CME, 13:00/13:15); ou pregão ausente (dia útil entre o primeiro e o último pregão sem barras, fora Ano Novo, Sexta-feira Santa e Natal, Natal em sábado vale a sexta, Natal/Ano Novo em domingo valem a segunda). O último pregão do arquivo é tratado pela regra do incompleto, não por esta.
 - Último pregão do arquivo incompleto (última barra antes das 16:59 NY) não é gravado.
 - Telas: nada de texto explicativo visível; explicação só em "(?)". Nenhuma tela nova nesta etapa.
 - Testes nunca tocam `data/database.duckdb` (conftest isola `DB_PATH`); `ativos_temp/` não vai para o git.
@@ -286,7 +286,7 @@ def test_ultimo_pregao_incompleto():
 - [ ] **Step 4: Implement `core/importar_lse.py`**
   - `ler_partes`: `pl.read_parquet` de cada arquivo, exige as 7 colunas (mensagem com o nome do arquivo se faltar), `time` em `us` UTC; concatena; nas linhas com `time` repetido, compara OHLC+volume e levanta `ValueError("... diverge ...")` com até 5 exemplos; senão `unique(subset="time")` e ordena.
   - `preparar`: `round(x / tick_size) * tick_unid` → Int64; `volume` e `trades` → Int64 (recusa volume não inteiro); `ts = utc_para_pregao(time)`.
-  - `pregoes_suspeitos`: agrupa por `ts.dt.date()`; minuto do pregão = `hour*60+minute`; suspeito se `max(diff entre barras consecutivas do mesmo pregão) > 60 min`, se o primeiro minuto > 60, ou se o último minuto < `hora_para_minuto("16:59") + deslocamento_min` fora da janela 12:59–13:14 NY; mais a regra de pregão ausente (dias úteis sem barras, exceto feriados de fechamento total). O último pregão do DataFrame fica fora desta checagem (é assunto de `pregao_incompleto`). Motivos em hora de NY usando `hora_para_exibir` (ex.: `"terminou as 18:59 NY"`).
+  - `pregoes_suspeitos`: agrupa por `ts.dt.date()`; minuto do pregão = `hour*60+minute`; suspeito se `max(diff entre barras consecutivas do mesmo pregão) > 60 min`, se o primeiro minuto > 60, ou se o último minuto < `hora_para_minuto("16:59") + deslocamento_min` fora da janela 12:59–13:15 NY; mais a regra de pregão ausente (dias úteis sem barras, exceto feriados de fechamento total). O último pregão do DataFrame fica fora desta checagem (é assunto de `pregao_incompleto`). Motivos em hora de NY usando `hora_para_exibir` (ex.: `"terminou as 18:59 NY"`).
   - Docstring: de onde vêm os dados, o limite de 2,5 M linhas por download e a regra dos suspeitos.
 
 - [ ] **Step 5: Run** — Expected: PASS.
