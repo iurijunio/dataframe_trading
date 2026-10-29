@@ -1,7 +1,2323 @@
 {
- "bloco_robustez": "Div(children=[Div(children=[Div(children=[H3(children='Resultado fora da amostra', className='grp'), Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Os mesmos números da aba Walk-Forward: o que a estratégia fez nos meses que o otimizador não viu.', data-dica='Os mesmos números da aba Walk-Forward: o que a estratégia fez nos meses que o otimizador não viu.')], className='secao-head'), Div(children=Table(children=Tbody([Tr([Td(children=['período', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='O trecho que a curva fora da amostra cobre: do início do OOS da primeira janela ao fim do OOS da última. O IS da primeira janela fica de fora — ali só se otimizou, nada foi operado.', data-dica='O trecho que a curva fora da amostra cobre: do início do OOS da primeira janela ao fim do OOS da última. O IS da primeira janela fica de fora — ali só se otimizou, nada foi operado.')], className='ct-nome'), Td(children='01/03/2022 → 01/03/2026', className='ct-valor'), Td(children='base inteira, holdout incluído', className='ct-nota')]), Tr([Td(children=['lucro líquido', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A soma de todos os pedaços fora da amostra, já descontado o custo. É o único número de lucro desta tela que não teve o otimizador olhando: em cada trecho, os parâmetros foram escolhidos só com o dado anterior a ele. Compare com o lucro do backtest otimizado no período inteiro — a diferença entre os dois é o sobreajuste, em reais.', data-dica='A soma de todos os pedaços fora da amostra, já descontado o custo. É o único número de lucro desta tela que não teve o otimizador olhando: em cada trecho, os parâmetros foram escolhidos só com o dado anterior a ele. Compare com o lucro do backtest otimizado no período inteiro — a diferença entre os dois é o sobreajuste, em reais.')], className='ct-nome'), Td(children='R$ 5.474,00', className='ct-valor tom-bom'), Td(children='bruto R$ 5.984,00 − custo R$ 510,00', className='ct-nota')]), Tr([Td(children=['max drawdown', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label=\"O maior mergulho da curva fora da amostra, do topo ao fundo. É o número mais realista de sofrimento que esta plataforma produz, porque a curva dele nunca viu o futuro. '% do pico' divide pelo topo alcançado até ali; '% do capital', pelo que se depositou. Compare com o drawdown do backtest otimizado: se o daqui for muito maior, o backtest estava escondendo risco. O portão desta plataforma aceita até 1,5× o drawdown do IS.\", data-dica=\"O maior mergulho da curva fora da amostra, do topo ao fundo. É o número mais realista de sofrimento que esta plataforma produz, porque a curva dele nunca viu o futuro. '% do pico' divide pelo topo alcançado até ali; '% do capital', pelo que se depositou. Compare com o drawdown do backtest otimizado: se o daqui for muito maior, o backtest estava escondendo risco. O portão desta plataforma aceita até 1,5× o drawdown do IS.\")], className='ct-nome'), Td(children='R$ 791,00', className='ct-valor tom-bom'), Td(children='6,3% do pico · 7,9% do capital', className='ct-nota')]), Tr([Td(children=['profit factor', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto se ganhou para cada R$ 1 perdido, fora da amostra. Abaixo de 1,0 a estratégia perde dinheiro em dado novo, por mais bonito que seja o backtest. De 1,2 a 1,6 é o normal de um sistema real de day trade.', data-dica='Quanto se ganhou para cada R$ 1 perdido, fora da amostra. Abaixo de 1,0 a estratégia perde dinheiro em dado novo, por mais bonito que seja o backtest. De 1,2 a 1,6 é o normal de um sistema real de day trade.')], className='ct-nome'), Td(children='1,44', className='ct-valor tom-bom'), Td(children='', className='ct-nota')]), Tr([Td(children=['win rate', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Percentual de operações vencedoras fora da amostra. Sozinho não diz nada: leia junto do payoff. O que importa é ele não despencar em relação ao backtest — se despencar, o gatilho estava ajustado ao ruído.', data-dica='Percentual de operações vencedoras fora da amostra. Sozinho não diz nada: leia junto do payoff. O que importa é ele não despencar em relação ao backtest — se despencar, o gatilho estava ajustado ao ruído.')], className='ct-nome'), Td(children='23,3%', className='ct-valor'), Td(children='', className='ct-nota')]), Tr([Td(children=['payoff', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Ganho médio dividido pela perda média. Multiplicado pelo win rate é o que define se a expectativa é positiva. Com 50% de acerto, qualquer payoff acima de 1,0 lucra antes do custo.', data-dica='Ganho médio dividido pela perda média. Multiplicado pelo win rate é o que define se a expectativa é positiva. Com 50% de acerto, qualquer payoff acima de 1,0 lucra antes do custo.')], className='ct-nome'), Td(children='4,73', className='ct-valor'), Td(children='', className='ct-nota')]), Tr([Td(children=['expectativa', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto cada operação rendeu, em média, fora da amostra. É a expectativa honesta — a do backtest otimizado é sempre melhor que a realidade. É ela que tem que cobrir o slippage que o backtest não viu.', data-dica='Quanto cada operação rendeu, em média, fora da amostra. É a expectativa honesta — a do backtest otimizado é sempre melhor que a realidade. É ela que tem que cobrir o slippage que o backtest não viu.')], className='ct-nome'), Td(children='R$ 10,73', className='ct-valor tom-bom'), Td(children='por trade', className='ct-nota')]), Tr([Td(children=['fator recuperação', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Lucro líquido dividido pelo max drawdown: quantas vezes a estratégia repôs o pior mergulho que deu. Abaixo de 1,0 o lucro do período inteiro não cobre um drawdown. Acima de 3,0 é bom.', data-dica='Lucro líquido dividido pelo max drawdown: quantas vezes a estratégia repôs o pior mergulho que deu. Abaixo de 1,0 o lucro do período inteiro não cobre um drawdown. Acima de 3,0 é bom.')], className='ct-nome'), Td(children='6,92', className='ct-valor tom-bom'), Td(children='', className='ct-nota')]), Tr([Td(children=['sharpe', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A mesma conta do Backtest — retorno diário anualizado sobre a volatilidade diária — feita sobre os pregões da curva fora da amostra. Acima de 1,0 é bom. Espere um número menor que o do backtest otimizado; quando ficam próximos, o otimizador não estava inflando o resultado. O Sortino pune só a oscilação para baixo.', data-dica='A mesma conta do Backtest — retorno diário anualizado sobre a volatilidade diária — feita sobre os pregões da curva fora da amostra. Acima de 1,0 é bom. Espere um número menor que o do backtest otimizado; quando ficam próximos, o otimizador não estava inflando o resultado. O Sortino pune só a oscilação para baixo.')], className='ct-nome'), Td(children='1,27', className='ct-valor tom-bom'), Td(children='sortino 3,74', className='ct-nota')]), Tr([Td(children=['trades', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Tamanho da amostra fora da amostra. O portão desta plataforma pede ao menos 300: abaixo disso o WFE e as janelas positivas ainda podem ser acaso, por melhores que pareçam.', data-dica='Tamanho da amostra fora da amostra. O portão desta plataforma pede ao menos 300: abaixo disso o WFE e as janelas positivas ainda podem ser acaso, por melhores que pareçam.')], className='ct-nome'), Td(children='510', className='ct-valor'), Td(children='1,49 por pregão', className='ct-nota')]), Tr([Td(children=['holdout', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto a curva rendeu por mês nos meses do HOLDOUT (o trecho final que nenhuma combinação minerada enxergou) contra quanto rendia por mês ANTES do corte. É a mesma curva do portão \"O holdout confirma?\", só em reais por mês em vez de caminhos simulados — quem decide passa ou reprova é aquele portão, não esta linha.', data-dica='Quanto a curva rendeu por mês nos meses do HOLDOUT (o trecho final que nenhuma combinação minerada enxergou) contra quanto rendia por mês ANTES do corte. É a mesma curva do portão \"O holdout confirma?\", só em reais por mês em vez de caminhos simulados — quem decide passa ou reprova é aquele portão, não esta linha.')], className='ct-nome'), Td(children='sem holdout nesta curva', className='ct-valor'), Td(children='', className='ct-nota')])]), className='cand-tab'), className='cand-tab-rola')], className='cand-tab-bloco'), Div(children=[Div(children=[H3(children='Quanto a estratégia aguenta', className='grp'), Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A plataforma sorteia 2.000 caminhos possíveis para a estratégia, usando os dias reais que ela já operou em outra ordem e combinação. Os números dizem o que acontece nos caminhos ruins — não no que você viu, que é só um deles. Cada linha é o pior caminho PARA AQUELA métrica: os números ruins de linhas diferentes não aconteceram todos juntos, no mesmo caminho sorteado.', data-dica='A plataforma sorteia 2.000 caminhos possíveis para a estratégia, usando os dias reais que ela já operou em outra ordem e combinação. Os números dizem o que acontece nos caminhos ruins — não no que você viu, que é só um deles. Cada linha é o pior caminho PARA AQUELA métrica: os números ruins de linhas diferentes não aconteceram todos juntos, no mesmo caminho sorteado.')], className='secao-head'), Div(children=Table(children=Tbody([Tr([Td(children=['perda esperada · 6 meses', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A maior queda a partir de um topo que você deve esperar nos próximos 6 meses, até a próxima reotimização. Só 5 de cada 100 caminhos sorteados perdem mais do que isso. É a base para decidir quando desligar o robô. Bom: até 10% do capital. Ruim: acima de 20%. Neste walk-forward, o número veio da curva inteira.', data-dica='A maior queda a partir de um topo que você deve esperar nos próximos 6 meses, até a próxima reotimização. Só 5 de cada 100 caminhos sorteados perdem mais do que isso. É a base para decidir quando desligar o robô. Bom: até 10% do capital. Ruim: acima de 20%. Neste walk-forward, o número veio da curva inteira.')], className='ct-nome'), Td(children='R$ 831,00', className='ct-valor tom-bom'), Td(children='8,3% do capital', className='ct-nota')]), Tr([Td(children=['dias perdendo seguidos', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quantos dias de operação seguidos fechando no prejuízo você deve estar preparado para viver. Dia sem operação não conta. Só 5 de cada 100 caminhos têm sequência maior. Se este número for bem maior que o da curva real, o passado teve sorte — o azar ainda não apareceu. Neste walk-forward, o número veio da curva inteira.', data-dica='Quantos dias de operação seguidos fechando no prejuízo você deve estar preparado para viver. Dia sem operação não conta. Só 5 de cada 100 caminhos têm sequência maior. Se este número for bem maior que o da curva real, o passado teve sorte — o azar ainda não apareceu. Neste walk-forward, o número veio da curva inteira.')], className='ct-nome'), Td(children='15', className='ct-valor'), Td(children='na curva real: 11', className='ct-nota')]), Tr([Td(children=['dias até novo topo', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quantos dias de pregão a estratégia costuma passar abaixo do último topo antes de superá-lo. O valor é o caso típico; o pior caso fica ao lado. O prazo é de 131 pregões (até a próxima reotimização). Bom: até metade do prazo. Ruim: quase o prazo inteiro. Neste walk-forward, o número veio da curva inteira.', data-dica='Quantos dias de pregão a estratégia costuma passar abaixo do último topo antes de superá-lo. O valor é o caso típico; o pior caso fica ao lado. O prazo é de 131 pregões (até a próxima reotimização). Bom: até metade do prazo. Ruim: quase o prazo inteiro. Neste walk-forward, o número veio da curva inteira.')], className='ct-nome'), Td(children='57', className='ct-valor tom-bom'), Td(children='pior caso: 125 de 131 pregões', className='ct-nota')]), Tr([Td(children=['perda com outra ordem', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Os MESMOS trades da curva, embaralhados: o lucro final não muda, só a ordem. Mede o azar de os prejuízos virem todos juntos, no período inteiro (não nos próximos meses) — por isso é maior que a perda esperada e não se compara direto com ela. Bom: até 10% do capital. Ruim: acima de 20%.', data-dica='Os MESMOS trades da curva, embaralhados: o lucro final não muda, só a ordem. Mede o azar de os prejuízos virem todos juntos, no período inteiro (não nos próximos meses) — por isso é maior que a perda esperada e não se compara direto com ela. Bom: até 10% do capital. Ruim: acima de 20%.')], className='ct-nome'), Td(children='R$ 1.395,00', className='ct-valor tom-medio'), Td(children='14,0% do capital · período inteiro', className='ct-nota')])]), className='cand-tab'), className='cand-tab-rola')], className='cand-tab-bloco')], className='cand-tabelas')",
- "bloco_robustez_holdout": "Div(children=[Div(children=[Div(children=[H3(children='Resultado fora da amostra', className='grp'), Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Os mesmos números da aba Walk-Forward: o que a estratégia fez nos meses que o otimizador não viu.', data-dica='Os mesmos números da aba Walk-Forward: o que a estratégia fez nos meses que o otimizador não viu.')], className='secao-head'), Div(children=Table(children=Tbody([Tr([Td(children=['período', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='O trecho que a curva fora da amostra cobre: do início do OOS da primeira janela ao fim do OOS da última. O IS da primeira janela fica de fora — ali só se otimizou, nada foi operado.', data-dica='O trecho que a curva fora da amostra cobre: do início do OOS da primeira janela ao fim do OOS da última. O IS da primeira janela fica de fora — ali só se otimizou, nada foi operado.')], className='ct-nome'), Td(children='02/01/2023 → 29/12/2023', className='ct-valor'), Td(children='fora da amostra, janela após janela', className='ct-nota')]), Tr([Td(children=['lucro líquido', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A soma de todos os pedaços fora da amostra, já descontado o custo. É o único número de lucro desta tela que não teve o otimizador olhando: em cada trecho, os parâmetros foram escolhidos só com o dado anterior a ele. Compare com o lucro do backtest otimizado no período inteiro — a diferença entre os dois é o sobreajuste, em reais.', data-dica='A soma de todos os pedaços fora da amostra, já descontado o custo. É o único número de lucro desta tela que não teve o otimizador olhando: em cada trecho, os parâmetros foram escolhidos só com o dado anterior a ele. Compare com o lucro do backtest otimizado no período inteiro — a diferença entre os dois é o sobreajuste, em reais.')], className='ct-nome'), Td(children='R$ 5.474,00', className='ct-valor tom-bom'), Td(children='bruto R$ 5.984,00 − custo R$ 510,00', className='ct-nota')]), Tr([Td(children=['max drawdown', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label=\"O maior mergulho da curva fora da amostra, do topo ao fundo. É o número mais realista de sofrimento que esta plataforma produz, porque a curva dele nunca viu o futuro. '% do pico' divide pelo topo alcançado até ali; '% do capital', pelo que se depositou. Compare com o drawdown do backtest otimizado: se o daqui for muito maior, o backtest estava escondendo risco. O portão desta plataforma aceita até 1,5× o drawdown do IS.\", data-dica=\"O maior mergulho da curva fora da amostra, do topo ao fundo. É o número mais realista de sofrimento que esta plataforma produz, porque a curva dele nunca viu o futuro. '% do pico' divide pelo topo alcançado até ali; '% do capital', pelo que se depositou. Compare com o drawdown do backtest otimizado: se o daqui for muito maior, o backtest estava escondendo risco. O portão desta plataforma aceita até 1,5× o drawdown do IS.\")], className='ct-nome'), Td(children='R$ 791,00', className='ct-valor tom-bom'), Td(children='6,3% do pico · 7,9% do capital', className='ct-nota')]), Tr([Td(children=['profit factor', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto se ganhou para cada R$ 1 perdido, fora da amostra. Abaixo de 1,0 a estratégia perde dinheiro em dado novo, por mais bonito que seja o backtest. De 1,2 a 1,6 é o normal de um sistema real de day trade.', data-dica='Quanto se ganhou para cada R$ 1 perdido, fora da amostra. Abaixo de 1,0 a estratégia perde dinheiro em dado novo, por mais bonito que seja o backtest. De 1,2 a 1,6 é o normal de um sistema real de day trade.')], className='ct-nome'), Td(children='1,44', className='ct-valor tom-bom'), Td(children='', className='ct-nota')]), Tr([Td(children=['win rate', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Percentual de operações vencedoras fora da amostra. Sozinho não diz nada: leia junto do payoff. O que importa é ele não despencar em relação ao backtest — se despencar, o gatilho estava ajustado ao ruído.', data-dica='Percentual de operações vencedoras fora da amostra. Sozinho não diz nada: leia junto do payoff. O que importa é ele não despencar em relação ao backtest — se despencar, o gatilho estava ajustado ao ruído.')], className='ct-nome'), Td(children='23,3%', className='ct-valor'), Td(children='', className='ct-nota')]), Tr([Td(children=['payoff', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Ganho médio dividido pela perda média. Multiplicado pelo win rate é o que define se a expectativa é positiva. Com 50% de acerto, qualquer payoff acima de 1,0 lucra antes do custo.', data-dica='Ganho médio dividido pela perda média. Multiplicado pelo win rate é o que define se a expectativa é positiva. Com 50% de acerto, qualquer payoff acima de 1,0 lucra antes do custo.')], className='ct-nome'), Td(children='4,73', className='ct-valor'), Td(children='', className='ct-nota')]), Tr([Td(children=['expectativa', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto cada operação rendeu, em média, fora da amostra. É a expectativa honesta — a do backtest otimizado é sempre melhor que a realidade. É ela que tem que cobrir o slippage que o backtest não viu.', data-dica='Quanto cada operação rendeu, em média, fora da amostra. É a expectativa honesta — a do backtest otimizado é sempre melhor que a realidade. É ela que tem que cobrir o slippage que o backtest não viu.')], className='ct-nome'), Td(children='R$ 10,73', className='ct-valor tom-bom'), Td(children='por trade', className='ct-nota')]), Tr([Td(children=['fator recuperação', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Lucro líquido dividido pelo max drawdown: quantas vezes a estratégia repôs o pior mergulho que deu. Abaixo de 1,0 o lucro do período inteiro não cobre um drawdown. Acima de 3,0 é bom.', data-dica='Lucro líquido dividido pelo max drawdown: quantas vezes a estratégia repôs o pior mergulho que deu. Abaixo de 1,0 o lucro do período inteiro não cobre um drawdown. Acima de 3,0 é bom.')], className='ct-nome'), Td(children='6,92', className='ct-valor tom-bom'), Td(children='', className='ct-nota')]), Tr([Td(children=['sharpe', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A mesma conta do Backtest — retorno diário anualizado sobre a volatilidade diária — feita sobre os pregões da curva fora da amostra. Acima de 1,0 é bom. Espere um número menor que o do backtest otimizado; quando ficam próximos, o otimizador não estava inflando o resultado. O Sortino pune só a oscilação para baixo.', data-dica='A mesma conta do Backtest — retorno diário anualizado sobre a volatilidade diária — feita sobre os pregões da curva fora da amostra. Acima de 1,0 é bom. Espere um número menor que o do backtest otimizado; quando ficam próximos, o otimizador não estava inflando o resultado. O Sortino pune só a oscilação para baixo.')], className='ct-nome'), Td(children='1,27', className='ct-valor tom-bom'), Td(children='sortino 3,74', className='ct-nota')]), Tr([Td(children=['trades', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Tamanho da amostra fora da amostra. O portão desta plataforma pede ao menos 300: abaixo disso o WFE e as janelas positivas ainda podem ser acaso, por melhores que pareçam.', data-dica='Tamanho da amostra fora da amostra. O portão desta plataforma pede ao menos 300: abaixo disso o WFE e as janelas positivas ainda podem ser acaso, por melhores que pareçam.')], className='ct-nome'), Td(children='510', className='ct-valor'), Td(children='1,49 por pregão', className='ct-nota')]), Tr([Td(children=['holdout', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto a curva rendeu por mês nos meses do HOLDOUT (o trecho final que nenhuma combinação minerada enxergou) contra quanto rendia por mês ANTES do corte. É a mesma curva do portão \"O holdout confirma?\", só em reais por mês em vez de caminhos simulados — quem decide passa ou reprova é aquele portão, não esta linha.', data-dica='Quanto a curva rendeu por mês nos meses do HOLDOUT (o trecho final que nenhuma combinação minerada enxergou) contra quanto rendia por mês ANTES do corte. É a mesma curva do portão \"O holdout confirma?\", só em reais por mês em vez de caminhos simulados — quem decide passa ou reprova é aquele portão, não esta linha.')], className='ct-nome'), Td(children='R$ 850,00/mês no holdout', className='ct-valor'), Td(children='R$ 620,00/mês antes do corte', className='ct-nota')])]), className='cand-tab'), className='cand-tab-rola')], className='cand-tab-bloco'), Div(children=[Div(children=[H3(children='Quanto a estratégia aguenta', className='grp'), Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A plataforma sorteia 2.000 caminhos possíveis para a estratégia, usando os dias reais que ela já operou em outra ordem e combinação. Os números dizem o que acontece nos caminhos ruins — não no que você viu, que é só um deles. Cada linha é o pior caminho PARA AQUELA métrica: os números ruins de linhas diferentes não aconteceram todos juntos, no mesmo caminho sorteado.', data-dica='A plataforma sorteia 2.000 caminhos possíveis para a estratégia, usando os dias reais que ela já operou em outra ordem e combinação. Os números dizem o que acontece nos caminhos ruins — não no que você viu, que é só um deles. Cada linha é o pior caminho PARA AQUELA métrica: os números ruins de linhas diferentes não aconteceram todos juntos, no mesmo caminho sorteado.')], className='secao-head'), Div(children=Table(children=Tbody([Tr([Td(children=['perda esperada · 6 meses', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A maior queda a partir de um topo que você deve esperar nos próximos 6 meses, até a próxima reotimização. Só 5 de cada 100 caminhos sorteados perdem mais do que isso. É a base para decidir quando desligar o robô. Bom: até 10% do capital. Ruim: acima de 20%. Neste walk-forward, o número veio da curva inteira.', data-dica='A maior queda a partir de um topo que você deve esperar nos próximos 6 meses, até a próxima reotimização. Só 5 de cada 100 caminhos sorteados perdem mais do que isso. É a base para decidir quando desligar o robô. Bom: até 10% do capital. Ruim: acima de 20%. Neste walk-forward, o número veio da curva inteira.')], className='ct-nome'), Td(children='R$ 831,00', className='ct-valor tom-bom'), Td(children='8,3% do capital', className='ct-nota')]), Tr([Td(children=['dias perdendo seguidos', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quantos dias de operação seguidos fechando no prejuízo você deve estar preparado para viver. Dia sem operação não conta. Só 5 de cada 100 caminhos têm sequência maior. Se este número for bem maior que o da curva real, o passado teve sorte — o azar ainda não apareceu. Neste walk-forward, o número veio da curva inteira.', data-dica='Quantos dias de operação seguidos fechando no prejuízo você deve estar preparado para viver. Dia sem operação não conta. Só 5 de cada 100 caminhos têm sequência maior. Se este número for bem maior que o da curva real, o passado teve sorte — o azar ainda não apareceu. Neste walk-forward, o número veio da curva inteira.')], className='ct-nome'), Td(children='15', className='ct-valor'), Td(children='na curva real: 11', className='ct-nota')]), Tr([Td(children=['dias até novo topo', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quantos dias de pregão a estratégia costuma passar abaixo do último topo antes de superá-lo. O valor é o caso típico; o pior caso fica ao lado. O prazo é de 131 pregões (até a próxima reotimização). Bom: até metade do prazo. Ruim: quase o prazo inteiro. Neste walk-forward, o número veio da curva inteira.', data-dica='Quantos dias de pregão a estratégia costuma passar abaixo do último topo antes de superá-lo. O valor é o caso típico; o pior caso fica ao lado. O prazo é de 131 pregões (até a próxima reotimização). Bom: até metade do prazo. Ruim: quase o prazo inteiro. Neste walk-forward, o número veio da curva inteira.')], className='ct-nome'), Td(children='57', className='ct-valor tom-bom'), Td(children='pior caso: 125 de 131 pregões', className='ct-nota')]), Tr([Td(children=['perda com outra ordem', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Os MESMOS trades da curva, embaralhados: o lucro final não muda, só a ordem. Mede o azar de os prejuízos virem todos juntos, no período inteiro (não nos próximos meses) — por isso é maior que a perda esperada e não se compara direto com ela. Bom: até 10% do capital. Ruim: acima de 20%.', data-dica='Os MESMOS trades da curva, embaralhados: o lucro final não muda, só a ordem. Mede o azar de os prejuízos virem todos juntos, no período inteiro (não nos próximos meses) — por isso é maior que a perda esperada e não se compara direto com ela. Bom: até 10% do capital. Ruim: acima de 20%.')], className='ct-nome'), Td(children='R$ 1.395,00', className='ct-valor tom-medio'), Td(children='14,0% do capital · período inteiro', className='ct-nota')])]), className='cand-tab'), className='cand-tab-rola')], className='cand-tab-bloco')], className='cand-tabelas')",
- "bloco_tamanho": "Div(children=[Div(children=[Div(children=[H3(children='Quanto operar', className='grp'), Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='O tamanho da posição sai da perda de um contrato num pregão ruim, não do lucro esperado. Três contas limitam ao mesmo tempo, e vale a menor delas.', data-dica='O tamanho da posição sai da perda de um contrato num pregão ruim, não do lucro esperado. Três contas limitam ao mesmo tempo, e vale a menor delas.')], className='secao-head'), Div(children=Table(children=Tbody([Tr([Td(children=['contratos', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quantos contratos operar. É o menor de três contas: o que o seu risco por pregão permite, o que a garantia da corretora permite, e o que sobra para pagar as duas coisas no mesmo dia. Sempre arredondado para baixo — entre 1 e 2 contratos o risco dobra. Zero contratos não é erro: é o capital não comportar o instrumento, e a nota diz qual das contas zerou. Bom: 1 ou mais. Ruim: zero — e aí baixar o risco não resolve, porque ele já está no limite; só mais capital ou limite de operações no dia mais apertado.', data-dica='Quantos contratos operar. É o menor de três contas: o que o seu risco por pregão permite, o que a garantia da corretora permite, e o que sobra para pagar as duas coisas no mesmo dia. Sempre arredondado para baixo — entre 1 e 2 contratos o risco dobra. Zero contratos não é erro: é o capital não comportar o instrumento, e a nota diz qual das contas zerou. Bom: 1 ou mais. Ruim: zero — e aí baixar o risco não resolve, porque ele já está no limite; só mais capital ou limite de operações no dia mais apertado.')], className='ct-nome'), Td(children='3', className='ct-valor tom-bom'), Td(children='quem limitou: risco', className='ct-nota')]), Tr([Td(children=['risco por pregão', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto do capital você perde num pregão ruim com os contratos escolhidos. É por PREGÃO, não por operação: a perda de referência é de um dia inteiro, então quem opera três vezes por dia não multiplica por três. O valor real fica abaixo do pedido porque o número de contratos é inteiro, e o pedido é o teto. Bom: até 1% por pregão. Ruim: acima de 2%, porque a sequência de dias ruins que a tabela mostra logo abaixo viraria uma perda grande demais para continuar operando.', data-dica='Quanto do capital você perde num pregão ruim com os contratos escolhidos. É por PREGÃO, não por operação: a perda de referência é de um dia inteiro, então quem opera três vezes por dia não multiplica por três. O valor real fica abaixo do pedido porque o número de contratos é inteiro, e o pedido é o teto. Bom: até 1% por pregão. Ruim: acima de 2%, porque a sequência de dias ruins que a tabela mostra logo abaixo viraria uma perda grande demais para continuar operando.')], className='ct-nome'), Td(children='0,90%', className='ct-valor'), Td(children='você pediu 1,0%', className='ct-nota')]), Tr([Td(children=['perda de referência', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='A perda de UM contrato que decide o tamanho da posição: vale a pior entre a média dos 5% piores dias e um dia ruim de execução. É uma MÉDIA dos dias ruins, não o teto deles — metade dos dias ruins perde mais que isso. Bom: até 2% do seu capital, porque aí 1 contrato cabe com folga. Ruim: acima de 5%, quando o capital praticamente não comporta o instrumento.', data-dica='A perda de UM contrato que decide o tamanho da posição: vale a pior entre a média dos 5% piores dias e um dia ruim de execução. É uma MÉDIA dos dias ruins, não o teto deles — metade dos dias ruins perde mais que isso. Bom: até 2% do seu capital, porque aí 1 contrato cabe com folga. Ruim: acima de 5%, quando o capital praticamente não comporta o instrumento.')], className='ct-nome'), Td(children='R$ 300,00', className='ct-valor'), Td(children='a média dos 5% piores pregões', className='ct-nota')]), Tr([Td(children=['dia ruim de execução', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='O dia em que todo stop que o seu limite diário permite bate, e o último sai com o dobro do tamanho porque não havia preço. Pode nunca ter acontecido na sua curva e ainda assim acontecer amanhã — por isso ele entra na conta. Quantos stops cabem no dia sai do seu limite diário; sem limite nenhum, sai do pregão mais movimentado que a sua curva já teve. Ruim: quando ele fica muito maior que a média dos dias ruins, porque aí é ele que decide o seu tamanho. Apertar o máximo de operações por dia derruba este número direto.', data-dica='O dia em que todo stop que o seu limite diário permite bate, e o último sai com o dobro do tamanho porque não havia preço. Pode nunca ter acontecido na sua curva e ainda assim acontecer amanhã — por isso ele entra na conta. Quantos stops cabem no dia sai do seu limite diário; sem limite nenhum, sai do pregão mais movimentado que a sua curva já teve. Ruim: quando ele fica muito maior que a média dos dias ruins, porque aí é ele que decide o seu tamanho. Apertar o máximo de operações por dia derruba este número direto.')], className='ct-nome'), Td(children='R$ 240,00', className='ct-valor'), Td(children='todos os stops do dia, o último com o dobro do tamanho', className='ct-nota')]), Tr([Td(children=['pior pregão já ocorrido', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='O pior dia que a curva fora da amostra já teve, por contrato. Não dimensiona nada de propósito: ele é um recorde, que só piora conforme o histórico cresce, e um único registro torto passaria a decidir sozinho o seu tamanho de posição. Serve de referência: se ele for muito maior que a média dos dias ruins, você já viveu um dia fora da curva — e vai viver de novo. Bom: perto da média dos dias ruins. Ruim: várias vezes maior, porque aí o pior dia da sua curva não tem nada a ver com o dia ruim comum.', data-dica='O pior dia que a curva fora da amostra já teve, por contrato. Não dimensiona nada de propósito: ele é um recorde, que só piora conforme o histórico cresce, e um único registro torto passaria a decidir sozinho o seu tamanho de posição. Serve de referência: se ele for muito maior que a média dos dias ruins, você já viveu um dia fora da curva — e vai viver de novo. Bom: perto da média dos dias ruins. Ruim: várias vezes maior, porque aí o pior dia da sua curva não tem nada a ver com o dia ruim comum.')], className='ct-nome'), Td(children='R$ 128,00', className='ct-valor'), Td(children='leitura, não dimensiona', className='ct-nota')]), Tr([Td(children=['garantia por contrato', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto a corretora exige de garantia por contrato. Informe a INTRADIÁRIA se você fecha a posição no mesmo dia — a cheia é dez a trinta vezes maior e derrubaria o número de contratos na mesma proporção. Em branco, a conta da garantia fica de fora e só o risco limita. Bom: informada, com o valor que a sua corretora cobra hoje. Ruim: em branco, porque o número de contratos pode sair maior do que ela vai deixar você operar.', data-dica='Quanto a corretora exige de garantia por contrato. Informe a INTRADIÁRIA se você fecha a posição no mesmo dia — a cheia é dez a trinta vezes maior e derrubaria o número de contratos na mesma proporção. Em branco, a conta da garantia fica de fora e só o risco limita. Bom: informada, com o valor que a sua corretora cobra hoje. Ruim: em branco, porque o número de contratos pode sair maior do que ela vai deixar você operar.')], className='ct-nome'), Td(children='não informada', className='ct-valor'), Td(children='a conta da garantia ficou de fora', className='ct-nota')])]), className='cand-tab'), className='cand-tab-rola')], className='cand-tab-bloco'), Div(children=[Div(children=[H3(children='Quando parar', className='grp'), Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Dois níveis, porque um gatilho só é mau detector: parando apenas na queda ruim, você desliga estratégia sadia às vezes e demora demais para desligar a que morreu. Os valores em reais saem da frequência com que você aceita agir à toa — não de um número escolhido no olho.', data-dica='Dois níveis, porque um gatilho só é mau detector: parando apenas na queda ruim, você desliga estratégia sadia às vezes e demora demais para desligar a que morreu. Os valores em reais saem da frequência com que você aceita agir à toa — não de um número escolhido no olho.')], className='secao-head'), Div(children=Table(children=Tbody([Tr([Td(children=['reduzir para 1 contrato', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quando a queda a partir do topo passar deste valor, reduza para 1 contrato. O limite não foi escolhido no olho: você escolhe com que frequência aceita reduzir sem precisar — 20% das vezes, por padrão — e o valor em reais sai disso. Esses 20% querem dizer: em 20 de cada 100 períodos até a próxima reotimização, uma estratégia que continua boa encostaria aqui e você reduziria à toa. Reduzir é barato e se desfaz, por isso pode disparar mais vezes que o desligar. Bom: entre 15% e 25%. Ruim: abaixo de 10%, e você só reduz quando já perdeu demais; acima de 35%, e você vive com meia posição sem motivo.', data-dica='Quando a queda a partir do topo passar deste valor, reduza para 1 contrato. O limite não foi escolhido no olho: você escolhe com que frequência aceita reduzir sem precisar — 20% das vezes, por padrão — e o valor em reais sai disso. Esses 20% querem dizer: em 20 de cada 100 períodos até a próxima reotimização, uma estratégia que continua boa encostaria aqui e você reduziria à toa. Reduzir é barato e se desfaz, por isso pode disparar mais vezes que o desligar. Bom: entre 15% e 25%. Ruim: abaixo de 10%, e você só reduz quando já perdeu demais; acima de 35%, e você vive com meia posição sem motivo.')], className='ct-nome'), Td(children='R$ 1.200,00', className='ct-valor'), Td(children='reduz à toa em 20% dos períodos até reotimizar', className='ct-nota')]), Tr([Td(children=['desligar e reotimizar', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quando a queda chegar aqui, desligue e reotimize antes de voltar. Mesma lógica: você escolhe quantas vezes aceita desligar uma estratégia que ainda funcionava — 5 de cada 100 períodos até a reotimização, por padrão. Bom: até 8%. Ruim: acima de 15%, porque aí o disjuntor dispara sozinho e você nunca vai saber se a estratégia morreu ou só teve azar.', data-dica='Quando a queda chegar aqui, desligue e reotimize antes de voltar. Mesma lógica: você escolhe quantas vezes aceita desligar uma estratégia que ainda funcionava — 5 de cada 100 períodos até a reotimização, por padrão. Bom: até 8%. Ruim: acima de 15%, porque aí o disjuntor dispara sozinho e você nunca vai saber se a estratégia morreu ou só teve azar.')], className='ct-nome'), Td(children='R$ 1.800,00', className='ct-valor tom-bom'), Td(children='18,0% do capital · desliga uma estratégia boa em 5,0% dos períodos até reotimizar', className='ct-nota')]), Tr([Td(children=['dias perdendo seguidos', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quantos pregões seguidos no prejuízo você deve estar preparado para viver. Passou disso, reduza — é o mesmo sinal da queda, visto por outro lado. Dia sem operação não conta. Bom: até 8, uma semana e meia de pregões. Ruim: acima de 15, porque quase ninguém segue o plano depois de três semanas perdendo.', data-dica='Quantos pregões seguidos no prejuízo você deve estar preparado para viver. Passou disso, reduza — é o mesmo sinal da queda, visto por outro lado. Dia sem operação não conta. Bom: até 8, uma semana e meia de pregões. Ruim: acima de 15, porque quase ninguém segue o plano depois de três semanas perdendo.')], className='ct-nome'), Td(children='15', className='ct-valor'), Td(children='também reduz para 1 contrato', className='ct-nota')]), Tr([Td(children=['pior lucro esperado no prazo', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Onde o lucro acumulado costuma estar no PIOR dos casos ao fim do prazo até a próxima reotimização. A plataforma sorteia 2.000 continuações possíveis para a sua estratégia, usando os dias que ela já viveu em outra ordem, e só 1 em cada 10 termina abaixo deste número. Ficar abaixo dele não é azar comum — é sinal de reduzir. Bom: número positivo, ou seja, mesmo o mau caminho ainda termina no lucro.', data-dica='Onde o lucro acumulado costuma estar no PIOR dos casos ao fim do prazo até a próxima reotimização. A plataforma sorteia 2.000 continuações possíveis para a sua estratégia, usando os dias que ela já viveu em outra ordem, e só 1 em cada 10 termina abaixo deste número. Ficar abaixo dele não é azar comum — é sinal de reduzir. Bom: número positivo, ou seja, mesmo o mau caminho ainda termina no lucro.')], className='ct-nome'), Td(children='-R$ 200,00', className='ct-valor'), Td(children='ao fim de 131 pregões', className='ct-nota')]), Tr([Td(children=['dias sem novo topo', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Quanto tempo a estratégia pode passar abaixo do último topo sem que isso signifique que ela quebrou. Passar muito disso é motivo para olhar, mesmo sem a queda ter batido no limite. Bom: até metade do prazo até a reotimização. Ruim: quase o prazo inteiro, porque aí você passaria o ciclo todo no vermelho esperando.', data-dica='Quanto tempo a estratégia pode passar abaixo do último topo sem que isso signifique que ela quebrou. Passar muito disso é motivo para olhar, mesmo sem a queda ter batido no limite. Bom: até metade do prazo até a reotimização. Ruim: quase o prazo inteiro, porque aí você passaria o ciclo todo no vermelho esperando.')], className='ct-nome'), Td(children='125', className='ct-valor'), Td(children='de 131 pregões', className='ct-nota')]), Tr([Td(children=['limite do dia', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='O limite de perda e de operações do dia que vem do seu perfil de execução, já multiplicado pelos contratos. Bom: ter os dois definidos. Ruim: não ter nenhum, porque sem trava o dia pode empilhar perdas — e é justamente isso que engorda a perda de referência lá em cima e derruba o seu número de contratos.', data-dica='O limite de perda e de operações do dia que vem do seu perfil de execução, já multiplicado pelos contratos. Bom: ter os dois definidos. Ruim: não ter nenhum, porque sem trava o dia pode empilhar perdas — e é justamente isso que engorda a perda de referência lá em cima e derruba o seu número de contratos.')], className='ct-nome'), Td(children='R$ 400,00', className='ct-valor'), Td(children='6 operações por dia', className='ct-nota')])]), className='cand-tab'), className='cand-tab-rola')], className='cand-tab-bloco')], className='cand-tabelas')",
+ "bloco_robustez": {
+  "ns": "dash_html_components",
+  "props": {
+   "children": [
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Resultado fora da amostra",
+            "className": "grp"
+           },
+           "type": "H3"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "aria-label": "Os mesmos números da aba Walk-Forward: o que a estratégia fez nos meses que o otimizador não viu.",
+            "children": "?",
+            "className": "dica-mark",
+            "data-dica": "Os mesmos números da aba Walk-Forward: o que a estratégia fez nos meses que o otimizador não viu.",
+            "role": "button",
+            "tabIndex": "0"
+           },
+           "type": "Span"
+          }
+         ],
+         "className": "secao-head"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": {
+          "ns": "dash_html_components",
+          "props": {
+           "children": {
+            "ns": "dash_html_components",
+            "props": {
+             "children": [
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "período",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "O trecho que a curva fora da amostra cobre: do início do OOS da primeira janela ao fim do OOS da última. O IS da primeira janela fica de fora — ali só se otimizou, nada foi operado.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "O trecho que a curva fora da amostra cobre: do início do OOS da primeira janela ao fim do OOS da última. O IS da primeira janela fica de fora — ali só se otimizou, nada foi operado.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "01/03/2022 → 01/03/2026",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "base inteira, holdout incluído",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "lucro líquido",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "A soma de todos os pedaços fora da amostra, já descontado o custo. É o único número de lucro desta tela que não teve o otimizador olhando: em cada trecho, os parâmetros foram escolhidos só com o dado anterior a ele. Compare com o lucro do backtest otimizado no período inteiro — a diferença entre os dois é o sobreajuste, em reais.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "A soma de todos os pedaços fora da amostra, já descontado o custo. É o único número de lucro desta tela que não teve o otimizador olhando: em cada trecho, os parâmetros foram escolhidos só com o dado anterior a ele. Compare com o lucro do backtest otimizado no período inteiro — a diferença entre os dois é o sobreajuste, em reais.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 5.474,00",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "bruto R$ 5.984,00 − custo R$ 510,00",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "max drawdown",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "O maior mergulho da curva fora da amostra, do topo ao fundo. É o número mais realista de sofrimento que esta plataforma produz, porque a curva dele nunca viu o futuro. '% do pico' divide pelo topo alcançado até ali; '% do capital', pelo que se depositou. Compare com o drawdown do backtest otimizado: se o daqui for muito maior, o backtest estava escondendo risco. O portão desta plataforma aceita até 1,5× o drawdown do IS.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "O maior mergulho da curva fora da amostra, do topo ao fundo. É o número mais realista de sofrimento que esta plataforma produz, porque a curva dele nunca viu o futuro. '% do pico' divide pelo topo alcançado até ali; '% do capital', pelo que se depositou. Compare com o drawdown do backtest otimizado: se o daqui for muito maior, o backtest estava escondendo risco. O portão desta plataforma aceita até 1,5× o drawdown do IS.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 791,00",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "6,3% do pico · 7,9% do capital",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "profit factor",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto se ganhou para cada R$ 1 perdido, fora da amostra. Abaixo de 1,0 a estratégia perde dinheiro em dado novo, por mais bonito que seja o backtest. De 1,2 a 1,6 é o normal de um sistema real de day trade.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto se ganhou para cada R$ 1 perdido, fora da amostra. Abaixo de 1,0 a estratégia perde dinheiro em dado novo, por mais bonito que seja o backtest. De 1,2 a 1,6 é o normal de um sistema real de day trade.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "1,44",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "win rate",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Percentual de operações vencedoras fora da amostra. Sozinho não diz nada: leia junto do payoff. O que importa é ele não despencar em relação ao backtest — se despencar, o gatilho estava ajustado ao ruído.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Percentual de operações vencedoras fora da amostra. Sozinho não diz nada: leia junto do payoff. O que importa é ele não despencar em relação ao backtest — se despencar, o gatilho estava ajustado ao ruído.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "23,3%",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "payoff",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Ganho médio dividido pela perda média. Multiplicado pelo win rate é o que define se a expectativa é positiva. Com 50% de acerto, qualquer payoff acima de 1,0 lucra antes do custo.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Ganho médio dividido pela perda média. Multiplicado pelo win rate é o que define se a expectativa é positiva. Com 50% de acerto, qualquer payoff acima de 1,0 lucra antes do custo.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "4,73",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "expectativa",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto cada operação rendeu, em média, fora da amostra. É a expectativa honesta — a do backtest otimizado é sempre melhor que a realidade. É ela que tem que cobrir o slippage que o backtest não viu.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto cada operação rendeu, em média, fora da amostra. É a expectativa honesta — a do backtest otimizado é sempre melhor que a realidade. É ela que tem que cobrir o slippage que o backtest não viu.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 10,73",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "por trade",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "fator recuperação",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Lucro líquido dividido pelo max drawdown: quantas vezes a estratégia repôs o pior mergulho que deu. Abaixo de 1,0 o lucro do período inteiro não cobre um drawdown. Acima de 3,0 é bom.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Lucro líquido dividido pelo max drawdown: quantas vezes a estratégia repôs o pior mergulho que deu. Abaixo de 1,0 o lucro do período inteiro não cobre um drawdown. Acima de 3,0 é bom.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "6,92",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "sharpe",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "A mesma conta do Backtest — retorno diário anualizado sobre a volatilidade diária — feita sobre os pregões da curva fora da amostra. Acima de 1,0 é bom. Espere um número menor que o do backtest otimizado; quando ficam próximos, o otimizador não estava inflando o resultado. O Sortino pune só a oscilação para baixo.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "A mesma conta do Backtest — retorno diário anualizado sobre a volatilidade diária — feita sobre os pregões da curva fora da amostra. Acima de 1,0 é bom. Espere um número menor que o do backtest otimizado; quando ficam próximos, o otimizador não estava inflando o resultado. O Sortino pune só a oscilação para baixo.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "1,27",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "sortino 3,74",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "trades",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Tamanho da amostra fora da amostra. O portão desta plataforma pede ao menos 300: abaixo disso o WFE e as janelas positivas ainda podem ser acaso, por melhores que pareçam.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Tamanho da amostra fora da amostra. O portão desta plataforma pede ao menos 300: abaixo disso o WFE e as janelas positivas ainda podem ser acaso, por melhores que pareçam.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "510",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "1,49 por pregão",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "holdout",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto a curva rendeu por mês nos meses do HOLDOUT (o trecho final que nenhuma combinação minerada enxergou) contra quanto rendia por mês ANTES do corte. É a mesma curva do portão \"O holdout confirma?\", só em reais por mês em vez de caminhos simulados — quem decide passa ou reprova é aquele portão, não esta linha.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto a curva rendeu por mês nos meses do HOLDOUT (o trecho final que nenhuma combinação minerada enxergou) contra quanto rendia por mês ANTES do corte. É a mesma curva do portão \"O holdout confirma?\", só em reais por mês em vez de caminhos simulados — quem decide passa ou reprova é aquele portão, não esta linha.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "sem holdout nesta curva",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              }
+             ]
+            },
+            "type": "Tbody"
+           },
+           "className": "cand-tab"
+          },
+          "type": "Table"
+         },
+         "className": "cand-tab-rola"
+        },
+        "type": "Div"
+       }
+      ],
+      "className": "cand-tab-bloco"
+     },
+     "type": "Div"
+    },
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Quanto a estratégia aguenta",
+            "className": "grp"
+           },
+           "type": "H3"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "aria-label": "A plataforma sorteia 2.000 caminhos possíveis para a estratégia, usando os dias reais que ela já operou em outra ordem e combinação. Os números dizem o que acontece nos caminhos ruins — não no que você viu, que é só um deles. Cada linha é o pior caminho PARA AQUELA métrica: os números ruins de linhas diferentes não aconteceram todos juntos, no mesmo caminho sorteado.",
+            "children": "?",
+            "className": "dica-mark",
+            "data-dica": "A plataforma sorteia 2.000 caminhos possíveis para a estratégia, usando os dias reais que ela já operou em outra ordem e combinação. Os números dizem o que acontece nos caminhos ruins — não no que você viu, que é só um deles. Cada linha é o pior caminho PARA AQUELA métrica: os números ruins de linhas diferentes não aconteceram todos juntos, no mesmo caminho sorteado.",
+            "role": "button",
+            "tabIndex": "0"
+           },
+           "type": "Span"
+          }
+         ],
+         "className": "secao-head"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": {
+          "ns": "dash_html_components",
+          "props": {
+           "children": {
+            "ns": "dash_html_components",
+            "props": {
+             "children": [
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "perda esperada · 6 meses",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "A maior queda a partir de um topo que você deve esperar nos próximos 6 meses, até a próxima reotimização. Só 5 de cada 100 caminhos sorteados perdem mais do que isso. É a base para decidir quando desligar o robô. Bom: até 10% do capital. Ruim: acima de 20%. Neste walk-forward, o número veio da curva inteira.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "A maior queda a partir de um topo que você deve esperar nos próximos 6 meses, até a próxima reotimização. Só 5 de cada 100 caminhos sorteados perdem mais do que isso. É a base para decidir quando desligar o robô. Bom: até 10% do capital. Ruim: acima de 20%. Neste walk-forward, o número veio da curva inteira.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 831,00",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "8,3% do capital",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "dias perdendo seguidos",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quantos dias de operação seguidos fechando no prejuízo você deve estar preparado para viver. Dia sem operação não conta. Só 5 de cada 100 caminhos têm sequência maior. Se este número for bem maior que o da curva real, o passado teve sorte — o azar ainda não apareceu. Neste walk-forward, o número veio da curva inteira.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quantos dias de operação seguidos fechando no prejuízo você deve estar preparado para viver. Dia sem operação não conta. Só 5 de cada 100 caminhos têm sequência maior. Se este número for bem maior que o da curva real, o passado teve sorte — o azar ainda não apareceu. Neste walk-forward, o número veio da curva inteira.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "15",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "na curva real: 11",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "dias até novo topo",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quantos dias de pregão a estratégia costuma passar abaixo do último topo antes de superá-lo. O valor é o caso típico; o pior caso fica ao lado. O prazo é de 131 pregões (até a próxima reotimização). Bom: até metade do prazo. Ruim: quase o prazo inteiro. Neste walk-forward, o número veio da curva inteira.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quantos dias de pregão a estratégia costuma passar abaixo do último topo antes de superá-lo. O valor é o caso típico; o pior caso fica ao lado. O prazo é de 131 pregões (até a próxima reotimização). Bom: até metade do prazo. Ruim: quase o prazo inteiro. Neste walk-forward, o número veio da curva inteira.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "57",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "pior caso: 125 de 131 pregões",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "perda com outra ordem",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Os MESMOS trades da curva, embaralhados: o lucro final não muda, só a ordem. Mede o azar de os prejuízos virem todos juntos, no período inteiro (não nos próximos meses) — por isso é maior que a perda esperada e não se compara direto com ela. Bom: até 10% do capital. Ruim: acima de 20%.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Os MESMOS trades da curva, embaralhados: o lucro final não muda, só a ordem. Mede o azar de os prejuízos virem todos juntos, no período inteiro (não nos próximos meses) — por isso é maior que a perda esperada e não se compara direto com ela. Bom: até 10% do capital. Ruim: acima de 20%.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 1.395,00",
+                   "className": "ct-valor tom-medio"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "14,0% do capital · período inteiro",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              }
+             ]
+            },
+            "type": "Tbody"
+           },
+           "className": "cand-tab"
+          },
+          "type": "Table"
+         },
+         "className": "cand-tab-rola"
+        },
+        "type": "Div"
+       }
+      ],
+      "className": "cand-tab-bloco"
+     },
+     "type": "Div"
+    }
+   ],
+   "className": "cand-tabelas"
+  },
+  "type": "Div"
+ },
+ "bloco_robustez_holdout": {
+  "ns": "dash_html_components",
+  "props": {
+   "children": [
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Resultado fora da amostra",
+            "className": "grp"
+           },
+           "type": "H3"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "aria-label": "Os mesmos números da aba Walk-Forward: o que a estratégia fez nos meses que o otimizador não viu.",
+            "children": "?",
+            "className": "dica-mark",
+            "data-dica": "Os mesmos números da aba Walk-Forward: o que a estratégia fez nos meses que o otimizador não viu.",
+            "role": "button",
+            "tabIndex": "0"
+           },
+           "type": "Span"
+          }
+         ],
+         "className": "secao-head"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": {
+          "ns": "dash_html_components",
+          "props": {
+           "children": {
+            "ns": "dash_html_components",
+            "props": {
+             "children": [
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "período",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "O trecho que a curva fora da amostra cobre: do início do OOS da primeira janela ao fim do OOS da última. O IS da primeira janela fica de fora — ali só se otimizou, nada foi operado.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "O trecho que a curva fora da amostra cobre: do início do OOS da primeira janela ao fim do OOS da última. O IS da primeira janela fica de fora — ali só se otimizou, nada foi operado.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "02/01/2023 → 29/12/2023",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "fora da amostra, janela após janela",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "lucro líquido",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "A soma de todos os pedaços fora da amostra, já descontado o custo. É o único número de lucro desta tela que não teve o otimizador olhando: em cada trecho, os parâmetros foram escolhidos só com o dado anterior a ele. Compare com o lucro do backtest otimizado no período inteiro — a diferença entre os dois é o sobreajuste, em reais.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "A soma de todos os pedaços fora da amostra, já descontado o custo. É o único número de lucro desta tela que não teve o otimizador olhando: em cada trecho, os parâmetros foram escolhidos só com o dado anterior a ele. Compare com o lucro do backtest otimizado no período inteiro — a diferença entre os dois é o sobreajuste, em reais.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 5.474,00",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "bruto R$ 5.984,00 − custo R$ 510,00",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "max drawdown",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "O maior mergulho da curva fora da amostra, do topo ao fundo. É o número mais realista de sofrimento que esta plataforma produz, porque a curva dele nunca viu o futuro. '% do pico' divide pelo topo alcançado até ali; '% do capital', pelo que se depositou. Compare com o drawdown do backtest otimizado: se o daqui for muito maior, o backtest estava escondendo risco. O portão desta plataforma aceita até 1,5× o drawdown do IS.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "O maior mergulho da curva fora da amostra, do topo ao fundo. É o número mais realista de sofrimento que esta plataforma produz, porque a curva dele nunca viu o futuro. '% do pico' divide pelo topo alcançado até ali; '% do capital', pelo que se depositou. Compare com o drawdown do backtest otimizado: se o daqui for muito maior, o backtest estava escondendo risco. O portão desta plataforma aceita até 1,5× o drawdown do IS.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 791,00",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "6,3% do pico · 7,9% do capital",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "profit factor",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto se ganhou para cada R$ 1 perdido, fora da amostra. Abaixo de 1,0 a estratégia perde dinheiro em dado novo, por mais bonito que seja o backtest. De 1,2 a 1,6 é o normal de um sistema real de day trade.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto se ganhou para cada R$ 1 perdido, fora da amostra. Abaixo de 1,0 a estratégia perde dinheiro em dado novo, por mais bonito que seja o backtest. De 1,2 a 1,6 é o normal de um sistema real de day trade.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "1,44",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "win rate",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Percentual de operações vencedoras fora da amostra. Sozinho não diz nada: leia junto do payoff. O que importa é ele não despencar em relação ao backtest — se despencar, o gatilho estava ajustado ao ruído.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Percentual de operações vencedoras fora da amostra. Sozinho não diz nada: leia junto do payoff. O que importa é ele não despencar em relação ao backtest — se despencar, o gatilho estava ajustado ao ruído.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "23,3%",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "payoff",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Ganho médio dividido pela perda média. Multiplicado pelo win rate é o que define se a expectativa é positiva. Com 50% de acerto, qualquer payoff acima de 1,0 lucra antes do custo.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Ganho médio dividido pela perda média. Multiplicado pelo win rate é o que define se a expectativa é positiva. Com 50% de acerto, qualquer payoff acima de 1,0 lucra antes do custo.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "4,73",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "expectativa",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto cada operação rendeu, em média, fora da amostra. É a expectativa honesta — a do backtest otimizado é sempre melhor que a realidade. É ela que tem que cobrir o slippage que o backtest não viu.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto cada operação rendeu, em média, fora da amostra. É a expectativa honesta — a do backtest otimizado é sempre melhor que a realidade. É ela que tem que cobrir o slippage que o backtest não viu.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 10,73",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "por trade",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "fator recuperação",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Lucro líquido dividido pelo max drawdown: quantas vezes a estratégia repôs o pior mergulho que deu. Abaixo de 1,0 o lucro do período inteiro não cobre um drawdown. Acima de 3,0 é bom.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Lucro líquido dividido pelo max drawdown: quantas vezes a estratégia repôs o pior mergulho que deu. Abaixo de 1,0 o lucro do período inteiro não cobre um drawdown. Acima de 3,0 é bom.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "6,92",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "sharpe",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "A mesma conta do Backtest — retorno diário anualizado sobre a volatilidade diária — feita sobre os pregões da curva fora da amostra. Acima de 1,0 é bom. Espere um número menor que o do backtest otimizado; quando ficam próximos, o otimizador não estava inflando o resultado. O Sortino pune só a oscilação para baixo.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "A mesma conta do Backtest — retorno diário anualizado sobre a volatilidade diária — feita sobre os pregões da curva fora da amostra. Acima de 1,0 é bom. Espere um número menor que o do backtest otimizado; quando ficam próximos, o otimizador não estava inflando o resultado. O Sortino pune só a oscilação para baixo.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "1,27",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "sortino 3,74",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "trades",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Tamanho da amostra fora da amostra. O portão desta plataforma pede ao menos 300: abaixo disso o WFE e as janelas positivas ainda podem ser acaso, por melhores que pareçam.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Tamanho da amostra fora da amostra. O portão desta plataforma pede ao menos 300: abaixo disso o WFE e as janelas positivas ainda podem ser acaso, por melhores que pareçam.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "510",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "1,49 por pregão",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "holdout",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto a curva rendeu por mês nos meses do HOLDOUT (o trecho final que nenhuma combinação minerada enxergou) contra quanto rendia por mês ANTES do corte. É a mesma curva do portão \"O holdout confirma?\", só em reais por mês em vez de caminhos simulados — quem decide passa ou reprova é aquele portão, não esta linha.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto a curva rendeu por mês nos meses do HOLDOUT (o trecho final que nenhuma combinação minerada enxergou) contra quanto rendia por mês ANTES do corte. É a mesma curva do portão \"O holdout confirma?\", só em reais por mês em vez de caminhos simulados — quem decide passa ou reprova é aquele portão, não esta linha.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 850,00/mês no holdout",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 620,00/mês antes do corte",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              }
+             ]
+            },
+            "type": "Tbody"
+           },
+           "className": "cand-tab"
+          },
+          "type": "Table"
+         },
+         "className": "cand-tab-rola"
+        },
+        "type": "Div"
+       }
+      ],
+      "className": "cand-tab-bloco"
+     },
+     "type": "Div"
+    },
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Quanto a estratégia aguenta",
+            "className": "grp"
+           },
+           "type": "H3"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "aria-label": "A plataforma sorteia 2.000 caminhos possíveis para a estratégia, usando os dias reais que ela já operou em outra ordem e combinação. Os números dizem o que acontece nos caminhos ruins — não no que você viu, que é só um deles. Cada linha é o pior caminho PARA AQUELA métrica: os números ruins de linhas diferentes não aconteceram todos juntos, no mesmo caminho sorteado.",
+            "children": "?",
+            "className": "dica-mark",
+            "data-dica": "A plataforma sorteia 2.000 caminhos possíveis para a estratégia, usando os dias reais que ela já operou em outra ordem e combinação. Os números dizem o que acontece nos caminhos ruins — não no que você viu, que é só um deles. Cada linha é o pior caminho PARA AQUELA métrica: os números ruins de linhas diferentes não aconteceram todos juntos, no mesmo caminho sorteado.",
+            "role": "button",
+            "tabIndex": "0"
+           },
+           "type": "Span"
+          }
+         ],
+         "className": "secao-head"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": {
+          "ns": "dash_html_components",
+          "props": {
+           "children": {
+            "ns": "dash_html_components",
+            "props": {
+             "children": [
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "perda esperada · 6 meses",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "A maior queda a partir de um topo que você deve esperar nos próximos 6 meses, até a próxima reotimização. Só 5 de cada 100 caminhos sorteados perdem mais do que isso. É a base para decidir quando desligar o robô. Bom: até 10% do capital. Ruim: acima de 20%. Neste walk-forward, o número veio da curva inteira.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "A maior queda a partir de um topo que você deve esperar nos próximos 6 meses, até a próxima reotimização. Só 5 de cada 100 caminhos sorteados perdem mais do que isso. É a base para decidir quando desligar o robô. Bom: até 10% do capital. Ruim: acima de 20%. Neste walk-forward, o número veio da curva inteira.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 831,00",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "8,3% do capital",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "dias perdendo seguidos",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quantos dias de operação seguidos fechando no prejuízo você deve estar preparado para viver. Dia sem operação não conta. Só 5 de cada 100 caminhos têm sequência maior. Se este número for bem maior que o da curva real, o passado teve sorte — o azar ainda não apareceu. Neste walk-forward, o número veio da curva inteira.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quantos dias de operação seguidos fechando no prejuízo você deve estar preparado para viver. Dia sem operação não conta. Só 5 de cada 100 caminhos têm sequência maior. Se este número for bem maior que o da curva real, o passado teve sorte — o azar ainda não apareceu. Neste walk-forward, o número veio da curva inteira.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "15",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "na curva real: 11",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "dias até novo topo",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quantos dias de pregão a estratégia costuma passar abaixo do último topo antes de superá-lo. O valor é o caso típico; o pior caso fica ao lado. O prazo é de 131 pregões (até a próxima reotimização). Bom: até metade do prazo. Ruim: quase o prazo inteiro. Neste walk-forward, o número veio da curva inteira.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quantos dias de pregão a estratégia costuma passar abaixo do último topo antes de superá-lo. O valor é o caso típico; o pior caso fica ao lado. O prazo é de 131 pregões (até a próxima reotimização). Bom: até metade do prazo. Ruim: quase o prazo inteiro. Neste walk-forward, o número veio da curva inteira.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "57",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "pior caso: 125 de 131 pregões",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "perda com outra ordem",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Os MESMOS trades da curva, embaralhados: o lucro final não muda, só a ordem. Mede o azar de os prejuízos virem todos juntos, no período inteiro (não nos próximos meses) — por isso é maior que a perda esperada e não se compara direto com ela. Bom: até 10% do capital. Ruim: acima de 20%.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Os MESMOS trades da curva, embaralhados: o lucro final não muda, só a ordem. Mede o azar de os prejuízos virem todos juntos, no período inteiro (não nos próximos meses) — por isso é maior que a perda esperada e não se compara direto com ela. Bom: até 10% do capital. Ruim: acima de 20%.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 1.395,00",
+                   "className": "ct-valor tom-medio"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "14,0% do capital · período inteiro",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              }
+             ]
+            },
+            "type": "Tbody"
+           },
+           "className": "cand-tab"
+          },
+          "type": "Table"
+         },
+         "className": "cand-tab-rola"
+        },
+        "type": "Div"
+       }
+      ],
+      "className": "cand-tab-bloco"
+     },
+     "type": "Div"
+    }
+   ],
+   "className": "cand-tabelas"
+  },
+  "type": "Div"
+ },
+ "bloco_tamanho": {
+  "ns": "dash_html_components",
+  "props": {
+   "children": [
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Quanto operar",
+            "className": "grp"
+           },
+           "type": "H3"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "aria-label": "O tamanho da posição sai da perda de um contrato num pregão ruim, não do lucro esperado. Três contas limitam ao mesmo tempo, e vale a menor delas.",
+            "children": "?",
+            "className": "dica-mark",
+            "data-dica": "O tamanho da posição sai da perda de um contrato num pregão ruim, não do lucro esperado. Três contas limitam ao mesmo tempo, e vale a menor delas.",
+            "role": "button",
+            "tabIndex": "0"
+           },
+           "type": "Span"
+          }
+         ],
+         "className": "secao-head"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": {
+          "ns": "dash_html_components",
+          "props": {
+           "children": {
+            "ns": "dash_html_components",
+            "props": {
+             "children": [
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "contratos",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quantos contratos operar. É o menor de três contas: o que o seu risco por pregão permite, o que a garantia da corretora permite, e o que sobra para pagar as duas coisas no mesmo dia. Sempre arredondado para baixo — entre 1 e 2 contratos o risco dobra. Zero contratos não é erro: é o capital não comportar o instrumento, e a nota diz qual das contas zerou. Bom: 1 ou mais. Ruim: zero — e aí baixar o risco não resolve, porque ele já está no limite; só mais capital ou limite de operações no dia mais apertado.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quantos contratos operar. É o menor de três contas: o que o seu risco por pregão permite, o que a garantia da corretora permite, e o que sobra para pagar as duas coisas no mesmo dia. Sempre arredondado para baixo — entre 1 e 2 contratos o risco dobra. Zero contratos não é erro: é o capital não comportar o instrumento, e a nota diz qual das contas zerou. Bom: 1 ou mais. Ruim: zero — e aí baixar o risco não resolve, porque ele já está no limite; só mais capital ou limite de operações no dia mais apertado.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "3",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "quem limitou: risco",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "risco por pregão",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto do capital você perde num pregão ruim com os contratos escolhidos. É por PREGÃO, não por operação: a perda de referência é de um dia inteiro, então quem opera três vezes por dia não multiplica por três. O valor real fica abaixo do pedido porque o número de contratos é inteiro, e o pedido é o teto. Bom: até 1% por pregão. Ruim: acima de 2%, porque a sequência de dias ruins que a tabela mostra logo abaixo viraria uma perda grande demais para continuar operando.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto do capital você perde num pregão ruim com os contratos escolhidos. É por PREGÃO, não por operação: a perda de referência é de um dia inteiro, então quem opera três vezes por dia não multiplica por três. O valor real fica abaixo do pedido porque o número de contratos é inteiro, e o pedido é o teto. Bom: até 1% por pregão. Ruim: acima de 2%, porque a sequência de dias ruins que a tabela mostra logo abaixo viraria uma perda grande demais para continuar operando.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "0,90%",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "você pediu 1,0%",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "perda de referência",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "A perda de UM contrato que decide o tamanho da posição: vale a pior entre a média dos 5% piores dias e um dia ruim de execução. É uma MÉDIA dos dias ruins, não o teto deles — metade dos dias ruins perde mais que isso. Bom: até 2% do seu capital, porque aí 1 contrato cabe com folga. Ruim: acima de 5%, quando o capital praticamente não comporta o instrumento.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "A perda de UM contrato que decide o tamanho da posição: vale a pior entre a média dos 5% piores dias e um dia ruim de execução. É uma MÉDIA dos dias ruins, não o teto deles — metade dos dias ruins perde mais que isso. Bom: até 2% do seu capital, porque aí 1 contrato cabe com folga. Ruim: acima de 5%, quando o capital praticamente não comporta o instrumento.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 300,00",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "a média dos 5% piores pregões",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "dia ruim de execução",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "O dia em que todo stop que o seu limite diário permite bate, e o último sai com o dobro do tamanho porque não havia preço. Pode nunca ter acontecido na sua curva e ainda assim acontecer amanhã — por isso ele entra na conta. Quantos stops cabem no dia sai do seu limite diário; sem limite nenhum, sai do pregão mais movimentado que a sua curva já teve. Ruim: quando ele fica muito maior que a média dos dias ruins, porque aí é ele que decide o seu tamanho. Apertar o máximo de operações por dia derruba este número direto.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "O dia em que todo stop que o seu limite diário permite bate, e o último sai com o dobro do tamanho porque não havia preço. Pode nunca ter acontecido na sua curva e ainda assim acontecer amanhã — por isso ele entra na conta. Quantos stops cabem no dia sai do seu limite diário; sem limite nenhum, sai do pregão mais movimentado que a sua curva já teve. Ruim: quando ele fica muito maior que a média dos dias ruins, porque aí é ele que decide o seu tamanho. Apertar o máximo de operações por dia derruba este número direto.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 240,00",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "todos os stops do dia, o último com o dobro do tamanho",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "pior pregão já ocorrido",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "O pior dia que a curva fora da amostra já teve, por contrato. Não dimensiona nada de propósito: ele é um recorde, que só piora conforme o histórico cresce, e um único registro torto passaria a decidir sozinho o seu tamanho de posição. Serve de referência: se ele for muito maior que a média dos dias ruins, você já viveu um dia fora da curva — e vai viver de novo. Bom: perto da média dos dias ruins. Ruim: várias vezes maior, porque aí o pior dia da sua curva não tem nada a ver com o dia ruim comum.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "O pior dia que a curva fora da amostra já teve, por contrato. Não dimensiona nada de propósito: ele é um recorde, que só piora conforme o histórico cresce, e um único registro torto passaria a decidir sozinho o seu tamanho de posição. Serve de referência: se ele for muito maior que a média dos dias ruins, você já viveu um dia fora da curva — e vai viver de novo. Bom: perto da média dos dias ruins. Ruim: várias vezes maior, porque aí o pior dia da sua curva não tem nada a ver com o dia ruim comum.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 128,00",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "leitura, não dimensiona",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "garantia por contrato",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto a corretora exige de garantia por contrato. Informe a INTRADIÁRIA se você fecha a posição no mesmo dia — a cheia é dez a trinta vezes maior e derrubaria o número de contratos na mesma proporção. Em branco, a conta da garantia fica de fora e só o risco limita. Bom: informada, com o valor que a sua corretora cobra hoje. Ruim: em branco, porque o número de contratos pode sair maior do que ela vai deixar você operar.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto a corretora exige de garantia por contrato. Informe a INTRADIÁRIA se você fecha a posição no mesmo dia — a cheia é dez a trinta vezes maior e derrubaria o número de contratos na mesma proporção. Em branco, a conta da garantia fica de fora e só o risco limita. Bom: informada, com o valor que a sua corretora cobra hoje. Ruim: em branco, porque o número de contratos pode sair maior do que ela vai deixar você operar.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "não informada",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "a conta da garantia ficou de fora",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              }
+             ]
+            },
+            "type": "Tbody"
+           },
+           "className": "cand-tab"
+          },
+          "type": "Table"
+         },
+         "className": "cand-tab-rola"
+        },
+        "type": "Div"
+       }
+      ],
+      "className": "cand-tab-bloco"
+     },
+     "type": "Div"
+    },
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Quando parar",
+            "className": "grp"
+           },
+           "type": "H3"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "aria-label": "Dois níveis, porque um gatilho só é mau detector: parando apenas na queda ruim, você desliga estratégia sadia às vezes e demora demais para desligar a que morreu. Os valores em reais saem da frequência com que você aceita agir à toa — não de um número escolhido no olho.",
+            "children": "?",
+            "className": "dica-mark",
+            "data-dica": "Dois níveis, porque um gatilho só é mau detector: parando apenas na queda ruim, você desliga estratégia sadia às vezes e demora demais para desligar a que morreu. Os valores em reais saem da frequência com que você aceita agir à toa — não de um número escolhido no olho.",
+            "role": "button",
+            "tabIndex": "0"
+           },
+           "type": "Span"
+          }
+         ],
+         "className": "secao-head"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": {
+          "ns": "dash_html_components",
+          "props": {
+           "children": {
+            "ns": "dash_html_components",
+            "props": {
+             "children": [
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "reduzir para 1 contrato",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quando a queda a partir do topo passar deste valor, reduza para 1 contrato. O limite não foi escolhido no olho: você escolhe com que frequência aceita reduzir sem precisar — 20% das vezes, por padrão — e o valor em reais sai disso. Esses 20% querem dizer: em 20 de cada 100 períodos até a próxima reotimização, uma estratégia que continua boa encostaria aqui e você reduziria à toa. Reduzir é barato e se desfaz, por isso pode disparar mais vezes que o desligar. Bom: entre 15% e 25%. Ruim: abaixo de 10%, e você só reduz quando já perdeu demais; acima de 35%, e você vive com meia posição sem motivo.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quando a queda a partir do topo passar deste valor, reduza para 1 contrato. O limite não foi escolhido no olho: você escolhe com que frequência aceita reduzir sem precisar — 20% das vezes, por padrão — e o valor em reais sai disso. Esses 20% querem dizer: em 20 de cada 100 períodos até a próxima reotimização, uma estratégia que continua boa encostaria aqui e você reduziria à toa. Reduzir é barato e se desfaz, por isso pode disparar mais vezes que o desligar. Bom: entre 15% e 25%. Ruim: abaixo de 10%, e você só reduz quando já perdeu demais; acima de 35%, e você vive com meia posição sem motivo.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 1.200,00",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "reduz à toa em 20% dos períodos até reotimizar",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "desligar e reotimizar",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quando a queda chegar aqui, desligue e reotimize antes de voltar. Mesma lógica: você escolhe quantas vezes aceita desligar uma estratégia que ainda funcionava — 5 de cada 100 períodos até a reotimização, por padrão. Bom: até 8%. Ruim: acima de 15%, porque aí o disjuntor dispara sozinho e você nunca vai saber se a estratégia morreu ou só teve azar.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quando a queda chegar aqui, desligue e reotimize antes de voltar. Mesma lógica: você escolhe quantas vezes aceita desligar uma estratégia que ainda funcionava — 5 de cada 100 períodos até a reotimização, por padrão. Bom: até 8%. Ruim: acima de 15%, porque aí o disjuntor dispara sozinho e você nunca vai saber se a estratégia morreu ou só teve azar.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 1.800,00",
+                   "className": "ct-valor tom-bom"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "18,0% do capital · desliga uma estratégia boa em 5,0% dos períodos até reotimizar",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "dias perdendo seguidos",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quantos pregões seguidos no prejuízo você deve estar preparado para viver. Passou disso, reduza — é o mesmo sinal da queda, visto por outro lado. Dia sem operação não conta. Bom: até 8, uma semana e meia de pregões. Ruim: acima de 15, porque quase ninguém segue o plano depois de três semanas perdendo.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quantos pregões seguidos no prejuízo você deve estar preparado para viver. Passou disso, reduza — é o mesmo sinal da queda, visto por outro lado. Dia sem operação não conta. Bom: até 8, uma semana e meia de pregões. Ruim: acima de 15, porque quase ninguém segue o plano depois de três semanas perdendo.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "15",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "também reduz para 1 contrato",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "pior lucro esperado no prazo",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Onde o lucro acumulado costuma estar no PIOR dos casos ao fim do prazo até a próxima reotimização. A plataforma sorteia 2.000 continuações possíveis para a sua estratégia, usando os dias que ela já viveu em outra ordem, e só 1 em cada 10 termina abaixo deste número. Ficar abaixo dele não é azar comum — é sinal de reduzir. Bom: número positivo, ou seja, mesmo o mau caminho ainda termina no lucro.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Onde o lucro acumulado costuma estar no PIOR dos casos ao fim do prazo até a próxima reotimização. A plataforma sorteia 2.000 continuações possíveis para a sua estratégia, usando os dias que ela já viveu em outra ordem, e só 1 em cada 10 termina abaixo deste número. Ficar abaixo dele não é azar comum — é sinal de reduzir. Bom: número positivo, ou seja, mesmo o mau caminho ainda termina no lucro.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "-R$ 200,00",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "ao fim de 131 pregões",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "dias sem novo topo",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "Quanto tempo a estratégia pode passar abaixo do último topo sem que isso signifique que ela quebrou. Passar muito disso é motivo para olhar, mesmo sem a queda ter batido no limite. Bom: até metade do prazo até a reotimização. Ruim: quase o prazo inteiro, porque aí você passaria o ciclo todo no vermelho esperando.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "Quanto tempo a estratégia pode passar abaixo do último topo sem que isso signifique que ela quebrou. Passar muito disso é motivo para olhar, mesmo sem a queda ter batido no limite. Bom: até metade do prazo até a reotimização. Ruim: quase o prazo inteiro, porque aí você passaria o ciclo todo no vermelho esperando.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "125",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "de 131 pregões",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              },
+              {
+               "ns": "dash_html_components",
+               "props": {
+                "children": [
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": [
+                    "limite do dia",
+                    {
+                     "ns": "dash_html_components",
+                     "props": {
+                      "aria-label": "O limite de perda e de operações do dia que vem do seu perfil de execução, já multiplicado pelos contratos. Bom: ter os dois definidos. Ruim: não ter nenhum, porque sem trava o dia pode empilhar perdas — e é justamente isso que engorda a perda de referência lá em cima e derruba o seu número de contratos.",
+                      "children": "?",
+                      "className": "dica-mark",
+                      "data-dica": "O limite de perda e de operações do dia que vem do seu perfil de execução, já multiplicado pelos contratos. Bom: ter os dois definidos. Ruim: não ter nenhum, porque sem trava o dia pode empilhar perdas — e é justamente isso que engorda a perda de referência lá em cima e derruba o seu número de contratos.",
+                      "role": "button",
+                      "tabIndex": "0"
+                     },
+                     "type": "Span"
+                    }
+                   ],
+                   "className": "ct-nome"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "R$ 400,00",
+                   "className": "ct-valor"
+                  },
+                  "type": "Td"
+                 },
+                 {
+                  "ns": "dash_html_components",
+                  "props": {
+                   "children": "6 operações por dia",
+                   "className": "ct-nota"
+                  },
+                  "type": "Td"
+                 }
+                ]
+               },
+               "type": "Tr"
+              }
+             ]
+            },
+            "type": "Tbody"
+           },
+           "className": "cand-tab"
+          },
+          "type": "Table"
+         },
+         "className": "cand-tab-rola"
+        },
+        "type": "Div"
+       }
+      ],
+      "className": "cand-tab-bloco"
+     },
+     "type": "Div"
+    }
+   ],
+   "className": "cand-tabelas"
+  },
+  "type": "Div"
+ },
  "linhas": [
   [
    "Resultado fora da amostra",

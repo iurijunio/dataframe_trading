@@ -185,6 +185,23 @@ def _grade_plato(fr, deploy_idx):
 
 
 # ------------------------------------------------------------- componentes
+def _c(o):
+    """Forma canônica de um componente Dash: dicionário com chaves ordenadas.
+    `str(componente)` mostra os atributos na ordem de criação, que muda de um
+    processo para outro; o dicionário não depende disso."""
+    if hasattr(o, "to_plotly_json"):
+        j = o.to_plotly_json()
+        if "props" not in j:          # figura do plotly, não componente
+            return _c(j)
+        return {"type": j.get("type"), "ns": j.get("namespace"),
+                "props": {k: _c(v) for k, v in sorted(j["props"].items())}}
+    if isinstance(o, dict):
+        return {str(k): _c(v) for k, v in sorted(o.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(o, (list, tuple)):
+        return [_c(v) for v in o]
+    return o
+
+
 def _figs(*figuras) -> list[str]:
     return [f.to_json() for f in figuras]
 
@@ -214,12 +231,12 @@ def _backtest_telas() -> dict:
     custo_ponta = (res.profile.corretagem_por_contrato
                    + res.profile.emolumentos_por_contrato)
     return {
-        "stats_cards.render": str(SC.render(m)),
-        "stats_cards.cartoes": {k: str(v) for k, v in SC.cartoes(m).items()},
+        "stats_cards.render": _c(SC.render(m)),
+        "stats_cards.cartoes": {k: _c(v) for k, v in SC.cartoes(m).items()},
         "stats_cards.itens": SC.itens(m),
         "stats_cards.cartoes_dica": {
-            k: str(v) for k, v in SC.cartoes(m, {"sharpe": "texto novo"}).items()},
-        "detalhes_cards.render": str(DC.render(
+            k: _c(v) for k, v in SC.cartoes(m, {"sharpe": "texto novo"}).items()},
+        "detalhes_cards.render": _c(DC.render(
             m, detalhes.sequencias(liq),
             detalhes.eficiencia(ex["mae"], ex["mfe"], ex["points"], tp_ent,
                                 ex["reason"], K.EXIT_TARGET),
@@ -229,7 +246,7 @@ def _backtest_telas() -> dict:
                            res.n_bars, pregoes),
             AC.barras(detalhes.resultado_por_volume(t["entry_ts"], liq),
                       "Resultado por nº de trades no pregão"), casas=0)),
-        "robustez_cards.render": str(RC.render(
+        "robustez_cards.render": _c(RC.render(
             robustez.monte_carlo(liq, CAPITAL), robustez.significancia(liq),
             robustez.teste_runs(liq), robustez.correlacao_lr(liq, CAPITAL),
             robustez.concentracao(liq), robustez.ulcer_mar(liq, CAPITAL, dias),
@@ -285,10 +302,10 @@ def _mineracao_telas() -> dict:
 
     trials = _trials()
     saida = {
-        "mine_porteira.painel": str(MP.painel(porteira.avaliar(trials))),
-        "mine_porteira.painel_truncada": str(MP.painel(porteira.avaliar(trials), 7)),
-        "mine_regiao.cards": str(MR.cards(MS.resumo(trials))),
-        "mine_regiao.cards_vazio": str(MR.cards({})),
+        "mine_porteira.painel": _c(MP.painel(porteira.avaliar(trials))),
+        "mine_porteira.painel_truncada": _c(MP.painel(porteira.avaliar(trials), 7)),
+        "mine_regiao.cards": _c(MR.cards(MS.resumo(trials))),
+        "mine_regiao.cards_vazio": _c(MR.cards({})),
         "scatter.figura": scatter.figura(trials, "a", "b", None, "robusto").to_json(),
         "scatter.figura_3d": scatter.figura(trials, "a", "b", "lucro", "lucro").to_json(),
         "scatter.figura_metrica_no_eixo": scatter.figura(
@@ -329,13 +346,13 @@ def _wfa_telas() -> dict:
         "curva": WP.curva(ts, liq, steps, passos, CAPITAL).to_json(),
         "curva_fixas_holdout": WP.curva(ts, liq, steps, passos, CAPITAL, fixas,
                                         holdout_de="2023-06-15 00:00:00").to_json(),
-        "kpis": str(WP.kpis(passos, ts, liq, ag, CAPITAL, custo=o["custo"],
+        "kpis": _c(WP.kpis(passos, ts, liq, ag, CAPITAL, custo=o["custo"],
                             saida=o["saida"])),
-        "selo": str(WP.selo(ver)),
-        "selo_candidata": str(WP.selo(ver, titulo="a estratégia está pronta?")),
-        "regiao_larga": str(WP.regiao_larga(perfil, portoes, run_id=1)),
+        "selo": _c(WP.selo(ver)),
+        "selo_candidata": _c(WP.selo(ver, titulo="a estratégia está pronta?")),
+        "regiao_larga": _c(WP.regiao_larga(perfil, portoes, run_id=1)),
         "fita": WP.fita(passos).to_json(),
-        "cards_mensais": str(WP.cards_mensais(mes)),
+        "cards_mensais": _c(WP.cards_mensais(mes)),
         "mensal_fig": WP.mensal_fig(mes).to_json(),
         "linhas_trades": WP.linhas_trades(ts, liq, steps, CAPITAL,
                                           saida=o["saida"], custo=o["custo"],
@@ -361,12 +378,12 @@ def _candidata_telas() -> dict:
     return {
         "linhas": CP.linhas(leitura, CAPITAL),
         "linhas_oos": CP.linhas(leitura, CAPITAL, True, "2023-01-02", "2023-12-29", gate),
-        "bloco_robustez": str(CP.bloco_robustez(leitura, CAPITAL)),
-        "bloco_robustez_holdout": str(CP.bloco_robustez(
+        "bloco_robustez": _c(CP.bloco_robustez(leitura, CAPITAL)),
+        "bloco_robustez_holdout": _c(CP.bloco_robustez(
             leitura, CAPITAL, True, "2023-01-02", "2023-12-29", gate)),
         "linhas_tamanho": CP.linhas_tamanho(dim, ref, disj, CAPITAL),
         "linhas_tamanho_zero": CP.linhas_tamanho(zero, ref, disj, CAPITAL),
-        "bloco_tamanho": str(CP.bloco_tamanho(dim, ref, disj, CAPITAL)),
+        "bloco_tamanho": _c(CP.bloco_tamanho(dim, ref, disj, CAPITAL)),
         "portoes_rapidos": gates,
         "portao_custo_dica": candidata.portao_custo(1500.0, np.ones(510), tick)["dica"],
         "portao_custo": candidata.portao_custo(1500.0, np.ones(510), tick),
@@ -390,11 +407,11 @@ def _ficha_telas() -> dict:
               "emolumentos_por_contrato": 0.25, "slippage_ticks": 1,
               "limite_ganho_contrato": 150.0, "limite_perda_contrato": 100.0}
     return {
-        "ficha": str(FI.ficha(estrategia=estrategia,
+        "ficha": _c(FI.ficha(estrategia=estrategia,
                               params={"periodo_canal": 79, "folga_ticks": 9},
                               perfil=perfil, espaco=espaco,
                               geral={"ativo": "WIN$N", "mineração": "#1"})),
-        "ficha_padrao": str(FI.ficha(estrategia=estrategia, params={},
+        "ficha_padrao": _c(FI.ficha(estrategia=estrategia, params={},
                                      perfil={}, espaco={})),
     }
 
@@ -511,22 +528,22 @@ def _portfolio_com_banco(tmp: Path) -> dict:
         "vazio.correlacao": P.correlacao(vazio),
         "vazio.curvas": P.curvas(vazio), "vazio.resumo": P.resumo(vazio),
         "vazio.simulacao_capital": P.simulacao_capital(vazio),
-        "painel": str(PP.painel()),
-        "cartao_portfolio": str(PP.cartao_portfolio(pid, "portfólio", 2)),
-        "linha_membro": [str(PP.linha_membro(
+        "painel": _c(PP.painel()),
+        "cartao_portfolio": _c(PP.cartao_portfolio(pid, "portfólio", 2)),
+        "linha_membro": [_c(PP.linha_membro(
             m["variante_id"], m["nome"], m["estrategia"],
             m["sem_plano_ativo"], _retorno(curvas["series"].get(m["nome"])))) for m in ms],
-        "tabela_comparativa": str(comparativo),
-        "card_simulacao": str(PP.card_simulacao(sim)),
-        "card_simulacao_vazio": str(PP.card_simulacao(None)),
-        "card_risco": str(PP.card_risco(corr["risco_diario"])),
-        "card_risco_vazio": str(PP.card_risco(None)),
-        "heatmap": str(PP.heatmap(corr["variantes"], corr["matriz"])),
+        "tabela_comparativa": _c(comparativo),
+        "card_simulacao": _c(PP.card_simulacao(sim)),
+        "card_simulacao_vazio": _c(PP.card_simulacao(None)),
+        "card_risco": _c(PP.card_risco(corr["risco_diario"])),
+        "card_risco_vazio": _c(PP.card_risco(None)),
+        "heatmap": _c(PP.heatmap(corr["variantes"], corr["matriz"])),
         "figura_curva_vazia": PP.figura_curva_vazia().to_json(),
         "figura_curva": PP.figura_curva(curvas["series"], curvas["combinada"]).to_json(),
         "figura_crescimento_vazia": PP.figura_crescimento_vazia().to_json(),
         "figura_crescimento": PP.figura_crescimento(cres).to_json(),
-        "resumo_crescimento": str(PP.resumo_crescimento(cres)),
+        "resumo_crescimento": _c(PP.resumo_crescimento(cres)),
     }
     return telas
 

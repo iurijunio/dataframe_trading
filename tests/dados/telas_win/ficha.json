@@ -1,4 +1,2454 @@
 {
- "ficha": "Div(children=[P(children=['parâmetros minerados em destaque, com a faixa testada e a posição do valor nela', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Em destaque, os parâmetros que a mineração VARREU. Embaixo de cada um, a faixa testada e onde o valor escolhido caiu nela. No meio, a otimização achou um ótimo cercado de vizinhos que também foram testados. NA BORDA é alerta: o melhor valor pode estar do lado de fora do que se testou — a faixa cortou o morro ao meio, e o que parece o pico é só a encosta. A saída não é aceitar o valor da borda, e sim minerar de novo alargando a faixa daquele lado. PERTO DA BORDA (último décimo da faixa) pede o mesmo cuidado: o vizinho do teto diz quase o mesmo que o teto.', data-dica='Em destaque, os parâmetros que a mineração VARREU. Embaixo de cada um, a faixa testada e onde o valor escolhido caiu nela. No meio, a otimização achou um ótimo cercado de vizinhos que também foram testados. NA BORDA é alerta: o melhor valor pode estar do lado de fora do que se testou — a faixa cortou o morro ao meio, e o que parece o pico é só a encosta. A saída não é aceitar o valor da borda, e sim minerar de novo alargando a faixa daquele lado. PERTO DA BORDA (último décimo da faixa) pede o mesmo cuidado: o vizinho do teto diz quase o mesmo que o teto.')], className='fi-legenda'), Div(children=[Div(children=[H4(children='Geral', className='fi-grupo'), Div(children=[Span(children='ativo', className='fi-rotulo', title='ativo'), Span(children='WIN$N', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='mineração', className='fi-rotulo', title='mineração'), Span(children='#1', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Estratégia', className='fi-grupo'), Div(children=[Span(children='Período do canal', className='fi-rotulo', title='periodo_canal'), Span(children='79', className='fi-valor'), Div(children=[Span(children='10 → 40 · passo 10', className='fi-intervalo'), Div(children=[Div(children=Span(className='pp-marca pp-borda', style={'left': '100.0%'}), className='pp-trilho'), Span(children='na borda de cima', className='pp-rotulo pp-borda')], className='pp-pos')], className='fi-faixa')], className='fi-linha fi-minerado'), Div(children=[Span(children='Folga do rompimento (ticks)', className='fi-rotulo', title='folga_ticks'), Span(children='9', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Filtro de mercado', className='fi-grupo'), Div(children=[Span(children='ADX · régua', className='fi-rotulo', title='filtro_adx'), Span(children='tendência · ADX ≥ limiar', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='ADX · período', className='fi-rotulo', title='adx_periodo'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='ADX · limiar', className='fi-rotulo', title='adx_limiar'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='DI confirma o lado', className='fi-rotulo', title='adx_filtro_di'), Span(children='não', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='ADX subindo', className='fi-rotulo', title='adx_subindo'), Span(children='não', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Janela', className='fi-grupo'), Div(children=[Span(children='tempo gráfico', className='fi-rotulo', title='timeframe'), Span(children='M1', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='entradas de', className='fi-rotulo', title='entrada_inicio'), Span(children='09:00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='entradas até', className='fi-rotulo', title='entrada_fim'), Span(children='17:00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='fechar posições às', className='fi-rotulo', title='fechamento'), Span(children='17:30', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='dias da semana', className='fi-rotulo', title='dias_semana'), Span(children='seg a sex', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='direção', className='fi-rotulo', title='direcao'), Span(children='compra e venda', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='sem entradas · 1', className='fi-rotulo', title='sem_entrada1'), Span(children='—', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='sem entradas · 2', className='fi-rotulo', title='sem_entrada2'), Span(children='—', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='sem entradas · 3', className='fi-rotulo', title='sem_entrada3'), Span(children='—', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Gestão', className='fi-grupo'), Div(children=[Span(children='tipo de alvo', className='fi-rotulo', title='alvo_tipo'), Span(children='pontos fixos', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='alvo (pontos)', className='fi-rotulo', title='alvo_pontos'), Span(children='600', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='tipo de stop', className='fi-rotulo', title='stop_tipo'), Span(children='pontos fixos', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='stop (pontos)', className='fi-rotulo', title='stop_pontos'), Span(children='300', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Proteções', className='fi-grupo'), Div(children=[Span(children='breakeven · gatilho', className='fi-rotulo', title='breakeven_pct'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='stop móvel · gatilho', className='fi-rotulo', title='step_gatilho_pct'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='stop móvel · trava', className='fi-rotulo', title='step_distancia_pct'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='trailing (pontos)', className='fi-rotulo', title='trailing_pontos'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='tempo máximo (barras)', className='fi-rotulo', title='max_barras'), Span(children='desligado', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Limites diários', className='fi-grupo'), Div(children=[Span(children='ganho máx. por contrato', className='fi-rotulo', title='limite_ganho_contrato'), Span(children='R$ 150,00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='perda máx. por contrato', className='fi-rotulo', title='limite_perda_contrato'), Span(children='R$ 100,00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='máx. operações', className='fi-rotulo', title='max_trades_dia'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='máx. prejuízos', className='fi-rotulo', title='max_prejuizos_dia'), Span(children='desligado', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Custos', className='fi-grupo'), Div(children=[Span(children='corretagem por contrato', className='fi-rotulo', title='corretagem_por_contrato'), Span(children='R$ 0,50', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='emolumentos por contrato', className='fi-rotulo', title='emolumentos_por_contrato'), Span(children='R$ 0,25', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='slippage', className='fi-rotulo', title='slippage_ticks'), Span(children='1 tick', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Posição', className='fi-grupo'), Div(children=[Span(children='modo', className='fi-rotulo', title='modo_posicao'), Span(children='risco fixo', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='risco por trade', className='fi-rotulo', title='risco_por_trade'), Span(children='R$ 200,00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='capital inicial', className='fi-rotulo', title='capital_inicial'), Span(children='R$ 25.000,00', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Filtro de mineração', className='fi-grupo'), Div(children=[Span(children='mínimo de operações', className='fi-rotulo', title='min_operacoes'), Span(children='desligado', className='fi-valor'), None], className='fi-linha')], className='fi-bloco')], className='fi-grade')], className='ficha')",
- "ficha_padrao": "Div(children=[P(children=['parâmetros minerados em destaque, com a faixa testada e a posição do valor nela', Span(children='?', className='dica-mark', role='button', tabIndex='0', aria-label='Em destaque, os parâmetros que a mineração VARREU. Embaixo de cada um, a faixa testada e onde o valor escolhido caiu nela. No meio, a otimização achou um ótimo cercado de vizinhos que também foram testados. NA BORDA é alerta: o melhor valor pode estar do lado de fora do que se testou — a faixa cortou o morro ao meio, e o que parece o pico é só a encosta. A saída não é aceitar o valor da borda, e sim minerar de novo alargando a faixa daquele lado. PERTO DA BORDA (último décimo da faixa) pede o mesmo cuidado: o vizinho do teto diz quase o mesmo que o teto.', data-dica='Em destaque, os parâmetros que a mineração VARREU. Embaixo de cada um, a faixa testada e onde o valor escolhido caiu nela. No meio, a otimização achou um ótimo cercado de vizinhos que também foram testados. NA BORDA é alerta: o melhor valor pode estar do lado de fora do que se testou — a faixa cortou o morro ao meio, e o que parece o pico é só a encosta. A saída não é aceitar o valor da borda, e sim minerar de novo alargando a faixa daquele lado. PERTO DA BORDA (último décimo da faixa) pede o mesmo cuidado: o vizinho do teto diz quase o mesmo que o teto.')], className='fi-legenda'), Div(children=[Div(children=[H4(children='Estratégia', className='fi-grupo'), Div(children=[Span(children='Período do canal', className='fi-rotulo', title='periodo_canal'), Span(children='20', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='Folga do rompimento (ticks)', className='fi-rotulo', title='folga_ticks'), Span(children='1', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Filtro de mercado', className='fi-grupo'), Div(children=[Span(children='ADX · régua', className='fi-rotulo', title='filtro_adx'), Span(children='tendência · ADX ≥ limiar', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='ADX · período', className='fi-rotulo', title='adx_periodo'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='ADX · limiar', className='fi-rotulo', title='adx_limiar'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='DI confirma o lado', className='fi-rotulo', title='adx_filtro_di'), Span(children='não', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='ADX subindo', className='fi-rotulo', title='adx_subindo'), Span(children='não', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Janela', className='fi-grupo'), Div(children=[Span(children='tempo gráfico', className='fi-rotulo', title='timeframe'), Span(children='M1', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='entradas de', className='fi-rotulo', title='entrada_inicio'), Span(children='09:00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='entradas até', className='fi-rotulo', title='entrada_fim'), Span(children='17:00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='fechar posições às', className='fi-rotulo', title='fechamento'), Span(children='17:30', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='dias da semana', className='fi-rotulo', title='dias_semana'), Span(children='seg a sex', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='direção', className='fi-rotulo', title='direcao'), Span(children='compra e venda', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='sem entradas · 1', className='fi-rotulo', title='sem_entrada1'), Span(children='—', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='sem entradas · 2', className='fi-rotulo', title='sem_entrada2'), Span(children='—', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='sem entradas · 3', className='fi-rotulo', title='sem_entrada3'), Span(children='—', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Gestão', className='fi-grupo'), Div(children=[Span(children='tipo de alvo', className='fi-rotulo', title='alvo_tipo'), Span(children='pontos fixos', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='alvo (pontos)', className='fi-rotulo', title='alvo_pontos'), Span(children='600', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='tipo de stop', className='fi-rotulo', title='stop_tipo'), Span(children='pontos fixos', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='stop (pontos)', className='fi-rotulo', title='stop_pontos'), Span(children='300', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Proteções', className='fi-grupo'), Div(children=[Span(children='breakeven · gatilho', className='fi-rotulo', title='breakeven_pct'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='stop móvel · gatilho', className='fi-rotulo', title='step_gatilho_pct'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='stop móvel · trava', className='fi-rotulo', title='step_distancia_pct'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='trailing (pontos)', className='fi-rotulo', title='trailing_pontos'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='tempo máximo (barras)', className='fi-rotulo', title='max_barras'), Span(children='desligado', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Limites diários', className='fi-grupo'), Div(children=[Span(children='ganho máx. por contrato', className='fi-rotulo', title='limite_ganho_contrato'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='perda máx. por contrato', className='fi-rotulo', title='limite_perda_contrato'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='máx. operações', className='fi-rotulo', title='max_trades_dia'), Span(children='desligado', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='máx. prejuízos', className='fi-rotulo', title='max_prejuizos_dia'), Span(children='desligado', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Custos', className='fi-grupo'), Div(children=[Span(children='corretagem por contrato', className='fi-rotulo', title='corretagem_por_contrato'), Span(children='R$ 0,00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='emolumentos por contrato', className='fi-rotulo', title='emolumentos_por_contrato'), Span(children='R$ 0,00', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='slippage', className='fi-rotulo', title='slippage_ticks'), Span(children='1 tick', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Posição', className='fi-grupo'), Div(children=[Span(children='modo', className='fi-rotulo', title='modo_posicao'), Span(children='contratos fixos', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='contratos', className='fi-rotulo', title='contratos'), Span(children='1', className='fi-valor'), None], className='fi-linha'), Div(children=[Span(children='capital inicial', className='fi-rotulo', title='capital_inicial'), Span(children='R$ 10.000,00', className='fi-valor'), None], className='fi-linha')], className='fi-bloco'), Div(children=[H4(children='Filtro de mineração', className='fi-grupo'), Div(children=[Span(children='mínimo de operações', className='fi-rotulo', title='min_operacoes'), Span(children='desligado', className='fi-valor'), None], className='fi-linha')], className='fi-bloco')], className='fi-grade')], className='ficha')"
+ "ficha": {
+  "ns": "dash_html_components",
+  "props": {
+   "children": [
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       "parâmetros minerados em destaque, com a faixa testada e a posição do valor nela",
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "aria-label": "Em destaque, os parâmetros que a mineração VARREU. Embaixo de cada um, a faixa testada e onde o valor escolhido caiu nela. No meio, a otimização achou um ótimo cercado de vizinhos que também foram testados. NA BORDA é alerta: o melhor valor pode estar do lado de fora do que se testou — a faixa cortou o morro ao meio, e o que parece o pico é só a encosta. A saída não é aceitar o valor da borda, e sim minerar de novo alargando a faixa daquele lado. PERTO DA BORDA (último décimo da faixa) pede o mesmo cuidado: o vizinho do teto diz quase o mesmo que o teto.",
+         "children": "?",
+         "className": "dica-mark",
+         "data-dica": "Em destaque, os parâmetros que a mineração VARREU. Embaixo de cada um, a faixa testada e onde o valor escolhido caiu nela. No meio, a otimização achou um ótimo cercado de vizinhos que também foram testados. NA BORDA é alerta: o melhor valor pode estar do lado de fora do que se testou — a faixa cortou o morro ao meio, e o que parece o pico é só a encosta. A saída não é aceitar o valor da borda, e sim minerar de novo alargando a faixa daquele lado. PERTO DA BORDA (último décimo da faixa) pede o mesmo cuidado: o vizinho do teto diz quase o mesmo que o teto.",
+         "role": "button",
+         "tabIndex": "0"
+        },
+        "type": "Span"
+       }
+      ],
+      "className": "fi-legenda"
+     },
+     "type": "P"
+    },
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Geral",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ativo",
+               "className": "fi-rotulo",
+               "title": "ativo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "WIN$N",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "mineração",
+               "className": "fi-rotulo",
+               "title": "mineração"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "#1",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Estratégia",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "Período do canal",
+               "className": "fi-rotulo",
+               "title": "periodo_canal"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "79",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": [
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": "10 → 40 · passo 10",
+                  "className": "fi-intervalo"
+                 },
+                 "type": "Span"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": null,
+                       "className": "pp-marca pp-borda",
+                       "style": {
+                        "left": "100.0%"
+                       }
+                      },
+                      "type": "Span"
+                     },
+                     "className": "pp-trilho"
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "na borda de cima",
+                     "className": "pp-rotulo pp-borda"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "pp-pos"
+                 },
+                 "type": "Div"
+                }
+               ],
+               "className": "fi-faixa"
+              },
+              "type": "Div"
+             }
+            ],
+            "className": "fi-linha fi-minerado"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "Folga do rompimento (ticks)",
+               "className": "fi-rotulo",
+               "title": "folga_ticks"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "9",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Filtro de mercado",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ADX · régua",
+               "className": "fi-rotulo",
+               "title": "filtro_adx"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tendência · ADX ≥ limiar",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ADX · período",
+               "className": "fi-rotulo",
+               "title": "adx_periodo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ADX · limiar",
+               "className": "fi-rotulo",
+               "title": "adx_limiar"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "DI confirma o lado",
+               "className": "fi-rotulo",
+               "title": "adx_filtro_di"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "não",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ADX subindo",
+               "className": "fi-rotulo",
+               "title": "adx_subindo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "não",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Janela",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tempo gráfico",
+               "className": "fi-rotulo",
+               "title": "timeframe"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "M1",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "entradas de",
+               "className": "fi-rotulo",
+               "title": "entrada_inicio"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "09:00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "entradas até",
+               "className": "fi-rotulo",
+               "title": "entrada_fim"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "17:00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "fechar posições às",
+               "className": "fi-rotulo",
+               "title": "fechamento"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "17:30",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "dias da semana",
+               "className": "fi-rotulo",
+               "title": "dias_semana"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "seg a sex",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "direção",
+               "className": "fi-rotulo",
+               "title": "direcao"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "compra e venda",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "sem entradas · 1",
+               "className": "fi-rotulo",
+               "title": "sem_entrada1"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "—",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "sem entradas · 2",
+               "className": "fi-rotulo",
+               "title": "sem_entrada2"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "—",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "sem entradas · 3",
+               "className": "fi-rotulo",
+               "title": "sem_entrada3"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "—",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Gestão",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tipo de alvo",
+               "className": "fi-rotulo",
+               "title": "alvo_tipo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "pontos fixos",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "alvo (pontos)",
+               "className": "fi-rotulo",
+               "title": "alvo_pontos"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "600",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tipo de stop",
+               "className": "fi-rotulo",
+               "title": "stop_tipo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "pontos fixos",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "stop (pontos)",
+               "className": "fi-rotulo",
+               "title": "stop_pontos"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "300",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Proteções",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "breakeven · gatilho",
+               "className": "fi-rotulo",
+               "title": "breakeven_pct"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "stop móvel · gatilho",
+               "className": "fi-rotulo",
+               "title": "step_gatilho_pct"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "stop móvel · trava",
+               "className": "fi-rotulo",
+               "title": "step_distancia_pct"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "trailing (pontos)",
+               "className": "fi-rotulo",
+               "title": "trailing_pontos"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tempo máximo (barras)",
+               "className": "fi-rotulo",
+               "title": "max_barras"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Limites diários",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ganho máx. por contrato",
+               "className": "fi-rotulo",
+               "title": "limite_ganho_contrato"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 150,00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "perda máx. por contrato",
+               "className": "fi-rotulo",
+               "title": "limite_perda_contrato"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 100,00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "máx. operações",
+               "className": "fi-rotulo",
+               "title": "max_trades_dia"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "máx. prejuízos",
+               "className": "fi-rotulo",
+               "title": "max_prejuizos_dia"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Custos",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "corretagem por contrato",
+               "className": "fi-rotulo",
+               "title": "corretagem_por_contrato"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 0,50",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "emolumentos por contrato",
+               "className": "fi-rotulo",
+               "title": "emolumentos_por_contrato"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 0,25",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "slippage",
+               "className": "fi-rotulo",
+               "title": "slippage_ticks"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "1 tick",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Posição",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "modo",
+               "className": "fi-rotulo",
+               "title": "modo_posicao"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "risco fixo",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "risco por trade",
+               "className": "fi-rotulo",
+               "title": "risco_por_trade"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 200,00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "capital inicial",
+               "className": "fi-rotulo",
+               "title": "capital_inicial"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 25.000,00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Filtro de mineração",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "mínimo de operações",
+               "className": "fi-rotulo",
+               "title": "min_operacoes"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       }
+      ],
+      "className": "fi-grade"
+     },
+     "type": "Div"
+    }
+   ],
+   "className": "ficha"
+  },
+  "type": "Div"
+ },
+ "ficha_padrao": {
+  "ns": "dash_html_components",
+  "props": {
+   "children": [
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       "parâmetros minerados em destaque, com a faixa testada e a posição do valor nela",
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "aria-label": "Em destaque, os parâmetros que a mineração VARREU. Embaixo de cada um, a faixa testada e onde o valor escolhido caiu nela. No meio, a otimização achou um ótimo cercado de vizinhos que também foram testados. NA BORDA é alerta: o melhor valor pode estar do lado de fora do que se testou — a faixa cortou o morro ao meio, e o que parece o pico é só a encosta. A saída não é aceitar o valor da borda, e sim minerar de novo alargando a faixa daquele lado. PERTO DA BORDA (último décimo da faixa) pede o mesmo cuidado: o vizinho do teto diz quase o mesmo que o teto.",
+         "children": "?",
+         "className": "dica-mark",
+         "data-dica": "Em destaque, os parâmetros que a mineração VARREU. Embaixo de cada um, a faixa testada e onde o valor escolhido caiu nela. No meio, a otimização achou um ótimo cercado de vizinhos que também foram testados. NA BORDA é alerta: o melhor valor pode estar do lado de fora do que se testou — a faixa cortou o morro ao meio, e o que parece o pico é só a encosta. A saída não é aceitar o valor da borda, e sim minerar de novo alargando a faixa daquele lado. PERTO DA BORDA (último décimo da faixa) pede o mesmo cuidado: o vizinho do teto diz quase o mesmo que o teto.",
+         "role": "button",
+         "tabIndex": "0"
+        },
+        "type": "Span"
+       }
+      ],
+      "className": "fi-legenda"
+     },
+     "type": "P"
+    },
+    {
+     "ns": "dash_html_components",
+     "props": {
+      "children": [
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Estratégia",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "Período do canal",
+               "className": "fi-rotulo",
+               "title": "periodo_canal"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "20",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "Folga do rompimento (ticks)",
+               "className": "fi-rotulo",
+               "title": "folga_ticks"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "1",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Filtro de mercado",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ADX · régua",
+               "className": "fi-rotulo",
+               "title": "filtro_adx"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tendência · ADX ≥ limiar",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ADX · período",
+               "className": "fi-rotulo",
+               "title": "adx_periodo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ADX · limiar",
+               "className": "fi-rotulo",
+               "title": "adx_limiar"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "DI confirma o lado",
+               "className": "fi-rotulo",
+               "title": "adx_filtro_di"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "não",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ADX subindo",
+               "className": "fi-rotulo",
+               "title": "adx_subindo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "não",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Janela",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tempo gráfico",
+               "className": "fi-rotulo",
+               "title": "timeframe"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "M1",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "entradas de",
+               "className": "fi-rotulo",
+               "title": "entrada_inicio"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "09:00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "entradas até",
+               "className": "fi-rotulo",
+               "title": "entrada_fim"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "17:00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "fechar posições às",
+               "className": "fi-rotulo",
+               "title": "fechamento"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "17:30",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "dias da semana",
+               "className": "fi-rotulo",
+               "title": "dias_semana"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "seg a sex",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "direção",
+               "className": "fi-rotulo",
+               "title": "direcao"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "compra e venda",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "sem entradas · 1",
+               "className": "fi-rotulo",
+               "title": "sem_entrada1"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "—",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "sem entradas · 2",
+               "className": "fi-rotulo",
+               "title": "sem_entrada2"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "—",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "sem entradas · 3",
+               "className": "fi-rotulo",
+               "title": "sem_entrada3"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "—",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Gestão",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tipo de alvo",
+               "className": "fi-rotulo",
+               "title": "alvo_tipo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "pontos fixos",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "alvo (pontos)",
+               "className": "fi-rotulo",
+               "title": "alvo_pontos"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "600",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tipo de stop",
+               "className": "fi-rotulo",
+               "title": "stop_tipo"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "pontos fixos",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "stop (pontos)",
+               "className": "fi-rotulo",
+               "title": "stop_pontos"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "300",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Proteções",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "breakeven · gatilho",
+               "className": "fi-rotulo",
+               "title": "breakeven_pct"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "stop móvel · gatilho",
+               "className": "fi-rotulo",
+               "title": "step_gatilho_pct"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "stop móvel · trava",
+               "className": "fi-rotulo",
+               "title": "step_distancia_pct"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "trailing (pontos)",
+               "className": "fi-rotulo",
+               "title": "trailing_pontos"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tempo máximo (barras)",
+               "className": "fi-rotulo",
+               "title": "max_barras"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Limites diários",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "ganho máx. por contrato",
+               "className": "fi-rotulo",
+               "title": "limite_ganho_contrato"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "perda máx. por contrato",
+               "className": "fi-rotulo",
+               "title": "limite_perda_contrato"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "máx. operações",
+               "className": "fi-rotulo",
+               "title": "max_trades_dia"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "máx. prejuízos",
+               "className": "fi-rotulo",
+               "title": "max_prejuizos_dia"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Custos",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "corretagem por contrato",
+               "className": "fi-rotulo",
+               "title": "corretagem_por_contrato"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 0,00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "emolumentos por contrato",
+               "className": "fi-rotulo",
+               "title": "emolumentos_por_contrato"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 0,00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "slippage",
+               "className": "fi-rotulo",
+               "title": "slippage_ticks"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "1 tick",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Posição",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "modo",
+               "className": "fi-rotulo",
+               "title": "modo_posicao"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "contratos fixos",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "contratos",
+               "className": "fi-rotulo",
+               "title": "contratos"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "1",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "capital inicial",
+               "className": "fi-rotulo",
+               "title": "capital_inicial"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "R$ 10.000,00",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       },
+       {
+        "ns": "dash_html_components",
+        "props": {
+         "children": [
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": "Filtro de mineração",
+            "className": "fi-grupo"
+           },
+           "type": "H4"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "mínimo de operações",
+               "className": "fi-rotulo",
+               "title": "min_operacoes"
+              },
+              "type": "Span"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "desligado",
+               "className": "fi-valor"
+              },
+              "type": "Span"
+             },
+             null
+            ],
+            "className": "fi-linha"
+           },
+           "type": "Div"
+          }
+         ],
+         "className": "fi-bloco"
+        },
+        "type": "Div"
+       }
+      ],
+      "className": "fi-grade"
+     },
+     "type": "Div"
+    }
+   ],
+   "className": "ficha"
+  },
+  "type": "Div"
+ }
 }
