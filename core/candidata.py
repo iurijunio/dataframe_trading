@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import wfa
+from . import ativo, wfa
 
 
 def _valor(v):
@@ -529,13 +529,18 @@ def portao_poucos_dias(pnl, quantos: int = 5) -> dict:
         exigido, dica, formato=REAIS)
 
 
-def portao_custo(lucro_liquido: float, contratos, tick_value: float | None) -> dict:
+def portao_custo(lucro_liquido: float, contratos, tick_value: float | None,
+                 simbolo: str | None = None) -> dict:
     nome = "Aguenta custo maior?"
     exigido = "> 0 com +1 tick por ponta"
+    # a frase do mini índice é do WIN (corretagem em reais); em outra moeda
+    # ela seria falsa, então só sai quando o ativo não é BRL
+    frase_win = ("No mini índice 1 tick vale mais que a corretagem "
+                 "inteira, e ordem a mercado na hora da pressa costuma "
+                 "escorregar isso. ") if ativo.moeda_de(simbolo) == "BRL" else ""
     dica = ("O lucro depois de pagar 1 tick a mais na entrada e na saída de "
-            "cada trade. No mini índice 1 tick vale mais que a corretagem "
-            "inteira, e ordem a mercado na hora da pressa costuma escorregar "
-            "isso. Se o lucro some, a estratégia vive no limite do custo.")
+            "cada trade. " + frase_win +
+            "Se o lucro some, a estratégia vive no limite do custo.")
     if tick_value is None:
         # menor: sem `tick_value` no YAML do instrumento, o chamador não
         # pode fingir tick zero (custo extra some e o portão passa à toa) —
@@ -779,7 +784,8 @@ def alerta_reotimizar(percentil: float | None, motivo: str | None = None) -> dic
 
 def portoes_rapidos(trades: list[dict], leitura: dict, trials: list[dict],
                     espaco: dict, deploy: dict, corte, tick_value: float | None,
-                    capital: float, de=None, ate=None) -> list[dict]:
+                    capital: float, de=None, ate=None,
+                    simbolo: str | None = None) -> list[dict]:
     """Os portões e alertas que respondem NA HORA, ao escolher o
     walk-forward — tudo o que não depende dos três testes demorados
     (aleatório, tentativas, reotimizar compensou), que vivem em
@@ -818,7 +824,7 @@ def portoes_rapidos(trades: list[dict], leitura: dict, trials: list[dict],
         *portoes_plato(perfil),
         portao_acaso(pnl),
         portao_poucos_dias(pnl),
-        portao_custo(lucro_liquido, contratos, tick_value),
+        portao_custo(lucro_liquido, contratos, tick_value, simbolo),
         portao_capital(perda_esperada, contratos_por_trade, capital),
         # `corte=None` (mineração sem holdout marcado) vai direto para
         # `portao_holdout`, que sabe dizer "esta mineração não tem holdout

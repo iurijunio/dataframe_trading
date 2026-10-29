@@ -13,13 +13,15 @@ ruim.
 
 from __future__ import annotations
 
+from functools import partial
+
 from dash import dcc, html
 
 from core import candidata
 
 from . import cartao, stats_cards
-from .cartao import brl, dica, faixa, inteiro, pct
-from .wfa_panel import DICAS_OOS, _br
+from .cartao import dica, dinheiro, faixa, inteiro, nome_moeda, pct
+from .wfa_panel import _br, dicas_oos
 
 
 def vazio(mensagem):
@@ -71,7 +73,7 @@ def _tons_do_resultado(m: dict, capital: float) -> dict:
     }
 
 
-def _linha_holdout(holdout_gate: dict | None) -> dict:
+def _linha_holdout(holdout_gate: dict | None, moeda: str = "BRL") -> dict:
     """A linha "holdout" da tabela de resultado fora da amostra.
 
     Os mesmos números que o portão "O holdout confirma?" já calculou — não
@@ -83,7 +85,7 @@ def _linha_holdout(holdout_gate: dict | None) -> dict:
     explica = ("Quanto a curva rendeu por mês nos meses do HOLDOUT (o "
                "trecho final que nenhuma combinação minerada enxergou) "
                "contra quanto rendia por mês ANTES do corte. É a mesma "
-               "curva do portão \"O holdout confirma?\", só em reais por "
+               f"curva do portão \"O holdout confirma?\", só em {nome_moeda(moeda)} por "
                "mês em vez de caminhos simulados — quem decide passa ou "
                "reprova é aquele portão, não esta linha.")
     tem_holdout = (holdout_gate and holdout_gate.get("pregoes_holdout")
@@ -93,15 +95,17 @@ def _linha_holdout(holdout_gate: dict | None) -> dict:
                 "nota": "", "tom": None, "explica": explica}
     return {
         "nome": "holdout",
-        "valor": f"{brl(holdout_gate['lucro_mes_holdout'])}/mês no holdout",
-        "nota": f"{brl(holdout_gate['lucro_mes_antes'])}/mês antes do corte",
+        "valor": (f"{dinheiro(holdout_gate['lucro_mes_holdout'], moeda)}"
+                  "/mês no holdout"),
+        "nota": (f"{dinheiro(holdout_gate['lucro_mes_antes'], moeda)}"
+                 "/mês antes do corte"),
         "tom": None, "explica": explica,
     }
 
 
 def linhas(leitura: dict, capital: float, holdout: bool = False,
-           de=None, ate=None, holdout_gate: dict | None = None
-           ) -> list[tuple[str, str, list[dict]]]:
+           de=None, ate=None, holdout_gate: dict | None = None,
+           moeda: str = "BRL") -> list[tuple[str, str, list[dict]]]:
     """Os grupos da tabela: (título, explicação, linhas).
 
     Cada linha tem nome, valor, nota, explicação do (?) e tom
@@ -115,8 +119,9 @@ def linhas(leitura: dict, capital: float, holdout: bool = False,
     resultado = [{"nome": i["rotulo"], "valor": i["valor"],
                   "nota": i["nota"] or "", "explica": i["explica"],
                   "tom": tons.get(i["rotulo"])}
-                 for i in stats_cards.itens(m, DICAS_OOS)]
-    resultado.append(_linha_holdout(holdout_gate))
+                 for i in stats_cards.itens(m, dicas_oos(moeda), moeda=moeda)]
+    resultado.append(_linha_holdout(holdout_gate, moeda))
+    brl = partial(dinheiro, moeda=moeda)
 
     o = leitura["ordenacao"]
     pior = candidata.pior_dos_recortes(leitura)
@@ -193,12 +198,12 @@ def linhas(leitura: dict, capital: float, holdout: bool = False,
     ]
 
 
-def _reais(v, quando_falta="não medido"):
-    return brl(v) if v is not None else quando_falta
+def _reais(v, quando_falta="não medido", moeda: str = "BRL"):
+    return dinheiro(v, moeda) if v is not None else quando_falta
 
 
 def linhas_tamanho(dim: dict, ref: dict, disj: dict,
-                   capital: float) -> list[tuple[str, str, list[dict]]]:
+                   capital: float, moeda: str = "BRL") -> list[tuple[str, str, list[dict]]]:
     """Os grupos do bloco 5: quanto operar e quando parar.
 
     Mesmo formato dos outros blocos — (título, explicação, linhas) — para
@@ -206,6 +211,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
     já vem de `core/tamanho.py`, e o que falta chega como `None` e aparece
     como "não medido", nunca como zero.
     """
+    reais = partial(_reais, moeda=moeda)
     n = dim.get("n") or 0
     efetivo = dim.get("risco_efetivo_pct")
     pedido = dim.get("risco_pedido_pct")
@@ -239,7 +245,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "por pregão. Ruim: acima de 2%, porque a sequência de "
                      "dias ruins que a tabela mostra logo abaixo viraria uma "
                      "perda grande demais para continuar operando.")},
-        {"nome": "perda de referência", "valor": _reais(ref.get("valor")),
+        {"nome": "perda de referência", "valor": reais(ref.get("valor")),
          "nota": (ref.get("de_onde") or ref.get("motivo") or ""),
          "tom": None,
          "explica": ("A perda de UM contrato que decide o tamanho da "
@@ -249,7 +255,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "isso. Bom: até 2% do seu capital, porque aí 1 contrato "
                      "cabe com folga. Ruim: acima de 5%, quando o capital "
                      "praticamente não comporta o instrumento.")},
-        {"nome": "dia ruim de execução", "valor": _reais(ref.get("dia_ruim")),
+        {"nome": "dia ruim de execução", "valor": reais(ref.get("dia_ruim")),
          "nota": "todos os stops do dia, o último com o dobro do tamanho",
          "tom": None,
          "explica": ("O dia em que todo stop que o seu limite diário permite "
@@ -263,7 +269,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "é ele que decide o seu tamanho. Apertar o máximo de "
                      "operações por dia derruba este número direto.")},
         {"nome": "pior pregão já ocorrido",
-         "valor": _reais(abs(ref["pior_dia"]) if ref.get("pior_dia") else None),
+         "valor": reais(abs(ref["pior_dia"]) if ref.get("pior_dia") else None),
          "nota": "leitura, não dimensiona", "tom": None,
          "explica": ("O pior dia que a curva fora da amostra já teve, por "
                      "contrato. Não dimensiona nada de propósito: ele é um "
@@ -276,7 +282,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "porque aí o pior dia da sua curva não tem nada a ver "
                      "com o dia ruim comum.")},
         {"nome": "garantia por contrato",
-         "valor": _reais(margem, "não informada"),
+         "valor": reais(margem, "não informada"),
          "nota": (f"usando até {pct(dim.get('uso_margem_pct'), 0)} do capital"
                   if margem else "a conta da garantia ficou de fora"),
          "tom": None,
@@ -315,7 +321,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
             return texto
         return f"{hipotetico} · {texto}" if texto else hipotetico
     parar = [
-        {"nome": "reduzir para 1 contrato", "valor": _reais(n1.get("queda")),
+        {"nome": "reduzir para 1 contrato", "valor": reais(n1.get("queda")),
          "nota": nota(f"reduz à toa em {pct(n1.get('alarme_pct'), 0)} dos "
                       "períodos até reotimizar" if n1.get("queda")
                       else disj.get("motivo") or ""),
@@ -324,7 +330,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "reduza para 1 contrato. O limite não foi escolhido no "
                      "olho: você escolhe com que frequência aceita reduzir "
                      "sem precisar — 20% das vezes, por padrão — e o valor em "
-                     "reais sai disso. Esses 20% querem dizer: em 20 de cada "
+                     f"{nome_moeda(moeda)} sai disso. Esses 20% querem dizer: em 20 de cada "
                      "100 períodos até a próxima reotimização, uma estratégia "
                      "que continua boa encostaria aqui e você reduziria à "
                      "toa. Reduzir é barato e se desfaz, por isso pode "
@@ -332,7 +338,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "25%. Ruim: abaixo de 10%, e você só reduz quando já "
                      "perdeu demais; acima de 35%, e você vive com meia "
                      "posição sem motivo.")},
-        {"nome": "desligar e reotimizar", "valor": _reais(n2.get("queda")),
+        {"nome": "desligar e reotimizar", "valor": reais(n2.get("queda")),
          "nota": nota((f"{pct(n2.get('pct'), 1)} do capital · desliga uma "
                        f"estratégia boa em {pct(alarme2, 1)} dos períodos até "
                        "reotimizar")
@@ -356,7 +362,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "Ruim: acima de 15, porque quase ninguém segue o plano "
                      "depois de três semanas perdendo.")},
         {"nome": "pior lucro esperado no prazo",
-         "valor": _reais(n1.get("lucro_no_prazo")),
+         "valor": reais(n1.get("lucro_no_prazo")),
          "nota": nota(f"ao fim de {inteiro(disj.get('horizonte') or 0)} "
                       "pregões" if disj.get("horizonte") else ""),
          "tom": None,
@@ -381,7 +387,7 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
                      "reotimização. Ruim: quase o prazo inteiro, porque aí "
                      "você passaria o ciclo todo no vermelho esperando.")},
         {"nome": "limite do dia",
-         "valor": _reais(disj.get("limite_dia_reais"), "não definido"),
+         "valor": reais(disj.get("limite_dia_reais"), "não definido"),
          "nota": nota((f"{inteiro(disj['limite_dia_trades'])} operações por "
                        "dia") if disj.get("limite_dia_trades")
                       else "sem limite de operações no dia"),
@@ -403,17 +409,18 @@ def linhas_tamanho(dim: dict, ref: dict, disj: dict,
         ("Quando parar",
          "Dois níveis, porque um gatilho só é mau detector: parando apenas na "
          "queda ruim, você desliga estratégia sadia às vezes e demora demais "
-         "para desligar a que morreu. Os valores em reais saem da frequência "
+         f"para desligar a que morreu. Os valores em {nome_moeda(moeda)} saem da frequência "
          "com que você aceita agir à toa — não de um número escolhido no "
          "olho.",
          parar),
     ]
 
 
-def bloco_tamanho(dim: dict, ref: dict, disj: dict, capital: float):
+def bloco_tamanho(dim: dict, ref: dict, disj: dict, capital: float,
+                  moeda: str = "BRL"):
     """As duas tabelas do bloco 5."""
     return html.Div([_tabela(*g) for g in linhas_tamanho(dim, ref, disj,
-                                                         capital)],
+                                                         capital, moeda)],
                     className="cand-tabelas")
 
 
@@ -436,7 +443,8 @@ def _tabela(titulo: str, explica: str, itens: list[dict]):
 
 
 def bloco_robustez(leitura: dict, capital: float, holdout: bool = False,
-                   de=None, ate=None, holdout_gate: dict | None = None):
+                   de=None, ate=None, holdout_gate: dict | None = None,
+                   moeda: str = "BRL"):
     """A tabela da tela: o resultado fora da amostra e quanto ele aguenta.
 
     Cada número de risco é calculado duas vezes — na curva inteira e só nos
@@ -446,7 +454,8 @@ def bloco_robustez(leitura: dict, capital: float, holdout: bool = False,
     if leitura.get("erro"):
         return vazio(leitura["erro"])
     return html.Div([_tabela(*g) for g in linhas(leitura, capital, holdout,
-                                                  de, ate, holdout_gate)],
+                                                  de, ate, holdout_gate,
+                                                  moeda)],
                     className="cand-tabelas")
 
 
@@ -565,7 +574,9 @@ def entradas_tamanho() -> html.Div:
                "então quem opera três vezes por dia não multiplica por três. "
                "1% é um ponto de partida comum; acima de 2% por pregão a "
                "sequência ruim normal já machuca demais.", passo=0.1),
-        _campo("cand-margem", "garantia por contrato (R$)", None,
+        _campo("cand-margem",
+               ["garantia por contrato (", html.Span("R$", id={"type": "moeda-cand", "i": "margem"}), ")"],
+               None,
                "Quanto a corretora exige de garantia por contrato. Informe a "
                "INTRADIÁRIA se você fecha a posição no mesmo dia: a cheia é "
                "dez a trinta vezes maior e derrubaria o número de contratos "

@@ -1486,16 +1486,18 @@ def register(app):
             if not e["rodando"] and e["pronto"]:
                 e["entregue"] = True
 
-    def _regiao_de_hoje(run_id, espaco, passos):
+    def _regiao_de_hoje(run_id, espaco, passos, moeda="BRL"):
         """O bloco "Parâmetros de hoje: a região é larga?", com a conta da
         Candidata sobre os trials que a própria mineração gravou — os mesmos
         que a Candidata carrega (`optimizer.carregar_salva`)."""
         linha = next((p for p in passos if p.janela.deploy), None)
         if linha is None or not linha.params:
-            return WP.regiao_larga(None, None, run_id, sem_deploy=linha is None)
+            return WP.regiao_larga(None, None, run_id, sem_deploy=linha is None,
+                                   moeda=moeda)
         perfil = candidata.perfil_plato(optimizer.carregar_salva(run_id),
                                         espaco or {}, linha.params)
-        return WP.regiao_larga(perfil, candidata.portoes_plato(perfil), run_id)
+        return WP.regiao_larga(perfil, candidata.portoes_plato(perfil), run_id,
+                               moeda=moeda)
 
     def _wfa_montar(gatilho, _n, is_m, oos_m, inteligencia, holdout, travar,
                     run_id, ativo, store_atual, vazio):
@@ -1596,25 +1598,31 @@ def register(app):
         marca = {"fase": "pronta", "run": e["run_id"], "g": e.get("geracao"),
                  "n": len(cache),
                  "cfg": f"{is_m}-{oos_m}-{qual}-{int(estende)}"}
+        moeda = ativo_mod.moeda_de(simbolo)
         return ("",
                 WP.curva(ts, liq, steps, passos, capital, fixas,
-                         holdout_de=e["ate_holdout"] if estende else None),
+                         holdout_de=e["ate_holdout"] if estende else None,
+                         moeda=moeda),
                 WP.kpis(passos, ts, liq, ag, capital,
-                        custo=oos["custo"], saida=oos["exit_ts"]),
+                        custo=oos["custo"], saida=oos["exit_ts"],
+                        moeda=moeda),
                 WP.linhas_steps(passos, d["espaco"]),
                 f"{ag.get('steps', 0)} janelas · IS {is_m}/OOS {oos_m} · {rotulo}"
                 + (" · holdout incluído" if estende else " · até o holdout")
                 + f" · {origem_crit} · {simbolo}",
-                html.Div([WP.selo(ver),
-                          _regiao_de_hoje(run_id, d["espaco"], passos)]),
+                html.Div([WP.selo(ver, moeda=moeda),
+                          _regiao_de_hoje(run_id, d["espaco"], passos,
+                                          moeda)]),
                 WP.drift_figs(wfa.drift(passos, d["espaco"])),
-                WP.fita(passos),
-                WP.cards_mensais(mes),
-                WP.mensal_fig(mes),
+                WP.fita(passos, moeda),
+                WP.cards_mensais(mes, moeda),
+                WP.mensal_fig(mes, moeda),
                 AC.ganho_perda(analytics.por_dia_semana(ts, liq),
-                               "Lucro × prejuízo por dia da semana (OOS)"),
+                               "Lucro × prejuízo por dia da semana (OOS)",
+                               moeda=moeda),
                 AC.ganho_perda(analytics.por_hora(ts, liq, ativo_mod.ficha(simbolo)),
-                               "Lucro × prejuízo por hora de entrada (OOS)"),
+                               "Lucro × prejuízo por hora de entrada (OOS)",
+                               moeda=moeda),
                 WP.linhas_trades(ts, liq, steps, capital,
                                  saida=oos["exit_ts"], custo=oos["custo"],
                                  f=ativo_mod.ficha(simbolo)),
@@ -2003,7 +2011,8 @@ def register(app):
         return titulo, FI.ficha(estrategia=mod, params=escolhido.params,
                                 perfil=(d or {}).get("perfil", {}),
                                 espaco=(d or {}).get("espaco", {}),
-                                geral=geral)
+                                geral=geral,
+                                moeda=ativo_mod.moeda_de(_WFA.get("symbol")))
 
     # ------------------------------------------------------------ diagnóstico
     @app.callback(

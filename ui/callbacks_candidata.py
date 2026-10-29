@@ -8,9 +8,10 @@ para um lugar pequeno quando algo trava.
 from __future__ import annotations
 
 import numpy as np
-from dash import Input, Output, State, ctx, html, no_update
+from dash import ALL, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
+from core import ativo as ativo_mod
 from core import (candidata, codigo, diario, plano, tamanho, wfa, wfa_runner,
                   wfa_store)
 from core import db_manager as db
@@ -20,6 +21,7 @@ from core.candidata_runner import TESTES
 from strategies import registry
 
 from .components import candidata_panel as CP
+from .components.cartao import simbolo_moeda
 from .components import wfa_panel as WP
 
 # o selo compartilha o HTML da aba Walk-Forward (`wfa_panel.selo`), só com
@@ -169,7 +171,7 @@ def _gates_e_leitura(wfa_id: int, d: dict):
 
     rapidos = candidata.portoes_rapidos(
         trades, leitura, trials, espaco, deploy, corte, tick_value, capital,
-        de=de, ate=ate)
+        de=de, ate=ate, simbolo=d.get("symbol"))
     resultado = TESTES.resultado_de(wfa_id)
     lentos = resultado["portoes"] if resultado else candidata.portoes_pendentes()
     return leitura, rapidos + lentos, de, ate
@@ -402,17 +404,21 @@ def register(app):
         leitura, gates, de, ate = _gates_e_leitura(wid, d)
         holdout_gate = (next((g for g in gates if g["nome"] == "O holdout confirma?"),
                              None) if gates else None)
+        moeda = ativo_mod.moeda_de(d.get("symbol"))
         blocos = CP.bloco_robustez(leitura, capital, holdout=bool(d.get("holdout")),
-                                   de=de, ate=ate, holdout_gate=holdout_gate)
+                                   de=de, ate=ate, holdout_gate=holdout_gate,
+                                   moeda=moeda)
         if gates is None:
             return blocos, CP.vazio(leitura.get("erro") or
                                     "sem dado suficiente para medir os portões"), None
         ver = candidata.veredito(gates)
-        return blocos, WP.selo(ver, titulo=TITULO_SELO), veredito_para_tela(wid, ver)
+        return (blocos, WP.selo(ver, titulo=TITULO_SELO, moeda=moeda),
+                veredito_para_tela(wid, ver))
 
     # ------------------------------------- bloco 5: tamanho e disjuntor
     @app.callback(
         Output("cand-tamanho", "children"),
+        Output({"type": "moeda-cand", "i": ALL}, "children"),
         Input("cand-wfa", "value"),
         Input("cand-risco", "value"),
         Input("cand-margem", "value"),
@@ -427,21 +433,25 @@ def register(app):
         aprovar ou reprovar é sobre a estratégia, tamanho é sobre o bolso.
         """
         if not wfa_id:
-            return CP.vazio("escolha um walk-forward salvo para dimensionar")
+            return (CP.vazio("escolha um walk-forward salvo para dimensionar"),
+                    [simbolo_moeda("BRL")])
         wid = int(wfa_id)
         d = wfa_store.detalhes(wid) or {}
         capital = d.get("capital")
         if capital is None:
-            return CP.vazio("este walk-forward não tem capital gravado")
+            return (CP.vazio("este walk-forward não tem capital gravado"),
+                    [simbolo_moeda("BRL")])
 
+        moeda = ativo_mod.moeda_de(d.get("symbol"))
+        rotulo = [simbolo_moeda(moeda)]
         guardado = leitura_do_wfa(wid, d)
         leitura = guardado["leitura"]
         if leitura.get("erro"):
-            return CP.vazio(leitura["erro"])
+            return CP.vazio(leitura["erro"]), rotulo
         ref, dim, disj = _dimensionar(guardado["trades"], d, leitura,
                                       guardado["de"], guardado["ate"],
                                       risco, margem, uso_margem)
-        return CP.bloco_tamanho(dim, ref, disj, capital)
+        return CP.bloco_tamanho(dim, ref, disj, capital, moeda), rotulo
 
     # ----------------------------------------- gravar o plano de operação
     @app.callback(

@@ -25,7 +25,7 @@ from dash import html
 from core.engine.execution import ExecutionProfile
 
 from . import catalogo as C
-from .cartao import brl, dica, inteiro, num
+from .cartao import dica, dinheiro, inteiro, num
 
 
 # ----------------------------------------------------------- formatação
@@ -46,17 +46,17 @@ def _dias(v) -> str:
     return " · ".join(nomes.get(d, str(d)) for d in dias) or "nenhum"
 
 
-def formatar(campo: str, formato: str, v) -> str:
+def formatar(campo: str, formato: str, v, moeda: str = "BRL") -> str:
     if formato == "opcao":
         return next((r for r, x in C.OPCOES.get(campo, []) if x == v), str(v))
     if formato == "dias":
         return _dias(v)
     if formato == "brl":
-        return "—" if v is None else brl(float(v))
+        return "—" if v is None else dinheiro(float(v), moeda)
     if formato in ("desliga", "brl_desliga", "pct_alvo") and not v:
         return "desligado"
     if formato == "brl_desliga":
-        return brl(float(v))
+        return dinheiro(float(v), moeda)
     if formato == "pct_alvo":
         return f"{valor(v)}% do alvo"
     if formato == "pct_preco":
@@ -164,7 +164,8 @@ def perfil_efetivo(perfil: dict, params: dict) -> dict:
 
 
 def ficha(*, estrategia, params: dict, perfil: dict, espaco: dict,
-          geral: dict[str, str] | None = None) -> html.Div:
+          geral: dict[str, str] | None = None,
+          moeda: str = "BRL") -> html.Div:
     """A ficha inteira, em blocos.
 
     `estrategia` é o módulo (precisa de `params_schema`); `geral` são linhas
@@ -202,7 +203,7 @@ def ficha(*, estrategia, params: dict, perfil: dict, espaco: dict,
         if cond and efetivo.get(cond[0][0]) != cond[0][1]:
             continue          # ex.: ATR do alvo quando o alvo é em pontos
         por_grupo.setdefault(grupo, []).append(
-            _linha(rotulo, formatar(nome, formato, v),
+            _linha(rotulo, formatar(nome, formato, v, moeda),
                    _faixa(nome, v, espaco), nome))
     blocos += [_bloco(g, ls) for g, ls in por_grupo.items()]
     blocos.append(_bloco("outros", outros))

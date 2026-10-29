@@ -11,6 +11,8 @@ nenhum ponto dela o otimizador tinha visto o dado que estava operando.
 
 from __future__ import annotations
 
+from functools import partial
+
 import dash_ag_grid as dag
 import numpy as np
 import plotly.graph_objects as go
@@ -23,7 +25,7 @@ from .. import theme as T
 from .analytics_charts import BASE, EIXO, TITULO, _vazio
 from . import stats_cards as SC
 from . import wfa_matriz as WM
-from .cartao import brl, card, dica, faixa, inteiro, num
+from .cartao import brl, card, dica, dinheiro, faixa, inteiro, nome_moeda, num, simbolo_moeda
 from .ficha import valor as _valor
 
 BRL = {"function": "params.value == null ? '' : params.value.toLocaleString('pt-BR',"
@@ -132,7 +134,7 @@ def linhas_steps(passos, espaco: dict | None = None) -> list[dict]:
 
 # ------------------------------------------------------------------- curva
 def curva(ts, liquido, steps, passos, capital: float,
-          fixas=None, holdout_de=None) -> go.Figure:
+          fixas=None, holdout_de=None, moeda: str = "BRL") -> go.Figure:
     """A curva de capital **trade a trade**, só com os pedaços OOS.
 
     Cada ponto é uma operação. As divisórias verticais marcam onde a
@@ -151,6 +153,8 @@ def curva(ts, liquido, steps, passos, capital: float,
         return _vazio("Rode o walk-forward para ver a curva.")
 
     import numpy as np
+    brl = partial(dinheiro, moeda=moeda)
+    simb = simbolo_moeda(moeda)
 
     eq = capital + np.cumsum(liquido)
     x = np.concatenate(([ts[0] - np.timedelta64(1, "D")], ts))
@@ -164,7 +168,7 @@ def curva(ts, liquido, steps, passos, capital: float,
                    line=dict(color=T.ACCENT, width=1.6),
                    fill="tonexty", fillcolor="rgba(255,74,110,.10)",
                    customdata=np.concatenate(([0], steps)),
-                   hovertemplate="%{x|%d/%m/%Y}<br>R$ %{y:,.2f}"
+                   hovertemplate="%{x|%d/%m/%Y}<br>" + simb + " %{y:,.2f}"
                                  "<br>step %{customdata}<extra></extra>"),
     ])
     pct_fixas = None
@@ -186,8 +190,8 @@ def curva(ts, liquido, steps, passos, capital: float,
         fig.add_trace(go.Scatter(
             x=dq, y=qd[50], mode="lines", name="mediana das fixas",
             line=dict(color=T.MUTED, width=1, dash="dot"),
-            hovertemplate="mediana das fixas<br>%{x|%d/%m/%Y}<br>R$ %{y:,.2f}"
-                          "<extra></extra>"))
+            hovertemplate="mediana das fixas<br>%{x|%d/%m/%Y}<br>" + simb
+                          + " %{y:,.2f}<extra></extra>"))
         # as faixas vão para trás da curva do WFA e do drawdown
         fig.data = fig.data[-5:] + fig.data[:-5]
         pct_fixas = wfa.percentil_na_faixa(fixas, float(np.sum(liquido)))
@@ -212,8 +216,8 @@ def curva(ts, liquido, steps, passos, capital: float,
             fig.add_trace(go.Scatter(
                 x=x[i0:], y=y[i0:], mode="lines", name="holdout",
                 line=dict(color=T.WARN, width=2),
-                hovertemplate="holdout<br>%{x|%d/%m/%Y}<br>R$ %{y:,.2f}"
-                              "<extra></extra>"))
+                hovertemplate="holdout<br>%{x|%d/%m/%Y}<br>" + simb
+                              + " %{y:,.2f}<extra></extra>"))
 
     # uma divisória por reotimização
     for p in passos:
@@ -227,7 +231,7 @@ def curva(ts, liquido, steps, passos, capital: float,
     # atropelavam na mesma faixa de pixels
     fig.update_layout(
         **{**BASE, "margin": dict(l=10, r=10, t=30, b=10)},
-        xaxis=dict(**EIXO), yaxis=dict(**EIXO, title=dict(text="R$", font=dict(size=10))),
+        xaxis=dict(**EIXO), yaxis=dict(**EIXO, title=dict(text=simb, font=dict(size=10))),
         annotations=[dict(
             text=(f"{len(ts)} operações · capital {brl(capital)} → "
                   f"<span style='color:"
@@ -251,47 +255,53 @@ def curva(ts, liquido, steps, passos, capital: float,
 # ------------------------------------------------------------------- KPIs
 # O (?) dos cartões compartilhados com o Backtest, reescrito onde a leitura
 # muda. A conta é a mesma; o que muda é que esta curva nunca viu o futuro.
-DICAS_OOS = {
-    "período": "O trecho que a curva fora da amostra cobre: do início do OOS "
-               "da primeira janela ao fim do OOS da última. O IS da primeira "
-               "janela fica de fora — ali só se otimizou, nada foi operado.",
-    "lucro líquido": "A soma de todos os pedaços fora da amostra, já "
-                     "descontado o custo. É o único número de lucro desta "
-                     "tela que não teve o otimizador olhando: em cada trecho, "
-                     "os parâmetros foram escolhidos só com o dado anterior a "
-                     "ele. Compare com o lucro do backtest otimizado no "
-                     "período inteiro — a diferença entre os dois é o "
-                     "sobreajuste, em reais.",
-    "max drawdown": "O maior mergulho da curva fora da amostra, do topo ao "
-                    "fundo. É o número mais realista de sofrimento que esta "
-                    "plataforma produz, porque a curva dele nunca viu o "
-                    "futuro. '% do pico' divide pelo topo alcançado até ali; "
-                    "'% do capital', pelo que se depositou. Compare com o "
-                    "drawdown do backtest otimizado: se o daqui for muito "
-                    "maior, o backtest estava escondendo risco. O portão "
-                    "desta plataforma aceita até 1,5× o drawdown do IS.",
-    "profit factor": "Quanto se ganhou para cada R$ 1 perdido, fora da "
-                     "amostra. Abaixo de 1,0 a estratégia perde dinheiro em "
-                     "dado novo, por mais bonito que seja o backtest. De 1,2 "
-                     "a 1,6 é o normal de um sistema real de day trade.",
-    "win rate": "Percentual de operações vencedoras fora da amostra. Sozinho "
-                "não diz nada: leia junto do payoff. O que importa é ele não "
-                "despencar em relação ao backtest — se despencar, o gatilho "
-                "estava ajustado ao ruído.",
-    "expectativa": "Quanto cada operação rendeu, em média, fora da amostra. "
-                   "É a expectativa honesta — a do backtest otimizado é "
-                   "sempre melhor que a realidade. É ela que tem que cobrir "
-                   "o slippage que o backtest não viu.",
-    "sharpe": "A mesma conta do Backtest — retorno diário anualizado sobre "
-              "a volatilidade diária — feita sobre os pregões da curva fora "
-              "da amostra. Acima de 1,0 é bom. Espere um número menor que o "
-              "do backtest otimizado; quando ficam próximos, o otimizador "
-              "não estava inflando o resultado. O Sortino pune só a "
-              "oscilação para baixo.",
-    "trades": "Tamanho da amostra fora da amostra. O portão desta plataforma "
-              "pede ao menos 300: abaixo disso o WFE e as janelas positivas "
-              "ainda podem ser acaso, por melhores que pareçam.",
-}
+def dicas_oos(moeda: str = "BRL") -> dict:
+    reais = nome_moeda(moeda)
+    simb = simbolo_moeda(moeda)
+    return {
+        "período": "O trecho que a curva fora da amostra cobre: do início do OOS "
+                   "da primeira janela ao fim do OOS da última. O IS da primeira "
+                   "janela fica de fora — ali só se otimizou, nada foi operado.",
+        "lucro líquido": "A soma de todos os pedaços fora da amostra, já "
+                         "descontado o custo. É o único número de lucro desta "
+                         "tela que não teve o otimizador olhando: em cada trecho, "
+                         "os parâmetros foram escolhidos só com o dado anterior a "
+                         "ele. Compare com o lucro do backtest otimizado no "
+                         "período inteiro — a diferença entre os dois é o "
+                         f"sobreajuste, em {reais}.",
+        "max drawdown": "O maior mergulho da curva fora da amostra, do topo ao "
+                        "fundo. É o número mais realista de sofrimento que esta "
+                        "plataforma produz, porque a curva dele nunca viu o "
+                        "futuro. '% do pico' divide pelo topo alcançado até ali; "
+                        "'% do capital', pelo que se depositou. Compare com o "
+                        "drawdown do backtest otimizado: se o daqui for muito "
+                        "maior, o backtest estava escondendo risco. O portão "
+                        "desta plataforma aceita até 1,5× o drawdown do IS.",
+        "profit factor": f"Quanto se ganhou para cada {simb} 1 perdido, fora da "
+                         "amostra. Abaixo de 1,0 a estratégia perde dinheiro em "
+                         "dado novo, por mais bonito que seja o backtest. De 1,2 "
+                         "a 1,6 é o normal de um sistema real de day trade.",
+        "win rate": "Percentual de operações vencedoras fora da amostra. Sozinho "
+                    "não diz nada: leia junto do payoff. O que importa é ele não "
+                    "despencar em relação ao backtest — se despencar, o gatilho "
+                    "estava ajustado ao ruído.",
+        "expectativa": "Quanto cada operação rendeu, em média, fora da amostra. "
+                       "É a expectativa honesta — a do backtest otimizado é "
+                       "sempre melhor que a realidade. É ela que tem que cobrir "
+                       "o slippage que o backtest não viu.",
+        "sharpe": "A mesma conta do Backtest — retorno diário anualizado sobre "
+                  "a volatilidade diária — feita sobre os pregões da curva fora "
+                  "da amostra. Acima de 1,0 é bom. Espere um número menor que o "
+                  "do backtest otimizado; quando ficam próximos, o otimizador "
+                  "não estava inflando o resultado. O Sortino pune só a "
+                  "oscilação para baixo.",
+        "trades": "Tamanho da amostra fora da amostra. O portão desta plataforma "
+                  "pede ao menos 300: abaixo disso o WFE e as janelas positivas "
+                  "ainda podem ser acaso, por melhores que pareçam.",
+    }
+
+
+DICAS_OOS = dicas_oos("BRL")
 
 
 def _positivos_pct(ag: dict) -> float:
@@ -300,7 +310,7 @@ def _positivos_pct(ag: dict) -> float:
 
 
 def kpis(passos, ts, liquido, agregado: dict, capital: float,
-         custo=None, saida=None) -> html.Div:
+         custo=None, saida=None, moeda: str = "BRL") -> html.Div:
     """Os cartões da curva OOS.
 
     Os de trade (lucro, drawdown, Sharpe…) são os MESMOS do Backtest,
@@ -321,7 +331,7 @@ def kpis(passos, ts, liquido, agregado: dict, capital: float,
         m["periodo"] = (f"{_br(min(j.oos_de for j in reais))} → "
                         f"{_br(max(j.oos_ate for j in reais))}")
     m["periodo_nota"] = "fora da amostra, janela após janela"
-    base = SC.cartoes(m, DICAS_OOS)
+    base = SC.cartoes(m, dicas_oos(moeda), moeda=moeda)
 
     wfe_g = agregado.get("wfe_global")
     med = agregado.get("wfe_mediana")
@@ -357,7 +367,7 @@ def kpis(passos, ts, liquido, agregado: dict, capital: float,
              if agregado.get("periodos_positivos") is not None
              else f"{inteiro(agregado.get('janelas_operadas', 0))} janelas operadas")),
         "lucro por mês": card(
-            "lucro por mês", brl(agregado.get("lucro_mes_oos", 0.0)),
+            "lucro por mês", dinheiro(agregado.get("lucro_mes_oos", 0.0), moeda),
             "O lucro OOS dividido pelos meses de CALENDÁRIO — inclusive os "
             "meses em que nenhuma combinação passou nos critérios e a "
             "estratégia ficou fora do mercado. Esses meses passaram do mesmo "
@@ -802,14 +812,14 @@ def painel():
 # do portão, e renomear a pergunta fazia o número cair na regra genérica sem
 # erro nenhum: um p-valor de 0,03 aparecia como "0,0%".
 _FORMATOS = {
-    "reais": brl,
+    "reais": dinheiro,
     "numero": lambda v: num(v, 2),
     # p-valores são guardados como fração (0,03 = 3%), igual ao limiar deles
     "fracao_em_porcento": lambda v: f"{num(v * 100, 1)}%",
 }
 
 
-def _fmt_portao(p) -> str:
+def _fmt_portao(p, moeda: str = "BRL") -> str:
     v = p["valor"]
     if p["ok"] is None:
         # pendente: nunca reformata o motivo/"aguardando" que o portão já
@@ -825,6 +835,8 @@ def _fmt_portao(p) -> str:
         # Sem este desvio, `inteiro(int(v))` quebrava com ValueError na
         # primeira vez que um destes chegou ao selo.
         return v
+    if p.get("formato") == "reais":
+        return dinheiro(v, moeda)
     if p.get("formato") in _FORMATOS:
         return _FORMATOS[p["formato"]](v)
     nome = p["nome"]
@@ -834,7 +846,7 @@ def _fmt_portao(p) -> str:
     if "WFE" in nome:
         return f"{num(v * 100, 1)}%"
     if "lucro" in nome:
-        return brl(v)
+        return dinheiro(v, moeda)
     if "%" in (p["exigido"] or ""):
         return f"{num(v, 1)}%"
     if "×" in (p["exigido"] or ""):
@@ -842,7 +854,7 @@ def _fmt_portao(p) -> str:
     return inteiro(int(v))
 
 
-def _linha_portao(p: dict) -> html.Div:
+def _linha_portao(p: dict, moeda: str = "BRL") -> html.Div:
     """Uma linha do selo: marca, pergunta com (?), valor, exigido e tipo.
     Separada para o bloco da região larga usar a mesma gramática."""
     if p["ok"] is None:
@@ -854,7 +866,7 @@ def _linha_portao(p: dict) -> html.Div:
     return html.Div([
         html.Span(marca, className=f"portao-marca {classe}"),
         html.Span([p["nome"], dica(p["dica"])], className="portao-nome"),
-        html.Span(_fmt_portao(p), className=f"portao-valor {classe}"),
+        html.Span(_fmt_portao(p, moeda), className=f"portao-valor {classe}"),
         html.Span(p["exigido"], className="portao-exigido"),
         html.Span("crítico" if p["critico"] else "alerta",
                   className=f"portao-tipo {'crit' if p['critico'] else ''}"),
@@ -868,7 +880,7 @@ def _compacto(v: float) -> str:
 
 def regiao_larga(perfil: dict | None, portoes: list[dict] | None,
                  run_id=None, alcance: int = 4,
-                 sem_deploy: bool = False) -> html.Section:
+                 sem_deploy: bool = False, moeda: str = "BRL") -> html.Section:
     """"Parâmetros de hoje: a região é larga?" — a mesma régua da Candidata
     (`candidata.perfil_plato` + `portoes_plato`), já no Walk-Forward.
 
@@ -903,7 +915,7 @@ def regiao_larga(perfil: dict | None, portoes: list[dict] | None,
         corpo = [html.P(texto, className="regiao-nota")]
         return html.Section([titulo, *corpo], className="panel panel-regiao")
 
-    corpo = [html.Div([_linha_portao(p) for p in portoes or []],
+    corpo = [html.Div([_linha_portao(p, moeda) for p in portoes or []],
                       className="portoes")]
     pontos = perfil.get("pontos") or []
     i = next((k for k, x in enumerate(pontos) if x.get("atual")), None)
@@ -933,7 +945,8 @@ def regiao_larga(perfil: dict | None, portoes: list[dict] | None,
     return html.Section([titulo, *corpo], className="panel panel-regiao")
 
 
-def selo(ver: dict, titulo: str = "veredito do walk-forward") -> html.Div:
+def selo(ver: dict, titulo: str = "veredito do walk-forward",
+         moeda: str = "BRL") -> html.Div:
     """O carimbo do walk-forward, na gramática da Porteira da mineração.
 
     `titulo` deixa a Candidata reusar o mesmo carimbo com a pergunta dela
@@ -955,7 +968,7 @@ def selo(ver: dict, titulo: str = "veredito do walk-forward") -> html.Div:
     else:
         motivo = "passou em todos os portões"
 
-    linhas = [_linha_portao(p) for p in ver["portoes"]]
+    linhas = [_linha_portao(p, moeda) for p in ver["portoes"]]
 
     return html.Div([
         html.Div([
@@ -1050,7 +1063,7 @@ def drift_figs(itens: list[dict]) -> html.Div:
 
 
 # ------------------------------------------------------ fita das janelas
-def fita(passos) -> go.Figure:
+def fita(passos, moeda: str = "BRL") -> go.Figure:
     """A escadinha IS/OOS desenhada na linha do tempo.
 
     Barra apagada é a janela de otimização; barra acesa é o pedaço testado
@@ -1088,7 +1101,7 @@ def fita(passos) -> go.Figure:
         else:
             lucro = p.oos.get("lucro", 0.0)
             cor = T.POS if lucro > 0 else T.NEG
-            texto = f"OOS · {_br(j.oos_de)} a {_br(j.oos_ate)}<br>{brl(lucro)}"
+            texto = f"OOS · {_br(j.oos_de)} a {_br(j.oos_ate)}<br>{dinheiro(lucro, moeda)}"
         fig.add_trace(go.Bar(
             y=[y], x=[ms(j.oos_de, j.oos_ate)], base=[iso(j.oos_de)],
             orientation="h",
@@ -1116,28 +1129,30 @@ def fita(passos) -> go.Figure:
 
 
 # --------------------------------------------- eficiência temporal (OOS)
-def mensal_fig(m: dict) -> go.Figure:
+def mensal_fig(m: dict, moeda: str = "BRL") -> go.Figure:
     if not m:
         return _vazio("Rode o walk-forward.")
     fig = go.Figure(go.Bar(
         x=m["rotulos"], y=m["valores"],
         marker=dict(color=[T.POS if v > 0 else T.NEG for v in m["valores"]],
                     line=dict(width=0)),
-        hovertemplate="%{x}<br>R$ %{y:,.2f}<extra></extra>",
+        hovertemplate="%{x}<br>" + simbolo_moeda(moeda) + " %{y:,.2f}<extra></extra>",
     ))
     fig.update_layout(
         **{**BASE, "margin": dict(l=10, r=10, t=30, b=10)},
         title={**TITULO, "text": "Resultado mês a mês, fora da amostra"},
         xaxis=dict(**EIXO, type="category"),
-        yaxis=dict(**EIXO, title=dict(text="R$", font=dict(size=10))),
+        yaxis=dict(**EIXO, title=dict(text=simbolo_moeda(moeda),
+                                      font=dict(size=10))),
         bargap=.2,
     )
     return fig
 
 
-def cards_mensais(m: dict) -> html.Div:
+def cards_mensais(m: dict, moeda: str = "BRL") -> html.Div:
     if not m:
         return html.Div()
+    brl = partial(dinheiro, moeda=moeda)
     return html.Div([
         card("meses positivos", f"{num(m['pct_positivos'], 0)}%",
              "Percentual dos meses fora da amostra que fecharam no azul. É a "
