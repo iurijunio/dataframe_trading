@@ -26,9 +26,12 @@ from ui.components import (analytics_charts, ao_vivo_panel, candidata_panel,
                            results_grid, stats_cards, wfa_panel)
 
 # O simbolo NAO mora mais no codigo: vem do banco. Este e so o padrao de
-# arranque, o primeiro instrumento com barras.
+# arranque: o WIN$N (o ativo principal) quando ele tem barras; senao o primeiro
+# instrumento com barras. Nao pode ser so "o mais populoso": o MNQ passou o WIN.
 def _padrao() -> str:
     lista = D.instrumentos()
+    if any(i["symbol"] == "WIN$N" for i in lista):
+        return "WIN$N"
     return lista[0]["symbol"] if lista else "WIN$N"
 
 # As fontes moram em ui/assets/fontes (fontes.css): sem rede no pregão a tela
