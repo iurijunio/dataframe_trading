@@ -597,7 +597,6 @@ def register(app):
     @app.callback(
         Output({"type": "moeda-c4", "i": ALL}, "children"),
         Input("ativo", "value"),
-        prevent_initial_call=True,
     )
     def rotulos_moeda_c4(simbolo):
         return rotulos_moeda(simbolo, len(ctx.outputs_list))

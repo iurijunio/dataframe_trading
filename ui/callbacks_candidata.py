@@ -437,13 +437,13 @@ def register(app):
                     [simbolo_moeda("BRL")])
         wid = int(wfa_id)
         d = wfa_store.detalhes(wid) or {}
+        moeda = ativo_mod.moeda_de(d.get("symbol"))
+        rotulo = [simbolo_moeda(moeda)]
         capital = d.get("capital")
         if capital is None:
             return (CP.vazio("este walk-forward não tem capital gravado"),
-                    [simbolo_moeda("BRL")])
+                    rotulo)
 
-        moeda = ativo_mod.moeda_de(d.get("symbol"))
-        rotulo = [simbolo_moeda(moeda)]
         guardado = leitura_do_wfa(wid, d)
         leitura = guardado["leitura"]
         if leitura.get("erro"):

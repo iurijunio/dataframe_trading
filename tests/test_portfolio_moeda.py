@@ -205,6 +205,8 @@ def test_risco_sem_instrumento_continua_um_para_um(banco):
     ("2500,50", 2500.5),
     ("200000", 200000.0),
     ("200.000,50", 200000.5),
+    ("0.500", 0.5),
+    ("1.500", 1500.0),
 ])
 def test_parse_capital_formato_brasileiro(texto, valor):
     from ui import callbacks_portfolio as CP
@@ -216,6 +218,11 @@ def test_parse_capital_formato_brasileiro(texto, valor):
 def test_parse_capital_invalido_continua_none(texto):
     from ui import callbacks_portfolio as CP
     assert CP._parse_capital(texto) is None
+
+
+def test_parse_capital_grupo_inicial_com_zero_nao_e_milhar():
+    from ui import callbacks_portfolio as CP
+    assert CP._parse_capital("012.345") != 12345.0
 
 
 # ----------------------------------------------------------------- callbacks

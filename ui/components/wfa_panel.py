@@ -25,7 +25,7 @@ from .. import theme as T
 from .analytics_charts import BASE, EIXO, TITULO, _vazio
 from . import stats_cards as SC
 from . import wfa_matriz as WM
-from .cartao import brl, card, dica, dinheiro, faixa, inteiro, nome_moeda, num, simbolo_moeda
+from .cartao import card, dica, dinheiro, faixa, inteiro, nome_moeda, num, simbolo_moeda
 from .ficha import valor as _valor
 
 BRL = {"function": "params.value == null ? '' : params.value.toLocaleString('pt-BR',"
@@ -812,7 +812,6 @@ def painel():
 # do portão, e renomear a pergunta fazia o número cair na regra genérica sem
 # erro nenhum: um p-valor de 0,03 aparecia como "0,0%".
 _FORMATOS = {
-    "reais": dinheiro,
     "numero": lambda v: num(v, 2),
     # p-valores são guardados como fração (0,03 = 3%), igual ao limiar deles
     "fracao_em_porcento": lambda v: f"{num(v * 100, 1)}%",

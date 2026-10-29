@@ -265,3 +265,16 @@ def test_cand_tamanho_devolve_o_simbolo_da_moeda(monkeypatch):
     assert "R$ 1.500,00" in _txt(corpo)
 
     assert fn(None, 1.0, None, 50.0)[1] == ["R$"]
+
+
+def test_cand_tamanho_sem_capital_mantem_a_moeda_do_ativo(monkeypatch):
+    app = _AppFalso()
+    CC.register(app)
+    fn = app.funcs["cand_tamanho"]
+    det = {"symbol": "MES", "capital": None}
+    monkeypatch.setattr(CC.wfa_store, "detalhes", lambda wid: det)
+    _corpo, rotulo = fn(7, 1.0, 1500.0, 50.0)
+    assert rotulo == ["US$"]
+    det["symbol"] = "WIN$N"
+    _corpo, rotulo = fn(7, 1.0, 1500.0, 50.0)
+    assert rotulo == ["R$"]

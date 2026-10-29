@@ -14,7 +14,7 @@ from .components.cartao import simbolo_moeda
 _CAPITAL_PADRAO = "10000"
 
 
-_MILHAR = re.compile(r"[-+]?\d{1,3}(\.\d{3})+")
+_MILHAR = re.compile(r"[-+]?[1-9]\d{0,2}(\.\d{3})+")
 
 
 def _parse_capital(texto) -> float | None:
