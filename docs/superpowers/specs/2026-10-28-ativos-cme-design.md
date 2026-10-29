@@ -423,3 +423,17 @@ WIN batendo.
 | Mudança no motor altera o WIN | Foto do WIN em toda etapa; funções identidade para o WIN. |
 | Regra de "pregão com falha" descartar dia bom | Lista esperada; qualquer suspeito fora dela para a importação e vai para o usuário. |
 | Arquivos protegidos | Autorizados (D11); mudança mínima, WIN idêntico pela foto. |
+
+## Herança da etapa 1 (para as próximas etapas)
+
+- **Antes de mexer no `run_strategy` (etapa 2):** estender `scripts/foto_win.py` com mineração curta, Walk-Forward curto e rodada de Candidata. Hoje a foto cobre só os planos salvos e um backtest por estratégia.
+- **`int(tick_size)` lido do YAML** (vira 0 ou 1 no MES) em: `core/engine/execution.py:466`, `core/ordens.py:553`, `core/papel.py:255`, `core/papel_leitura.py:303,1112`, `core/papel_vivo.py:128`, `captura.py:256`, `ui/callbacks.py:243`, `ui/callbacks_operacao.py:168`. Passar a usar `ativo.ficha(...).tick_unid`.
+- **No gráfico do MES/MNQ:** marcadores de trade, barra ao vivo e linha de preço ainda saem em relógio de pregão e em inteiro.
+- **Até a etapa 2,** rodar ou minerar no MES/MNQ dá números sem sentido. Não salvar planos neles.
+- **Pendências pequenas:**
+  - `foto_win.comparar` não trata NaN escalar;
+  - `ler_partes` compara floats exatos e ignora `trades`;
+  - não há guarda de NaN em preço;
+  - o UPDATE de `observacao` roda fora da transação do ingest;
+  - faltam testes do gráfico em D1 e em M5/H1 atravessando a pausa.
+- **Pregões descartados** (decisão do usuário em 28/10/2026): toda falha da fonte e todo evento atípico real fica fora — MES 43, MNQ 44 (lista nos YAML).
