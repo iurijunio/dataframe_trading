@@ -14,6 +14,7 @@ from datetime import date, datetime
 
 import numpy as np
 
+from . import ativo as _ativo
 from . import db_manager as db
 from . import diario
 from . import plano as _plano
@@ -22,6 +23,54 @@ from . import variantes as V
 _MIN_DIAS_COMUNS = 20
 _N_SIMULACOES = 2000
 _PERCENTIL_RISCO = 10  # "so e ultrapassado em 10% dos cenarios" - ver spec §5.3
+
+
+class MoedaMista(Exception):
+    """Variantes de moedas diferentes no mesmo portfólio. Não é ValueError
+    de propósito: os `except ValueError` da tela a engoliriam com a mensagem
+    de valor inválido."""
+
+    def __init__(self, moedas):
+        codigos = sorted(moedas)
+        simbolos = [_ativo.SIMBOLOS_MOEDA.get(c, c) for c in codigos]
+        lista = ", ".join(simbolos[:-1]) + " e " + simbolos[-1]
+        super().__init__(
+            f"O portfólio mistura {lista}: variantes de moedas diferentes "
+            f"não podem ficar no mesmo portfólio.")
+        self.moedas = codigos
+
+
+def _symbol_do_wfa(wfa_id: int | None) -> str | None:
+    if wfa_id is None:
+        return None
+    with db.connect(read_only=True) as con:
+        r = con.execute("SELECT symbol FROM wfa_runs WHERE wfa_id = ?",
+                        [wfa_id]).fetchone()
+    return r[0] if r else None
+
+
+def _moeda_unica(symbols) -> str | None:
+    """A moeda de um conjunto de ativos (None = sem plano, não conta);
+    `None` se nenhum tem ativo; levanta MoedaMista se há mais de uma."""
+    moedas = {_ativo.moeda_de(s) for s in symbols if s is not None}
+    if len(moedas) > 1:
+        raise MoedaMista(moedas)
+    return next(iter(moedas), None)
+
+
+def _moeda_dos_membros(ms: list[dict]) -> str | None:
+    return _moeda_unica(m["symbol"] for m in ms if m["wfa_id"] is not None)
+
+
+def moeda(portfolio_id: int) -> str | None:
+    """A moeda dos membros com plano ativo (pelo ativo do walk-forward do
+    plano). `None` se nenhum tem plano; MoedaMista se há mais de uma."""
+    return _moeda_dos_membros(membros(portfolio_id))
+
+
+def _symbol_da_variante(variante_id: int) -> str | None:
+    ativo = V.plano_ativo(variante_id)
+    return _symbol_do_wfa(ativo["wfa_id"]) if ativo else None
 
 
 def criar(nome: str) -> int:
@@ -66,7 +115,17 @@ def definir_capital(portfolio_id: int, capital: float) -> None:
 
 def adicionar_variante(portfolio_id: int, variante_id: int) -> int:
     """Entra ligada, no papel: papel não envia ordem, e começar ligada não
-    faz a incubação perder dias. Já presente: não faz nada."""
+    faz a incubação perder dias. Já presente: não faz nada.
+
+    Moeda diferente da dos membros: levanta MoedaMista e não grava. A moeda
+    é lida ANTES de abrir a escrita - no DuckDB, uma leitura aberta dentro
+    da escrita trava ~15 s e termina em RuntimeError."""
+    with db.connect(read_only=True) as con:
+        vids = [r[0] for r in con.execute(
+            "SELECT variante_id FROM portfolio_membros WHERE portfolio_id = ? "
+            "AND removido_em IS NULL", [portfolio_id]).fetchall()]
+    if variante_id not in vids:
+        _moeda_unica(_symbol_da_variante(v) for v in vids + [variante_id])
     with db.connect_write() as con, db.transacao(con):
         r = con.execute(
             "SELECT ligacao_id FROM portfolio_membros WHERE portfolio_id = ? "
@@ -138,6 +197,7 @@ def membros(portfolio_id: int, hoje: date | None = None) -> list[dict]:
             "variante_id": vid, "nome": nome, "estrategia": estrategia,
             "ligacao_id": lig, "fase": fase, "ligada": bool(ligada),
             "wfa_id": ativo["wfa_id"] if ativo else None,
+            "symbol": _symbol_do_wfa(ativo["wfa_id"]) if ativo else None,
             "sem_plano_ativo": ativo is None,
             **_plano.marca_mesmo_assim(vigor["plano_id"] if vigor else None),
         })
@@ -157,6 +217,7 @@ def _retornos_diarios(wfa_id: int) -> dict:
 
 def correlacao(portfolio_id: int) -> dict:
     ms = membros(portfolio_id)
+    _moeda_dos_membros(ms)
     ativos = [m for m in ms if not m["sem_plano_ativo"]]
     avisos = [f"{m['nome']}: sem plano ativo" for m in ms if m["sem_plano_ativo"]]
 
@@ -196,11 +257,14 @@ def _trades_para_risco(wfa_id: int) -> list[dict]:
             "SELECT symbol FROM wfa_runs WHERE wfa_id = ?", [wfa_id]
         ).fetchone()[0]
         r = con.execute(
-            "SELECT point_value FROM instruments WHERE symbol = ?", [symbol]
+            "SELECT point_value, price_decimals FROM instruments "
+            "WHERE symbol = ?", [symbol]
         ).fetchone()
         # mesmo padrao de fallback ja usado em core/engine/execution.py -
-        # sem cotacao cadastrada assume 1 ponto = R$ 1
-        ponto = float(r[0]) if r and r[0] else 1.0
+        # sem cotacao cadastrada assume 1 unidade = 1 na moeda do ativo.
+        # O mae vem na unidade guardada (preco x 10^price_decimals).
+        ponto = (float(r[0]) / 10 ** int(r[1] or 0)
+                 if r and r[0] else 1.0)
         rows = con.execute(
             "SELECT entry_ts, exit_ts, mae, contratos, liquido "
             "FROM wfa_trades WHERE wfa_id = ? ORDER BY entry_ts",
@@ -311,6 +375,7 @@ def curvas(portfolio_id: int) -> dict:
     janela só.
     """
     ms = membros(portfolio_id)
+    _moeda_dos_membros(ms)
     avisos = []
     series = {}
     todos_trades = []  # (exit_ts, liquido) de TODAS as variantes, pra combinada
@@ -345,15 +410,19 @@ def curvas(portfolio_id: int) -> dict:
     return {"series": series, "combinada": combinada, "avisos": avisos}
 
 
-def _trades_combinados_ordenados(portfolio_id: int) -> list[tuple]:
+def _trades_combinados_ordenados(portfolio_id: int,
+                                 ms: list[dict] | None = None) -> list[tuple]:
     """(exit_ts, liquido, custo) de TODAS as variantes ativas, na ordem
     cronológica REAL de fechamento - não "todos os trades de uma variante,
     depois todos da outra" (a ordem natural de iterar os membros), que
     mediria drawdown/Sharpe sobre um caminho que nunca existiu de verdade
     (achado real do usuário: "888,94 de drawdown, é isso mesmo?" - não
     era). Base compartilhada por `resumo()` e `simulacao_capital()`."""
+    if ms is None:
+        ms = membros(portfolio_id)
+    _moeda_dos_membros(ms)
     todos_trades = []
-    for m in membros(portfolio_id):
+    for m in ms:
         _capital, aviso = _capital_do_membro(m)
         if aviso:
             continue
@@ -375,11 +444,13 @@ def resumo(portfolio_id: int) -> dict | None:
     não têm uma base de verdade pra dividir."""
     from . import metrics
 
+    ms = membros(portfolio_id)
+    _moeda_dos_membros(ms)
     capital_portfolio = _capital_do_portfolio(portfolio_id)
     if capital_portfolio is None:
         return None
 
-    todos_trades = _trades_combinados_ordenados(portfolio_id)
+    todos_trades = _trades_combinados_ordenados(portfolio_id, ms)
     if not todos_trades:
         return None
     saida_ts, liquido, custo = zip(*todos_trades)
@@ -396,8 +467,10 @@ def resumo_membros(portfolio_id: int) -> dict[str, dict]:
     critério de `curvas()`)."""
     from . import metrics
 
+    ms = membros(portfolio_id)
+    _moeda_dos_membros(ms)
     out = {}
-    for m in membros(portfolio_id):
+    for m in ms:
         capital, aviso = _capital_do_membro(m)
         if aviso:
             continue
@@ -549,6 +622,10 @@ def simular_crescimento(portfolio_id: int, capital_inicial: float,
     `None` sem trade histórico nenhum, ou sem nenhuma perda registrada
     (sem perda não dá pra medir o tamanho de 1R - mesma situação do
     Kelly indefinido)."""
+    # a moeda primeiro: um portfólio misto não tem conta nenhuma a fazer,
+    # e a tela mostra isso em vez de "valor inválido"
+    ms = membros(portfolio_id)
+    _moeda_dos_membros(ms)
     if capital_inicial is None or capital_inicial <= 0:
         raise ValueError("capital inicial precisa ser positivo")
     if risco_pct is None or risco_pct <= 0:
@@ -561,7 +638,7 @@ def simular_crescimento(portfolio_id: int, capital_inicial: float,
         # trava o servidor inteiro (achado da revisao)
         raise ValueError(f"número de trades não pode passar de {_N_TRADES_MAX}")
 
-    todos = _trades_combinados_ordenados(portfolio_id)
+    todos = _trades_combinados_ordenados(portfolio_id, ms)
     if not todos:
         return None
     liquido = np.array([t[1] for t in todos])

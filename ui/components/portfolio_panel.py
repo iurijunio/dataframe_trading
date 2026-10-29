@@ -7,12 +7,14 @@ ver docs/superpowers/specs/2026-09-23-portfolio-correlacao-design.md §2.
 from __future__ import annotations
 
 import math
+from functools import partial
 
 import plotly.graph_objects as go
 from dash import dcc, html
 
 from .. import theme as T
-from .cartao import brl, card, etiqueta_mesmo_assim, inteiro, num, pct
+from .cartao import (card, dinheiro, etiqueta_mesmo_assim, inteiro, num, pct,
+                     simbolo_moeda)
 
 # uma cor por variante, na ordem em que entram no portfolio - ciano e
 # violeta primeiro (as duas cores de marca), o resto so para diferenciar
@@ -140,7 +142,7 @@ def cartao_portfolio(portfolio_id: int, nome: str, n_membros: int) -> html.Div:
 def linha_membro(variante_id: int, nome: str, estrategia: str,
                  sem_plano_ativo: bool, resumo: dict | None = None,
                  gravado_mesmo_assim: bool = False,
-                 pendencias: list | None = None) -> html.Div:
+                 pendencias: list | None = None, moeda="BRL") -> html.Div:
     nota = "sem plano ativo" if sem_plano_ativo else "plano ativo"
     filhos = [
         html.Span(f"{nome} · {estrategia}", className="est-variante-nome"),
@@ -153,7 +155,7 @@ def linha_membro(variante_id: int, nome: str, estrategia: str,
     if resumo is not None:
         sinal = "pf-pos" if resumo["retorno"] >= 0 else "pf-neg"
         filhos.append(html.Span(
-            f"{brl(resumo['retorno'])} · {resumo['trades']} trade(s)",
+            f"{dinheiro(resumo['retorno'], moeda)} · {resumo['trades']} trade(s)",
             className=f"est-variante-resumo {sinal}"))
     filhos.append(html.Button("remover", id={"type": "pf-btn-remover",
                                              "variante_id": variante_id},
@@ -161,10 +163,11 @@ def linha_membro(variante_id: int, nome: str, estrategia: str,
     return html.Div(filhos, className="est-variante")
 
 
+# "dinheiro": formatado na moeda do portfólio, em `tabela_comparativa`
 _COLUNAS_COMPARATIVO = [
-    ("capital_inicial", "capital", brl, None),
-    ("lucro_liquido", "lucro líquido", brl, False),
-    ("max_drawdown", "max drawdown", brl, True),
+    ("capital_inicial", "capital", "dinheiro", None),
+    ("lucro_liquido", "lucro líquido", "dinheiro", False),
+    ("max_drawdown", "max drawdown", "dinheiro", True),
     ("max_drawdown_pct_capital", "dd % capital", lambda v: pct(v, 1), True),
     ("fator_recuperacao", "fator recuperação", lambda v: num(v), False),
     ("profit_factor", "profit factor", lambda v: num(v), False),
@@ -201,7 +204,8 @@ def _cor_comparativo(v: float, vmin: float, vmax: float, invertido: bool) -> str
 
 
 def tabela_comparativa(linhas: list[tuple[str, dict, bool]],
-                       capital_definido: bool = True) -> html.Div:
+                       capital_definido: bool = True,
+                       moeda="BRL") -> html.Div:
     """`linhas`: [(nome, resumo, destaque), ...] - `resumo` é o dict de
     `core.metrics.resumo` (mais "capital_inicial"), `destaque` marca a
     linha do portfólio combinado. Sombreado tipo heatmap POR COLUNA (mais
@@ -228,12 +232,14 @@ def tabela_comparativa(linhas: list[tuple[str, dict, bool]],
                if r.get(chave) is not None and not math.isinf(r[chave])]
         faixas[chave] = (min(vals), max(vals)) if vals else None
 
+    din = partial(dinheiro, moeda=moeda)
     cabecalho = html.Tr(
         [html.Th("")] + [html.Th(rot) for _, rot, _, _ in _COLUNAS_COMPARATIVO])
     corpo = []
     for nome, r, destaque in linhas:
         celulas = [html.Td(nome, className="pf-tab-nome")]
         for chave, _, fmt, invertido in _COLUNAS_COMPARATIVO:
+            fmt = din if fmt == "dinheiro" else fmt
             v = r.get(chave)
             texto = fmt(v) if v is not None else "—"
             estilo = {}
@@ -248,7 +254,7 @@ def tabela_comparativa(linhas: list[tuple[str, dict, bool]],
                       className="pf-tabela")
 
 
-def card_simulacao(sim: dict | None) -> html.Div:
+def card_simulacao(sim: dict | None, moeda="BRL") -> html.Div:
     """Critério de Kelly e risco de ruína do portfólio combinado - pedido
     do usuário depois de ver a primeira versão da tela: "risco de ruína,
     capital inicial recomendado, critério de Kelly... você não chegou a
@@ -265,6 +271,7 @@ def card_simulacao(sim: dict | None) -> html.Div:
     else:
         nota_rr = f"mantém o risco de ruína em até {pct(sim['prob_max_pct'], 0)}"
 
+    simb = simbolo_moeda(moeda)
     if sim["kelly_indefinido"]:
         card_kelly = card(
             "risco por trade (critério de kelly)", "indefinido",
@@ -280,8 +287,8 @@ def card_simulacao(sim: dict | None) -> html.Div:
             explica="Não é sobre número de contratos: é a fração DO "
                     "CAPITAL a arriscar em cada trade (não o total da "
                     "posição) pra maximizar o crescimento composto da "
-                    "curva a longo prazo. Ex.: com R$ 100.000 e Kelly de "
-                    "13%, arriscar R$ 13.000 por trade - o stop de cada "
+                    f"curva a longo prazo. Ex.: com {simb} 100.000 e Kelly de "
+                    f"13%, arriscar {simb} 13.000 por trade - o stop de cada "
                     "estratégia é que converte isso em número de "
                     "contratos. Kelly cheio é agressivo demais na "
                     "prática - a maioria usa meio-Kelly.",
@@ -310,12 +317,12 @@ def card_simulacao(sim: dict | None) -> html.Div:
     ], className="cards pf-metricas")
 
 
-def card_risco(risco: dict | None) -> html.Div:
+def card_risco(risco: dict | None, moeda="BRL") -> html.Div:
     if risco is None:
         return html.P("adicione pelo menos duas variantes com plano ativo "
                       "e trades no mesmo dia para ver o risco combinado.")
     sinal = "neg" if risco["p90"] < 0 else "pos"
-    return card("drawdown diário combinado (p90)", brl(risco["p90"]),
+    return card("drawdown diário combinado (p90)", dinheiro(risco["p90"], moeda),
                 explica="Estimativa por simulação: o valor só é "
                         "ultrapassado em 10% dos cenários simulados — não "
                         "é o pior caso absoluto.",
@@ -389,7 +396,8 @@ def figura_curva_vazia(mensagem="adicione variantes com plano ativo para "
     return fig
 
 
-def figura_curva(series: dict, combinada: dict | None = None) -> go.Figure:
+def figura_curva(series: dict, combinada: dict | None = None,
+                 moeda="BRL") -> go.Figure:
     """Uma linha por variante (fina, colorida) mais a linha COMBINADA do
     portfólio (grossa, branca, por cima das outras) - capital do plano
     ativo + trades OOS reais, acumulados em R$. Mesma leitura da curva do
@@ -398,6 +406,7 @@ def figura_curva(series: dict, combinada: dict | None = None) -> go.Figure:
     if not series:
         return figura_curva_vazia()
 
+    simb = simbolo_moeda(moeda)
     fig = go.Figure()
     for i, (nome, dados) in enumerate(series.items()):
         pontos = dados["pontos"]
@@ -412,7 +421,7 @@ def figura_curva(series: dict, combinada: dict | None = None) -> go.Figure:
         fig.add_trace(go.Scatter(
             x=xs, y=ys, mode="lines", name=nome,
             line=dict(color=cor, width=1.4),
-            hovertemplate=f"%{{x|%d/%m/%Y}}<br>{nome}: R$ %{{y:,.2f}}<extra></extra>",
+            hovertemplate=f"%{{x|%d/%m/%Y}}<br>{nome}: {simb} %{{y:,.2f}}<extra></extra>",
         ))
 
     if not fig.data and not (combinada and combinada["pontos"]):
@@ -426,7 +435,7 @@ def figura_curva(series: dict, combinada: dict | None = None) -> go.Figure:
         fig.add_trace(go.Scatter(
             x=xs, y=ys, mode="lines", name="Portfólio (combinado)",
             line=dict(color=T.INK, width=2.6),
-            hovertemplate="%{x|%d/%m/%Y}<br>combinado: R$ %{y:,.2f}<extra></extra>",
+            hovertemplate=f"%{{x|%d/%m/%Y}}<br>combinado: {simb} %{{y:,.2f}}<extra></extra>",
         ))
 
     fig.update_layout(
@@ -439,7 +448,7 @@ def figura_curva(series: dict, combinada: dict | None = None) -> go.Figure:
         xaxis=dict(gridcolor=T.LINE_SOFT, linecolor=T.LINE,
                   tickfont=dict(color=T.MUTED)),
         yaxis=dict(gridcolor=T.LINE_SOFT, linecolor=T.LINE,
-                  tickfont=dict(color=T.MUTED), tickprefix="R$ "),
+                  tickfont=dict(color=T.MUTED), tickprefix=f"{simb} "),
     )
     return fig
 
@@ -450,29 +459,30 @@ def figura_crescimento_vazia(
     return figura_curva_vazia(mensagem)
 
 
-def figura_crescimento(sim: dict) -> go.Figure:
+def figura_crescimento(sim: dict, moeda="BRL") -> go.Figure:
     """Leque de cenários: mediana (p50, linha cheia) com a faixa entre o
     cenário pessimista (p10) e o otimista (p90) sombreada por baixo/cima -
     mesma leitura de banda de confiança usada em projeção financeira, pra
     não passar a falsa certeza de uma única linha "seria assim"."""
+    simb = simbolo_moeda(moeda)
     n = len(sim["p50"])
     xs = list(range(n))
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=xs, y=sim["p90"], mode="lines", name="p90 (otimista)",
         line=dict(color=T.POS, width=0.8),
-        hovertemplate="trade %{x}<br>p90: R$ %{y:,.2f}<extra></extra>",
+        hovertemplate=f"trade %{{x}}<br>p90: {simb} %{{y:,.2f}}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=xs, y=sim["p10"], mode="lines", name="p10 (pessimista)",
         line=dict(color=T.NEG, width=0.8),
         fill="tonexty", fillcolor="rgba(255,255,255,.05)",
-        hovertemplate="trade %{x}<br>p10: R$ %{y:,.2f}<extra></extra>",
+        hovertemplate=f"trade %{{x}}<br>p10: {simb} %{{y:,.2f}}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=xs, y=sim["p50"], mode="lines", name="p50 (mediana)",
         line=dict(color=T.INK, width=2.2),
-        hovertemplate="trade %{x}<br>mediana: R$ %{y:,.2f}<extra></extra>",
+        hovertemplate=f"trade %{{x}}<br>mediana: {simb} %{{y:,.2f}}<extra></extra>",
     ))
     fig.update_layout(
         paper_bgcolor=T.SURFACE, plot_bgcolor=T.SURFACE,
@@ -484,14 +494,15 @@ def figura_crescimento(sim: dict) -> go.Figure:
         xaxis=dict(title="trades à frente", gridcolor=T.LINE_SOFT,
                   linecolor=T.LINE, tickfont=dict(color=T.MUTED)),
         yaxis=dict(gridcolor=T.LINE_SOFT, linecolor=T.LINE,
-                  tickfont=dict(color=T.MUTED), tickprefix="R$ "),
+                  tickfont=dict(color=T.MUTED), tickprefix=f"{simb} "),
     )
     return fig
 
 
-def resumo_crescimento(sim: dict) -> html.Div:
+def resumo_crescimento(sim: dict, moeda="BRL") -> html.Div:
     return html.Div([
-        card("capital final (mediana)", brl(sim["capital_final_mediana"]),
+        card("capital final (mediana)",
+             dinheiro(sim["capital_final_mediana"], moeda),
              explica="Valor do meio entre todos os cenários simulados no "
                      "último trade - metade terminou acima, metade abaixo."),
         card("chance de dobrar o capital", pct(sim["prob_dobrar_pct"], 1)),

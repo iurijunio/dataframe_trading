@@ -1,27 +1,36 @@
 """Callbacks da tela Portfólio — portfólios, membros, correlação e risco."""
 from __future__ import annotations
 
+import re
+
 from dash import ALL, Input, Output, State, ctx, html, no_update
 
 from core import portfolio as P
 from core import variantes as V
 
 from .components import portfolio_panel as PP
+from .components.cartao import simbolo_moeda
 
 _CAPITAL_PADRAO = "10000"
 
 
+_MILHAR = re.compile(r"[-+]?\d{1,3}(\.\d{3})+")
+
+
 def _parse_capital(texto) -> float | None:
-    """Aceita "200000", "200.000,50" (formato BR) ou "200000.50" - digitado
-    livre, sem os botões de +/- que o navegador desenha em <input
-    type=number> (achado real do usuário: queria digitar direto, sem
-    stepper)."""
+    """Formato brasileiro: ponto é milhar, vírgula é decimal - "10.000",
+    "R$ 10.000", "US$ 10.000,00", "200.000,50" - digitado livre, sem os
+    botões de +/- que o navegador desenha em <input type=number> (achado
+    real do usuário: queria digitar direto, sem stepper). Sem vírgula, o
+    ponto só é milhar quando separa grupos de 3 dígitos ("10.000"); assim
+    "0.5" no risco % e "200000.50" continuam decimais (decisão do usuário
+    em 29/10: "10.000" era lido como 10)."""
     if texto is None:
         return None
-    limpo = str(texto).strip().replace("R$", "").replace(" ", "")
+    limpo = re.sub(r"\s", "", str(texto).replace("US$", "").replace("R$", ""))
     if not limpo:
         return None
-    if "," in limpo:
+    if "," in limpo or _MILHAR.fullmatch(limpo):
         limpo = limpo.replace(".", "").replace(",", ".")
     try:
         return float(limpo)
@@ -72,6 +81,8 @@ def register(app):
         Output("pf-risco", "children"),
         Output("pf-avisos", "children"),
         Output("store-portfolio-aberto", "data"),
+        Output("pf-capital", "placeholder"),
+        Output("pf-cresc-capital", "placeholder"),
         Input({"type": "pf-cartao", "portfolio_id": ALL}, "n_clicks"),
         Input("pf-btn-add", "n_clicks"),
         Input({"type": "pf-btn-remover", "variante_id": ALL}, "n_clicks"),
@@ -90,11 +101,15 @@ def register(app):
         gatilho = ctx.triggered_id
         valor_disparo = ctx.triggered[0]["value"] if ctx.triggered else None
         aviso_remover = None
+        aviso_moeda = None
         if (isinstance(gatilho, dict) and gatilho.get("type") == "pf-cartao"
                 and valor_disparo):
             pid = gatilho["portfolio_id"]
         elif gatilho == "pf-btn-add" and pid is not None and variante_add:
-            P.adicionar_variante(pid, variante_add)
+            try:
+                P.adicionar_variante(pid, variante_add)
+            except P.MoedaMista as e:
+                aviso_moeda = str(e)
         elif (isinstance(gatilho, dict) and gatilho.get("type") == "pf-btn-remover"
               and valor_disparo and pid is not None):
             try:
@@ -111,7 +126,7 @@ def register(app):
         if pid is None:
             return ({"display": "none"}, no_update, no_update, no_update,
                     no_update, no_update, no_update, no_update, no_update,
-                    no_update, no_update, pid)
+                    no_update, no_update, pid, no_update, no_update)
 
         capital_msg = None
         if gatilho == "pf-btn-salvar-capital" and valor_disparo:
@@ -130,6 +145,25 @@ def register(app):
         else:
             capital_valor = _CAPITAL_PADRAO
         ms = P.membros(pid)
+        try:
+            moeda = P.moeda(pid) or "BRL"
+        except P.MoedaMista as e:
+            # o plano ativo de um membro mudou de ativo depois de entrar:
+            # nada a somar - só a lista de membros e o aviso
+            simb = simbolo_moeda("BRL")
+            linhas = [PP.linha_membro(
+                m["variante_id"], m["nome"], m["estrategia"],
+                m["sem_plano_ativo"],
+                gravado_mesmo_assim=m.get("gravado_mesmo_assim", False),
+                pendencias=m.get("pendencias")) for m in ms]
+            avisos_txt = list(dict.fromkeys(
+                [a for a in (aviso_moeda, aviso_remover) if a] + [str(e)]))
+            return ({"display": "block"}, nome, capital_valor, capital_msg,
+                    PP.figura_curva_vazia(), None, None, linhas, None, None,
+                    html.Ul([html.Li(a) for a in avisos_txt]), pid,
+                    f"capital do portfólio ({simb})",
+                    f"capital inicial ({simb})")
+        simb = simbolo_moeda(moeda)
 
         curvas = P.curvas(pid)
         series = curvas["series"]
@@ -139,7 +173,7 @@ def register(app):
                 m["sem_plano_ativo"],
                 resumo=_resumo_membro(series.get(m["nome"])),
                 gravado_mesmo_assim=m.get("gravado_mesmo_assim", False),
-                pendencias=m.get("pendencias"))
+                pendencias=m.get("pendencias"), moeda=moeda)
             for m in ms
         ] or [html.P("nenhuma variante neste portfólio ainda.")]
 
@@ -147,7 +181,7 @@ def register(app):
         # "sem plano ativo" já sai de correlacao() E de curvas() para o
         # mesmo membro - junta sem duplicar a linha na lista de avisos
         avisos_txt = list(dict.fromkeys(
-            ([aviso_remover] if aviso_remover else [])
+            [a for a in (aviso_moeda, aviso_remover) if a]
             + r["avisos"] + curvas["avisos"]))
         avisos = html.Ul([html.Li(a) for a in avisos_txt]) if avisos_txt else None
 
@@ -163,14 +197,16 @@ def register(app):
                 {"capital_inicial": p_atual["capital"], **resumo_pf},
                 True))
         tabela = PP.tabela_comparativa(linhas_tabela,
-                                       capital_definido=capital_definido)
-        simulacao = PP.card_simulacao(P.simulacao_capital(pid))
+                                       capital_definido=capital_definido,
+                                       moeda=moeda)
+        simulacao = PP.card_simulacao(P.simulacao_capital(pid), moeda=moeda)
 
         return ({"display": "block"}, nome, capital_valor, capital_msg,
-                PP.figura_curva(series, curvas["combinada"]), tabela,
-                simulacao, linhas_membros,
+                PP.figura_curva(series, curvas["combinada"], moeda=moeda),
+                tabela, simulacao, linhas_membros,
                 PP.heatmap(r["variantes"], r["matriz"]),
-                PP.card_risco(r["risco_diario"]), avisos, pid)
+                PP.card_risco(r["risco_diario"], moeda=moeda), avisos, pid,
+                f"capital do portfólio ({simb})", f"capital inicial ({simb})")
 
     def _resumo_membro(dados: dict | None) -> dict | None:
         if not dados or not dados["pontos"]:
@@ -196,9 +232,12 @@ def register(app):
         risco = _parse_capital(risco_txt)
         n_trades = _parse_capital(trades_txt)
         try:
+            moeda = P.moeda(pid) or "BRL"
             n_trades = int(n_trades) if n_trades is not None else None
             sim = P.simular_crescimento(pid, capital_inicial=capital,
                                         risco_pct=risco, n_trades=n_trades)
+        except P.MoedaMista as e:
+            return PP.figura_crescimento_vazia(str(e)), None
         except (ValueError, TypeError):
             return (PP.figura_crescimento_vazia(
                         "capital, risco e nº de trades precisam ser "
@@ -212,4 +251,5 @@ def register(app):
                         "pra simular)."),
                     None)
 
-        return PP.figura_crescimento(sim), PP.resumo_crescimento(sim)
+        return (PP.figura_crescimento(sim, moeda=moeda),
+                PP.resumo_crescimento(sim, moeda=moeda))
