@@ -25,3 +25,15 @@ allows_overnight: false
 # Rolagem do WIN: quarta-feira mais proxima do dia 15 dos meses pares.
 # Conferido contra os gaps medidos no historico (ver core/rollovers.py).
 rollover_policy: "b3_even_month_wed_nearest_15"
+
+# Perfil padrao da camada 4 quando este ativo e escolhido na tela
+# (horas no relogio local do ativo; iguais aos padroes de ui/components/controls.py).
+perfil_padrao:
+  entrada_inicio: "09:00"
+  entrada_fim: "17:00"
+  fechamento: "17:30"
+  corretagem: 0.50
+  emolumentos: 0.27
+  slippage_ticks: 1
+  stop_pontos: 300
+  alvo_pontos: 600

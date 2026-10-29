@@ -70,3 +70,15 @@ pregoes_descartados:
   "2026-10-12": "falha da fonte: vazio de barras dentro do pregao"
   "2026-10-19": "falha da fonte: dados so a partir das 19:54 NY"
 pregoes_mantidos: {}
+
+# Perfil padrao da camada 4 quando este ativo e escolhido na tela
+# (horas em NY). stop_pontos/alvo_pontos sao PROVISORIOS ate a etapa 4.
+perfil_padrao:
+  entrada_inicio: "18:00"
+  entrada_fim: "16:30"
+  fechamento: "16:50"
+  corretagem: 0.60
+  emolumentos: 0.0
+  slippage_ticks: 1
+  stop_pontos: 10
+  alvo_pontos: 20

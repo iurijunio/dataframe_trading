@@ -534,6 +534,27 @@ def register(app):
                   for _, chave in CAMPOS_PERFIL]
         return r
 
+    # ------------------- perfil padrao do ativo preenche a camada 4
+    @app.callback(
+        Output("e-ent-ini", "value", allow_duplicate=True),
+        Output("e-ent-fim", "value", allow_duplicate=True),
+        Output("e-fechamento", "value", allow_duplicate=True),
+        Output("e-corretagem", "value", allow_duplicate=True),
+        Output("e-emolumentos", "value", allow_duplicate=True),
+        Output("e-slippage", "value", allow_duplicate=True),
+        Output({"type": "val", "p": "stop_pontos"}, "value", allow_duplicate=True),
+        Output({"type": "val", "p": "alvo_pontos"}, "value", allow_duplicate=True),
+        Input("ativo", "value"),
+        prevent_initial_call=True,
+    )
+    def aplicar_perfil_do_ativo(simbolo):
+        p = ativo_mod.perfil_padrao(ativo_mod.ficha(_simbolo(simbolo)))
+        if not p:
+            return (no_update,) * 8
+        return tuple(p.get(c, no_update) for c in (
+            "entrada_inicio", "entrada_fim", "fechamento", "corretagem",
+            "emolumentos", "slippage_ticks", "stop_pontos", "alvo_pontos"))
+
     # ------------------------------------------------------------------ rodar
     @app.callback(
         Output("store-run", "data"),
@@ -622,6 +643,10 @@ def register(app):
         )
 
         simbolo = _simbolo(ativo)
+        erro_janela = ativo_mod.janela_valida(profile.entrada_inicio, profile.entrada_fim,
+                                              ativo_mod.ficha(simbolo))
+        if erro_janela:
+            return no_update, stats_cards.vazio(erro_janela), [], [], no_update, "", no_update
         todas = D.bars(simbolo)
         de_dt, ate_dt = _dt(de), _dt(ate, True)
 
@@ -811,6 +836,11 @@ def register(app):
             contratos=contratos or 1, risco_por_trade=risco,
             capital_inicial=capital or 10_000.0, min_operacoes=min_ops or 0,
         )
+
+        erro_janela = ativo_mod.janela_valida(perfil.entrada_inicio, perfil.entrada_fim,
+                                              ativo_mod.ficha(_simbolo(ativo)))
+        if erro_janela:
+            return erro_janela
 
         MINERACAO.iniciar(
             symbol=_simbolo(ativo), estrategia_nome=registry.nome_atual(),
