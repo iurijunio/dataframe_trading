@@ -52,7 +52,8 @@ def test_fichas_dos_micros():
     assert (mes.point_value, mes.tick_value, mes.tick_unid, mes.currency) == (5.0, 1.25, 25, "USD")
     assert (mnq.point_value, mnq.tick_value, mnq.tick_unid) == (2.0, 0.50, 25)
     assert mes.deslocamento_min == mnq.deslocamento_min == 360
-    assert set(mes.pregoes_descartados) == {"2020-03-02", "2020-03-03", "2022-06-21", "2026-10-12"}
+    assert set(mes.pregoes_descartados) == {"2020-02-27", "2020-02-28", "2020-03-02", "2020-03-03", "2022-06-21", "2026-10-12"}
+    assert set(mnq.pregoes_descartados) == set(mes.pregoes_descartados)
 
 def test_banco_guarda_tick_em_unidades_guardadas():
     with db.connect() as con:

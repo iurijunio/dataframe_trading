@@ -7,16 +7,17 @@ low, close, volume e trades. Aqui o arquivo vira o formato da base
 (`core/ingest.validar`) e os pregoes com falha da fonte sao apontados.
 
 Pregao suspeito = o que, no relogio de pregao, tem um vazio de mais de 60 min
-entre barras, comeca mais de 60 min depois da abertura ou termina antes das
-12:00 NY. O limite e estrito: comecar no minuto 60 nao e suspeito (o recorte
-de teste comeca ali). O ultimo pregao do arquivo fica de fora, porque o
-download pode ter cortado no meio dele (veja `pregao_incompleto`). Reduzir o
-pregao curto de vespera de feriado a "suspeito" seria erro: ele fecha 13:15
-NY, depois das 12:00.
+entre barras, comeca mais de 60 min depois da abertura, termina antes das
+16:59 NY ou nem existe (dia util sem nenhuma barra, fora os feriados de
+fechamento total). O limite do comeco e estrito: comecar no minuto 60 nao e
+suspeito (o recorte de teste comeca ali). Fim cedo nao conta quando a ultima
+barra cai entre 12:59 e 13:14 NY: sao os fechamentos antecipados oficiais da
+CME (13:00 e 13:15). O ultimo pregao do arquivo fica de fora, porque o
+download pode ter cortado no meio dele (veja `pregao_incompleto`).
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import polars as pl
@@ -27,7 +28,8 @@ from core.ativo import Ficha
 _COLUNAS = ["time", "open", "high", "low", "close", "volume", "trades"]
 _COMPARAR = ["open", "high", "low", "close", "volume"]
 _FIM_DO_PREGAO = 22 * 60 + 59  # 16:59 NY no relogio de pregao
-_FIM_CEDO = "12:00"
+_FIM_CHEIO = "16:59"
+_FECHAMENTO_ANTECIPADO = ("12:59", "13:14")  # ultima barra de 13:00 e 13:15 NY
 _LIMITE_VAZIO_MIN = 60
 
 
@@ -82,6 +84,36 @@ def _hhmm_ny(ts, f: Ficha) -> str:
     return ativo.hora_para_exibir(ts, f).strftime("%H:%M")
 
 
+def _pascoa(ano: int) -> date:
+    """Algoritmo gregoriano anonimo (Meeus/Jones/Butcher)."""
+    a, b, c = ano % 19, ano // 100, ano % 100
+    d, e = b // 4, b % 4
+    g = (b - (b + 8) // 25 + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    mes, dia = divmod(h + l - 7 * m + 114, 31)
+    return date(ano, mes, dia + 1)
+
+
+def feriados_de_fechamento_total(ano: int) -> set[date]:
+    """Dias uteis em que a CME nao abre: Ano Novo, Sexta-feira Santa e Natal.
+
+    Ano Novo e Natal em sabado fecham na sexta anterior; em domingo, na
+    segunda seguinte. Os outros feriados dos EUA tem pregao curto (ou normal),
+    entao o pregao existe e nao entra aqui.
+    """
+    def observado(d: date) -> date:
+        if d.weekday() == 5:
+            return d - timedelta(days=1)
+        if d.weekday() == 6:
+            return d + timedelta(days=1)
+        return d
+    return {observado(date(ano, 1, 1)), _pascoa(ano) - timedelta(days=2),
+            observado(date(ano, 12, 25))}
+
+
 def pregoes_suspeitos(df: pl.DataFrame, f: Ficha) -> dict[str, str]:
     """Data do pregao -> motivo (em hora de NY). Ignora o ultimo pregao do df."""
     if df.height == 0:
@@ -100,7 +132,10 @@ def pregoes_suspeitos(df: pl.DataFrame, f: Ficha) -> dict[str, str]:
         pl.col("ts").sort_by(pl.col("salto").fill_null(0)).last().alias("fim_do_salto"),
     ).filter(pl.col("dia") != ultimo).sort("dia")
 
-    limite_fim = ativo.hora_para_minuto(_FIM_CEDO) + f.deslocamento_min
+    desl = f.deslocamento_min
+    fim_cheio = ativo.hora_para_minuto(_FIM_CHEIO) + desl
+    cedo_ok = (ativo.hora_para_minuto(_FECHAMENTO_ANTECIPADO[0]) + desl,
+               ativo.hora_para_minuto(_FECHAMENTO_ANTECIPADO[1]) + desl)
     out: dict[str, str] = {}
     for r in por_dia.iter_rows(named=True):
         if r["maior_salto"] is not None and r["maior_salto"] > _LIMITE_VAZIO_MIN:
@@ -108,12 +143,20 @@ def pregoes_suspeitos(df: pl.DataFrame, f: Ficha) -> dict[str, str]:
             motivo = f"vazio de {r['maior_salto'] - 1} min a partir de {_hhmm_ny(inicio, f)} NY"
         elif r["min_ini"] > _LIMITE_VAZIO_MIN:
             motivo = f"comecou as {_hhmm_ny(r['primeira'], f)} NY"
-        elif r["min_fim"] < limite_fim:
+        elif r["min_fim"] < fim_cheio and not cedo_ok[0] <= r["min_fim"] <= cedo_ok[1]:
             motivo = f"terminou as {_hhmm_ny(r['ultima'], f)} NY"
         else:
             continue
         out[str(r["dia"])] = motivo
-    return out
+
+    # Pregao que nao tem nenhuma barra nao aparece no group_by acima.
+    presentes = set(d["dia"].unique().to_list())
+    dia = d["dia"].min()
+    while (dia := dia + timedelta(days=1)) < ultimo:
+        if (dia.weekday() < 5 and dia not in presentes
+                and dia not in feriados_de_fechamento_total(dia.year)):
+            out[str(dia)] = "pregao inteiro ausente"
+    return dict(sorted(out.items()))
 
 
 def pregao_incompleto(df: pl.DataFrame) -> str | None:

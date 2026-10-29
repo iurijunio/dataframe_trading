@@ -17,7 +17,7 @@
 - Relógio de pregão: UTC → `America/New_York` → `+ (24:00 − sessao_abertura)`; `sessao_abertura: "18:00"` → +360 min.
 - Preço guardado = round(preço / tick) × tick × 10^`price_decimals`, inteiro (MES 5432,25 → 543225).
 - `instruments.tick_size` (INTEGER) recebe `tick_unid` (MES 25), nunca 0,25.
-- Pregão suspeito: vazio interno > 60 min; ou primeira barra > 60 min depois das 18:00 NY; ou última barra antes das 12:00 NY (fechamentos antecipados reais da CME são às 12:00 CT/13:00 NY ou depois, e esses não contam). O último pregão do arquivo é tratado pela regra do incompleto, não por esta.
+- Pregão suspeito: vazio interno > 60 min; ou primeira barra > 60 min depois das 18:00 NY; ou última barra antes das 16:59 NY, exceto entre 12:59 e 13:14 NY (fechamentos antecipados oficiais da CME, 13:00/13:15); ou pregão ausente (dia útil entre o primeiro e o último pregão sem barras, fora Ano Novo, Sexta-feira Santa e Natal, com a regra de sábado/domingo). O último pregão do arquivo é tratado pela regra do incompleto, não por esta.
 - Último pregão do arquivo incompleto (última barra antes das 16:59 NY) não é gravado.
 - Telas: nada de texto explicativo visível; explicação só em "(?)". Nenhuma tela nova nesta etapa.
 - Testes nunca tocam `data/database.duckdb` (conftest isola `DB_PATH`); `ativos_temp/` não vai para o git.
@@ -191,7 +191,7 @@ def test_fichas_dos_micros():
     assert (mes.point_value, mes.tick_value, mes.tick_unid, mes.currency) == (5.0, 1.25, 25, "USD")
     assert (mnq.point_value, mnq.tick_value, mnq.tick_unid) == (2.0, 0.50, 25)
     assert mes.deslocamento_min == mnq.deslocamento_min == 360
-    assert set(mes.pregoes_descartados) == {"2020-03-02", "2020-03-03", "2022-06-21", "2026-10-12"}
+    assert set(mes.pregoes_descartados) == {"2020-02-27", "2020-02-28", "2020-03-02", "2020-03-03", "2022-06-21", "2026-10-12"}
 
 def test_banco_guarda_tick_em_unidades_guardadas():
     with db.connect() as con:
@@ -229,7 +229,7 @@ def test_banco_guarda_tick_em_unidades_guardadas():
   - `pregao_incompleto(df: pl.DataFrame) -> str | None` — data do último pregão se a última barra for antes de 22:59 no relógio de pregão.
 
 - [ ] **Step 1: Criar os recortes** a partir de `ativos_temp/` (script descartável, não commitado), salvando Parquet pequeno com o mesmo esquema do original:
-  - `tests/dados/lse/mes_2020_03.parquet`: `time` de 2020-02-28 00:00 a 2020-03-04 23:59 UTC (contém o buraco de 02–03/03).
+  - `tests/dados/lse/mes_2020_03.parquet`: `time` de 2020-02-26 00:00 a 2020-03-04 23:59 UTC (contém o buraco de 27/02 a 03/03).
   - `tests/dados/lse/mes_2024_12.parquet`: 2024-12-23 00:00 a 2024-12-27 23:59 UTC (véspera de Natal, fechamento 13:15 NY).
   - `tests/dados/lse/mnq_parte_a.parquet` e `mnq_parte_b.parquet`: duas partes do MNQ que se sobrepõem em 2019-09-19 22:00 a 2019-09-20 20:59 UTC (pegar 2019-09-18..09-20 da parte antiga e 2019-09-19..09-23 da nova).
   Conferir que somam menos de 2 MB.
@@ -266,8 +266,8 @@ def test_preparar_arredonda_ao_tick_e_escala():
 
 def test_buraco_de_marco_2020_e_suspeito():
     s = lse.pregoes_suspeitos(lse.preparar(lse.ler_partes([D / "mes_2020_03.parquet"]), MES), MES)
-    assert {"2020-03-02", "2020-03-03"} <= set(s)
-    assert "2020-02-28" not in s and "2020-03-04" not in s
+    assert {"2020-02-27", "2020-02-28", "2020-03-02", "2020-03-03"} <= set(s)
+    assert "2020-02-26" not in s and "2020-03-04" not in s
 
 def test_vespera_de_natal_nao_e_suspeita():
     s = lse.pregoes_suspeitos(lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES), MES)
@@ -279,14 +279,14 @@ def test_ultimo_pregao_incompleto():
     assert lse.pregao_incompleto(df.filter(pl.col("ts").dt.hour() < 20)) == str(df["ts"].dt.date().max())
 ```
 
-  (O pregão de 02/03/2020 tem só a primeira hora — domingo 18:00–18:59 NY — e cai na regra "terminou antes das 12:00 NY"; o de 03/03 cai em "começo tardio".)
+  (O pregão de 02/03/2020 tem só a primeira hora — domingo 18:00–18:59 NY — e cai na regra "terminou antes das 16:59 NY"; o de 03/03 cai em "começo tardio".)
 
 - [ ] **Step 3: Run** — Expected: FAIL (`core.importar_lse` não existe).
 
 - [ ] **Step 4: Implement `core/importar_lse.py`**
   - `ler_partes`: `pl.read_parquet` de cada arquivo, exige as 7 colunas (mensagem com o nome do arquivo se faltar), `time` em `us` UTC; concatena; nas linhas com `time` repetido, compara OHLC+volume e levanta `ValueError("... diverge ...")` com até 5 exemplos; senão `unique(subset="time")` e ordena.
   - `preparar`: `round(x / tick_size) * tick_unid` → Int64; `volume` e `trades` → Int64 (recusa volume não inteiro); `ts = utc_para_pregao(time)`.
-  - `pregoes_suspeitos`: agrupa por `ts.dt.date()`; minuto do pregão = `hour*60+minute`; suspeito se `max(diff entre barras consecutivas do mesmo pregão) > 60 min`, se o primeiro minuto > 60, ou se o último minuto < `hora_para_minuto("12:00") + deslocamento_min` (1080 no MES). O último pregão do DataFrame fica fora desta checagem (é assunto de `pregao_incompleto`). Motivos em hora de NY usando `hora_para_exibir` (ex.: `"terminou as 18:59 NY"`).
+  - `pregoes_suspeitos`: agrupa por `ts.dt.date()`; minuto do pregão = `hour*60+minute`; suspeito se `max(diff entre barras consecutivas do mesmo pregão) > 60 min`, se o primeiro minuto > 60, ou se o último minuto < `hora_para_minuto("16:59") + deslocamento_min` fora da janela 12:59–13:14 NY; mais a regra de pregão ausente (dias úteis sem barras, exceto feriados de fechamento total). O último pregão do DataFrame fica fora desta checagem (é assunto de `pregao_incompleto`). Motivos em hora de NY usando `hora_para_exibir` (ex.: `"terminou as 18:59 NY"`).
   - Docstring: de onde vêm os dados, o limite de 2,5 M linhas por download e a regra dos suspeitos.
 
 - [ ] **Step 5: Run** — Expected: PASS.

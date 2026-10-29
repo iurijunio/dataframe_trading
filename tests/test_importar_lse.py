@@ -63,14 +63,16 @@ def test_preparar_passa_pela_validacao_da_base():
 
 def test_buraco_de_marco_2020_e_suspeito():
     s = lse.pregoes_suspeitos(lse.preparar(lse.ler_partes([D / "mes_2020_03.parquet"]), MES), MES)
-    assert {"2020-03-02", "2020-03-03"} <= set(s)
-    assert "2020-02-28" not in s and "2020-03-04" not in s
+    assert {"2020-02-27", "2020-02-28", "2020-03-02", "2020-03-03"} <= set(s)
+    assert "ausente" in s["2020-02-28"] and "14:29" in s["2020-02-27"]
+    assert "2020-02-26" not in s and "2020-03-04" not in s
     assert "NY" in s["2020-03-02"] and "NY" in s["2020-03-03"]
 
 
 def test_vespera_de_natal_nao_e_suspeita():
     s = lse.pregoes_suspeitos(lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES), MES)
     assert "2024-12-24" not in s and "2024-12-26" not in s
+    assert "2024-12-25" not in s  # Natal ausente nao e suspeito
     assert "2024-12-23" not in s  # comeca no minuto 60: limite estrito
 
 
@@ -87,3 +89,12 @@ def test_ultimo_pregao_incompleto():
     df = lse.preparar(lse.ler_partes([D / "mnq_parte_a.parquet"]), MES)  # termina 20/09 16:59 NY
     assert lse.pregao_incompleto(df) is None
     assert lse.pregao_incompleto(df.filter(pl.col("ts").dt.hour() < 20)) == str(df["ts"].dt.date().max())
+
+
+def test_feriados_de_fechamento_total():
+    from datetime import date
+    assert date(2024, 3, 29) in lse.feriados_de_fechamento_total(2024)
+    assert date(2021, 4, 2) in lse.feriados_de_fechamento_total(2021)
+    assert date(2021, 12, 24) in lse.feriados_de_fechamento_total(2021)   # Natal no sabado
+    assert date(2023, 1, 2) in lse.feriados_de_fechamento_total(2023)     # Ano Novo no domingo
+    assert date(2024, 12, 25) in lse.feriados_de_fechamento_total(2024)

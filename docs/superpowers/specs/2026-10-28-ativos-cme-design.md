@@ -60,8 +60,8 @@ partes que se complementam. Conferido:
   parte acaba na sexta e a outra começa no domingo).
 - Ruído de ponto flutuante (7665,4999 em vez de 7665,50): arredondar ao tick.
 - Volume nunca zero.
-- **Buracos da fonte** (iguais nos dois micros): de 02/03/2020 até 03/03/2020
-  09:40 NY; 21/06/2022 (~272 barras); 12/10/2026 (~265 barras).
+- **Buracos da fonte** (iguais nos dois micros): de 27/02/2020 14:29 NY até
+  03/03/2020 09:40 NY (o pregão de 28/02 não existe); 21/06/2022 (~272 barras); 12/10/2026 (~265 barras).
 - Dias curtos **reais** (não são buraco): feriados, meio pregão (Black Friday,
   véspera de Natal), funeral do Carter (09/01/2025), paradas por queda em março
   de 2020. Saltos grandes reais: 12/01/2023 e 14/10/2026, às 08:30 NY (dado
@@ -313,16 +313,19 @@ Os padrões de hoje são do WIN (`ExecutionProfile` em `execution.py:~47-68`,
 6. **Pregões com falha da fonte** — um pregão é suspeito se tiver:
    - vazio interno de mais de 60 minutos fora da pausa diária, ou
    - começo tardio: primeira barra mais de 60 minutos depois das 18:00 NY.
-   - fim precoce: última barra antes das 12:00 NY (os fechamentos antecipados
-     reais da CME são às 13:00 NY ou depois). O último pregão do arquivo fica
-     com a regra do item 7.
+   - fim precoce: última barra antes das 16:59 NY, exceto entre 12:59 e 13:14
+     NY (fechamentos antecipados oficiais da CME, 13:00 e 13:15). O último
+     pregão do arquivo fica com a regra do item 7.
+   - pregão ausente: dia útil (seg–sex) entre o primeiro e o último pregão do
+     arquivo sem nenhuma barra, exceto Ano Novo, Sexta-feira Santa e Natal
+     (sábado vale a sexta anterior; domingo, a segunda seguinte).
 
    Fechamento antecipado (vazio no final) não conta. Os suspeitos são comparados
    com uma **lista esperada** (na ficha, `pregoes_descartados`, com a data do
    pregão e o motivo): os da lista **não são gravados** (ficam como feriado); um
    suspeito fora da lista faz a importação **parar** e mostrar o pregão para o
    usuário decidir (descartar ou manter, e a lista é atualizada). Lista inicial:
-   pregões de 02/03/2020, 03/03/2020, 21/06/2022 e 12/10/2026 — a primeira
+   pregões de 27/02/2020, 28/02/2020, 02/03/2020, 03/03/2020, 21/06/2022 e 12/10/2026 — a primeira
    importação confirma se a regra acha exatamente esses (madrugadas de pouco
    negócio de 2019 e o limite de queda de março/2020 podem aparecer e vão para a
    decisão do usuário).

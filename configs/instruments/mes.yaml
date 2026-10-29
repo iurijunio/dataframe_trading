@@ -26,6 +26,8 @@ abertura_referencia: "09:30"
 
 # Pregoes com falha da fonte, fora de toda leitura (data do pregao).
 pregoes_descartados:
+  "2020-02-27": "falha da fonte: dados param as 14:29 NY"
+  "2020-02-28": "falha da fonte: pregao inteiro ausente"
   "2020-03-02": "falha da fonte: so a primeira hora (domingo 18:00-18:59 NY)"
   "2020-03-03": "falha da fonte: dados so a partir das 09:40 NY"
   "2022-06-21": "falha da fonte: vazio de barras dentro do pregao"
