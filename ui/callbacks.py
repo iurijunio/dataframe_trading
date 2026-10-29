@@ -51,10 +51,16 @@ from .components import ficha as FI
 from .components import wfa_matriz as WM
 from .components import mine_criterios as CR
 from .components import robustez_cards as RC
+from .components.cartao import simbolo_moeda
 
 def _simbolo(valor: str | None) -> str:
     """O ativo escolhido na tela, com o padrao de arranque como rede."""
     return valor or D.simbolo_padrao()
+
+def rotulos_moeda(ativo: str | None, n: int) -> list[str]:
+    """O símbolo da moeda do ativo, repetido para os `n` rótulos da tela."""
+    return [simbolo_moeda(ativo_mod.moeda_de(ativo))] * n
+
 
 _runs: dict[str, dict] = {}
 
@@ -570,6 +576,14 @@ def register(app):
         return tuple(p.get(c, no_update) for c in (
             "entrada_inicio", "entrada_fim", "fechamento", "corretagem",
             "emolumentos", "slippage_ticks", "stop_pontos", "alvo_pontos"))
+
+    @app.callback(
+        Output({"type": "moeda-c4", "i": ALL}, "children"),
+        Input("ativo", "value"),
+        prevent_initial_call=True,
+    )
+    def rotulos_moeda_c4(simbolo):
+        return rotulos_moeda(simbolo, len(ctx.outputs_list))
 
     # ------------------------------------------------------------------ rodar
     @app.callback(

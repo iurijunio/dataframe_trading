@@ -269,8 +269,8 @@ def execucao():
 
             html.H3("Limites diários", className="grp"),
             html.Div([
-                _field("ganho máx. R$/contrato", _num("e-lim-ganho", 0.0, 50.0, 0)),
-                _field("perda máx. R$/contrato", _num("e-lim-perda", 0.0, 50.0, 0)),
+                _field(["ganho máx. ", html.Span("R$", id={"type": "moeda-c4", "i": "lim-ganho"}), "/contrato"], _num("e-lim-ganho", 0.0, 50.0, 0)),
+                _field(["perda máx. ", html.Span("R$", id={"type": "moeda-c4", "i": "lim-perda"}), "/contrato"], _num("e-lim-perda", 0.0, 50.0, 0)),
                 _field("máx. operações", _num("e-max-trades", 0, 1, 0)),
                 _field("máx. prejuízos", _num("e-max-loss", 0, 1, 0)),
             ], className="grid-2"),
@@ -290,8 +290,8 @@ def execucao():
                     id="e-modo", value="contratos_fixos", clearable=False, className="dd",
                     options=opcoes("modo_posicao"))),
                 _field("contratos", _num("e-contratos", 1, 1, 1)),
-                _field("risco/trade R$", _num("e-risco", 200.0, 10.0, 0)),
-                _field("capital inicial R$", _num("e-capital", 10000.0, 1000.0, 0)),
+                _field(["risco/trade ", html.Span("R$", id={"type": "moeda-c4", "i": "risco"})], _num("e-risco", 200.0, 10.0, 0)),
+                _field(["capital inicial ", html.Span("R$", id={"type": "moeda-c4", "i": "capital"})], _num("e-capital", 10000.0, 1000.0, 0)),
             ], className="grid-2"),
 
             html.H3("Filtro de mineração", className="grp"),
