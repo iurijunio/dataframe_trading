@@ -1,3 +1,5 @@
+import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -154,6 +156,8 @@ def test_suspeito_fora_da_lista_para_sem_gravar(monkeypatch):
         lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
     assert "2020-03-03" in e.value.pregoes
     assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES'").fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM ingest_log WHERE symbol='MES'").fetchone()[0] == 0
+    assert not (db.PARQUET_DIR / db.safe_symbol("MES")).exists()
 
 
 def test_mantido_pela_lista_e_gravado(monkeypatch):
@@ -172,7 +176,59 @@ def test_reimportar_nao_altera_nada():
     assert r.ingest.rows_inserted == 0 and r.ingest.rows_updated == 0
 
 
+def _seed_win(con):
+    from core import calendar as cal, ingest as ing
+    ts = [datetime(2024, 12, 2, 9, m) for m in range(5)]
+    df = pl.DataFrame({
+        "ts": ts, "open": [100000 + m for m in range(5)], "high": [100010 + m for m in range(5)],
+        "low": [99990 + m for m in range(5)], "close": [100005 + m for m in range(5)],
+        "tick_volume": [10] * 5, "volume": [5] * 5, "spread": [None] * 5,
+    }, schema_overrides={"spread": pl.Int32})
+    ing.ingest_df(con, df, "WIN$N", "win_teste", "sha_win")
+    cal.rebuild_trading_days(con, "WIN$N")
+    return db.export_parquet(con, "WIN$N")
+
+
+def _foto_win(con, pasta):
+    import hashlib
+    bars = con.execute("SELECT * FROM bars_m1 WHERE symbol='WIN$N' ORDER BY ts").fetchall()
+    dias = con.execute("SELECT * FROM trading_days WHERE symbol='WIN$N' ORDER BY date").fetchall()
+    shas = {str(p.relative_to(pasta)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(pasta.rglob("*.parquet"))}
+    return bars, dias, shas
+
+
 def test_win_nao_e_tocado():
     con = _con()
+    pasta = _seed_win(con)
+    antes = _foto_win(con, pasta)
+    assert antes[0] and antes[1] and antes[2]
     lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
-    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='WIN$N'").fetchone()[0] == 0
+    assert _foto_win(con, pasta) == antes
+
+
+def test_descartados_so_do_periodo_importado():
+    con = _con()
+    r = lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
+    assert r.descartados == {}
+    obs = con.execute("SELECT observacao FROM ingest_log WHERE symbol='MES'").fetchone()[0]
+    assert json.loads(obs)["descartados"] == {}
+
+
+def test_cli_importar_lse_sucesso_e_suspeito(monkeypatch, capsys):
+    import cli
+    monkeypatch.setattr(sys, "argv", ["cli.py", "importar-lse", "--symbol", "MES",
+                                      str(D / "mes_2024_12.parquet")])
+    cli.main()
+    assert "[MES]" in capsys.readouterr().out
+    with db.connect() as con:
+        assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES'").fetchone()[0] > 0
+
+    monkeypatch.setattr(lse, "_ficha", lambda s: ativo.ficha_de({**db.load_instrument_yaml("MES"), "pregoes_descartados": {}}))
+    monkeypatch.setattr(sys, "argv", ["cli.py", "importar-lse", "--symbol", "MES",
+                                      str(D / "mes_2020_03.parquet")])
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 1
+    out = capsys.readouterr().out
+    assert "2020-03-03" in out and "pregoes_descartados" in out

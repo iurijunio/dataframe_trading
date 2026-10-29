@@ -208,13 +208,17 @@ def importar(con, symbol: str, paths: list[Path]) -> ResultadoLSE:
         raise SuspeitoNovo(novos)
 
     incompleto = pregao_incompleto(df)
+    prep_ini, prep_fim = df["ts"].min().date(), df["ts"].max().date()
     fora = set(f.pregoes_descartados)
     if incompleto:
         fora.add(incompleto)
     # Descartado que nao esta nos dados (pregao ausente) nao remove nada,
     # mas continua contando como descartado.
     df = df.filter(~pl.col("ts").dt.strftime("%Y-%m-%d").is_in(list(fora)))
-    descartados = dict(f.pregoes_descartados)
+    # So conta o descartado que cai no periodo importado (ausente dentro do
+    # periodo tambem conta).
+    ini, fim = str(prep_ini), str(prep_fim)
+    descartados = {d: m for d, m in f.pregoes_descartados.items() if ini <= d <= fim}
 
     sha = hashlib.sha256("".join(ing.sha256_of(p) for p in paths).encode()).hexdigest()
     origem = "lse:" + ";".join(p.name for p in paths)
