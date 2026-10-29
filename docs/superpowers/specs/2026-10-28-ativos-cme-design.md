@@ -437,3 +437,27 @@ WIN batendo.
   - o UPDATE de `observacao` roda fora da transação do ingest;
   - faltam testes do gráfico em D1 e em M5/H1 atravessando a pausa.
 - **Pregões descartados** (decisão do usuário em 28/10/2026): toda falha da fonte e todo evento atípico real fica fora — MES 43, MNQ 44 (lista nos YAML).
+
+## Estado depois da etapa 2 (29/10/2026)
+
+**Resolvido:**
+- A foto do WIN cobre planos, backtests, mineração curta, Walk-Forward curto e Candidata, num banco congelado (`data/foto_win/<nome>.duckdb`). Ela deu idêntica em toda tarefa. Fora do lugar onde foi gravada, só o caminho do arquivo da estratégia difere.
+- `run_strategy` converte perfil, parâmetros e instrumento em cópia. O instrumento convertido guarda `_original`, por isso não há dupla conversão. `bars` leva `tick`, `abertura_min` e `inicio_min`.
+- As estratégias leem o tick e a abertura de referência do ativo. A EMA de abertura não sinaliza na própria barra de abertura.
+- O perfil padrão vem por ativo (`perfil_padrao` no YAML) e é aplicado ao trocar o ativo.
+- `janela_valida` recusa uma janela que atravesse a pausa e um fechamento antes do fim ou dentro da pausa. Isso vale também para o WIN.
+- Lista de trades, marcadores (também em D1), linhas de stop e alvo, horários, Detalhes e o Walk-Forward mostram hora de NY e pontos.
+- O motor usa o tick na unidade guardada. Os outros `int(tick_size)` ficam no papel, no vivo e na captura, que só operam WIN.
+- Os planos 5, 6 e 7 foram re-assinados em 29/10, com trades idênticos e backup em `backups/2026-10-29-antes-reassinar/`.
+
+**Fica para depois:**
+- **Etapa 3:** os rótulos ainda mostram R$ nos micros, mas os valores estão em US$.
+- **Etapa 4:** as faixas de mineração ainda são as do WIN. O stop e o alvo padrão do MES (10/20) e do MNQ (40/80) são provisórios. Planos não devem ser salvos nos micros até lá.
+- `execution_profiles.symbol` não foi feito, porque não existe tela de perfis salvos.
+- **Pendências pequenas:**
+  - `foto_win.comparar` não trata NaN escalar nem listas de arrays;
+  - `hora_para_minuto` quebra com "HH:MM:SS";
+  - `hora_do_pregao_para_exibir` ignora os minutos do deslocamento;
+  - `metrics` `pontos_liquidos`, `mae_medio` e `mfe_medio` saem na unidade guardada, mas nenhuma tela os lê hoje;
+  - a foto grava o caminho absoluto do arquivo da estratégia;
+  - continuam as da etapa 1 (`ler_partes`, guarda de NaN em preço, UPDATE de `observacao`).
