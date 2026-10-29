@@ -16,6 +16,7 @@ import plotly.graph_objects as go
 from dash import dcc, html
 
 from .. import theme as T
+from .cartao import simbolo_moeda
 
 METRICAS = [
     # o MT5 usa fator de recuperacao como criterio padrao de otimizacao;
@@ -70,7 +71,7 @@ def valor(t: dict, chave: str):
 
 
 def figura(trials: list[dict], eixo_x: str, eixo_y: str, eixo_z: str | None,
-           metrica: str) -> go.Figure:
+           metrica: str, moeda: str = "BRL") -> go.Figure:
     if not trials or not eixo_x or not eixo_y:
         return vazio()
 
@@ -95,12 +96,13 @@ def figura(trials: list[dict], eixo_x: str, eixo_y: str, eixo_z: str | None,
     tam = _tamanhos(validos)
     ids = [t["trial_id"] for t in validos]
 
+    simb = simbolo_moeda(moeda)
     hover = [
         f"<b>{t['params_txt']}</b><br>"
         f"score robusto {t['robusto']}<br>"
         f"períodos + {t['folds']} ({t['consistencia']}%)<br>"
-        f"mediana/período R$ {t['mediana_fold']:,.0f}<br>"
-        f"lucro R$ {t['lucro']:,.0f} · {t['trades']} trades<extra></extra>"
+        f"mediana/período {simb} {t['mediana_fold']:,.0f}<br>"
+        f"lucro {simb} {t['lucro']:,.0f} · {t['trades']} trades<extra></extra>"
         for t in validos
     ]
 

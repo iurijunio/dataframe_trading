@@ -57,6 +57,23 @@ def _simbolo(valor: str | None) -> str:
     """O ativo escolhido na tela, com o padrao de arranque como rede."""
     return valor or D.simbolo_padrao()
 
+
+def _moeda_da_mineracao() -> str:
+    """A moeda do ativo que a mineração em tela varreu (e não a do seletor)."""
+    return ativo_mod.moeda_de(MINERACAO.estado.get("symbol"))
+
+
+def _entrar_mineracao_salva(e: dict, run_id: int, d: dict) -> None:
+    """Põe no estado uma mineração salva, pelo mesmo caminho de uma recém-rodada.
+    `d` é `optimizer.detalhes_salva(run_id)`."""
+    e["trials"] = optimizer.carregar_salva(run_id)
+    # o banco nao trunca: aqui a tabela E o universo completo
+    e["resumo"], e["fonte"] = e["trials"], "banco"
+    e["fim_otimizacao"] = d.get("corte") or d["holdout_de"]
+    e["symbol"] = d.get("symbol")
+    e["mensagem"] = f"mineração #{run_id} carregada do banco"
+
+
 def rotulos_moeda(ativo: str | None, n: int) -> list[str]:
     """O símbolo da moeda do ativo, repetido para os `n` rótulos da tela."""
     return [simbolo_moeda(ativo_mod.moeda_de(ativo))] * n
@@ -1061,11 +1078,7 @@ def register(app):
             # não bate, é porque a estratégia sumiu — quem avisa é ele.
             if not d or d["estrategia"] != registry.nome_atual():
                 return [], no_update, {"width": "0%"}, {"fase": "vazia"}
-            e["trials"] = optimizer.carregar_salva(run_id)
-            # o banco nao trunca: aqui a tabela E o universo completo
-            e["resumo"], e["fonte"] = e["trials"], "banco"
-            e["fim_otimizacao"] = d.get("corte") or d["holdout_de"]
-            e["mensagem"] = f"mineração #{run_id} carregada do banco"
+            _entrar_mineracao_salva(e, run_id, d)
             _ULTIMA_TABELA.update(t=time.time(), feitos=-1)
             return (e["trials"], no_update, {"width": "100%"},
                     {"fase": "pronta", "n": len(e["trials"]),
@@ -1154,7 +1167,8 @@ def register(app):
             return scatter.vazio()
         if not x or not y:
             return scatter.vazio("Escolha os eixos para ver a nuvem.")
-        return scatter.figura(linhas, x, y, z, metrica or "robusto")
+        return scatter.figura(linhas, x, y, z, metrica or "robusto",
+                              moeda=_moeda_da_mineracao())
 
     # ------- cross-filtering: um caminho, dois gatilhos (nuvem e tabela)
     @app.callback(
@@ -1220,15 +1234,17 @@ def register(app):
 
         metrica = metrica or "lucro"
         rotulo = next((r for r, v in MS.METRICAS if v == metrica), metrica)
-        moeda = metrica in MS.DINHEIRO
+        # a moeda é a do ativo que foi minerado; métrica sem dinheiro é None
+        moeda_ativo = _moeda_da_mineracao()
+        moeda = moeda_ativo if metrica in MS.DINHEIRO else None
         valores = np.array([l[metrica] for l in linhas
                             if l.get(metrica) is not None], dtype=float)
         if not len(valores):
             v = MC._vazio("Nenhuma combinação tem esta métrica.")
-            return RG.cards(MS.resumo(linhas)), v, v
+            return RG.cards(MS.resumo(linhas), moeda=moeda_ativo), v, v
 
         return (
-            RG.cards(MS.resumo(linhas)),
+            RG.cards(MS.resumo(linhas), moeda=moeda_ativo),
             MC.histograma(analytics.distribuicao(valores), rotulo, moeda),
             MC.curva(MS.curva(linhas, metrica), rotulo, moeda),
         )
@@ -1252,7 +1268,8 @@ def register(app):
         if not todas:
             return PT.vazio()
         return PT.painel(porteira.avaliar(todas),
-                         truncada=len(todas) - len(linhas))
+                         truncada=len(todas) - len(linhas),
+                         moeda=_moeda_da_mineracao())
 
     # ---------------------------- passo 7: quem passa nos numeros fixados
     @app.callback(

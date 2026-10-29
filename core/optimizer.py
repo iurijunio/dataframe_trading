@@ -260,7 +260,10 @@ class Mineracao:
                        # salva: a varredura atual ja foi para o banco?
                        "salva": False, "salvando": False, "aviso_salvar": "",
                        # de qual estrategia e a varredura que esta na tela
-                       "fim_otimizacao": None, "estrategia": None}
+                       "fim_otimizacao": None, "estrategia": None,
+                       # o ativo da varredura na tela: a moeda do dinheiro
+                       # mostrado vem DELE, e nao da barra do topo
+                       "symbol": None}
         self._parar = threading.Event()
         self._thread: threading.Thread | None = None
         self._resultados: list[dict] = []   # varredura em memoria, nao salva
@@ -414,7 +417,8 @@ class Mineracao:
         geracao = self._geracao          # a que esta varredura pertence
         viva = lambda: self._geracao == geracao   # noqa: E731
         try:
-            e.update(inicio=time.time(), mensagem="montando espaço de busca")
+            e.update(inicio=time.time(), mensagem="montando espaço de busca",
+                     symbol=symbol)
 
             espaco_p = montar_espaco(schema, ranges)
             espaco_e = espaco_util(

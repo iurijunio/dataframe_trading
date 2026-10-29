@@ -17,13 +17,20 @@ import plotly.graph_objects as go
 
 from .. import theme as T
 from .analytics_charts import BASE, EIXO, TITULO, _vazio
+from .cartao import simbolo_moeda
 
 
-def _fmt(v: float, moeda: bool) -> str:
-    return f"R$ {v:,.0f}" if moeda else f"{v:,.2f}".rstrip("0").rstrip(".")
+def _fmt(v: float, moeda: str | bool | None) -> str:
+    """`moeda` é o código ISO, ou None para métrica que não é dinheiro.
+    `True` vale "BRL" (o bool de antes); `False` vale None."""
+    if moeda is True:
+        moeda = "BRL"
+    if moeda:
+        return f"{simbolo_moeda(moeda)} {v:,.0f}"
+    return f"{v:,.2f}".rstrip("0").rstrip(".")
 
 
-def histograma(dados: dict, rotulo: str, moeda: bool) -> go.Figure:
+def histograma(dados: dict, rotulo: str, moeda: str | bool | None) -> go.Figure:
     """Quantas combinações caíram em cada faixa de resultado.
 
     A leitura que decide não é a altura das barras — é **de que lado do zero
@@ -84,7 +91,7 @@ def histograma(dados: dict, rotulo: str, moeda: bool) -> go.Figure:
     return fig
 
 
-def curva(dados: dict, rotulo: str, moeda: bool) -> go.Figure:
+def curva(dados: dict, rotulo: str, moeda: str | bool | None) -> go.Figure:
     """As combinações ordenadas da melhor para a pior.
 
     Aqui a FORMA é a informação, não o valor. Descida suave é platô: os

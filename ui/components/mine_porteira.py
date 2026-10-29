@@ -13,13 +13,15 @@ sustenta decisão nenhuma.
 
 from __future__ import annotations
 
+from functools import partial
+
 import numpy as np
 import plotly.graph_objects as go
 from dash import dcc, html
 
 from .. import theme as T
 from .analytics_charts import BASE, EIXO, TITULO, _vazio
-from .cartao import brl, card, dica, faixa, inteiro, num
+from .cartao import card, dica, dinheiro, faixa, inteiro, nome_moeda, num, simbolo_moeda
 
 
 def vazio(msg="Rode uma mineração para passar pela porteira."):
@@ -41,7 +43,7 @@ FORMATO = {
 }
 
 
-def _fmt(p) -> str:
+def _fmt(p, moeda: str = "BRL") -> str:
     v = p["valor"]
     if v is None:
         return "—"
@@ -50,7 +52,7 @@ def _fmt(p) -> str:
     # o portão dos N desvios tem o N no nome, então casa pelo prefixo
     tipo = FORMATO.get(p["nome"], "R$" if "desvios" in p["nome"] else "num")
     if tipo == "R$":
-        return brl(v)
+        return dinheiro(v, moeda)
     if tipo == "%":
         return f"{num(v, 1)}%"
     if tipo == "x":
@@ -103,7 +105,7 @@ def selo(av: dict, truncada: int = 0) -> html.Div:
     )
 
 
-def tabela_portoes(av: dict) -> html.Div:
+def tabela_portoes(av: dict, moeda: str = "BRL") -> html.Div:
     linhas = []
     for p in av["portoes"]:
         marca = "✓" if p["ok"] else ("✕" if p["critico"] else "!")
@@ -112,7 +114,7 @@ def tabela_portoes(av: dict) -> html.Div:
             [
                 html.Span(marca, className=f"portao-marca {classe}"),
                 html.Span([p["nome"], dica(p["dica"])], className="portao-nome"),
-                html.Span(_fmt(p), className=f"portao-valor {classe}"),
+                html.Span(_fmt(p, moeda), className=f"portao-valor {classe}"),
                 html.Span(p["exigido"], className="portao-exigido"),
                 html.Span("crítico" if p["critico"] else "alerta",
                           className=f"portao-tipo {'crit' if p['critico'] else ''}"),
@@ -132,7 +134,8 @@ def tabela_portoes(av: dict) -> html.Div:
 
 
 # ----------------------------------------------------------------- os números
-def numeros(e: dict) -> html.Div:
+def numeros(e: dict, moeda: str = "BRL") -> html.Div:
+    brl = partial(dinheiro, moeda=moeda)
     # o Z pode ser infinito nos DOIS sentidos: sem dispersão, uma região toda
     # positiva dá +inf e uma toda negativa dá −inf
     z_fin = e["z"] if np.isfinite(e["z"]) else None
@@ -188,7 +191,7 @@ def numeros(e: dict) -> html.Div:
                  "é região sólida. "
                  "Ele responde de uma vez a pergunta dos 'três desvios', "
                  "porque média − 3σ > 0 e Z > 3 são a MESMA conta: uma escrita "
-                 "em reais, a outra em desvios. "
+                 f"em {nome_moeda(moeda)}, a outra em desvios. "
                  "E note o que ele NÃO faz: não multiplica por √N como o SQN "
                  "de Van Tharp. Lá o N são trades, e mais trades é mais "
                  "evidência; aqui o N são as combinações que você escolheu "
@@ -235,7 +238,7 @@ def numeros(e: dict) -> html.Div:
 
 
 # -------------------------------------------------------------------- gráfico
-def grafico(e: dict) -> go.Figure:
+def grafico(e: dict, moeda: str = "BRL") -> go.Figure:
     """A régua dos desvios: onde o zero cai em relação à média.
 
     O mesmo Z-score do cartão, desenhado. Quando a marca do zero fica dentro
@@ -276,20 +279,20 @@ def grafico(e: dict) -> go.Figure:
     fig.update_layout(
         **{**BASE, "margin": dict(l=10, r=10, t=40, b=28)},
         title={**TITULO, "text": f"Régua dos desvios — Z = {z_txt}"},
-        xaxis=dict(**EIXO, title=dict(text="resultado da combinação (R$)",
+        xaxis=dict(**EIXO, title=dict(text=f"resultado da combinação ({simbolo_moeda(moeda)})",
                                       font=dict(size=10))),
         yaxis=dict(visible=False, range=[0, 1]),
     )
     return fig
 
 
-def painel(av: dict, truncada: int = 0) -> html.Div:
+def painel(av: dict, truncada: int = 0, moeda: str = "BRL") -> html.Div:
     if not av:
         return vazio()
     return html.Div(
-        [selo(av, truncada), numeros(av["estatisticas"]),
-         dcc.Graph(figure=grafico(av["estatisticas"]), className="graf-porteira",
+        [selo(av, truncada), numeros(av["estatisticas"], moeda),
+         dcc.Graph(figure=grafico(av["estatisticas"], moeda), className="graf-porteira",
                    config={"displayModeBar": False, "responsive": True}),
-         tabela_portoes(av)],
+         tabela_portoes(av, moeda)],
         className="aba-porteira",
     )

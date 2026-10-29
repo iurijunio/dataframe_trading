@@ -7,14 +7,19 @@ falta saber é se ele representa a região ou se é a exceção dela.
 
 from __future__ import annotations
 
+from functools import partial
+
 from dash import html
 
-from .cartao import brl, card, faixa, inteiro, num, vazio
+from .cartao import card, dinheiro, faixa, inteiro, num, vazio
 
 
-def cards(r: dict, msg: str = "Rode uma mineração para ver a região.") -> html.Div:
+def cards(r: dict, msg: str = "Rode uma mineração para ver a região.",
+          moeda: str = "BRL") -> html.Div:
     if not r:
         return vazio(msg)
+
+    brl = partial(dinheiro, moeda=moeda)
 
     razao = r.get("razao_melhor_mediana")
     return html.Div(
