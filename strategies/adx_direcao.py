@@ -35,7 +35,7 @@ params_schema = {
                   "min": 1, "max": 100, "step": 1, "tipo": "int"},
     "amplitude_max": {"label": "Amplitude máxima do candle (pontos; 0 desliga)",
                       "default": 1000, "min": 0, "max": 10000, "step": 5,
-                      "tipo": "int"},
+                      "tipo": "int", "unidade": "pontos"},
     **opcao_saida.parametro(opcao_saida.NAO_SAIR),
 }
 

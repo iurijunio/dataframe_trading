@@ -33,12 +33,9 @@ params_schema = {
                     "min": 0, "max": 40, "step": 1, "tipo": "int"},
     "filtro_amplitude": {"label": "Amplitude mínima do canal (pontos)",
                          "default": 0, "min": 0, "max": 3000, "step": 50,
-                         "tipo": "int"},
+                         "tipo": "int", "unidade": "pontos"},
     **opcao_saida.parametro(opcao_saida.CONTRARIO),
 }
-
-TICK = 5  # pontos; o WIN anda de 5 em 5
-
 
 def _janela(x: np.ndarray, periodo: int, func) -> np.ndarray:
     """Máximo/mínimo das `periodo` barras ANTERIORES a cada posição.
@@ -58,7 +55,7 @@ def _janela(x: np.ndarray, periodo: int, func) -> np.ndarray:
 
 def signals(bars: dict, params: dict) -> Signals:
     periodo = int(params["periodo_canal"])
-    folga = int(params["folga_ticks"]) * TICK
+    folga = int(params["folga_ticks"]) * int(bars.get("tick", 5))
     minimo = int(params["filtro_amplitude"])
 
     high, low, close = bars["high"], bars["low"], bars["close"]

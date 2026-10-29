@@ -27,7 +27,7 @@ params_schema = {
                   "min": 3, "max": 600, "step": 1, "tipo": "int"},
     "distancia_abertura": {"label": "Distância mínima da abertura do dia (pontos)",
                             "default": 0, "min": 0, "max": 3000,
-                            "step": 50, "tipo": "int"},
+                            "step": 50, "tipo": "int", "unidade": "pontos"},
     **opcao_saida.parametro(opcao_saida.NAO_SAIR),
 }
 
@@ -72,7 +72,24 @@ def signals(bars: dict, params: dict) -> Signals:
 
     dia = np.asarray(bars["ts"]).astype("datetime64[D]")
     _, inicio_dia = np.unique(dia, return_index=True)
-    abertura_dia = np.repeat(abertura[inicio_dia], np.diff(np.append(inicio_dia, n)))
+    fim_dia = np.append(inicio_dia[1:], n)
+    abertura_min = bars.get("abertura_min")
+    if abertura_min is None:
+        ref_dia = inicio_dia
+    else:
+        # barra de abertura = primeira do dia que COMECA na abertura de referencia
+        inicio_min = np.asarray(bars["inicio_min"])
+        ref_dia = fim_dia.copy()  # dia sem essa barra: sem abertura, sem sinal
+        for k, (ini, fim) in enumerate(zip(inicio_dia, fim_dia)):
+            achou = np.flatnonzero(inicio_min[ini:fim] >= abertura_min)
+            if achou.size:
+                ref_dia[k] = ini + achou[0]
+    tem_ref = ref_dia < fim_dia
+    abertura_dia = np.repeat(
+        np.where(tem_ref, abertura[np.minimum(ref_dia, n - 1)], np.nan),
+        fim_dia - inicio_dia)
+    # barras antes da abertura de referencia nao sinalizam
+    depois_ref = np.arange(n) >= np.repeat(ref_dia, fim_dia - inicio_dia)
 
     anterior_valido = np.zeros(n, dtype=np.bool_)
     anterior_valido[1:] = dia[1:] == dia[:-1]
@@ -80,12 +97,12 @@ def signals(bars: dict, params: dict) -> Signals:
     maxima_anterior = np.roll(maxima, 1)
     curta_anterior = np.roll(media_curta, 1)
 
-    compra = (anterior_valido & (fechamento > abertura)
+    compra = (anterior_valido & depois_ref & (fechamento > abertura)
               & (fechamento > media_curta) & (fechamento > media_longa)
               & (minima_anterior < curta_anterior)
               & (fechamento > maxima_anterior)
               & (fechamento - abertura_dia >= distancia))
-    venda = (anterior_valido & (fechamento < abertura)
+    venda = (anterior_valido & depois_ref & (fechamento < abertura)
              & (fechamento < media_curta) & (fechamento < media_longa)
              & (maxima_anterior > curta_anterior)
              & (fechamento < minima_anterior)

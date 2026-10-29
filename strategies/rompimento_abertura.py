@@ -31,15 +31,13 @@ params_schema = {
                     "min": 0, "max": 500, "step": 1, "tipo": "int"},
     "filtro_amplitude": {"label": "Amplitude mínima da abertura (pontos)",
                          "default": 0, "min": 0, "max": 2000, "step": 50,
-                         "tipo": "int"},
+                         "tipo": "int", "unidade": "pontos"},
 }
-
-TICK = 5  # pontos; o WIN anda de 5 em 5
 
 
 def signals(bars: dict, params: dict) -> Signals:
     barras_abertura = int(params["barras_abertura"])
-    folga = int(params["folga_ticks"]) * TICK
+    folga = int(params["folga_ticks"]) * int(bars.get("tick", 5))
     minimo = int(params["filtro_amplitude"])
 
     ts, high, low, close = bars["ts"], bars["high"], bars["low"], bars["close"]
@@ -51,7 +49,16 @@ def signals(bars: dict, params: dict) -> Signals:
 
     # posicao da barra dentro do proprio pregao (0 = primeira barra do dia)
     fim_do_dia = np.append(inicio_do_dia[1:], n)
-    pos_no_dia = np.arange(n) - np.repeat(inicio_do_dia,
+    # barra de abertura: a primeira do dia, ou (ativo com abertura de
+    # referencia) a primeira que COMECA nela; dia sem ela nao tem abertura
+    abertura_min = bars.get("abertura_min")
+    abre_no_dia = inicio_do_dia.copy()
+    if abertura_min is not None:
+        inicio_min = np.asarray(bars["inicio_min"])
+        for k, (ini, fim) in enumerate(zip(inicio_do_dia, fim_do_dia)):
+            achou = np.flatnonzero(inicio_min[ini:fim] >= abertura_min)
+            abre_no_dia[k] = ini + achou[0] if achou.size else fim
+    pos_no_dia = np.arange(n) - np.repeat(abre_no_dia,
                                            fim_do_dia - inicio_do_dia)
 
     # um pregao mais curto que `barras_abertura` ainda calcula teto/piso
@@ -59,10 +66,12 @@ def signals(bars: dict, params: dict) -> Signals:
     # de valer e o filtro `formado`, logo a seguir, nunca este calculo
     teto = np.full(n, np.nan)
     piso = np.full(n, np.nan)
-    for ini, fim in zip(inicio_do_dia, fim_do_dia):
-        limite = min(ini + barras_abertura, fim)
-        teto[ini:fim] = high[ini:limite].max()
-        piso[ini:fim] = low[ini:limite].min()
+    for ini, fim, abre in zip(inicio_do_dia, fim_do_dia, abre_no_dia):
+        if abre >= fim:
+            continue
+        limite = min(abre + barras_abertura, fim)
+        teto[ini:fim] = high[abre:limite].max()
+        piso[ini:fim] = low[abre:limite].min()
 
     # a propria janela de abertura nao pode romper o range que ela mesma
     # esta formando - so depois dela conta. tambem cobre pregao mais
