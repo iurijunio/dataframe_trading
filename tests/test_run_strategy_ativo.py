@@ -1,6 +1,4 @@
 """run_strategy e o ponto unico de conversao humano -> unidades guardadas."""
-from dataclasses import replace
-
 import numpy as np
 
 from core import ativo
@@ -78,11 +76,8 @@ def test_chamada_dupla_da_trades_iguais():
 def test_instrumento_ja_convertido_nao_converte_de_novo():
     perfil, barras = _perfil(), _mes()
     a = run_strategy(barras, _Estrategia(), {"k": 30}, perfil, MES_INST)
-    # instrumento guardado => o par (perfil, instrumento) ja esta em unidades
-    # guardadas: nada e convertido de novo (100x seria 100000)
-    guardado = replace(perfil, stop_pontos=1000, alvo_pontos=100_000, entrada_inicio="15:00",
-                      entrada_fim="21:00", fechamento="22:00")
-    b = run_strategy(barras, _Estrategia(), {"k": 30}, guardado, a.instrument)
+    # o perfil e sempre humano; so o instrumento nao converte duas vezes
+    b = run_strategy(barras, _Estrategia(), {"k": 30}, perfil, a.instrument)
     assert np.array_equal(a.sl_at_entry, b.sl_at_entry)
     assert (b.sl_at_entry[b.sl_at_entry > 0] == 1000).all()
 

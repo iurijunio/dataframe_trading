@@ -121,17 +121,17 @@ def _identidade(f: Ficha | None) -> bool:
 def ficha_do_instrumento(instr: dict) -> Ficha | None:
     """Ficha do dicionario do instrumento; None se for de teste/WIN antigo ou ja convertido."""
     if instr.get("_unidade") == "guardada":
-        return None
+        instr = instr["_original"]  # perfil e parametros chegam sempre em unidade humana
     if "price_decimals" not in instr and "sessao_abertura" not in instr:
         return None
     return ficha_de(instr)
 
 
 def instrumento_para_motor(instr: dict, f: Ficha | None) -> dict:
-    if _identidade(f):
+    if _identidade(f) or instr.get("_unidade") == "guardada":
         return instr
     return {**instr, "tick_size": f.tick_unid, "point_value": f.valor_por_unid,
-            "_unidade": "guardada"}
+            "_unidade": "guardada", "_original": instr}
 
 
 def perfil_para_motor(p: "ExecutionProfile", f: Ficha | None) -> "ExecutionProfile":

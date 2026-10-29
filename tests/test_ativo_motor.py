@@ -36,7 +36,9 @@ def test_instrumento_mes():
     assert conv["tick_size"] == 25 and conv["point_value"] == 0.05
     assert conv["_unidade"] == "guardada"
     assert "_unidade" not in MES_CFG
-    assert ativo.ficha_do_instrumento(conv) is None
+    f = ativo.ficha_do_instrumento(conv)
+    assert f == ativo.ficha_do_instrumento(MES_CFG)
+    assert ativo.instrumento_para_motor(conv, f) is conv
 
 
 def test_perfil_mes():
