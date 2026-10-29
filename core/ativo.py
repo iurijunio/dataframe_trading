@@ -189,19 +189,29 @@ def perfil_padrao(f: Ficha) -> dict | None:
     return f.perfil_padrao
 
 
-def janela_valida(ini: str, fim: str, f: Ficha | None) -> str | None:
+def janela_valida(ini: str, fim: str, f: Ficha | None,
+                  fechamento: str | None = None) -> str | None:
     """Mensagem de erro se a janela de entrada atravessa a virada do pregao.
 
     No relogio de pregao a pausa (17:00-18:00 NY) e a virada do dia: uma janela
-    cujo inicio vem depois do fim, em minutos, cruza essa pausa.
+    cujo inicio vem depois do fim, em minutos, cruza essa pausa. O fechamento
+    (vazio ou None = nao confere) nao pode vir antes do fim da janela nem cair
+    na pausa.
     """
     conv = (lambda h: h) if f is None else (lambda h: hora_para_motor(h, f))
     try:
         a, b = hora_para_minuto(conv(ini)), hora_para_minuto(conv(fim))
+        c = hora_para_minuto(conv(fechamento)) if fechamento else None
     except (ValueError, AttributeError):
         return "horário inválido"
-    if a <= b:
-        return None
-    if f is not None and f.deslocamento_min:
-        return "janela de entrada atravessa a pausa do pregão (17:00–18:00 NY)"
-    return "janela de entrada termina antes de começar"
+    deslocado = f is not None and f.deslocamento_min
+    if a > b:
+        if deslocado:
+            return "janela de entrada atravessa a pausa do pregão (17:00–18:00 NY)"
+        return "janela de entrada termina antes de começar"
+    if c is not None:
+        if c < b:
+            return "fechamento antes do fim da janela de entrada"
+        if deslocado and c > hora_para_minuto(hora_para_motor("17:00", f)):
+            return "fechamento dentro da pausa do pregão (17:00–18:00 NY)"
+    return None

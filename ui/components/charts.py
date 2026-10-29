@@ -63,17 +63,27 @@ def price_series(dados: dict, markers: list | None = None,
     ]
 
 
-def trade_markers(trades: dict, t0: int, t1: int, limite: int = 400, f=None) -> list[dict]:
+def trade_markers(trades: dict, t0: int, t1: int, limite: int = 400, f=None,
+                  d1: bool = False) -> list[dict]:
     """Setas de entrada e saida dos trades que caem na janela visivel.
 
     Com a ficha do ativo, tempo e pontos saem na mesma unidade dos candles.
+    No D1 os candles levam a data do pregao (sem deslocamento): os marcadores
+    ficam nessa data, no relogio de pregao.
     """
     if not trades or not len(trades["entry_i"]):
         return []
+    bruto = trades
     trades = ativo.trades_para_exibir(trades, f)
+    d1 = d1 and f is not None and bool(f.deslocamento_min)
+    if d1:
+        trades = dict(trades, entry_ts=bruto["entry_ts"], exit_ts=bruto["exit_ts"])
 
     ent = np.array([to_epoch(t) for t in trades["entry_ts"]])
     sai = np.array([to_epoch(t) for t in trades["exit_ts"]])
+    if d1:
+        dia = 86400
+        ent, sai = ent - ent % dia, sai - sai % dia
     dentro = np.flatnonzero((sai >= t0) & (ent <= t1))
     if dentro.size > limite:
         dentro = dentro[:limite]

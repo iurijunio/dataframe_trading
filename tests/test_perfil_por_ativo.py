@@ -95,6 +95,26 @@ def test_janela_ny_normal_e_win_aceitos():
     assert ativo.janela_valida("17:00", "09:00", ativo.ficha("WIN$N"))
 
 
+def test_fechamento_validado_mes():
+    mes = ativo.ficha("MES")
+    assert ativo.janela_valida("09:30", "15:00", mes, "16:00") is None
+    assert ativo.janela_valida("09:30", "15:00", mes, "17:00") is None
+    assert ativo.janela_valida("09:30", "15:00", mes, "") is None
+    assert ativo.janela_valida("09:30", "15:00", mes, None) is None
+    assert ativo.janela_valida("09:30", "15:00", mes, "14:00")        # antes do fim
+    assert ativo.janela_valida("09:30", "15:00", mes, "17:30")        # na pausa
+    assert ativo.janela_valida("09:30", "15:00", mes, "17:59")
+    assert ativo.janela_valida("09:30", "15:00", mes, "18:00")       # inicio do pregao seguinte
+    assert ativo.janela_valida("09:30", "15:00", mes, "9h") == "horário inválido"
+
+
+def test_fechamento_win_aceito():
+    win = ativo.ficha("WIN$N")
+    assert ativo.janela_valida("09:00", "17:00", win, "17:30") is None
+    assert ativo.janela_valida("09:00", "17:00", win, "") is None
+    assert ativo.janela_valida("09:00", "17:00", win, None) is None
+
+
 @pytest.fixture
 def app(_banco_isolado):
     with db.connect_write() as con:

@@ -161,7 +161,7 @@ def test_ema_abertura_so_depois_das_09h30_e_distancia_do_open_das_09h30():
     run_strategy(barras, e0, p, _perfil(), MES)
     longa0, curta0 = e0.sinais.entry_long, e0.sinais.entry_short
     assert (longa0 | curta0).any()
-    assert not (longa0 | curta0)[minuto < _hhmm(15, 30)].any()
+    assert not (longa0 | curta0)[minuto < _hhmm(15, 31)].any()
 
     e3 = _Capta(rompimento_ema_abertura)
     run_strategy(barras, e3, {**p, "distancia_abertura": 3}, _perfil(), MES)
@@ -177,6 +177,45 @@ def test_ema_abertura_so_depois_das_09h30_e_distancia_do_open_das_09h30():
     assert e3.sinais.entry_long.any() or e3.sinais.entry_short.any()
     assert (e3.sinais.entry_long.sum() + e3.sinais.entry_short.sum()
             < longa0.sum() + curta0.sum())
+
+
+def _sobe_em_15h30(minuto, o, h, l, c):
+    # preco parado; 15:30 (barra de abertura) e 15:31 fecham fortes, e o
+    # pavio da barra anterior fica abaixo da EMA curta nas duas
+    for m, abre, fecha in ((_hhmm(15, 30), BASE, BASE + 500),
+                           (_hhmm(15, 31), BASE + 500, BASE + 1000)):
+        o[minuto == m], c[minuto == m], h[minuto == m] = abre, fecha, fecha
+    for m in (_hhmm(15, 29), _hhmm(15, 30)):
+        l[minuto == m] = BASE - 100
+
+
+def test_ema_abertura_barra_de_abertura_nao_sinaliza_mas_a_seguinte_pode():
+    barras, minuto = _barras_planas(_sobe_em_15h30)
+    p = {"ema_curta": 3, "ema_longa": 8, "distancia_abertura": 0}
+    e = _Capta(rompimento_ema_abertura)
+    run_strategy(barras, e, p, _perfil(), MES)
+    longas = _sinal_min(e, minuto)
+    assert _hhmm(15, 30) not in longas
+    assert _hhmm(15, 31) in longas
+
+
+def test_sessao_sem_barra_depois_das_09h30_nao_sinaliza_nem_erra():
+    # pregao termina 09:15 NY (15:15 no relogio de pregao): sem abertura
+    ts = np.concatenate([_minutos(d, fim=15 * 60 + 15) for d in DIAS])
+    n = len(ts)
+    barras = {"ts": ts, "open": np.full(n, BASE, dtype=np.int64),
+              "high": np.full(n, BASE + 50, dtype=np.int64),
+              "low": np.full(n, BASE - 50, dtype=np.int64),
+              "close": np.full(n, BASE, dtype=np.int64),
+              "tick_volume": np.ones(n, dtype=np.int64),
+              "volume": np.ones(n, dtype=np.int64)}
+    for mod, p in ((rompimento_abertura, {"barras_abertura": 6, "folga_ticks": 1,
+                                          "filtro_amplitude": 0}),
+                   (rompimento_ema_abertura, {"ema_curta": 3, "ema_longa": 8,
+                                              "distancia_abertura": 0})):
+        e = _Capta(mod)
+        run_strategy(dict(barras), e, p, _perfil(), MES)
+        assert not (e.sinais.entry_long | e.sinais.entry_short).any()
 
 
 def test_adx_amplitude_max_em_pontos_vira_unidade_guardada():

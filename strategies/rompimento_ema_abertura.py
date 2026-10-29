@@ -88,8 +88,9 @@ def signals(bars: dict, params: dict) -> Signals:
     abertura_dia = np.repeat(
         np.where(tem_ref, abertura[np.minimum(ref_dia, n - 1)], np.nan),
         fim_dia - inicio_dia)
-    # barras antes da abertura de referencia nao sinalizam
-    depois_ref = np.arange(n) >= np.repeat(ref_dia, fim_dia - inicio_dia)
+    # a propria barra de abertura nao sinaliza (como a 1a barra do dia no WIN,
+    # que nao tem anterior): o 1o sinal possivel e o da barra seguinte
+    depois_ref = np.arange(n) > np.repeat(ref_dia, fim_dia - inicio_dia)
 
     anterior_valido = np.zeros(n, dtype=np.bool_)
     anterior_valido[1:] = dia[1:] == dia[:-1]

@@ -68,6 +68,24 @@ def test_trade_markers_mes():
     assert m[1]["text"] == "+1.25"
 
 
+def test_trade_markers_mes_d1_fica_na_data_do_pregao():
+    # 18:30 NY de 17/06 = 00:30 de 18/06 no relogio de pregao: no D1 o candle
+    # leva a data do pregao (18/06), sem deslocar -6 h
+    t = _trades("2024-06-18T00:30", "2024-06-18T01:00", 543225, 125, 40, 200)
+    dia = to_epoch(np.datetime64("2024-06-18T00:00"))
+    assert {x["time"] for x in charts.trade_markers(t, 0, 10**10, f=MES, d1=True)} == {dia}
+    # fora do D1 segue em hora de NY (dia anterior)
+    m = charts.trade_markers(t, 0, 10**10, f=MES)
+    assert m[0]["time"] == to_epoch(np.datetime64("2024-06-17T18:30"))
+    # pontos continuam em pontos
+    assert charts.trade_markers(t, 0, 10**10, f=MES, d1=True)[1]["text"] == "+1.25"
+
+
+def test_trade_markers_win_d1_identico():
+    assert (charts.trade_markers(T_WIN, 0, 10**10, f=WIN, d1=True)
+            == charts.trade_markers(T_WIN, 0, 10**10))
+
+
 def test_trade_markers_win_identico():
     assert charts.trade_markers(T_WIN, 0, 10**10, f=WIN) == charts.trade_markers(T_WIN, 0, 10**10)
 

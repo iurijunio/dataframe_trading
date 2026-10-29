@@ -656,7 +656,8 @@ def register(app):
 
         simbolo = _simbolo(ativo)
         erro_janela = ativo_mod.janela_valida(profile.entrada_inicio, profile.entrada_fim,
-                                              ativo_mod.ficha(simbolo))
+                                              ativo_mod.ficha(simbolo),
+                                              profile.fechamento)
         if erro_janela:
             return no_update, stats_cards.vazio(erro_janela), [], [], no_update, "", no_update
         todas = D.bars(simbolo)
@@ -850,7 +851,8 @@ def register(app):
         )
 
         erro_janela = ativo_mod.janela_valida(perfil.entrada_inicio, perfil.entrada_fim,
-                                              ativo_mod.ficha(_simbolo(ativo)))
+                                              ativo_mod.ficha(_simbolo(ativo)),
+                                              perfil.fechamento)
         if erro_janela:
             return erro_janela
 
@@ -2046,7 +2048,8 @@ def register(app):
             fr = ativo_mod.ficha(r.get("simbolo") or simbolo)
             t0 = dados["candles"][0]["time"]
             t1 = dados["candles"][-1]["time"]
-            marcas = charts.trade_markers(r["res"].trades, t0, t1, f=fr)
+            marcas = charts.trade_markers(r["res"].trades, t0, t1, f=fr,
+                                          d1=dados["timeframe"] == "D1")
             i = janela.get("trade")
             if i is not None:
                 linhas = charts.trade_price_lines(r["res"], i, fr)
