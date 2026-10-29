@@ -337,14 +337,13 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    `...-ordens-decisoes.md`. O **Envio de ordens nasce desligado** e registra
    "seria enviada". Conta real ficou para a parte 5. Pausar com posição
    aberta encerra na hora.
-   **Situação em 15/10/2026:** o usuário dispensou o ensaio de um pregão
-   inteiro. A **ordem de teste** na demo passou (entrada 149 ms, proteção
-   676 ms, saída 496 ms). O **Envio de ordens está LIGADO na conta demo, com
-   1 contrato**, na ligação do `rompimento_ema_abertura`; a ligação do
-   rompimento de canal segue só no papel. O PR `live-trading` → `master` está
-   foi mergeado no `master` (PR #2).
-   **Próximo passo:** acompanhar a demo, comparando papel × demo todo dia, e
-   promover a estratégia de canal.
+   A **ordem de teste** na demo passou em 15/10/2026 (entrada 149 ms,
+   proteção 676 ms, saída 496 ms). A parte 4 foi mergeada no `master` (PR #2).
+   **Situação em 29/10/2026:** desde 21/10 as ligações do
+   `rompimento_ema_abertura` (plano #6) e do `rompimento_canal` (plano #5)
+   estão na **fase real, com 1 contrato e o Envio LIGADO na conta real**
+   (Clear). O Envio da demo está desligado. A ligação da `adx_direcao`
+   (plano #7, desde 27/10) segue só no papel.
    **Opção "Saída" (18/10/2026, `strategies/saida.py`):** parâmetro `saida`
    em toda estratégia (inclusive a `adx_direcao`) menos o `rompimento_abertura` (um sinal por dia: os
    modos dariam os mesmos trades, cópia = platô falso), minerável como
