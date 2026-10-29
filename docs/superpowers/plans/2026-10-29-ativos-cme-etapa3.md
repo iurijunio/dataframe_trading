@@ -236,7 +236,11 @@
     - o `adicionar_variante` de uma variante WIN continua rápido: o teste mede menos de 2 s, sem a trava de leitura dentro da escrita;
   - **plano ativo que muda de ativo depois de entrar:** a variante entra com plano WIN e o plano ativo vira MES → `correlacao`, `curvas`, `resumo`, `resumo_membros`, `simulacao_capital` e `simular_crescimento` levantam `MoedaMista`;
   - **risco:** com `db.upsert_instrument(con, load_instrument_yaml("MES"))` gravado, `_trades_para_risco` de um WFA do MES com `mae=1000` e 1 contrato dá `mae_reais == 50.0`; sem linha em `instruments`, o padrão continua 1.0 (os testes de `tests/test_portfolio.py:176-239` passam sem mudança);
-  - **capital digitado:** `_parse_capital("US$ 10000") == 10000.0` e `_parse_capital("US$ 10.000,00") == 10000.0`; o comportamento atual para "R$" não muda;
+  - **capital digitado** (formato brasileiro: ponto = milhar, vírgula = decimal; decisão do usuário em 29/10 de corrigir o defeito antigo "10.000" → 10):
+    - `_parse_capital("10.000") == 10000.0`, `_parse_capital("R$ 10.000") == 10000.0`, `_parse_capital("US$ 10000") == 10000.0`, `_parse_capital("US$ 10.000,00") == 10000.0`;
+    - `_parse_capital("1.234.567,8") == 1234567.8`, `_parse_capital("2500,50") == 2500.5`;
+    - inválidos continuam `None`;
+    - os testes antigos que dependiam de "10.000" → 10 são corrigidos, com nota no relatório;
   - **callbacks:**
     - `abrir_detalhe` com uma adição recusada mostra a mensagem em `pf-avisos` e desenha o portfólio sem o membro;
     - `simular_crescimento` com portfólio misto mostra a mensagem de moeda, não a de "precisam ser números positivos";
