@@ -74,7 +74,7 @@ def _sequencias(s):
 
 
 # ------------------------------------------------------------- eficiência
-def _eficiencia(e):
+def _eficiencia(e, casas=0):
     if not e:
         return None
     fora = [
@@ -107,8 +107,8 @@ def _eficiencia(e):
              "alvo; abaixo de 1,0 o sinal não oferece assimetria e nenhuma "
              "gestão conserta isso.",
              faixa(e["razao_mfe_mae"], 1.5, 1.0),
-             f"a favor {num(e['mfe_medio'], 0)} pts · "
-             f"contra {num(e['mae_medio'], 0)} pts"),
+             f"a favor {num(e['mfe_medio'], casas)} pts · "
+             f"contra {num(e['mae_medio'], casas)} pts"),
         card("alvo tocado e não pago", f"{num(e['pct_devolvido'], 0)}%",
              "Trades que chegaram a encostar na distância do alvo mas saíram "
              "por outro motivo — ou seja, o lucro esteve na mão e escapou. "
@@ -270,9 +270,9 @@ def _motor(m):
 
 
 # ------------------------------------------------------------------ render
-def render(m, seq, ef, risco, rit, fig_volume=None) -> html.Div:
+def render(m, seq, ef, risco, rit, fig_volume=None, casas=0) -> html.Div:
     if not m or not m.get("trades"):
         return vazio("Rode um backtest para ver os detalhes.")
-    blocos = [b for b in (_sequencias(seq), _eficiencia(ef), _risco(risco),
+    blocos = [b for b in (_sequencias(seq), _eficiencia(ef, casas), _risco(risco),
                           _ritmo(rit, fig_volume), _motor(m)) if b]
     return html.Div(blocos, className="aba-detalhes")

@@ -258,10 +258,11 @@ def _detalhes(res, run, liq, f=None):
                             tp_ent, t["reason"], K.EXIT_TARGET),
         detalhes.risco_trade(liq, t["points"], sl_ent,
                              t["reason"], K.EXIT_STOP, folga),
-        detalhes.ritmo(t["entry_ts"], liq, int(t["bars_held"].sum()),
+        detalhes.ritmo(res.trades["entry_ts"], liq, int(t["bars_held"].sum()),
                        res.n_bars, run["pregoes"]),
-        AC.barras(detalhes.resultado_por_volume(t["entry_ts"], liq),
+        AC.barras(detalhes.resultado_por_volume(res.trades["entry_ts"], liq),
                   "Resultado por nº de trades no pregão"),
+        casas=0 if ativo_mod._identidade(f) else f.price_decimals,
     )
 
 
@@ -1575,7 +1576,8 @@ def register(app):
                 AC.ganho_perda(analytics.por_hora(ts, liq, ativo_mod.ficha(simbolo)),
                                "Lucro × prejuízo por hora de entrada (OOS)"),
                 WP.linhas_trades(ts, liq, steps, capital,
-                                 saida=oos["exit_ts"], custo=oos["custo"]),
+                                 saida=oos["exit_ts"], custo=oos["custo"],
+                                 f=ativo_mod.ficha(simbolo)),
                 marca if marca != store_atual else no_update)
 
     # ------------------------------------------- a matriz das 12 configurações
@@ -2041,12 +2043,13 @@ def register(app):
         marcas, linhas, nota = [], [], ""
         if run and run.get("token") in _runs:
             r = _runs[run["token"]]
+            fr = ativo_mod.ficha(r.get("simbolo") or simbolo)
             t0 = dados["candles"][0]["time"]
             t1 = dados["candles"][-1]["time"]
-            marcas = charts.trade_markers(r["res"].trades, t0, t1, f=ativo_mod.ficha(simbolo))
+            marcas = charts.trade_markers(r["res"].trades, t0, t1, f=fr)
             i = janela.get("trade")
             if i is not None:
-                linhas = charts.trade_price_lines(r["res"], i, ativo_mod.ficha(simbolo))
+                linhas = charts.trade_price_lines(r["res"], i, fr)
                 nota = f"trade #{i + 1} em foco"
             else:
                 nota = f"{len(marcas) // 2} operações nesta janela"

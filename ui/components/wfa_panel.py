@@ -74,7 +74,7 @@ COLUNAS_TRADES = [
 
 
 def linhas_trades(ts, liquido, steps, capital: float,
-                  saida=None, custo=None) -> list[dict]:
+                  saida=None, custo=None, f=None) -> list[dict]:
     """A auditoria linha a linha. Limitada às 3.000 primeiras: além disso a
     tabela não é mais auditoria, é despejo — e o navegador engasga."""
     if not len(ts):
@@ -83,6 +83,10 @@ def linhas_trades(ts, liquido, steps, capital: float,
     acum = capital + np.cumsum(liquido)
     saida = ts if saida is None else saida
     custo = np.zeros(len(ts)) if custo is None else custo
+    if f is not None and f.deslocamento_min:
+        # o relogio guardado e o de pregao: a tela mostra a hora local do ativo
+        desl = np.timedelta64(f.deslocamento_min, "m")
+        ts, saida = ts - desl, saida - desl
     return [
         {"n": i + 1, "quando": str(ts[i])[:16].replace("T", " "),
          "saida": str(saida[i])[:16].replace("T", " "),

@@ -84,7 +84,7 @@ def test_trade_price_lines_win_identico():
 def test_por_hora_mes_rotulo_de_ny():
     ts = np.array(["2024-06-17T15:30"], dtype="datetime64[s]")
     d = analytics.por_hora(ts, np.array([1.0]), MES)
-    assert "09h" in str(d)
+    assert d["chaves"] == ["09h"]
     assert str(analytics.por_hora(ts, np.array([1.0]), WIN)) == str(analytics.por_hora(ts, np.array([1.0])))
 
 
@@ -104,7 +104,7 @@ def test_referencias_sem_trades_usam_perfil_humano():
 
 def test_detalhes_mes_nao_zera_a_folga(monkeypatch):
     vistos = {}
-    monkeypatch.setattr(callbacks.DC, "render", lambda *a: vistos.setdefault("a", a))
+    monkeypatch.setattr(callbacks.DC, "render", lambda *a, **k: vistos.setdefault("a", a))
     n = 25
     t = {k: np.repeat(v, n) for k, v in T_MES.items()}
     t["reason"] = np.repeat(K.EXIT_STOP, n)
@@ -119,3 +119,19 @@ def test_detalhes_mes_nao_zera_a_folga(monkeypatch):
     risco = vistos["a"][3]
     # limite = 10.00 + 0.25 de folga: -10.05 nao e stop furado (com folga 0 seria)
     assert risco["stops_furados"] == 0
+
+
+def test_ritmo_conta_um_pregao_quando_a_sessao_cruza_a_meia_noite_de_ny(monkeypatch):
+    vistos = {}
+    monkeypatch.setattr(callbacks.DC, "render", lambda *a, **k: vistos.setdefault("a", a))
+    n = 25
+    # 20:00 NY (sessao 02:00) e 10:00 NY do dia seguinte (sessao 16:00): mesmo pregao
+    ts = np.array(["2024-06-18T02:00", "2024-06-18T16:00"] * 12 + ["2024-06-18T16:00"],
+                  dtype="datetime64[ns]")
+    t = {k: np.repeat(v, n) for k, v in T_MES.items()}
+    t["entry_ts"] = ts
+    res = _res(t, 1000, 2000, {"tick_size": 25, "_unidade": "guardada"})
+    res.n_bars = 100
+    run = {"profile": ExecutionProfile(), "metrics": {"trades": n}, "pregoes": 5}
+    callbacks._detalhes(res, run, np.repeat(10.0, n), MES)
+    assert vistos["a"][4]["pregoes_operados"] == 1
