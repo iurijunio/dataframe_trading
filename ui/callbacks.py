@@ -214,22 +214,25 @@ def _varredura(linhas):
     return linhas or []
 
 
-def _referencias_operadas(res, perfil):
+def _referencias_operadas(res, perfil, f=None):
     """Stop e alvo que o motor operou, mediana por trade.
 
     O perfil pode guardar valores que nunca entraram em jogo (alvo por
     multiplicador do stop, ATR, stop da estratégia) — as sugestões e as
     linhas do MAE/MFE precisam do operado, senão o "% do alvo" que a tela
     mostra estaria errado no número em que o usuário decide o que mexer.
-    Sem trades, cai no perfil (não há mediana para tirar).
+    Sem trades, cai no perfil (não há mediana para tirar). Sai sempre em
+    pontos (o perfil da tela já é humano; sl/tp guardados voltam por `f`).
     """
     sl, tp = res.sl_at_entry, res.tp_at_entry
-    stop = int(np.median(sl)) if len(sl) else perfil.stop_pontos
-    alvo = int(np.median(tp)) if len(tp) else perfil.alvo_pontos
+    stop = (ativo_mod.pontos_para_exibir(int(np.median(sl)), f)
+            if len(sl) else perfil.stop_pontos)
+    alvo = (ativo_mod.pontos_para_exibir(int(np.median(tp)), f)
+            if len(tp) else perfil.alvo_pontos)
     return stop, alvo
 
 
-def _detalhes(res, run, liq):
+def _detalhes(res, run, liq, f=None):
     """Monta a aba Detalhes: o que MEXER, em oposição ao "isto é sorte?" da
     Robustez. Sai tudo dos mesmos arrays — nenhum backtest roda de novo."""
     p, t, m = run["profile"], res.trades, run["metrics"]
@@ -238,14 +241,22 @@ def _detalhes(res, run, liq):
 
     # o slippage ja esta embutido em points: sem descontá-lo aqui, TODA saida
     # por stop apareceria como stop furado
-    folga = int(p.slippage_ticks * int(res.instrument.get("tick_size", 1)))
+    # (em ativo com centavos, tudo em pontos: o tick vem da ficha, nao do
+    # instrumento guardado)
+    if ativo_mod._identidade(f):
+        folga = int(p.slippage_ticks * int(res.instrument.get("tick_size", 1)))
+    else:
+        folga = p.slippage_ticks * f.tick_size
+    t = ativo_mod.trades_para_exibir(t, f)
+    tp_ent = ativo_mod.pontos_para_exibir(res.tp_at_entry, f)
+    sl_ent = ativo_mod.pontos_para_exibir(res.sl_at_entry, f)
 
     return DC.render(
         m,
         detalhes.sequencias(liq),
         detalhes.eficiencia(t["mae"], t["mfe"], t["points"],
-                            res.tp_at_entry, t["reason"], K.EXIT_TARGET),
-        detalhes.risco_trade(liq, t["points"], res.sl_at_entry,
+                            tp_ent, t["reason"], K.EXIT_TARGET),
+        detalhes.risco_trade(liq, t["points"], sl_ent,
                              t["reason"], K.EXIT_STOP, folga),
         detalhes.ritmo(t["entry_ts"], liq, int(t["bars_held"].sum()),
                        res.n_bars, run["pregoes"]),
@@ -701,14 +712,14 @@ def register(app):
         token = f"r{n or 0}-{int(time.time() * 1000)}"
         _runs.clear()
         _runs[token] = {"res": res, "dinheiro": dinheiro, "profile": profile,
-                "metrics": m,
+                "metrics": m, "simbolo": simbolo,
                 # pregoes do PERIODO, nao os operados: a aba Detalhes
                 # compara um com o outro para medir seletividade
                 "pregoes": int(len(np.unique(
                     bars["ts"].astype("datetime64[D]"))))}
 
         equity = charts.equity_series(res.trades, dinheiro["liquido"], profile.capital_inicial)
-        linhas = results_grid.rows(res.trades, dinheiro)
+        linhas = results_grid.rows(res.trades, dinheiro, ativo_mod.ficha(simbolo))
 
         fim_janela = bars["ts"][-1].astype("datetime64[s]").item()
         janela = {"de": (fim_janela - timedelta(days=5)).isoformat(),
@@ -1561,7 +1572,7 @@ def register(app):
                 WP.mensal_fig(mes),
                 AC.ganho_perda(analytics.por_dia_semana(ts, liq),
                                "Lucro × prejuízo por dia da semana (OOS)"),
-                AC.ganho_perda(analytics.por_hora(ts, liq),
+                AC.ganho_perda(analytics.por_hora(ts, liq, ativo_mod.ficha(simbolo)),
                                "Lucro × prejuízo por hora de entrada (OOS)"),
                 WP.linhas_trades(ts, liq, steps, capital,
                                  saida=oos["exit_ts"], custo=oos["custo"]),
@@ -1977,20 +1988,22 @@ def register(app):
                 "Rode um backtest para ver os detalhes."), RC.vazio()
 
         res, liq = run["res"], run["dinheiro"]["liquido"]
-        t, p = res.trades, run["profile"]
+        p = run["profile"]
+        f = ativo_mod.ficha(run.get("simbolo") or _simbolo(None))
+        t = ativo_mod.trades_para_exibir(res.trades, f)
 
         diag = analytics.calor_mae_mfe(t["mae"], t["mfe"], liq)
-        stop_ref, alvo_ref = _referencias_operadas(res, p)
+        stop_ref, alvo_ref = _referencias_operadas(res, p, f)
         dicas = analytics.sugestoes(diag, stop_ref, alvo_ref)
 
         return (
-            AC.ganho_perda(analytics.por_hora(t["entry_ts"], liq),
+            AC.ganho_perda(analytics.por_hora(res.trades["entry_ts"], liq, f),
                            "Lucro × prejuízo por hora de entrada"),
-            AC.ganho_perda(analytics.por_dia_semana(t["entry_ts"], liq),
+            AC.ganho_perda(analytics.por_dia_semana(res.trades["entry_ts"], liq),
                            "Lucro × prejuízo por dia da semana"),
-            AC.ganho_perda(analytics.por_mes(t["entry_ts"], liq),
+            AC.ganho_perda(analytics.por_mes(res.trades["entry_ts"], liq),
                            "Lucro × prejuízo por mês do ano"),
-            AC.calendario(analytics.calendario_mensal(t["entry_ts"], liq)),
+            AC.calendario(analytics.calendario_mensal(res.trades["entry_ts"], liq)),
             AC.mae_mfe(diag, stop_ref, alvo_ref),
             AC.barras(analytics.por_duracao(t["bars_held"], liq,
                                             TIMEFRAMES.get(p.timeframe, 1)),
@@ -1999,7 +2012,7 @@ def register(app):
                       "Lucro por motivo de saída", com_expectativa=False),
             AC.histograma(analytics.distribuicao(liq)),
             [html.P(d, className="dica") for d in dicas],
-            _detalhes(res, run, liq),
+            _detalhes(res, run, liq, f),
             _robustez(res, run, liq),
         )
 
@@ -2030,10 +2043,10 @@ def register(app):
             r = _runs[run["token"]]
             t0 = dados["candles"][0]["time"]
             t1 = dados["candles"][-1]["time"]
-            marcas = charts.trade_markers(r["res"].trades, t0, t1)
+            marcas = charts.trade_markers(r["res"].trades, t0, t1, f=ativo_mod.ficha(simbolo))
             i = janela.get("trade")
             if i is not None:
-                linhas = charts.trade_price_lines(r["res"], i)
+                linhas = charts.trade_price_lines(r["res"], i, ativo_mod.ficha(simbolo))
                 nota = f"trade #{i + 1} em foco"
             else:
                 nota = f"{len(marcas) // 2} operações nesta janela"
