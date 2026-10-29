@@ -244,10 +244,12 @@ def compare_sizing(res: BacktestResult) -> dict[str, dict]:
     return out
 
 
-def format_panel(m: dict) -> str:
+def format_panel(m: dict, moeda: str = "BRL") -> str:
     if not m.get("trades"):
         return "nenhum trade."
-    br = lambda v: f"R$ {v:>12,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
+    from .ativo import SIMBOLOS_MOEDA
+    simbolo = SIMBOLOS_MOEDA.get(moeda, moeda)
+    br = lambda v: f"{simbolo} {v:>12,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
     return "\n".join([
         f"  trades              : {m['trades']:>12,}".replace(",", "."),
         f"  lucro liquido       : {br(m['lucro_liquido'])}",

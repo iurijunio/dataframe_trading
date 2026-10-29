@@ -57,8 +57,8 @@ def main() -> None:
     e.add_argument("--step-gatilho", type=float, default=0, help="%% do alvo")
     e.add_argument("--step-dist", type=float, default=0, help="%% do alvo")
     e.add_argument("--trailing", type=int, default=0, help="pontos")
-    e.add_argument("--lim-ganho", type=float, default=0, help="R$ por contrato")
-    e.add_argument("--lim-perda", type=float, default=0, help="R$ por contrato")
+    e.add_argument("--lim-ganho", type=float, default=0, help="na moeda do ativo, por contrato")
+    e.add_argument("--lim-perda", type=float, default=0, help="na moeda do ativo, por contrato")
     e.add_argument("--max-trades", type=int, default=0)
     e.add_argument("--max-loss", type=int, default=0)
     e.add_argument("--slippage", type=int, default=1, help="ticks")
@@ -115,7 +115,7 @@ def main() -> None:
 
     for modo, m in metrics.compare_sizing(res).items():
         print(f"--- {modo} ---")
-        print(metrics.format_panel(m))
+        print(metrics.format_panel(m, res.instrument.get("currency", "BRL")))
         print()
 
 

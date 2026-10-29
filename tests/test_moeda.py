@@ -57,3 +57,21 @@ def test_moeda_de_le_a_ficha_do_ativo():
 
 def test_moeda_de_simbolo_sem_yaml_cai_em_brl():
     assert ativo.moeda_de("XYZ") == "BRL"
+
+
+def test_linha_de_comando_troca_so_o_simbolo():
+    from core import metrics
+
+    m = {
+        "trades": 3, "lucro_liquido": 1234.5, "custo_total": 10.0,
+        "profit_factor": 1.5, "win_rate": 50.0, "payoff": 1.2,
+        "expectativa": 411.5, "max_drawdown": -57056.0,
+        "max_drawdown_pct": 5.0, "max_drawdown_pct_capital": 4.0,
+        "fator_recuperacao": 2.0, "sharpe": 1.0, "sortino": 1.1,
+        "max_perdas_consecutivas": 2, "trades_por_dia": 1.0,
+        "barras_ambiguas": 0, "barras_ambiguas_pct": 0.0, "saidas": {},
+    }
+    usd = metrics.format_panel(m, "USD")
+    assert "US$" in usd and "R$" not in usd
+    assert metrics.format_panel(m) == metrics.format_panel(m, "BRL")
+    assert "R$" in metrics.format_panel(m) and "US$" not in metrics.format_panel(m)
