@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime
 import polars as pl
 from core import ativo
+from core import db_manager as db
 
 WIN = ativo.ficha_de({"symbol": "WIN$N", "currency": "BRL", "timezone": "America/Sao_Paulo",
                       "price_decimals": 0, "tick_size": 5, "point_value": 0.20, "tick_value": 1.0})
@@ -46,10 +47,6 @@ def test_ida_e_volta_de_hora():
 
 def test_preco_mes():
     assert ativo.preco_para_exibir(543225, MES) == 5432.25
-
-
-from core import db_manager as db
-
 def test_fichas_dos_micros():
     mes, mnq = ativo.ficha("MES"), ativo.ficha("MNQ")
     assert (mes.point_value, mes.tick_value, mes.tick_unid, mes.currency) == (5.0, 1.25, 25, "USD")
