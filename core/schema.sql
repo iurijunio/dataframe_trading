@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS ingest_log (
     conflict_sample VARCHAR,  -- JSON com ate 5 exemplos de divergencia
     ingested_at     TIMESTAMP
 );
+-- Nota livre da carga (JSON na importacao do London Strategic Edge).
+ALTER TABLE ingest_log ADD COLUMN IF NOT EXISTS observacao VARCHAR;
 
 -- --------------------------------------------------------------- derivadas
 -- Reconstruidas a partir de bars_m1. Nunca sao fonte da verdade.

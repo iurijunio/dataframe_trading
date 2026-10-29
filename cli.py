@@ -2,6 +2,7 @@
 
     py cli.py init                      cria o schema e carrega os instrumentos
     py cli.py ingest <csv> [--symbol]   importa uma exportacao do MT5 (merge)
+    py cli.py importar-lse --symbol MES <arquivos>  importa Parquet do London Strategic Edge
     py cli.py derive [--symbol]         reconstroi trading_days e rollovers
     py cli.py status [--symbol]         estado da base
     py cli.py verify [--symbol]         reconstroi do Parquet e compara
@@ -19,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from core.captura import captura_ativa_em, dias_pendentes  # noqa: E402
 from core import calendar as cal  # noqa: E402
 from core import db_manager as db  # noqa: E402
+from core import importar_lse as lse  # noqa: E402
 from core import ingest as ing  # noqa: E402
 from core import rollovers as roll  # noqa: E402
 
@@ -74,6 +76,34 @@ def cmd_ingest(args) -> None:
         print("  escrevendo espelho Parquet...")
         out = db.export_parquet(con, args.symbol)
         print(f"    {out}")
+
+
+def cmd_importar_lse(args) -> None:
+    paths = [Path(a) for a in args.arquivos]
+    for p in paths:
+        if not p.exists():
+            sys.exit(f"arquivo nao encontrado: {p}")
+
+    with db.connect() as con:
+        db.init_schema(con)
+        db.sync_instruments(con)
+        try:
+            r = lse.importar(con, args.symbol, paths)
+        except lse.SuspeitoNovo as e:
+            print("Pregoes suspeitos sem decisao (nada foi gravado):")
+            for d, motivo in e.pregoes.items():
+                print(f"  {d}  {motivo}")
+            print("\nAcrescente em pregoes_descartados ou pregoes_mantidos de "
+                  "configs/instruments/<arquivo>.yaml e rode de novo.")
+            sys.exit(1)
+
+        print(r.ingest.summary())
+        if r.descartados:
+            print("\n  pregoes descartados:")
+            for d, motivo in r.descartados.items():
+                print(f"    {d}  {motivo}")
+        if r.incompleto:
+            print(f"\n  ultimo pregao incompleto, deixado de fora: {r.incompleto}")
 
 
 ESTADO_CAPTURA = db.DATA / "ao_vivo" / "estado.json"
@@ -256,6 +286,11 @@ def main() -> None:
     pi.add_argument("--symbol", default=DEFAULT_SYMBOL)
     pi.add_argument("--no-copy-raw", dest="copy_raw", action="store_false")
     pi.set_defaults(func=cmd_ingest, copy_raw=True)
+
+    pl_ = sub.add_parser("importar-lse", help="importa Parquet do London Strategic Edge")
+    pl_.add_argument("--symbol", required=True)
+    pl_.add_argument("arquivos", nargs="+")
+    pl_.set_defaults(func=cmd_importar_lse)
 
     pm = sub.add_parser("minas", help="lista/limpa minerações salvas")
     pm.add_argument("--limpar", action="store_true")

@@ -4,7 +4,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from core import ativo, importar_lse as lse
+from core import ativo, db_manager as db, importar_lse as lse
 
 D = Path(__file__).parent / "dados" / "lse"
 MES = ativo.ficha("MES")
@@ -126,3 +126,53 @@ def test_todos_os_motivos_aparecem():
                           | (ts >= pl.datetime(2024, 12, 26, 17)))))
     m = lse.pregoes_suspeitos(q, MES)["2024-12-26"]
     assert m.count(";") == 2 and "vazio" in m and "comecou" in m and "terminou" in m
+
+
+@pytest.fixture(autouse=True)
+def _parquet_isolado(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "PARQUET_DIR", tmp_path / "parquet")
+
+
+def _con():
+    con = db.connect(); db.init_schema(con); db.sync_instruments(con); return con
+
+
+def test_importar_descarta_os_da_lista_e_grava_o_resto():
+    con = _con()
+    r = lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
+    datas = {str(d) for (d,) in con.execute("SELECT DISTINCT CAST(ts AS DATE) FROM bars_m1 WHERE symbol='MES'").fetchall()}
+    assert "2020-03-03" not in datas and "2020-03-04" in datas
+    assert "2020-03-03" in r.descartados
+    obs = con.execute("SELECT observacao FROM ingest_log WHERE symbol='MES'").fetchone()[0]
+    assert "2020-03-03" in obs
+
+
+def test_suspeito_fora_da_lista_para_sem_gravar(monkeypatch):
+    con = _con()
+    monkeypatch.setattr(lse, "_ficha", lambda s: ativo.ficha_de({**db.load_instrument_yaml("MES"), "pregoes_descartados": {}}))
+    with pytest.raises(lse.SuspeitoNovo) as e:
+        lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
+    assert "2020-03-03" in e.value.pregoes
+    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES'").fetchone()[0] == 0
+
+
+def test_mantido_pela_lista_e_gravado(monkeypatch):
+    con = _con()
+    cfg = {**db.load_instrument_yaml("MES"), "pregoes_descartados": {},
+           "pregoes_mantidos": {d: "teste" for d in ("2020-02-27", "2020-02-28", "2020-03-02", "2020-03-03")}}
+    monkeypatch.setattr(lse, "_ficha", lambda s: ativo.ficha_de(cfg))
+    lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
+    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES' AND CAST(ts AS DATE)='2020-03-03'").fetchone()[0] > 0
+
+
+def test_reimportar_nao_altera_nada():
+    con = _con()
+    lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
+    r = lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
+    assert r.ingest.rows_inserted == 0 and r.ingest.rows_updated == 0
+
+
+def test_win_nao_e_tocado():
+    con = _con()
+    lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
+    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='WIN$N'").fetchone()[0] == 0

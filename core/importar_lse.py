@@ -17,12 +17,19 @@ download pode ter cortado no meio dele (veja `pregao_incompleto`).
 """
 from __future__ import annotations
 
+import hashlib
+import json
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
 import polars as pl
 
 from core import ativo
+from core import calendar as cal
+from core import db_manager as db
+from core import ingest as ing
+from core import rollovers as roll
 from core.ativo import Ficha
 
 _COLUNAS = ["time", "open", "high", "low", "close", "volume", "trades"]
@@ -165,3 +172,58 @@ def pregao_incompleto(df: pl.DataFrame) -> str | None:
     if ultima.hour * 60 + ultima.minute < _FIM_DO_PREGAO:
         return str(ultima.date())
     return None
+
+
+class SuspeitoNovo(Exception):
+    """Pregao suspeito que a ficha ainda nao decidiu (descartar ou manter)."""
+
+    def __init__(self, pregoes: dict[str, str]):
+        self.pregoes = pregoes
+        super().__init__(f"{len(pregoes)} pregoes suspeitos sem decisao na ficha: "
+                         + ", ".join(pregoes))
+
+
+@dataclass
+class ResultadoLSE:
+    ingest: ing.IngestResult
+    descartados: dict[str, str]
+    incompleto: str | None
+
+
+def _ficha(symbol: str) -> Ficha:
+    return ativo.ficha(symbol)
+
+
+def importar(con, symbol: str, paths: list[Path]) -> ResultadoLSE:
+    """Importa os arquivos do LSE para a base. Para antes de gravar se houver
+    pregao suspeito que a ficha nao descartou nem manteve."""
+    f = _ficha(symbol)
+    paths = sorted((Path(p) for p in paths), key=lambda p: p.name)
+    df = preparar(ler_partes(paths), f)
+
+    suspeitos = pregoes_suspeitos(df, f)
+    novos = {d: m for d, m in suspeitos.items()
+             if d not in f.pregoes_descartados and d not in f.pregoes_mantidos}
+    if novos:
+        raise SuspeitoNovo(novos)
+
+    incompleto = pregao_incompleto(df)
+    fora = set(f.pregoes_descartados)
+    if incompleto:
+        fora.add(incompleto)
+    # Descartado que nao esta nos dados (pregao ausente) nao remove nada,
+    # mas continua contando como descartado.
+    df = df.filter(~pl.col("ts").dt.strftime("%Y-%m-%d").is_in(list(fora)))
+    descartados = dict(f.pregoes_descartados)
+
+    sha = hashlib.sha256("".join(ing.sha256_of(p) for p in paths).encode()).hexdigest()
+    origem = "lse:" + ";".join(p.name for p in paths)
+    res = ing.ingest_df(con, df, symbol, origem, sha, price_decimals=0)
+    con.execute("UPDATE ingest_log SET observacao = ? WHERE ingest_id = ?",
+                [json.dumps({"descartados": descartados, "incompleto": incompleto},
+                            ensure_ascii=False), res.ingest_id])
+
+    cal.rebuild_trading_days(con, symbol)
+    roll.rebuild_rollovers(con, symbol, "none")
+    db.export_parquet(con, symbol)
+    return ResultadoLSE(res, descartados, incompleto)
