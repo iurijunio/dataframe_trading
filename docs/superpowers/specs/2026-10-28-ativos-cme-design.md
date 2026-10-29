@@ -461,3 +461,35 @@ WIN batendo.
   - `metrics` `pontos_liquidos`, `mae_medio` e `mfe_medio` saem na unidade guardada, mas nenhuma tela os lê hoje;
   - a foto grava o caminho absoluto do arquivo da estratégia;
   - continuam as da etapa 1 (`ler_partes`, guarda de NaN em preço, UPDATE de `observacao`).
+
+## Estado depois da etapa 3 (29/10/2026)
+
+**Resolvido:**
+- Todo valor em dinheiro da pesquisa sai na moeda do ativo, com formato brasileiro ("US$ 1.234,56", "-US$ 57.056,00"). Isso vale para:
+  - backtest, Detalhes, Robustez, gráficos e lista de trades;
+  - mineração, que segue o ativo da mineração e não o seletor;
+  - Walk-Forward, Candidata e ficha da estratégia;
+  - Portfólio e linha de comando.
+- A moeda vem de `Ficha.currency`, por `ativo.moeda_de`. Os símbolos estão em `core/ativo.py` e a formatação em `cartao.dinheiro`.
+- Os 4 rótulos de dinheiro da camada 4 seguem o ativo. O `controls.py` (protegido) mudou só nesses rótulos, com autorização do usuário.
+- **Portfólio:**
+  - recusa misturar moedas (`MoedaMista`) ao adicionar a variante e em todas as contas, inclusive quando o plano ativo de uma variante troca de ativo depois;
+  - o risco diário usa `point_value / 10**price_decimals`;
+  - o capital digitado lê o ponto como milhar ("10.000" = dez mil), mas só quando ele separa grupos de 3 dígitos que não começam por zero ("0.5" e "0.500" continuam decimais).
+- **Garantia do WIN:** referência das telas (`scripts/referencia_telas.py` + `tests/dados/telas_win/`), gravada antes da etapa e idêntica no fim. A foto do motor também ficou idêntica.
+
+**Decisões e desvios:**
+- **Portão "Aguenta custo maior?":** a frase do mini índice sai fora do BRL, em vez de usar a descrição do ativo como esta spec pedia, porque nos micros a frase seria falsa (decisão do usuário). Hoje a condição é "moeda BRL". Um futuro ativo BRL que não seja o WIN, como o WDO, herdaria a frase.
+- **Textos de (?) que ficam em R$:** são de layout fixo, montados uma vez (decisão do usuário):
+  - `core/mineracao_stats.py:32` e `:53`;
+  - `core/porteira.py:72` e `:190`;
+  - `core/tamanho.py:421`.
+
+**Pendências pequenas:**
+- `_fmt_capital` não faz ida e volta com 3 casas decimais abaixo de mil;
+- risco % "1.500" é lido como 1500 (ambiguidade aceita);
+- `abrir_detalhe` do portfólio chama `membros()` várias vezes;
+- dois "adicionar" simultâneos de moedas diferentes podem passar, mas as contas recusam depois;
+- os placeholders do portfólio misto mostram "(R$)";
+- `optimizer` `iniciar`/`esquecer` não zeram o símbolo da mineração;
+- a referência das telas compara JSON exato, então um upgrade do plotly exige regravar.
