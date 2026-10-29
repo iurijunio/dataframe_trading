@@ -24,3 +24,18 @@ def test_gerar_tem_as_cinco_partes(monkeypatch):
         monkeypatch.setattr(foto_win, nome, lambda *a, **k: {})
     assert set(foto_win.gerar()) == {"planos", "estrategias", "mineracao",
                                      "walkforward", "candidata"}
+
+
+def test_conferir_usa_o_banco_congelado(monkeypatch, tmp_path):
+    import pickle
+    from scripts import foto_win
+    monkeypatch.setattr(foto_win, "PASTA_FOTOS", tmp_path)
+    (tmp_path / "x.pkl").write_bytes(pickle.dumps({}))
+    (tmp_path / "x.duckdb").write_bytes(b"")
+    vistos = []
+    monkeypatch.setattr(foto_win, "gerar", lambda banco=None: vistos.append(banco) or {})
+    assert foto_win.main(["conferir", "x"]) == 0
+    assert vistos == [tmp_path / "x.duckdb"]
+    (tmp_path / "x.duckdb").unlink()
+    assert foto_win.main(["conferir", "x"]) == 0
+    assert vistos[-1] is None

@@ -1,6 +1,7 @@
 """Foto dos resultados do WIN, para provar que nada mudou.
 
-    python scripts/foto_win.py gravar <nome>     (não sobrescreve)
+    python scripts/foto_win.py gravar <nome>     (não sobrescreve; congela o banco
+                                                  em data/foto_win/<nome>.duckdb)
     python scripts/foto_win.py conferir <nome>   (exit 1 se houver diferença)
 
 A foto tem cinco partes, tudo no WIN$N: trades de cada plano (via
@@ -58,15 +59,15 @@ GRADE = {"media_rapida": [5, 9, 13, 17], "media_lenta": [21, 34, 55, 89, 144]}
 
 
 @contextmanager
-def _banco():
-    """Cópia do banco aberta só para leitura."""
+def _banco(origem: Path | None = None):
+    """Cópia do banco (`origem`, por padrão o real) aberta só para leitura."""
     import duckdb
 
     from core import db_manager as db
     from scripts.reassinar_codigo import copiar_banco
 
     with tempfile.TemporaryDirectory(prefix="foto-win-") as tmp:
-        copia = str(copiar_banco(Path(db.DB_PATH), Path(tmp) / "copia.duckdb"))
+        copia = str(copiar_banco(Path(origem or db.DB_PATH), Path(tmp) / "copia.duckdb"))
         con = duckdb.connect(copia, read_only=True)
         try:
             yield con, copia, Path(tmp)
@@ -74,8 +75,8 @@ def _banco():
             con.close()
 
 
-def _planos() -> dict:
-    with _banco() as (con, copia, tmp):
+def _planos(banco: Path | None = None) -> dict:
+    with _banco(banco) as (con, copia, tmp):
         ids = [int(r[0]) for r in con.execute(
             "SELECT plano_id FROM planos_operacao ORDER BY plano_id").fetchall()]
         saida = tmp / "planos.pkl"
@@ -90,14 +91,14 @@ def _planos() -> dict:
             return pickle.load(f)
 
 
-def _estrategias() -> dict:
+def _estrategias(banco: Path | None = None) -> dict:
     from core import db_manager as db
     from core.engine.execution import ExecutionProfile, prepare_bars, run_strategy
     from strategies import registry
     from strategies.base import defaults
 
     estrategias = {}
-    with _banco() as (con, _copia, _tmp):
+    with _banco(banco) as (con, _copia, _tmp):
         barras = prepare_bars(con, SIMBOLO)
         inst = db.load_instrument_yaml(SIMBOLO)
         for e in registry.descobrir():
@@ -187,8 +188,10 @@ def _candidata() -> dict:
         n=20, semente=7, lucros_reais=lucros)
 
 
-def gerar() -> dict:
-    return {"planos": _planos(), "estrategias": _estrategias(),
+def gerar(banco: Path | None = None) -> dict:
+    """`banco`: arquivo do banco congelado na gravação (padrão: o real). Só
+    planos e estratégias leem o banco; o resto lê o Parquet, cortado em 2025."""
+    return {"planos": _planos(banco), "estrategias": _estrategias(banco),
             "mineracao": _mineracao(), "walkforward": _walkforward(),
             "candidata": _candidata()}
 
@@ -207,15 +210,24 @@ def main(argv: list[str]) -> int:
         if arq.exists():
             print(f"{arq} já existe; não sobrescrevo (escolha outro nome).")
             return 1
-        foto = gerar()
+        from core import db_manager as db
+        from scripts.reassinar_codigo import copiar_banco
         arq.parent.mkdir(parents=True, exist_ok=True)
+        congelado = copiar_banco(Path(db.DB_PATH), arq.with_suffix(".duckdb"))
+        foto = gerar(congelado)
         with open(arq, "wb") as f:
             pickle.dump(foto, f)
         print(f"foto {nome} gravada ({_contagens(foto)})")
         return 0
     with open(arq, "rb") as f:
         salva = pickle.load(f)
-    nova = gerar()
+    congelado = arq.with_suffix(".duckdb")
+    if congelado.exists():
+        nova = gerar(congelado)
+    else:
+        print(f"AVISO: {congelado.name} não existe; confiro contra o banco "
+              "real, que ganha barras todo dia.")
+        nova = gerar()
     difs = comparar(salva, nova)
     if not difs:
         print(f"foto {nome}: idêntica ({_contagens(nova)})")
