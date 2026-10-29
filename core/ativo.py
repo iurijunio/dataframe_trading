@@ -196,7 +196,11 @@ def janela_valida(ini: str, fim: str, f: Ficha | None) -> str | None:
     cujo inicio vem depois do fim, em minutos, cruza essa pausa.
     """
     conv = (lambda h: h) if f is None else (lambda h: hora_para_motor(h, f))
-    if hora_para_minuto(conv(ini)) <= hora_para_minuto(conv(fim)):
+    try:
+        a, b = hora_para_minuto(conv(ini)), hora_para_minuto(conv(fim))
+    except (ValueError, AttributeError):
+        return "horário inválido"
+    if a <= b:
         return None
     if f is not None and f.deslocamento_min:
         return "janela de entrada atravessa a pausa do pregão (17:00–18:00 NY)"

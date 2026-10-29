@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from dash import no_update
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -32,18 +33,35 @@ def _valor(comp, id_):
     return achado[0]
 
 
+def _achar(comp, id_):
+    achado = []
+
+    def visita(c):
+        if getattr(c, "id", None) == id_:
+            achado.append(c)
+        filhos = getattr(c, "children", None)
+        if isinstance(filhos, (list, tuple)):
+            for x in filhos:
+                visita(x)
+        elif filhos is not None:
+            visita(filhos)
+
+    visita(comp)
+    assert achado, f"componente {id_} nao encontrado na camada 4"
+    return achado[0]
+
+
 def test_perfil_win_igual_aos_padroes_da_tela():
     p = ativo.perfil_padrao(ativo.ficha("WIN$N"))
-    tela = controls.camada_execucao() if hasattr(controls, "camada_execucao") else None
-    esperado = {"entrada_inicio": "09:00", "entrada_fim": "17:00", "fechamento": "17:30",
-                "corretagem": 0.50, "emolumentos": 0.27, "slippage_ticks": 1,
-                "stop_pontos": 300, "alvo_pontos": 600}
-    assert p == esperado
-    if tela is not None:
-        for cid, chave in (("e-ent-ini", "entrada_inicio"), ("e-ent-fim", "entrada_fim"),
-                           ("e-fechamento", "fechamento"), ("e-corretagem", "corretagem"),
-                           ("e-emolumentos", "emolumentos"), ("e-slippage", "slippage_ticks")):
-            assert _valor(tela, cid) == p[chave]
+    tela = controls.execucao()
+    ids = {"entrada_inicio": "e-ent-ini", "entrada_fim": "e-ent-fim",
+           "fechamento": "e-fechamento", "corretagem": "e-corretagem",
+           "emolumentos": "e-emolumentos", "slippage_ticks": "e-slippage",
+           "stop_pontos": {"type": "val", "p": "stop_pontos"},
+           "alvo_pontos": {"type": "val", "p": "alvo_pontos"}}
+    assert set(p) == set(ids)
+    for chave, cid in ids.items():
+        assert _achar(tela, cid).value == p[chave], chave
 
 
 def test_win_com_perfil_padrao_continua_identidade():
@@ -63,6 +81,12 @@ def test_mes_tem_perfil_de_ny():
 def test_janela_16h_19h_ny_recusada():
     msg = ativo.janela_valida("16:00", "19:00", ativo.ficha("MES"))
     assert msg
+
+
+def test_janela_horario_malformado_nao_levanta():
+    f = ativo.ficha("MES")
+    assert ativo.janela_valida("9h", "16:30", f) == "horário inválido"
+    assert ativo.janela_valida("", "16:30", f) == "horário inválido"
 
 
 def test_janela_ny_normal_e_win_aceitos():
@@ -98,3 +122,16 @@ def test_callback_aplica_perfil_do_ativo(app):
     assert tuple(mes) == ("18:00", "16:30", "16:50", 0.60, 0.0, 1, 10, 20)
     win = cb("WIN$N")
     assert tuple(win) == ("09:00", "17:00", "17:30", 0.50, 0.27, 1, 300, 600)
+
+
+def test_rodar_param_invalido_devolve_sete_saidas(app):
+    rodar = _callback(app, "store-run.data")
+    n = len(rodar.__code__.co_varnames[:rodar.__code__.co_argcount])
+    args = [None] * n
+    from strategies import registry
+    mod = registry.atual()
+    nome, meta = next((k, m) for k, m in mod.params_schema.items() if m.get("min") is not None)
+    args[5], args[6] = [meta["min"] - 1], [{"type": "val", "p": nome}]  # abaixo do minimo
+    r = rodar(*args)
+    assert len(r) == 7
+    assert r[1] is not no_update

@@ -604,7 +604,7 @@ def register(app):
             params = validate(mod.params_schema,
                               {k: v.get(k) for k in mod.params_schema})
         except ValueError as erro:
-            return no_update, stats_cards.vazio(str(erro)), [], [], no_update, ""
+            return no_update, stats_cards.vazio(str(erro)), [], [], no_update, "", no_update
 
         profile = ExecutionProfile(
             timeframe=tf or "M1",
@@ -681,13 +681,13 @@ def register(app):
         corte = (todas["ts"] >= np.datetime64(de_dt)) & (todas["ts"] <= np.datetime64(ate_dt))
         bars = {k: val[corte] for k, val in todas.items()}
         if not len(bars["open"]):
-            return no_update, stats_cards.vazio("Sem barras no período."), [], [], no_update, ""
+            return no_update, stats_cards.vazio("Sem barras no período."), [], [], no_update, "", no_update
 
         t0 = time.perf_counter()
         try:
             res = run_strategy(bars, mod, params, profile, D.instrument(simbolo))
         except ValueError as erro:
-            return no_update, stats_cards.vazio(str(erro)), [], [], no_update, ""
+            return no_update, stats_cards.vazio(str(erro)), [], [], no_update, "", no_update
         dinheiro = metrics.monetize(res)
         m = metrics.compute(res)
         ms = (time.perf_counter() - t0) * 1000
