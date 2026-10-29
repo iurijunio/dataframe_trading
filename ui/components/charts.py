@@ -63,10 +63,14 @@ def price_series(dados: dict, markers: list | None = None,
     ]
 
 
-def trade_markers(trades: dict, t0: int, t1: int, limite: int = 400) -> list[dict]:
-    """Setas de entrada e saida dos trades que caem na janela visivel."""
+def trade_markers(trades: dict, t0: int, t1: int, limite: int = 400, f=None) -> list[dict]:
+    """Setas de entrada e saida dos trades que caem na janela visivel.
+
+    Com a ficha do ativo, tempo e pontos saem na mesma unidade dos candles.
+    """
     if not trades or not len(trades["entry_i"]):
         return []
+    trades = ativo.trades_para_exibir(trades, f)
 
     ent = np.array([to_epoch(t) for t in trades["entry_ts"]])
     sai = np.array([to_epoch(t) for t in trades["exit_ts"]])
@@ -77,7 +81,8 @@ def trade_markers(trades: dict, t0: int, t1: int, limite: int = 400) -> list[dic
     out = []
     for i in dentro:
         comprado = trades["side"][i] == 1
-        pts = int(trades["points"][i])
+        pts = trades["points"][i]
+        pts = int(pts) if f is None or f.escala == 1 else round(float(pts), f.price_decimals)
         out.append({
             "time": int(ent[i]),
             "position": "belowBar" if comprado else "aboveBar",
@@ -90,13 +95,17 @@ def trade_markers(trades: dict, t0: int, t1: int, limite: int = 400) -> list[dic
             "position": "aboveBar" if comprado else "belowBar",
             "color": T.POS if pts > 0 else T.NEG,
             "shape": "circle",
-            "text": f"{pts:+d}",
+            "text": f"{pts:+d}" if isinstance(pts, int) else f"{pts:+.{f.price_decimals}f}",
         })
     out.sort(key=lambda m: m["time"])
     return out
 
 
-def trade_price_lines(res, i: int) -> list[dict]:
+def _arred(v, f):
+    return v if f is None or f.escala == 1 else round(v, f.price_decimals)
+
+
+def trade_price_lines(res, i: int, f=None) -> list[dict]:
     """Entrada, stop, alvo e saida do trade selecionado.
 
     Stop e alvo saem dos valores CONGELADOS na barra de entrada, nao dos
@@ -110,19 +119,24 @@ def trade_price_lines(res, i: int) -> list[dict]:
     entrada = int(trades["entry_px"][i])
     stop = int(res.sl_at_entry[i])
     alvo = int(res.tp_at_entry[i])
+    saida = int(trades["exit_px"][i])
+    if f is not None and f.escala != 1:
+        # tudo guardado em unidades de preco: volta para pontos antes de desenhar
+        entrada, stop, alvo, saida = (ativo.preco_para_exibir(v, f)
+                                      for v in (entrada, stop, alvo, saida))
 
     linhas = [
         {"price": entrada, "color": T.ACCENT, "lineWidth": 2, "lineStyle": 0,
          "axisLabelVisible": True, "title": "entrada"},
-        {"price": int(trades["exit_px"][i]), "color": T.ACCENT_2, "lineWidth": 1,
+        {"price": saida, "color": T.ACCENT_2, "lineWidth": 1,
          "lineStyle": 3, "axisLabelVisible": True, "title": "saída"},
     ]
     if stop > 0:
-        linhas.append({"price": entrada - lado * stop, "color": T.NEG,
+        linhas.append({"price": _arred(entrada - lado * stop, f), "color": T.NEG,
                        "lineWidth": 1, "lineStyle": 2,
                        "axisLabelVisible": True, "title": "stop"})
     if alvo > 0:
-        linhas.append({"price": entrada + lado * alvo, "color": T.POS,
+        linhas.append({"price": _arred(entrada + lado * alvo, f), "color": T.POS,
                        "lineWidth": 1, "lineStyle": 2,
                        "axisLabelVisible": True, "title": "alvo"})
     return linhas

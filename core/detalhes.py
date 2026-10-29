@@ -123,7 +123,7 @@ def eficiencia(mae: np.ndarray, mfe: np.ndarray, pontos: np.ndarray,
 
 def risco_trade(liquido: np.ndarray, pontos: np.ndarray,
                 sl_entrada: np.ndarray, motivos: np.ndarray,
-                cod_stop: int, folga: int = 0) -> dict:
+                cod_stop: int, folga: float = 0) -> dict:
     """O tamanho do risco de uma operação, em número.
 
     VaR e CVaR respondem coisas diferentes: o VaR é a perda que só 5% dos
@@ -149,7 +149,7 @@ def risco_trade(liquido: np.ndarray, pontos: np.ndarray,
 
     # stop furado: fechou pior do que o stop mandava, ja fora o slippage -
     # ou seja, gap ou barra que abriu atravessada
-    limite = sl_entrada + int(folga)
+    limite = sl_entrada + folga
     por_stop = motivos == cod_stop
     furou = por_stop & (pontos < -limite) & (sl_entrada > 0)
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import dash_ag_grid as dag
 import numpy as np
 
+from core import ativo
 from core.engine import kernel as K
 
 # Formato brasileiro: 1.234,56. O d3.format padrao devolveria 1,234.56.
@@ -17,6 +18,14 @@ BRL = {
                 "{minimumFractionDigits: 2, maximumFractionDigits: 2})"
 }
 INT = {"function": "params.value == null ? '' : params.value.toLocaleString('pt-BR')"}
+# Ativo com centavos (MES/MNQ): a linha traz `dec` (casas do preco); sem `dec`
+# (WIN) o texto sai exatamente como antes.
+PRECO = {"function": "params.value == null ? '' : (params.data && params.data.dec ? "
+                     "params.value.toLocaleString('pt-BR', {minimumFractionDigits: params.data.dec, "
+                     "maximumFractionDigits: params.data.dec}) : params.value.toLocaleString('pt-BR'))"}
+PONTOS = {"function": "params.value == null ? '' : (params.data && params.data.dec ? "
+                      "params.value.toLocaleString('pt-BR', {minimumFractionDigits: params.data.dec, "
+                      "maximumFractionDigits: params.data.dec}) : params.value)"}
 
 COLUNAS = [
     {"field": "n", "headerName": "#", "width": 78, "pinned": "left"},
@@ -26,10 +35,11 @@ COLUNAS = [
      "cellClassRules": {"lado-c": "params.value == 'compra'",
                         "lado-v": "params.value == 'venda'"}},
     {"field": "preco_ent", "headerName": "preço ent.", "width": 110,
-     "type": "numericColumn", "valueFormatter": INT},
+     "type": "numericColumn", "valueFormatter": PRECO},
     {"field": "preco_sai", "headerName": "preço saí.", "width": 110,
-     "type": "numericColumn", "valueFormatter": INT},
+     "type": "numericColumn", "valueFormatter": PRECO},
     {"field": "pontos", "headerName": "pontos", "width": 100, "type": "numericColumn",
+     "valueFormatter": PONTOS,
      "cellClassRules": {"pos": "params.value > 0", "neg": "params.value < 0"}},
     {"field": "liquido", "headerName": "líquido R$", "width": 120, "type": "numericColumn",
      "valueFormatter": BRL,
@@ -37,37 +47,46 @@ COLUNAS = [
     {"field": "contratos", "headerName": "ctr", "width": 76, "type": "numericColumn"},
     {"field": "motivo", "headerName": "saída por", "width": 130},
     {"field": "barras", "headerName": "barras", "width": 92, "type": "numericColumn"},
-    {"field": "mae", "headerName": "MAE", "width": 92, "type": "numericColumn"},
-    {"field": "mfe", "headerName": "MFE", "width": 92, "type": "numericColumn"},
+    {"field": "mae", "headerName": "MAE", "width": 92, "type": "numericColumn",
+     "valueFormatter": PONTOS},
+    {"field": "mfe", "headerName": "MFE", "width": 92, "type": "numericColumn",
+     "valueFormatter": PONTOS},
 ]
 
 
-def rows(trades: dict, dinheiro: dict) -> list[dict]:
+def rows(trades: dict, dinheiro: dict, f=None) -> list[dict]:
     if not trades or not len(trades["entry_i"]):
         return []
     # ISO fica nos campos ocultos, que o callback usa para mover o grafico;
     # a coluna visivel mostra a data no formato daqui.
     iso_e = np.datetime_as_string(trades["entry_ts"], unit="m")
     iso_s = np.datetime_as_string(trades["exit_ts"], unit="m")
+    # texto visivel em hora/pontos do ativo; t_ent/t_sai seguem no relogio de pregao
+    exib = ativo.trades_para_exibir(trades, f)
+    txt_e = np.datetime_as_string(exib["entry_ts"], unit="m")
+    txt_s = np.datetime_as_string(exib["exit_ts"], unit="m")
     br = lambda s: f"{s[8:10]}/{s[5:7]}/{s[:4]}  {s[11:]}"
+    dec = f.price_decimals if f is not None and f.escala != 1 else 0
+    num = (lambda v: round(float(v), dec)) if dec else int
     return [
         {
             "n": i + 1,
             "idx": i,
             "t_ent": str(iso_e[i]),
             "t_sai": str(iso_s[i]),
-            "entrada": br(str(iso_e[i])),
-            "saida": br(str(iso_s[i])),
+            "entrada": br(str(txt_e[i])),
+            "saida": br(str(txt_s[i])),
             "lado": "compra" if trades["side"][i] == 1 else "venda",
-            "preco_ent": int(trades["entry_px"][i]),
-            "preco_sai": int(trades["exit_px"][i]),
-            "pontos": int(trades["points"][i]),
+            "preco_ent": num(exib["entry_px"][i]),
+            "preco_sai": num(exib["exit_px"][i]),
+            "pontos": num(exib["points"][i]),
             "liquido": round(float(dinheiro["liquido"][i]), 2),
             "contratos": int(dinheiro["contratos"][i]),
             "motivo": K.EXIT_LABELS[int(trades["reason"][i])],
             "barras": int(trades["bars_held"][i]),
-            "mae": int(trades["mae"][i]),
-            "mfe": int(trades["mfe"][i]),
+            "mae": num(exib["mae"][i]),
+            "mfe": num(exib["mfe"][i]),
+            **({"dec": dec} if dec else {}),
         }
         for i in range(len(trades["entry_i"]))
     ]

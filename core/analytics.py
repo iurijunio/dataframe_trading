@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from core.ativo import hora_do_pregao_para_exibir
+
 DIAS = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun",
          "jul", "ago", "set", "out", "nov", "dez"]
@@ -61,8 +63,11 @@ def _agrupar(chaves: np.ndarray, liquido: np.ndarray, rotulos=None) -> dict:
 
 
 # ------------------------------------------------------------------- tempo
-def por_hora(entry_ts: np.ndarray, liquido: np.ndarray) -> dict:
+def por_hora(entry_ts: np.ndarray, liquido: np.ndarray, f=None) -> dict:
     horas = (entry_ts.astype("datetime64[h]").astype(np.int64) % 24)
+    if f is not None:
+        # entry_ts vem no relogio de pregao: o rotulo e a hora local do ativo
+        horas = hora_do_pregao_para_exibir(horas, f)
     return _agrupar(horas, liquido, lambda h: f"{h:02d}h")
 
 
