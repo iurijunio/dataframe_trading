@@ -207,19 +207,41 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
     Hoje o stop/alvo já não depende da flag (`vela_do_nivel` lê o minuto
     anterior); ela segue valendo para o ADX daquela barra.
     """
+    from core import ativo
     from strategies.base import Signals
+
+    # unico ponto de conversao: o que o operador digita (pontos, hora de
+    # Nova York, preco em moeda) vira unidade guardada, sobre COPIAS
+    f = ativo.ficha_do_instrumento(instrument)
+    inst_m = ativo.instrumento_para_motor(instrument, f)
+    perfil_m = ativo.perfil_para_motor(profile, f)
+    params_m = ativo.params_para_motor(
+        params, getattr(estrategia, "params_schema", {}), f)
 
     n = len(bars["open"])
     passo = TIMEFRAMES.get(profile.timeframe, 1)
     if passo == 1:
         bars_tf, fechada, fim = bars, np.arange(n), np.arange(n)
+        inicio = np.arange(n)
     else:
         bars_tf, fechada, fim = resample(bars, passo)
         if vela_aberta and n:
             fechada = fechada.copy()
             fechada[n - 1] -= 1
+        # grupos contiguos: cada um comeca logo depois do fim do anterior
+        inicio = np.concatenate(([0], fim[:-1] + 1)).astype(np.int64)
 
-    s = estrategia.signals(bars_tf, params)
+    # copia rasa (tambem em M1): o dict do chamador nunca ganha chaves
+    bars_s = dict(bars_tf)
+    bars_s["tick"] = int(inst_m.get("tick_size", 1)) or 1
+    bars_s["abertura_min"] = f.abertura_min if f else None
+    if n:
+        bars_s["inicio_min"] = (
+            np.asarray(bars["ts"])[inicio].astype("datetime64[m]").astype(np.int64) % 1440)
+    else:
+        bars_s["inicio_min"] = np.zeros(0, dtype=np.int64)
+
+    s = estrategia.signals(bars_s, params_m)
 
     # o nivel da estrategia vai ao minuto em que a vela dele FECHA; o
     # backtest e que o empurra para a entrada seguinte (`_ao_abrir`)
@@ -240,7 +262,9 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
         tp_points=nivel(s.tp_points),
         virar=bool(getattr(s, "virar", False)),
     )
-    return backtest(bars, sig, profile, instrument, bars_tf, fechada)
+    res = backtest(bars, sig, perfil_m, inst_m, bars_tf, fechada)
+    res.profile = profile  # o perfil humano; o instrumento fica convertido
+    return res
 
 
 def atr(bars: dict, periodo: int) -> np.ndarray:
