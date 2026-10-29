@@ -135,6 +135,7 @@ def test_win_e_identidade():
     e = _Estrategia()
     res = run_strategy(barras, e, {"k": 30}, perfil, WIN_INST)
     assert e.visto["tick"] == 5 and e.visto["abertura_min"] is None
+    assert e.visto["inicio_min"] is None
     assert res.instrument is WIN_INST and res.profile is perfil
 
     n = len(barras["open"])

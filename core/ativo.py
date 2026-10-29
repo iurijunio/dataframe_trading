@@ -121,7 +121,7 @@ def _identidade(f: Ficha | None) -> bool:
 def ficha_do_instrumento(instr: dict) -> Ficha | None:
     """Ficha do dicionario do instrumento; None se for de teste/WIN antigo ou ja convertido."""
     if instr.get("_unidade") == "guardada":
-        instr = instr["_original"]  # perfil e parametros chegam sempre em unidade humana
+        instr = instr.get("_original", instr)  # perfil e parametros chegam sempre em unidade humana
     if "price_decimals" not in instr and "sessao_abertura" not in instr:
         return None
     return ficha_de(instr)

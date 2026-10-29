@@ -235,11 +235,15 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
     bars_s = dict(bars_tf)
     bars_s["tick"] = int(inst_m.get("tick_size", 1)) or 1
     bars_s["abertura_min"] = f.abertura_min if f else None
-    if n:
-        bars_s["inicio_min"] = (
-            np.asarray(bars["ts"])[inicio].astype("datetime64[m]").astype(np.int64) % 1440)
+    # minuto do dia do 1o M1 de cada barra: so quem tem abertura de referencia usa
+    if bars_s["abertura_min"] is None:
+        bars_s["inicio_min"] = None
     else:
-        bars_s["inicio_min"] = np.zeros(0, dtype=np.int64)
+        ts0 = np.asarray(bars["ts"] if passo == 1 else bars["ts"][inicio])
+        if ts0.dtype == np.dtype("datetime64[ns]"):
+            bars_s["inicio_min"] = (ts0.view(np.int64) // 60_000_000_000) % 1440
+        else:
+            bars_s["inicio_min"] = ts0.astype("datetime64[m]").astype(np.int64) % 1440
 
     s = estrategia.signals(bars_s, params_m)
 
