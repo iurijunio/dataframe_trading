@@ -6,8 +6,9 @@
 Plataforma quantitativa em Python (Dash + DuckDB + Numba) para criar, minerar,
 validar e operar estratégias de day trade no Mini Índice (`WIN$N`),
 substituindo o fluxo que antes vivia no MT5. Branch de trabalho:
-`live-trading` (partes 4 e 5, ordens e conta real), criada do `master` em 08/10/2026 depois
-de o usuário juntar o `candidata` nele (remoto `origin` no GitHub).
+`new-strategies` (ativos da CME, estratégias novas). O ramo principal é o
+`master` (não o `candidata`): as partes 4 e 5 (ordens e conta real, ramo
+`live-trading`) já entraram nele pelo PR #2. Remoto `origin` no GitHub.
 
 ## O usuário
 
@@ -20,7 +21,7 @@ de o usuário juntar o `candidata` nele (remoto `origin` no GitHub).
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (~2.100 testes, <1 min de coleta)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.568 testes coletados em 29/10/2026)
 ```
 
 - Para ver o app: rode `ui/app.py` e abra http://127.0.0.1:8050. Quem tiver
@@ -258,6 +259,27 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - **Ordem de teste na conta do processo** (demo ou real, liberada na real em 21/10/2026): botão fora da tela desde 21/10 (motor mantido; para religar veja o commit 6ceaa18); confere login, tipo cadastrado e trade_mode do MT5 antes de enviar; não depende do Envio.
   - **Dado protegido:** `data/ao_vivo/ordens/real/*.jsonl` nunca se apaga (é o
     diário write-ahead da conta real, como o da demo).
+- **Ativos da CME (MES, MNQ; `core/ativo.py`, spec
+  `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`):**
+  - **Três unidades, cada lugar usa uma.** *Humana* (pontos, hora de NY) na
+    tela, no YAML, nos perfis e nos `params`/`profile` salvos. *Guardada*
+    (preço × 10^`price_decimals`, relógio de pregão = hora de NY + 360 min) em
+    barras, motor e registros de trade (`points`, `entry_px`, `wfa_trades`…).
+    *Dinheiro* na moeda do ativo.
+  - **A conversão humana → guardada só acontece em `run_strategy`, numa
+    cópia.** Nunca converta em outro lugar (dupla conversão): o instrumento
+    convertido guarda `_original`. Guardada → humana só na tela, via
+    `core/ativo.py`. O WIN é identidade (escala 1, deslocamento 0).
+  - **Foto do WIN é obrigatória antes e depois de mexer no motor:**
+    `scripts/foto_win.py gravar` / `conferir` (banco congelado em
+    `data/foto_win/<nome>.duckdb`, fora do git). Tem de dar idêntico.
+  - **Mudou código de estratégia?** Rode
+    `scripts/reassinar_codigo.py --de <commit> --aplicar`. O papel lê o
+    `codigo_hash` a cada ciclo: troque só fora do pregão, com o app e a
+    captura fechados. Planos 5, 6 e 7 reassinados em 29/10/2026, trades
+    idênticos (backup em `backups/2026-10-29-antes-reassinar/`).
+  - **Até as etapas 3 e 4, não salve planos em MES/MNQ**, e os rótulos ainda
+    dizem "R$" nos micros (os valores já estão em US$).
 - **Nunca passe dicionário (ou qualquer coisa que não seja componente) como
   filho de `html.*`.** O Dash 4 falha ao desenhar e, em silêncio, devolve o
   estado de OUTROS componentes: o menu e as sub-telas voltavam sozinhos para
@@ -279,15 +301,16 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 
 ## Documentos: qual confiar
 
-| Documento | Estado (21/10/2026) |
+| Documento | Estado (29/10/2026) |
 |---|---|
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
 | `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
-| `CHANGELOG.md` | atualizado até a parte 5 (conta real, 21/10/2026); **não cobre variantes, portfólio nem gatilho** |
-| `README.md` | atualizado até a parte 4 (papel e demo, `iniciar.bat`); o texto do MVP segue como história |
-| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 15/10/2026 (incubação, portfólio e demo) |
+| `docs/superpowers/specs/2026-10-28-ativos-cme-design.md` + `plans/2026-10-28-ativos-cme-etapa1.md`, `2026-10-29-ativos-cme-etapa2.md` | ativos da CME; as seções "Herança da etapa 1" e "Estado depois da etapa 2" dizem o que ficou |
+| `CHANGELOG.md` | atualizado até os ativos da CME, etapas 1 e 2 (29/10/2026); **não cobre variantes, portfólio nem gatilho** |
+| `README.md` | atualizado até os ativos da CME (29/10/2026); o texto do MVP segue como história |
+| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 29/10/2026 |
 
 Na dúvida entre documento e código, o código manda. Use o agente
 `documentador` para pôr a documentação em dia depois de uma entrega.
@@ -319,11 +342,11 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    676 ms, saída 496 ms). O **Envio de ordens está LIGADO na conta demo, com
    1 contrato**, na ligação do `rompimento_ema_abertura`; a ligação do
    rompimento de canal segue só no papel. O PR `live-trading` → `master` está
-   aberto (não mergeado).
-   **Próximo passo:** acompanhar a demo por 3 a 5 pregões, comparando papel ×
-   demo todo dia; depois mergear no `master` e promover a estratégia de canal.
+   foi mergeado no `master` (PR #2).
+   **Próximo passo:** acompanhar a demo, comparando papel × demo todo dia, e
+   promover a estratégia de canal.
    **Opção "Saída" (18/10/2026, `strategies/saida.py`):** parâmetro `saida`
-   em toda estratégia menos o `rompimento_abertura` (um sinal por dia: os
+   em toda estratégia (inclusive a `adx_direcao`) menos o `rompimento_abertura` (um sinal por dia: os
    modos dariam os mesmos trades, cópia = platô falso), minerável como
    inteiro (o "até" da faixa já vem no último modo) — 0 sinal contrário, 1 não
    sai, 2 vira a mão (sai e entra do outro lado na mesma abertura; o motor
@@ -342,7 +365,8 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    hash (do plano e dos `papel_pregoes` dele) com trades idênticos; faz
    backup antes; o hash gravado é conferido também pela receita de hash do
    commit antigo. Os planos #5 e #6 foram reassinados assim em 18/10/2026
-   (backup em `C:\Users\mrRobot\Documents\Neturna\backups\2026-10-18-antes-resign-hash`).
+   (backup em `C:\Users\mrRobot\Documents\Neturna\backups\2026-10-18-antes-resign-hash`);
+   #5, #6 e #7 de novo em 29/10/2026.
 5. **Conta real** ✅ **implementada** (21/10/2026). Spec:
    `docs/superpowers/specs/2026-10-19-conta-real-design.md`. A conta real roda
    **em paralelo com a demo, com a real primeiro**, pelo processo próprio
@@ -356,6 +380,9 @@ fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execuç�
    fim do candle. A corretora tem 1 s para executar o stop/alvo tocado; depois
    disso a automação sai a mercado e abre chamado. Execução assim sai marcada
    como "fora do mercado" e fica fora da derrapagem.
+      Em 23/10 duas correções na real: preço confirmado pelo negócio (a bolsa
+   devolve `price` 0) e a real aplica os próprios contratos, fase e chave aos
+   desejados da ponte.
    Ideias para depois: recursos com LLM fora do caminho da ordem; aba Conta.
 Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
 
@@ -369,6 +396,30 @@ mercado ADX (tendência/rango, 0 desliga) e a estratégia
 padrão do MT5**, que suaviza diferente. Nos timeframes M7/M11/M13/M17 a
 primeira vela do pregão sai parcial (contam da meia-noite); igual em todos
 os modos.
+
+**Ativos da CME na pesquisa (MES e MNQ; ramo `new-strategies`, desde
+28/10/2026)** — só pesquisa; a operação ao vivo não inclui os micros (sem
+corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
+- **Etapa 1 ✅:** fichas `configs/instruments/mes.yaml` e `mnq.yaml`,
+  `core/ativo.py` (ficha, relógio de pregão, escala de preço), importação do
+  London Strategic Edge (`cli.py importar-lse --symbol MES <arquivos>`, em
+  `core/importar_lse.py`), gráfico em hora de NY e preço com centavos. Pregões
+  descartados: MES 43, MNQ 44 (lista nos YAML).
+- **Etapa 2 ✅:** conversão em `run_strategy`, `bars["tick"]`/`abertura_min`/
+  `inicio_min`, abertura de referência (09:30 NY), perfil padrão por ativo
+  (`perfil_padrao` no YAML), `janela_valida` (recusa janela que atravessa a
+  pausa; vale também para o WIN), trades, marcadores, Detalhes e Walk-Forward
+  em hora de NY e pontos. A EMA de abertura só sinaliza depois da barra de
+  abertura.
+- **Etapa 3 (moeda) ❌:** `dinheiro()`, rótulos R$/US$, portão de custo da
+  Candidata, bloqueio de portfólio com moedas misturadas.
+- **Etapa 4 (faixas de mineração por ativo) ❌:** as faixas ainda são as do
+  WIN; stop/alvo padrão do MES (10/20) e do MNQ (40/80) são provisórios.
+- Pendências pequenas em "Estado depois da etapa 2" da spec.
+
+Também entraram em 21–23/10: stop e alvo em porcentagem do preço de entrada
+(`7d1d272`) e a estratégia `adx_direcao` (`cdb74bc`, `8eaca51`: parâmetros
+`di_periodo` e `adx_suavizacao`, com trava contra colisão de nome com o perfil).
 
 Pendente, não iniciado:
 - **Gatilho, fatia 2**: avisar na tela de Portfólio que a correlação/risco

@@ -8,6 +8,47 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Ativos da CME na pesquisa: MES e MNQ, etapas 1 e 2** (`core/ativo.py`,
+  `core/importar_lse.py`, `configs/instruments/mes.yaml` e `mnq.yaml`,
+  `core/engine/execution.py`, `strategies/*.py`, `scripts/foto_win.py`,
+  `scripts/reassinar_codigo.py`; desenho em
+  [docs/superpowers/specs/2026-10-28-ativos-cme-design.md](docs/superpowers/specs/2026-10-28-ativos-cme-design.md)).
+  Só pesquisa: a operação ao vivo continua só no WIN (ainda não há corretora
+  para os micros). Suíte: 2.568 testes.
+  - **Etapa 1: fichas e importação.** Fichas dos micros (tick, valor do ponto,
+    abertura de referência 09:30 de Nova York) e `core/ativo.py` (ficha,
+    relógio de pregão, escala de preço). `cli.py importar-lse --symbol MES
+    <arquivos>` lê os Parquet do London Strategic Edge, junta as partes,
+    arredonda ao tick e descarta pregões com falha da fonte: 43 no MES e 44 no
+    MNQ (lista nos YAML). O gráfico mostra hora de NY e preço com centavos.
+  - **Etapa 2: motor e estratégias.** `run_strategy` converte perfil,
+    parâmetros e instrumento numa cópia (regra de unidades: humana na
+    tela/YAML/perfis, guardada nas barras, no motor e nos trades). As barras
+    levam `tick`, `abertura_min` e `inicio_min`; as estratégias leem tick e
+    abertura do ativo. O perfil padrão vem por ativo (`perfil_padrao`).
+    `janela_valida` recusa janela que atravessa a pausa (vale também para o
+    WIN). Trades, marcadores (também no D1), linhas de stop e alvo, Detalhes e
+    Walk-Forward saem em hora de NY e pontos. A EMA de abertura só sinaliza
+    depois da barra de abertura (decisão do usuário: "se é abertura, deve ser
+    trabalhado na abertura").
+  - **Garantia do WIN.** `scripts/foto_win.py` grava e confere planos,
+    backtests, mineração curta, Walk-Forward curto e Candidata num banco
+    congelado (`data/foto_win/<nome>.duckdb`). Deu idêntico em toda tarefa.
+    Os planos 5, 6 e 7 foram reassinados em 29/10 com trades idênticos.
+  - **Falta:** etapa 3 (moeda: rótulos ainda "R$" nos micros, com valores em
+    US$; portfólio misto) e etapa 4 (faixas de mineração por ativo). Até lá,
+    não salvar planos em MES/MNQ.
+- **Estratégia `adx_direcao`** (`strategies/adx_direcao.py`): candle mais ADX
+  subindo/caindo, com filtro de amplitude. Parâmetros próprios `di_periodo` e
+  `adx_suavizacao`; um teste trava colisão de nome com o perfil
+  (`tests/test_estrategias_nomes.py`).
+- **Stop e alvo em porcentagem do preço de entrada** (`core/engine/execution.py`,
+  `ui/components/catalogo.py`), arredondados ao tick.
+
+- **Conta real, correções de 23/10:** o preço da ordem vem do negócio
+  confirmado (a bolsa devolve `price` 0) e a captura espelha o diário da real;
+  a real aplica os próprios contratos, fase e chave aos desejados da ponte
+  (`core/ordens.py`, `core/papel_vivo.py`, `captura.py`, `ordens_real.py`).
 - **Ao vivo, parte 5: conta real** (`ordens_real.py`, `ordens_real.bat`,
   `core/ponte.py`, `core/comandos.py`, `core/ordens.py`, `core/papel_vivo.py`,
   `captura.py`, `ui/components/ao_vivo_panel.py`, `ui/components/operacao_panel.py`;

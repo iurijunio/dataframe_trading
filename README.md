@@ -6,7 +6,9 @@ de estratégias — começando pelo Mini Índice (WIN).
 **Status:** do backtest ao pregão ao vivo. MVP (F0 dados · F1 motor · F2
 dashboard · F3 mineração · F4 dispersão) mais Walk-Forward, Candidata,
 Estratégias, Portfólio e a tela **Ao vivo** (captura, papel e ordens na conta
-demo).
+demo e real). Na pesquisa também há os micros da CME, **MES** e **MNQ**
+(horário de Nova York, preço em pontos); moeda e faixas de mineração por ativo
+ainda faltam.
 
 ```bash
 iniciar.bat                            # abre o app e o serviço de captura
@@ -186,8 +188,14 @@ core/ordens.py             reconcilia papel × corretora e manda as ordens
 core/corretora.py          MT5: envio, retornos e conferência (order_check)
 core/ordem_teste.py        ordem de teste na conta demo
 captura.py                 serviço de captura (candles, papel, ordens)
-iniciar.bat                abre o app e a captura
-tests/                     ~2.100 testes
+ordens_real.py             processo "Ordens real" (conta real, em paralelo)
+iniciar.bat                abre o app, a captura e as ordens real
+core/ativo.py              ficha do ativo, relógio de pregão, escala de preço
+core/importar_lse.py       importação dos candles da CME (cli.py importar-lse)
+configs/instruments/       win.yaml, mes.yaml, mnq.yaml
+scripts/foto_win.py        foto do WIN: prova resultado idêntico após mexer no motor
+scripts/reassinar_codigo.py  reassina o hash de planos quando o código muda sem mudar trades
+tests/                     2.568 testes
 ```
 
 ## O dashboard

@@ -387,8 +387,8 @@ já não funcionou.
 | 7 Critério de validação | ✅ sete limiares, gargalo e lista de aprovadas |
 | 8 Salvar mineração | ✅ explícito, com nome |
 | 9 Carregar salva | ✅ restauração completa, com teste |
-| 10 Testes de robustez | ✅ dez testes do Backtest · tela **Candidata** aprova, aprova com ressalva ou reprova a estratégia para a incubação, com 12 portões, dimensiona contratos e grava o plano de operação ([contas](CALCULOS-CANDIDATA.md)) · ❌ outro ativo |
+| 10 Testes de robustez | ✅ dez testes do Backtest · tela **Candidata** aprova, aprova com ressalva ou reprova a estratégia para a incubação, com 12 portões, dimensiona contratos e grava o plano de operação ([contas](CALCULOS-CANDIDATA.md)) · 🔨 outro ativo: MES e MNQ (CME) já têm importação, gráfico, backtest e Walk-Forward em hora de NY e pontos; faltam moeda (US$) e faixas de mineração por ativo, antes de salvar planos |
 | 11 Incubação | ✅ o **papel roda sempre**, em qualquer fase: o serviço de captura calcula o sinal a cada candle e a conferência diária compara papel × backtest (sub-tela Ao vivo › Operação) |
 | 12 Portfólio | ✅ identidade, correlação (inclusive nos piores dias), capital, Kelly, risco de ruína e simulador de crescimento · ❌ aviso de correlação desatualizada quando o plano ativo muda |
-| 13 Demo | 🔨 ordens pelo próprio Dataframe na conta demo (fase demo por portfólio). Desde 15/10/2026 o Envio está ligado com 1 contrato na ligação do `rompimento_ema_abertura`; em acompanhamento por 3 a 5 pregões, papel × demo todo dia |
-| 14–15 Contrato mínimo e Live | ❌ conta real fora da parte 4 (o "real mínimo" foi eliminado: a fase vai de demo direto a real) |
+| 13 Demo | 🔨 ordens pelo próprio Dataframe na conta demo (fase demo por portfólio). Desde 15/10/2026 o Envio está ligado com 1 contrato na ligação do `rompimento_ema_abertura`; em acompanhamento, papel × demo todo dia |
+| 14–15 Contrato mínimo e Live | 🔨 conta real implementada em 21/10/2026 (processo "Ordens real", em paralelo com a demo; Envio nasce desligado e ligar é decisão do usuário). O "real mínimo" foi eliminado: a fase vai de demo direto a real |
