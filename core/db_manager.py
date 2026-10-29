@@ -193,6 +193,9 @@ def upsert_instrument(con, cfg: dict) -> None:
         "price_decimals", "tick_size", "point_value", "tick_value",
         "allows_overnight", "rollover_policy",
     )
+    from core import ativo  # import tardio: core.ativo importa este modulo
+
+    cfg = {**cfg, "tick_size": ativo.ficha_de(cfg).tick_unid}  # unidades guardadas
     con.execute("DELETE FROM instruments WHERE symbol = ?", [cfg["symbol"]])
     con.execute(
         f"INSERT INTO instruments ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",

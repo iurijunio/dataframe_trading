@@ -1,0 +1,33 @@
+# Camada 1 - Instrumento.
+# Propriedades do contrato. Nao muda entre backtests, nao aparece na tela.
+# Custos, horarios e dimensionamento NAO ficam aqui: sao do operador,
+# vivem no perfil de execucao (camada 4) e sao editaveis na interface.
+
+symbol: "MNQ"
+description: "Micro E-mini Nasdaq-100 - serie continua (London Strategic Edge)"
+exchange: "CME"
+currency: "USD"
+timezone: "America/New_York"
+
+# Precos guardados como inteiro x 100 (5432.25 vira 543225).
+price_decimals: 2
+tick_size: 0.25 # pontos, como o usuario le
+point_value: 2.00 # US$ por ponto, por contrato
+tick_value: 0.50 # tick_size * point_value
+
+# Day trade puro; a fonte ja entrega serie continua.
+allows_overnight: false
+rollover_policy: "none"
+
+# Relogio de pregao: o pregao comeca as 18:00 de NY (domingo a noite) e o
+# motor enxerga essa hora como 00:00 (deslocamento de +6h sobre a hora de NY).
+sessao_abertura: "18:00"
+abertura_referencia: "09:30"
+
+# Pregoes com falha da fonte, fora de toda leitura (data do pregao).
+pregoes_descartados:
+  "2020-03-02": "falha da fonte: pregao inteiro ausente"
+  "2020-03-03": "falha da fonte: pregao inteiro ausente"
+  "2022-06-21": "falha da fonte: pregao inteiro ausente"
+  "2026-10-12": "falha da fonte: pregao inteiro ausente"
+pregoes_mantidos: {}

@@ -46,3 +46,19 @@ def test_ida_e_volta_de_hora():
 
 def test_preco_mes():
     assert ativo.preco_para_exibir(543225, MES) == 5432.25
+
+
+from core import db_manager as db
+
+def test_fichas_dos_micros():
+    mes, mnq = ativo.ficha("MES"), ativo.ficha("MNQ")
+    assert (mes.point_value, mes.tick_value, mes.tick_unid, mes.currency) == (5.0, 1.25, 25, "USD")
+    assert (mnq.point_value, mnq.tick_value, mnq.tick_unid) == (2.0, 0.50, 25)
+    assert mes.deslocamento_min == mnq.deslocamento_min == 360
+    assert set(mes.pregoes_descartados) == {"2020-03-02", "2020-03-03", "2022-06-21", "2026-10-12"}
+
+def test_banco_guarda_tick_em_unidades_guardadas():
+    with db.connect() as con:
+        db.init_schema(con); db.sync_instruments(con)
+        lin = dict(con.execute("SELECT symbol, tick_size FROM instruments").fetchall())
+    assert lin["MES"] == 25 and lin["WIN$N"] == 5
