@@ -365,17 +365,16 @@ SAIDAS_C4 = (
     + [({"type": "opt", "p": c, "k": k}, "step", "step")
        for c in CAMPOS_C4 for k in ("de", "passo", "ate")]
 )
+# Só o `step` das 12 caixas: `estrategia_ou_mineracao` também o escreve, ao
+# carregar uma mineração salva (a escala é a do ativo DELA, não a do seletor).
+SAIDAS_C4_STEP = [s for s in SAIDAS_C4 if s[1] == "step"]
 
 
-def _camada4_do_ativo(simbolo) -> list:
-    """Valores de `SAIDAS_C4` para o ativo: a faixa da ficha (step 1, pontos
-    inteiros) ou, sem faixa (o WIN), `controls.PADRAO_C4` com o step de hoje —
-    é o que faz a volta do MES para o WIN restaurar a tela.
-
-    Com mineração na tela nada muda: os campos são os da varredura."""
-    if _mineracao_na_tela():
-        return [no_update] * len(SAIDAS_C4)
-    faixas = ativo_mod.faixas_do_ativo(_simbolo(simbolo))
+def _tabela_c4(simbolo) -> dict:
+    """{campo: {valor, de, passo, ate, step}} de stop, alvo e trailing no
+    ativo: a faixa da ficha (step 1, pontos inteiros) ou, sem faixa (o WIN,
+    ou símbolo nenhum), `controls.PADRAO_C4` com o step de hoje."""
+    faixas = ativo_mod.faixas_do_ativo(simbolo)
     tabela = {}
     for c in CAMPOS_C4:
         valor, de, passo, ate, step = controls.PADRAO_C4[c]
@@ -385,13 +384,29 @@ def _camada4_do_ativo(simbolo) -> list:
                      {"valor": f.get("valor", valor), "de": f.get("de", de),
                       "passo": f.get("passo", passo), "ate": f.get("ate", ate),
                       "step": 1})
+    return tabela
+
+
+def _camada4_do_ativo(simbolo) -> list:
+    """Valores de `SAIDAS_C4` para o ativo (`_tabela_c4`) — é o que faz a
+    volta do MES para o WIN restaurar a tela.
+
+    Com mineração na tela nada muda: os campos são os da varredura."""
+    if _mineracao_na_tela():
+        return [no_update] * len(SAIDAS_C4)
+    tabela = _tabela_c4(_simbolo(simbolo))
     return [tabela[ident["p"]][chave] for ident, _prop, chave in SAIDAS_C4]
+
+
+# posição, na saída de `estrategia_ou_mineracao`, do primeiro `step` da
+# camada 4 (depois dos 17 fixos e de CAMPOS_PERFIL)
+_INICIO_STEP = 17 + len(CAMPOS_PERFIL)
 
 
 def _estrategia_ou_mineracao(gatilho, nome, run_id, simbolo, ids_val,
                              ids_faixa, ids_on):
     """Corpo de `estrategia_ou_mineracao`, fora do `register` para os testes."""
-    sem_mudanca = [no_update] * (17 + len(CAMPOS_PERFIL))
+    sem_mudanca = [no_update] * (_INICIO_STEP + len(SAIDAS_C4_STEP))
     sem_mudanca[9:12] = ([no_update] * len(ids_val),
                          [no_update] * len(ids_faixa),
                          [no_update] * len(ids_on))
@@ -470,6 +485,10 @@ def _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on, r):
     # tem dono próprio.
     do_ativo = {p: f for p, f in ativo_mod.faixas_do_ativo(
         d.get("symbol"), d["estrategia"]).items() if p in mod.params_schema}
+    # stop, alvo e trailing também na escala da mineração: sem isto as
+    # caixas ficavam com o step do ativo anterior (10 do WIN) recebendo o
+    # 8 do MES, e o Dash 4.4.1 apaga o valor fora do step ao sair da caixa
+    c4 = _tabela_c4(d.get("symbol"))
 
     def de_faixa(p, k, senao):
         for fonte in (faixas.get(p) or {}, do_ativo.get(p) or {}):
@@ -486,10 +505,17 @@ def _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on, r):
     # no padrão do motor - com no_update ficava o que estava na tela, e
     # o backtest do clique dava outro lucro que o da tabela
     padrao = ExecutionProfile().to_config()
-    r[9] = [de_faixa(i["p"], "valor",
+    def valor_c4(p):
+        v = perfil.get(p)
+        return v if v is not None else c4[p]["valor"]
+
+    r[9] = [de_faixa(i["p"], "valor", valor_c4(i["p"])) if i["p"] in c4 else
+            de_faixa(i["p"], "valor",
                      perfil.get(i["p"], padrao.get(i["p"], no_update)))
             for i in ids_val]
-    r[10] = [de_faixa(i["p"], i["k"], no_update) for i in ids_faixa]
+    r[10] = [de_faixa(i["p"], i["k"],
+                      c4[i["p"]][i["k"]] if i["p"] in c4 else no_update)
+             for i in ids_faixa]
     r[11] = [["on"] if faixas.get(i["p"], {}).get("on") else []
              for i in ids_on]
     r[12] = (f"mineração #{run_id} carregada"
@@ -500,8 +526,10 @@ def _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on, r):
     w = d.get("wf_config") or {}
     r[13:17] = (w.get("treino_meses", no_update), w.get("teste_meses", no_update),
                 w.get("passo_meses", no_update), w.get("holdout_meses", no_update))
-    r[17:] = [perfil.get(chave, padrao.get(chave, no_update))
-              for _, chave in CAMPOS_PERFIL]
+    r[17:_INICIO_STEP] = [perfil.get(chave, padrao.get(chave, no_update))
+                          for _, chave in CAMPOS_PERFIL]
+    r[_INICIO_STEP:] = [c4[ident["p"]]["step"]
+                        for ident, _prop, _chave in SAIDAS_C4_STEP]
     return r
 
 
@@ -640,7 +668,11 @@ def register(app):
          Output("mine-info", "children", allow_duplicate=True),
          Output("wf-treino", "value"), Output("wf-teste", "value"),
          Output("wf-passo", "value"), Output("wf-holdout", "value")]
-        + [Output(cid, "value", allow_duplicate=True) for cid, _ in CAMPOS_PERFIL],
+        + [Output(cid, "value", allow_duplicate=True) for cid, _ in CAMPOS_PERFIL]
+        # o `step` de stop, alvo e trailing ao carregar uma mineração salva;
+        # duplica o de `aplicar_perfil_do_ativo` (ids específicos)
+        + [Output(ident, prop, allow_duplicate=True)
+           for ident, prop, _chave in SAIDAS_C4_STEP],
         Input("estrategia", "value"),
         Input("mine-carregar", "value"),
         Input("ativo", "value"),

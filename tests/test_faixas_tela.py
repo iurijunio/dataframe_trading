@@ -74,7 +74,7 @@ def _referencia(chave):
 
 
 def _r_vazio(n_val=0, n_faixa=0, n_on=0):
-    r = [no_update] * (17 + len(CB.CAMPOS_PERFIL))
+    r = [no_update] * (17 + len(CB.CAMPOS_PERFIL) + len(CB.SAIDAS_C4_STEP))
     r[9:12] = ([no_update] * n_val, [no_update] * n_faixa, [no_update] * n_on)
     return r
 
@@ -243,6 +243,84 @@ def test_mineracao_do_win_carrega_igual_a_hoje(monkeypatch):
     assert _canonico(r[2]) == _canonico(esperado)
 
 
+# ------------------- carregar mineração: stop, alvo e trailing na escala dela
+def _ids_c4():
+    ids_val = [{"type": "val", "p": c} for c in CB.CAMPOS_C4]
+    ids_faixa = [{"type": "opt", "p": c, "k": k}
+                 for c in CB.CAMPOS_C4 for k in ("de", "passo", "ate")]
+    return ids_val, ids_faixa
+
+
+def _carregada_c4(monkeypatch, d):
+    """{(campo, célula): (valor, step)} da camada 4 depois de carregar `d`."""
+    monkeypatch.setattr(optimizer, "detalhes_salva", lambda run_id: d)
+    ids_val, ids_faixa = _ids_c4()
+    r = CB._carregar_mineracao(7, ids_val, ids_faixa, [],
+                               _r_vazio(len(ids_val), len(ids_faixa)))
+    assert len(r) == 17 + len(CB.CAMPOS_PERFIL) + len(CB.SAIDAS_C4_STEP)
+    valores = {(i["p"], "valor"): v for i, v in zip(ids_val, r[9])}
+    valores.update({(i["p"], i["k"]): v for i, v in zip(ids_faixa, r[10])})
+    steps = {(ident["p"], ident.get("k", "valor")): v
+             for (ident, _p, _c), v in zip(CB.SAIDAS_C4_STEP,
+                                           r[CB._INICIO_STEP:])}
+    return {k: (valores[k], steps[k]) for k in valores}
+
+
+def test_mineracao_do_mes_ajusta_stop_alvo_trailing_com_seletor_no_win(
+        monkeypatch):
+    # o seletor fica no WIN (estado de todo arranque); a mineração varreu só
+    # o stop e gravou alvo 17 no perfil
+    MINERACAO.estado.update(rodando=False, trials=[])
+    d = {"estrategia": "rompimento_canal", "symbol": "MES", "nome": "",
+         "espaco": {"stop_pontos": [4, 6, 8]}, "perfil": {"alvo_pontos": 17},
+         "wf_config": {}}
+    saida = _carregada_c4(monkeypatch, d)
+    assert all(step == 1 for _v, step in saida.values()), saida
+    # o que a mineração varreu manda
+    assert {k: saida[("stop_pontos", k)][0]
+            for k in ("valor", "de", "passo", "ate")} == {
+        "valor": 4, "de": 4, "passo": 2, "ate": 8}
+    # o valor do perfil dela vem antes da faixa do ativo
+    assert saida[("alvo_pontos", "valor")][0] == 17
+    # células que ela não varreu: a faixa do MES, nunca as do WIN
+    _v, de, passo, ate = TABELA_C4["MES"]["alvo_pontos"]
+    assert [saida[("alvo_pontos", k)][0] for k in ("de", "passo", "ate")] == [
+        de, passo, ate]
+    assert [saida[("trailing_pontos", k)][0]
+            for k in ("valor", "de", "passo", "ate")] == list(
+        TABELA_C4["MES"]["trailing_pontos"])
+
+
+def test_mineracao_do_win_com_seletor_no_mes_volta_a_escala_do_win(
+        monkeypatch):
+    MINERACAO.estado.update(rodando=False, trials=[])
+    d = {"estrategia": "rompimento_canal", "symbol": "WIN$N", "nome": "",
+         "espaco": {"filtro_amplitude": [4, 6, 8]}, "perfil": {"stop_pontos": 250},
+         "wf_config": {}}
+    saida = _carregada_c4(monkeypatch, d)
+    for campo, (valor, de, passo, ate, step) in controls.PADRAO_C4.items():
+        esperado = {"valor": (250 if campo == "stop_pontos" else valor, step),
+                    "de": (de, step), "passo": (passo, step),
+                    "ate": (ate, step)}
+        assert {k: saida[(campo, k)] for k in esperado} == esperado, campo
+
+
+def test_mineracao_sem_simbolo_usa_o_padrao_da_camada4(monkeypatch):
+    MINERACAO.estado.update(rodando=False, trials=[])
+    d = {"estrategia": "rompimento_canal", "nome": "", "espaco": {},
+         "perfil": {}, "wf_config": {}}
+    saida = _carregada_c4(monkeypatch, d)
+    assert saida[("stop_pontos", "valor")] == (300, 10)
+
+
+def test_outros_gatilhos_nao_mexem_no_step_da_camada4(espiao):
+    MINERACAO.estado.update(rodando=False, trials=[])
+    for gatilho in ("ativo", "estrategia"):
+        r = CB._estrategia_ou_mineracao(gatilho, "rompimento_canal", None,
+                                        "MES", [], [], [])
+        assert r[CB._INICIO_STEP:] == [no_update] * len(CB.SAIDAS_C4_STEP)
+
+
 # ------------------------------------------- camada 4: stop, alvo e trailing
 def _c4(simbolo):
     """{(campo, chave): valor} de `_camada4_do_ativo`, com `step` por célula."""
@@ -374,6 +452,9 @@ def test_saidas_dos_callbacks_do_ativo_sem_conflito(app):
                                o.component_property, o.allow_duplicate))
     assert any(_ident(s[1]) == {"type": "val", "p": "trailing_pontos"}
                for s in saidas)
+    # o `step` do stop tem dois donos: o perfil do ativo e o carregar mineração
+    assert sum(_ident(s[1]) == {"type": "val", "p": "stop_pontos"}
+               and s[2] == "step" for s in saidas) == 2
     for i, a in enumerate(saidas):
         for b in saidas[i + 1:]:
             if a[2] != b[2] or not _coincidem(a[1], b[1]):
