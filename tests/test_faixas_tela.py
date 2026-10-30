@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dash import no_update  # noqa: E402
+from dash import ALL, no_update  # noqa: E402
 
 from core import ativo as ativo_mod  # noqa: E402
 from core import optimizer  # noqa: E402
@@ -241,3 +241,149 @@ def test_mineracao_do_win_carrega_igual_a_hoje(monkeypatch):
     esperado = controls.campos_da_estrategia(
         canal, optimizer.faixas_do_espaco(d["espaco"]))
     assert _canonico(r[2]) == _canonico(esperado)
+
+
+# ------------------------------------------- camada 4: stop, alvo e trailing
+def _c4(simbolo):
+    """{(campo, chave): valor} de `_camada4_do_ativo`, com `step` por célula."""
+    saida = {}
+    for (ident, prop, chave), v in zip(CB.SAIDAS_C4,
+                                       CB._camada4_do_ativo(simbolo)):
+        celula = ident.get("k", "valor")
+        saida[(ident["p"], chave if prop == "value" else f"step_{celula}")] = v
+    return saida
+
+
+def _campo_c4(saida, campo):
+    return {k: saida[(campo, k)] for k in ("valor", "de", "passo", "ate",
+                                           "step_valor", "step_de",
+                                           "step_passo", "step_ate")}
+
+
+TABELA_C4 = {
+    "MES": {"stop_pontos": (8, 3, 1, 16), "alvo_pontos": (16, 6, 2, 32),
+            "trailing_pontos": (0, 0, 2, 14)},
+    "MNQ": {"stop_pontos": (45, 15, 5, 90), "alvo_pontos": (90, 30, 10, 180),
+            "trailing_pontos": (0, 0, 10, 80)},
+}
+
+
+@pytest.mark.parametrize("simbolo", ["MES", "MNQ"])
+def test_camada4_no_micro_segue_a_tabela_com_step_1(simbolo):
+    MINERACAO.estado.update(rodando=False, trials=[])
+    saida = _c4(simbolo)
+    for campo, (valor, de, passo, ate) in TABELA_C4[simbolo].items():
+        assert _campo_c4(saida, campo) == {
+            "valor": valor, "de": de, "passo": passo, "ate": ate,
+            "step_valor": 1, "step_de": 1, "step_passo": 1,
+            "step_ate": 1}, campo
+
+
+def test_camada4_no_win_volta_ao_padrao_de_hoje():
+    MINERACAO.estado.update(rodando=False, trials=[])
+    saida = _c4("WIN$N")
+    for campo, (valor, de, passo, ate, step) in controls.PADRAO_C4.items():
+        assert _campo_c4(saida, campo) == {
+            "valor": valor, "de": de, "passo": passo, "ate": ate,
+            "step_valor": step, "step_de": step, "step_passo": step,
+            "step_ate": step}, campo
+
+
+def test_padrao_c4_sao_os_literais_de_hoje():
+    assert controls.PADRAO_C4 == {
+        "alvo_pontos": (600, 200, 100, 1200, 10),
+        "stop_pontos": (300, 100, 50, 600, 10),
+        "trailing_pontos": (0, 0, 50, 500, 10)}
+
+
+@pytest.mark.parametrize("estado", [{"rodando": True, "trials": []},
+                                    {"rodando": False, "trials": [{"x": 1}]}])
+def test_camada4_com_mineracao_na_tela_nao_mexe(estado):
+    MINERACAO.estado.update(estado)
+    r = CB._camada4_do_ativo("MES")
+    assert len(r) == len(CB.SAIDAS_C4)
+    assert all(x is no_update for x in r)
+
+
+def test_camada4_cobre_valor_faixa_e_step_dos_tres_campos():
+    pares = {(ident.get("k", "valor"), ident["p"], prop)
+             for ident, prop, _ in CB.SAIDAS_C4}
+    assert len(pares) == len(CB.SAIDAS_C4) == 24
+    for campo in ("stop_pontos", "alvo_pontos", "trailing_pontos"):
+        for k in ("valor", "de", "passo", "ate"):
+            assert (k, campo, "value") in pares
+            # toda caixa, a do passo inclusive, como `controls._opt` (step
+            # único por campo): o passo de mineração vai só no valor dela
+            assert (k, campo, "step") in pares
+
+
+# ------------------------------------------------- saídas sem conflito no app
+@pytest.fixture
+def app(_banco_isolado):
+    from core import db_manager as db
+    from ui.app import build
+    with db.connect_write() as con:
+        db.init_schema(con)
+        con.execute("INSERT INTO instruments (symbol, description) "
+                    "VALUES ('WIN$N', 'teste')")
+        for i in range(10):
+            con.execute(
+                "INSERT INTO bars_m1 (symbol, ts, open, high, low, close, "
+                "src_ingest_id) VALUES ('WIN$N', TIMESTAMP '2026-01-05 09:00:00'"
+                f" + INTERVAL {i} MINUTE, 100, 101, 99, 100, 1)")
+    return build()
+
+
+def _ident(cid):
+    if isinstance(cid, str) and cid.startswith("{"):
+        return json.loads(cid)
+    return cid
+
+
+def _curinga(v):
+    return v is ALL or v == ["ALL"]
+
+
+def _coincidem(a, b):
+    """Mesmo id contando ALL como curinga (a regra do Dash para sobreposição)."""
+    if isinstance(a, dict) != isinstance(b, dict):
+        return False
+    if not isinstance(a, dict):
+        return a == b
+    if set(a) != set(b):
+        return False
+    return all(_curinga(a[k]) or _curinga(b[k]) or a[k] == b[k] for k in a)
+
+
+def _e_all(ident):
+    return isinstance(ident, dict) and any(map(_curinga, ident.values()))
+
+
+def test_saidas_dos_callbacks_do_ativo_sem_conflito(app):
+    saidas = []  # (callback, id, propriedade, allow_duplicate)
+    for chave, cb in app.callback_map.items():
+        if not any(i["id"] == "ativo" for i in cb["inputs"]):
+            continue
+        outs = cb["output"] if isinstance(cb["output"], list) else [cb["output"]]
+        for o in outs:
+            if isinstance(o, str):  # saída única guardada como texto
+                cid, prop = o.split("@")[0].rsplit(".", 1)
+                saidas.append((chave, _ident(cid), prop, "@" in o))
+            else:
+                saidas.append((chave, _ident(o.component_id),
+                               o.component_property, o.allow_duplicate))
+    assert any(_ident(s[1]) == {"type": "val", "p": "trailing_pontos"}
+               for s in saidas)
+    for i, a in enumerate(saidas):
+        for b in saidas[i + 1:]:
+            if a[2] != b[2] or not _coincidem(a[1], b[1]):
+                continue
+            # no mesmo callback, nunca; entre dois, só com allow_duplicate —
+            # e quem coincide com uma ALL de outro é quem duplica (perfil e
+            # `estrategia_ou_mineracao` já dividiam e-ent-ini & cia. assim)
+            assert a[0] != b[0], (a, b)
+            if _e_all(a[1]) or _e_all(b[1]):
+                especifica = b if _e_all(a[1]) else a
+                assert especifica[3], (a, b)
+            else:
+                assert a[3] or b[3], (a, b)

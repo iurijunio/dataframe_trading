@@ -350,6 +350,44 @@ def _mineracao_na_tela() -> bool:
     return bool(e.get("rodando") or e.get("trials"))
 
 
+# Saídas da camada 4 que seguem o ativo, na ordem de `_camada4_do_ativo`:
+# primeiro os valores fixos (stop e alvo abrem a lista, como antes vinham do
+# perfil), depois as células da faixa e por fim o `step` de todas as caixas,
+# como `controls._opt` faz (Dash 4.4.1: valor digitado fora do `step` vira
+# None; os micros andam em pontos inteiros, e o passo de mineração 2 numa
+# caixa de step 10 seria recusado).
+CAMPOS_C4 = ("stop_pontos", "alvo_pontos", "trailing_pontos")
+SAIDAS_C4 = (
+    [({"type": "val", "p": c}, "value", "valor") for c in CAMPOS_C4]
+    + [({"type": "opt", "p": c, "k": k}, "value", k)
+       for c in CAMPOS_C4 for k in ("de", "passo", "ate")]
+    + [({"type": "val", "p": c}, "step", "step") for c in CAMPOS_C4]
+    + [({"type": "opt", "p": c, "k": k}, "step", "step")
+       for c in CAMPOS_C4 for k in ("de", "passo", "ate")]
+)
+
+
+def _camada4_do_ativo(simbolo) -> list:
+    """Valores de `SAIDAS_C4` para o ativo: a faixa da ficha (step 1, pontos
+    inteiros) ou, sem faixa (o WIN), `controls.PADRAO_C4` com o step de hoje —
+    é o que faz a volta do MES para o WIN restaurar a tela.
+
+    Com mineração na tela nada muda: os campos são os da varredura."""
+    if _mineracao_na_tela():
+        return [no_update] * len(SAIDAS_C4)
+    faixas = ativo_mod.faixas_do_ativo(_simbolo(simbolo))
+    tabela = {}
+    for c in CAMPOS_C4:
+        valor, de, passo, ate, step = controls.PADRAO_C4[c]
+        f = faixas.get(c)
+        tabela[c] = ({"valor": valor, "de": de, "passo": passo, "ate": ate,
+                      "step": step} if not f else
+                     {"valor": f.get("valor", valor), "de": f.get("de", de),
+                      "passo": f.get("passo", passo), "ate": f.get("ate", ate),
+                      "step": 1})
+    return [tabela[ident["p"]][chave] for ident, _prop, chave in SAIDAS_C4]
+
+
 def _estrategia_ou_mineracao(gatilho, nome, run_id, simbolo, ids_val,
                              ids_faixa, ids_on):
     """Corpo de `estrategia_ou_mineracao`, fora do `register` para os testes."""
@@ -637,18 +675,19 @@ def register(app):
         Output("e-corretagem", "value", allow_duplicate=True),
         Output("e-emolumentos", "value", allow_duplicate=True),
         Output("e-slippage", "value", allow_duplicate=True),
-        Output({"type": "val", "p": "stop_pontos"}, "value", allow_duplicate=True),
-        Output({"type": "val", "p": "alvo_pontos"}, "value", allow_duplicate=True),
+        *[Output(ident, prop, allow_duplicate=True)
+          for ident, prop, _chave in SAIDAS_C4],
         Input("ativo", "value"),
         prevent_initial_call=True,
     )
     def aplicar_perfil_do_ativo(simbolo):
+        """Único callback da camada 4 disparado pelo ativo: horários e custos
+        do perfil padrão, e stop, alvo e trailing (`_camada4_do_ativo`)."""
         p = ativo_mod.perfil_padrao(ativo_mod.ficha(_simbolo(simbolo)))
-        if not p:
-            return (no_update,) * 8
-        return tuple(p.get(c, no_update) for c in (
+        perfil = (no_update,) * 6 if not p else tuple(p.get(c, no_update) for c in (
             "entrada_inicio", "entrada_fim", "fechamento", "corretagem",
-            "emolumentos", "slippage_ticks", "stop_pontos", "alvo_pontos"))
+            "emolumentos", "slippage_ticks"))
+        return perfil + tuple(_camada4_do_ativo(simbolo))
 
     @app.callback(
         Output({"type": "moeda-c4", "i": ALL}, "children"),

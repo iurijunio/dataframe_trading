@@ -136,12 +136,15 @@ def _callback(app, saida):
     raise AssertionError(saida)
 
 
-def test_callback_aplica_perfil_do_ativo(app):
+def test_callback_aplica_perfil_do_ativo(app, monkeypatch):
+    from core.optimizer import MINERACAO
+    monkeypatch.setattr(MINERACAO, "estado", {"rodando": False, "trials": []})
     cb = _callback(app, "e-ent-ini.value")
+    # perfil (6) + stop e alvo; o resto da camada 4 em test_faixas_tela
     mes = cb("MES")
-    assert tuple(mes) == ("18:00", "16:30", "16:50", 0.60, 0.0, 1, 8, 16)
+    assert tuple(mes)[:8] == ("18:00", "16:30", "16:50", 0.60, 0.0, 1, 8, 16)
     win = cb("WIN$N")
-    assert tuple(win) == ("09:00", "17:00", "17:30", 0.50, 0.27, 1, 300, 600)
+    assert tuple(win)[:8] == ("09:00", "17:00", "17:30", 0.50, 0.27, 1, 300, 600)
 
 
 def test_rodar_param_invalido_devolve_oito_saidas(app):

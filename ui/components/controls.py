@@ -18,6 +18,12 @@ from strategies import registry
 
 from .catalogo import DIAS, opcoes
 
+# (valor, de, passo, ate, step) de stop, alvo e trailing em pontos no WIN; os
+# micros trocam pela faixa da ficha do ativo (`aplicar_perfil_do_ativo`)
+PADRAO_C4 = {"alvo_pontos": (600, 200, 100, 1200, 10),
+             "stop_pontos": (300, 100, 50, 600, 10),
+             "trailing_pontos": (0, 0, 50, 500, 10)}
+
 
 def _num(id_, value, step=1, minimo=None, maximo=None, placeholder=None):
     return dcc.Input(id=id_, type="number", value=value, step=step, min=minimo,
@@ -247,7 +253,7 @@ def execucao():
                 id="e-alvo-tipo", value="pontos", clearable=False, className="dd",
                 options=opcoes("alvo_tipo"))),
             # so um dos dois blocos aparece, conforme o tipo escolhido
-            html.Div(_opt("alvo_pontos", "Alvo (pontos)", 600, 200, 100, 1200, 10, 0),
+            html.Div(_opt("alvo_pontos", "Alvo (pontos)", *PADRAO_C4["alvo_pontos"], 0),
                      id="blk-alvo-pontos"),
             html.Div([
                 _opt("alvo_atr_periodo", "ATR período", 20, 5, 1, 60, 1, 2),
@@ -264,7 +270,7 @@ def execucao():
             _field("tipo de stop", dcc.Dropdown(
                 id="e-stop-tipo", value="pontos", clearable=False, className="dd",
                 options=opcoes("stop_tipo"))),
-            html.Div(_opt("stop_pontos", "Stop (pontos)", 300, 100, 50, 600, 10, 0),
+            html.Div(_opt("stop_pontos", "Stop (pontos)", *PADRAO_C4["stop_pontos"], 0),
                      id="blk-stop-pontos"),
             html.Div([
                 _opt("stop_atr_periodo", "ATR período", 20, 5, 1, 60, 1, 2),
@@ -281,7 +287,8 @@ def execucao():
                  5, 0, "0 desliga"),
             _opt("step_distancia_pct", "Stop móvel — trava (% do alvo)", 0, 0, 10, 100,
                  5, 0, "onde o stop vai parar, a favor"),
-            _opt("trailing_pontos", "Trailing (pontos)", 0, 0, 50, 500, 10, 0, "0 desliga"),
+            _opt("trailing_pontos", "Trailing (pontos)", *PADRAO_C4["trailing_pontos"],
+                 0, "0 desliga"),
             _field("tempo máximo (barras)", _num("e-max-barras", 0, 10, 0), "0 desliga"),
 
             html.H3("Limites diários", className="grp"),
