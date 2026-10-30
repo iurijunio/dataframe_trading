@@ -548,6 +548,25 @@ def _portfolio_com_banco(tmp: Path) -> dict:
     return telas
 
 
+def _parametros_telas() -> dict:
+    """Os campos de parâmetro de cada estratégia do registro e o bloco de
+    execução da camada 4 (stop, alvo e trailing em pontos): é o que a tela do
+    WIN monta, e tem que continuar igual quando as faixas por ativo entrarem."""
+    from strategies import registry
+    from ui.components import controls as CT
+
+    saida = {}
+    for e in registry.descobrir():
+        mod = registry.carregar(e["modulo"])
+        saida[f"campos.{e['modulo']}"] = [_c(c) for c in CT.campos_da_estrategia(mod)]
+    canal = registry.carregar("rompimento_canal")
+    saida["campos_com_faixas.rompimento_canal"] = [_c(c) for c in CT.campos_da_estrategia(
+        canal, {"filtro_amplitude": {"valor": 12, "de": 4, "passo": 2, "ate": 60,
+                                     "on": True}})]
+    saida["camada4.execucao"] = _c(CT.execucao())
+    return saida
+
+
 # ------------------------------------------------------------------ tabela
 ENTRADAS = [
     ("backtest", _backtest_telas),
@@ -558,6 +577,7 @@ ENTRADAS = [
     ("ficha", _ficha_telas),
     ("metricas", _metricas_telas),
     ("portfolio", _portfolio_telas),
+    ("parametros", _parametros_telas),
 ]
 
 
