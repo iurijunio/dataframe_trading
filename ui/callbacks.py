@@ -339,6 +339,134 @@ def _chave_matriz(run_id, geracao, estende, trava, valores=None) -> str:
             + (f"-{marca}" if marca else ""))
 
 
+def _mineracao_na_tela() -> bool:
+    """Há uma mineração rodando, ou uma tabela dela (recém-rodada ou
+    carregada do banco) na tela.
+
+    Trocar o ativo nessa hora não pode refazer campos nem interromper nada:
+    as faixas na tela são as da varredura, e reescrevê-las com as do ativo
+    novo deixaria a tabela descrevendo outra coisa."""
+    e = MINERACAO.estado
+    return bool(e.get("rodando") or e.get("trials"))
+
+
+def _estrategia_ou_mineracao(gatilho, nome, run_id, simbolo, ids_val,
+                             ids_faixa, ids_on):
+    """Corpo de `estrategia_ou_mineracao`, fora do `register` para os testes."""
+    sem_mudanca = [no_update] * (17 + len(CAMPOS_PERFIL))
+    sem_mudanca[9:12] = ([no_update] * len(ids_val),
+                         [no_update] * len(ids_faixa),
+                         [no_update] * len(ids_on))
+    if gatilho == "mine-carregar":
+        return _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on,
+                                   sem_mudanca)
+    if gatilho == "ativo":
+        return _trocar_ativo(nome, simbolo, sem_mudanca)
+    return _trocar_estrategia(nome, sem_mudanca, simbolo=_simbolo(simbolo))
+
+
+def _trocar_ativo(nome, simbolo, r):
+    """Refaz só a seção de parâmetros na escala do ativo novo.
+
+    Com mineração na tela não mexe em nada (`_mineracao_na_tela`): nem
+    seção, nem `esquecer`/`parar` — trocar o ativo não é motivo para
+    perder uma varredura."""
+    if _mineracao_na_tela():
+        return r
+    nome = nome or registry.nome_atual()
+    r[2] = controls.campos_da_estrategia(
+        registry.carregar(nome), None,
+        ativo_mod.faixas_do_ativo(_simbolo(simbolo), nome))
+    return r
+
+
+def _trocar_estrategia(nome, r, simbolo=None):
+    """Troca a estratégia e zera TUDO que veio da anterior.
+
+    Não é higiene: os parâmetros mudam de nome e de significado entre
+    estratégias, então uma tabela de mineração antiga ao lado dos campos
+    novos seria um convite a clicar numa combinação que não existe mais.
+    Melhor a tela vazia — inclusive o seletor da mineração carregada.
+    """
+    mod = registry.definir(nome)
+    MINERACAO.esquecer()
+    r[1:9] = (None,
+              controls.campos_da_estrategia(
+                  mod, None, ativo_mod.faixas_do_ativo(simbolo, nome)),
+              "", [],
+              scatter.vazio("Rode uma mineração para ver a nuvem de parâmetros."),
+              stats_cards.vazio(), [], [])
+    return r
+
+
+def _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on, r):
+    """Carregar uma mineração repõe a TELA INTEIRA como ela estava.
+
+    Não bastam as linhas da tabela: sem o perfil de execução e as faixas
+    de volta nos campos, clicar numa combinação rodaria o backtest com o
+    que estiver na tela agora — outro timeframe, outro custo, outra
+    janela — e o resultado não bateria com a linha clicada.
+    """
+    if not run_id:
+        return r
+    d = optimizer.detalhes_salva(run_id)
+    if not d:
+        return r
+
+    # A mineração manda: ela carrega a própria estratégia junto. Antes
+    # isto era recusado, e a tela ficava mostrando "Cruzamento de médias"
+    # com uma varredura de rompimento de canal carregada.
+    try:
+        mod = registry.definir(d["estrategia"])
+    except Exception:
+        r[12] = (f"mineração #{run_id} é da estratégia “{d['estrategia']}”, "
+                 "que não está mais em strategies/")
+        return r
+    MINERACAO.estado["estrategia"] = d["estrategia"]
+
+    faixas = optimizer.faixas_do_espaco(d["espaco"])
+    perfil = d["perfil"] or {}
+    # a reserva é a escala do ativo DA MINERAÇÃO, não a do seletor: uma
+    # varredura do MES aberta com o WIN no topo não pode ganhar os 50 em 50
+    # do WIN no parâmetro que ela não varreu. Só os da estratégia: a camada 4
+    # tem dono próprio.
+    do_ativo = {p: f for p, f in ativo_mod.faixas_do_ativo(
+        d.get("symbol"), d["estrategia"]).items() if p in mod.params_schema}
+
+    def de_faixa(p, k, senao):
+        for fonte in (faixas.get(p) or {}, do_ativo.get(p) or {}):
+            if fonte.get(k) is not None:
+                return fonte[k]
+        return senao
+
+    # os parâmetros da estratégia vão embutidos na seção reconstruída;
+    # os outputs por id cuidam só dos campos da camada 4
+    r[0] = d["estrategia"]
+    r[2] = controls.campos_da_estrategia(mod, faixas, do_ativo)
+    r[3] = ""
+    # campo que a mineração antiga nem conhecia (sem entradas, ADX) cai
+    # no padrão do motor - com no_update ficava o que estava na tela, e
+    # o backtest do clique dava outro lucro que o da tabela
+    padrao = ExecutionProfile().to_config()
+    r[9] = [de_faixa(i["p"], "valor",
+                     perfil.get(i["p"], padrao.get(i["p"], no_update)))
+            for i in ids_val]
+    r[10] = [de_faixa(i["p"], i["k"], no_update) for i in ids_faixa]
+    r[11] = [["on"] if faixas.get(i["p"], {}).get("on") else []
+             for i in ids_on]
+    r[12] = (f"mineração #{run_id} carregada"
+             + (f" · “{d['nome']}”" if d["nome"] else ""))
+
+    # o walk-forward volta junto: é ele que define o corte do holdout,
+    # e o backtest único precisa medir a mesma janela que a tabela mediu
+    w = d.get("wf_config") or {}
+    r[13:17] = (w.get("treino_meses", no_update), w.get("teste_meses", no_update),
+                w.get("passo_meses", no_update), w.get("holdout_meses", no_update))
+    r[17:] = [perfil.get(chave, padrao.get(chave, no_update))
+              for _, chave in CAMPOS_PERFIL]
+    return r
+
+
 def register(app):
     # ------------------------------------------------------ modal do grafico
     @app.callback(
@@ -477,12 +605,13 @@ def register(app):
         + [Output(cid, "value", allow_duplicate=True) for cid, _ in CAMPOS_PERFIL],
         Input("estrategia", "value"),
         Input("mine-carregar", "value"),
+        Input("ativo", "value"),
         State({"type": "val", "p": ALL}, "id"),
         State({"type": "opt", "p": ALL, "k": ALL}, "id"),
         State({"type": "opt-on", "p": ALL}, "id"),
         prevent_initial_call=True,
     )
-    def estrategia_ou_mineracao(nome, run_id, ids_val, ids_faixa, ids_on):
+    def estrategia_ou_mineracao(nome, run_id, simbolo, ids_val, ids_faixa, ids_on):
         """Único dono de `estrategia` e `mine-carregar`: um mexe no outro.
 
         Eram dois callbacks — trocar a estratégia limpava o seletor, carregar
@@ -493,85 +622,12 @@ def register(app):
         congelou). Um callback só nunca espera por si mesmo: o renderer
         desconta dos Inputs as próprias Outputs, e escrever `estrategia`
         daqui não o dispara de novo.
+
+        O `ativo` entra aqui pelo mesmo motivo: as faixas dos parâmetros vêm
+        da ficha dele, e um segundo dono de `params-body` reabriria a corrida.
         """
-        sem_mudanca = [no_update] * (17 + len(CAMPOS_PERFIL))
-        sem_mudanca[9:12] = ([no_update] * len(ids_val),
-                             [no_update] * len(ids_faixa),
-                             [no_update] * len(ids_on))
-        if ctx.triggered_id == "mine-carregar":
-            return _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on,
-                                       sem_mudanca)
-        return _trocar_estrategia(nome, sem_mudanca)
-
-    def _trocar_estrategia(nome, r):
-        """Troca a estratégia e zera TUDO que veio da anterior.
-
-        Não é higiene: os parâmetros mudam de nome e de significado entre
-        estratégias, então uma tabela de mineração antiga ao lado dos campos
-        novos seria um convite a clicar numa combinação que não existe mais.
-        Melhor a tela vazia — inclusive o seletor da mineração carregada.
-        """
-        mod = registry.definir(nome)
-        MINERACAO.esquecer()
-        r[1:9] = (None, controls.campos_da_estrategia(mod), "", [],
-                  scatter.vazio("Rode uma mineração para ver a nuvem de parâmetros."),
-                  stats_cards.vazio(), [], [])
-        return r
-
-    def _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on, r):
-        """Carregar uma mineração repõe a TELA INTEIRA como ela estava.
-
-        Não bastam as linhas da tabela: sem o perfil de execução e as faixas
-        de volta nos campos, clicar numa combinação rodaria o backtest com o
-        que estiver na tela agora — outro timeframe, outro custo, outra
-        janela — e o resultado não bateria com a linha clicada.
-        """
-        if not run_id:
-            return r
-        d = optimizer.detalhes_salva(run_id)
-        if not d:
-            return r
-
-        # A mineração manda: ela carrega a própria estratégia junto. Antes
-        # isto era recusado, e a tela ficava mostrando "Cruzamento de médias"
-        # com uma varredura de rompimento de canal carregada.
-        try:
-            mod = registry.definir(d["estrategia"])
-        except Exception:
-            r[12] = (f"mineração #{run_id} é da estratégia “{d['estrategia']}”, "
-                     "que não está mais em strategies/")
-            return r
-        MINERACAO.estado["estrategia"] = d["estrategia"]
-
-        faixas = optimizer.faixas_do_espaco(d["espaco"])
-        perfil = d["perfil"] or {}
-
-        # os parâmetros da estratégia vão embutidos na seção reconstruída;
-        # os outputs por id cuidam só dos campos da camada 4
-        r[0] = d["estrategia"]
-        r[2] = controls.campos_da_estrategia(mod, faixas)
-        r[3] = ""
-        # campo que a mineração antiga nem conhecia (sem entradas, ADX) cai
-        # no padrão do motor - com no_update ficava o que estava na tela, e
-        # o backtest do clique dava outro lucro que o da tabela
-        padrao = ExecutionProfile().to_config()
-        r[9] = [faixas.get(i["p"], {}).get("valor",
-                                          perfil.get(i["p"], padrao.get(i["p"], no_update)))
-                for i in ids_val]
-        r[10] = [faixas.get(i["p"], {}).get(i["k"], no_update) for i in ids_faixa]
-        r[11] = [["on"] if faixas.get(i["p"], {}).get("on") else []
-                 for i in ids_on]
-        r[12] = (f"mineração #{run_id} carregada"
-                 + (f" · “{d['nome']}”" if d["nome"] else ""))
-
-        # o walk-forward volta junto: é ele que define o corte do holdout,
-        # e o backtest único precisa medir a mesma janela que a tabela mediu
-        w = d.get("wf_config") or {}
-        r[13:17] = (w.get("treino_meses", no_update), w.get("teste_meses", no_update),
-                    w.get("passo_meses", no_update), w.get("holdout_meses", no_update))
-        r[17:] = [perfil.get(chave, padrao.get(chave, no_update))
-                  for _, chave in CAMPOS_PERFIL]
-        return r
+        return _estrategia_ou_mineracao(ctx.triggered_id, nome, run_id,
+                                        simbolo, ids_val, ids_faixa, ids_on)
 
     # ------------------- perfil padrao do ativo preenche a camada 4
     @app.callback(

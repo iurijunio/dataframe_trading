@@ -125,7 +125,8 @@ def _ate_padrao(meta: dict, valor):
     return min(meta["max"], valor * 3)
 
 
-def campos_da_estrategia(mod=None, faixas: dict | None = None):
+def campos_da_estrategia(mod=None, faixas: dict | None = None,
+                         faixas_ativo: dict | None = None):
     """Os campos de parâmetro são montados a partir do schema da estratégia
     ativa — por isso trocar de estratégia troca a seção inteira.
 
@@ -133,18 +134,34 @@ def campos_da_estrategia(mod=None, faixas: dict | None = None):
     componentes, e não por callback depois: reconstruir a seção apagaria
     qualquer valor escrito em seguida, e a corrida entre as duas coisas era
     o que fazia a estratégia carregada aparecer com os campos da anterior.
+
+    `faixas_ativo` (`ativo.faixas_do_ativo`) é a escala do ativo: o filtro de
+    50 em 50 pontos do WIN não serve para um MES de 5 mil pontos. Vale chave
+    por chave, abaixo da mineração e acima do schema. Com faixa do ativo o
+    `step` do input é 1: os micros andam em pontos inteiros, e no Dash um
+    valor fora do passo vira None.
     """
     mod = mod or registry.atual()
     faixas = faixas or {}
+    faixas_ativo = faixas_ativo or {}
     campos = []
     for nome, meta in mod.params_schema.items():
         f = faixas.get(nome) or {}
-        d = f.get("valor", meta["default"])
+        a = faixas_ativo.get(nome) or {}
+
+        def chave(k, padrao):
+            for fonte in (f, a):
+                if fonte.get(k) is not None:
+                    return fonte[k]
+            return padrao
+
+        d = chave("valor", meta["default"])
+        ate = chave("ate", None)
         campos.append(_opt(nome, meta["label"], d,
-                           de=f.get("de", meta["min"]),
-                           passo=f.get("passo", meta["step"]),
-                           ate=f.get("ate", _ate_padrao(meta, d)),
-                           step=meta["step"], minimo=meta["min"],
+                           de=chave("de", meta["min"]),
+                           passo=chave("passo", meta["step"]),
+                           ate=_ate_padrao(meta, d) if ate is None else ate,
+                           step=1 if a else meta["step"], minimo=meta["min"],
                            ligado=bool(f.get("on"))))
     return campos
 
