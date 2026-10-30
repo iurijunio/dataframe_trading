@@ -112,8 +112,8 @@ perfil_padrao:             # preenche a camada 4 ao escolher o ativo (secao 7)
   corretagem: 0.60         # US$ por contrato por lado
   emolumentos: 0.0
   slippage_ticks: 1
-  stop_pontos: (medido na etapa 4)
-  alvo_pontos: (medido na etapa 4)
+  stop_pontos: 8             # etapa 4 (30/10): MES 8, MNQ 45
+  alvo_pontos: 16            # etapa 4 (30/10): MES 16, MNQ 90
 faixas: { ... }            # faixas de mineracao por parametro (secao 6)
 ```
 
@@ -268,6 +268,10 @@ Um único "schema efetivo" (schema da estratégia + faixas da ficha) é usado em
 Claude propõe as faixas iniciais a partir do movimento típico de cada micro
 (amplitude do pregão e da abertura, medida nos dados importados) e apresenta ao
 usuário numa tabela antes de gravar.
+
+> **Como ficou (etapa 4, opção B):** o "schema efetivo" acima **não** foi feito.
+> As faixas do YAML só preenchem a tela; motor, `validate` e mineração seguem o
+> schema. Ver "Estado depois da etapa 4".
 
 ### 7. Perfil de execução por ativo
 
@@ -452,7 +456,7 @@ WIN batendo.
 
 **Fica para depois:**
 - **Etapa 3:** os rótulos ainda mostram R$ nos micros, mas os valores estão em US$.
-- **Etapa 4:** as faixas de mineração ainda são as do WIN. O stop e o alvo padrão do MES (10/20) e do MNQ (40/80) são provisórios. Planos não devem ser salvos nos micros até lá.
+- **Etapa 4:** as faixas de mineração ainda são as do WIN. O stop e o alvo padrão do MES (10/20) e do MNQ (40/80) são provisórios. Planos não devem ser salvos nos micros até lá. *(Feito em 30/10: stop/alvo MES 8/16 e MNQ 45/90, faixas por ativo pela opção B — ver "Estado depois da etapa 4".)*
 - `execution_profiles.symbol` não foi feito, porque não existe tela de perfis salvos.
 - **Pendências pequenas:**
   - `foto_win.comparar` não trata NaN escalar nem listas de arrays;
@@ -493,3 +497,31 @@ WIN batendo.
 - os placeholders do portfólio misto mostram "(R$)";
 - `optimizer` `iniciar`/`esquecer` não zeram o símbolo da mineração;
 - a referência das telas compara JSON exato, então um upgrade do plotly exige regravar.
+
+## Estado depois da etapa 4 (30/10/2026)
+
+**Resolvido (opção B):**
+- Cada ficha de micro (`mes.yaml`, `mnq.yaml`) ganhou `faixas`: o bloco `comum` (stop, alvo e trailing) e um bloco por estratégia. O `win.yaml` não ganhou `faixas`, e a tela do WIN ficou idêntica à referência gravada antes da etapa (`tests/test_referencia_telas.py`).
+- As faixas **só preenchem a tela**: valor, de, passo e até dos campos. O motor, `validate`, a mineração e o Walk-Forward não as conhecem nem as impõem. Quem automatizar a mineração no futuro tem de pegar as faixas de `core.ativo.faixas_do_ativo`, e não do schema.
+- O stop e o alvo padrão saíram de provisórios: `perfil_padrao` é MES 8/16 e MNQ 45/90, igual ao `valor` de `faixas.comum` (um teste garante).
+- Nos micros, toda caixa com faixa do ativo tem `step=1` (pontos inteiros); o passo da mineração fica só na célula "passo". No WIN, o step de antes.
+- Prioridade, chave por chave: mineração carregada > faixa do ativo > schema (ou `PADRAO_C4` na camada 4).
+
+**Tabela aprovada pelo usuário (valor · de–até · passo, em pontos):**
+
+| Campo | Chave | MES | MNQ |
+|---|---|---|---|
+| Stop | `stop_pontos` | 8 · 3–16 · 1 | 45 · 15–90 · 5 |
+| Alvo | `alvo_pontos` | 16 · 6–32 · 2 | 90 · 30–180 · 10 |
+| Trailing | `trailing_pontos` | 0 · 0–14 · 2 | 0 · 0–80 · 10 |
+| `rompimento_abertura` | `filtro_amplitude` | 0 · 0–40 · 2 | 0 · 0–220 · 10 |
+| `rompimento_canal` | `filtro_amplitude` | 0 · 0–80 · 2 | 0 · 0–460 · 10 |
+| `rompimento_ema_abertura` | `distancia_abertura` | 0 · 0–80 · 2 | 0 · 0–400 · 10 |
+| `adx_direcao` | `amplitude_max` | 25 · 5–80 · 5 | 150 · 25–450 · 25 |
+
+**Comportamento da tela ao trocar o ativo:**
+- Sem mineração na tela (nem rodando, nem carregada), a seção de parâmetros e o stop, o alvo e o trailing da camada 4 são refeitos na escala do ativo novo. Isso **zera os valores digitados e as marcas de "minerar"** dos parâmetros.
+- Com mineração na tela, parâmetros e stop/alvo/trailing ficam como estão, e a mineração nunca é interrompida nem esquecida por causa do ativo. Horários, custos e slippage da camada 4 trocam assim mesmo, então a tela pode ficar misturada (por exemplo horário de NY com stop do WIN) até a mineração sair da tela e o ativo ser trocado de novo.
+- Carregar uma mineração salva usa a escala do ativo **dela** (`symbol` gravado), não a do seletor, também no step e nas células não varridas de stop, alvo e trailing.
+
+**Fora do escopo, ainda:** plano de operação, papel e ao vivo para os ativos da CME — não há corretora para eles.
