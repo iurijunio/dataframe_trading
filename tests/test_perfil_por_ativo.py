@@ -73,9 +73,9 @@ def test_mes_tem_perfil_de_ny():
     p = ativo.perfil_padrao(ativo.ficha("MES"))
     assert (p["entrada_inicio"], p["entrada_fim"], p["fechamento"]) == ("18:00", "16:30", "16:50")
     assert (p["corretagem"], p["emolumentos"], p["slippage_ticks"]) == (0.60, 0.0, 1)
-    assert (p["stop_pontos"], p["alvo_pontos"]) == (10, 20)
+    assert (p["stop_pontos"], p["alvo_pontos"]) == (8, 16)
     q = ativo.perfil_padrao(ativo.ficha("MNQ"))
-    assert (q["stop_pontos"], q["alvo_pontos"]) == (40, 80)
+    assert (q["stop_pontos"], q["alvo_pontos"]) == (45, 90)
 
 
 def test_janela_16h_19h_ny_recusada():
@@ -139,7 +139,7 @@ def _callback(app, saida):
 def test_callback_aplica_perfil_do_ativo(app):
     cb = _callback(app, "e-ent-ini.value")
     mes = cb("MES")
-    assert tuple(mes) == ("18:00", "16:30", "16:50", 0.60, 0.0, 1, 10, 20)
+    assert tuple(mes) == ("18:00", "16:30", "16:50", 0.60, 0.0, 1, 8, 16)
     win = cb("WIN$N")
     assert tuple(win) == ("09:00", "17:00", "17:30", 0.50, 0.27, 1, 300, 600)
 

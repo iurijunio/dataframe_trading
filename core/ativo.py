@@ -42,6 +42,7 @@ class Ficha:
     pregoes_descartados: dict[str, str] = field(default_factory=dict)
     pregoes_mantidos: dict[str, str] = field(default_factory=dict)
     perfil_padrao: dict | None = field(default=None, hash=False, compare=False)
+    faixas: dict | None = field(default=None, hash=False, compare=False)
 
     @property
     def escala(self) -> int:
@@ -82,6 +83,7 @@ def ficha_de(cfg: dict) -> Ficha:
         pregoes_descartados={str(k): v for k, v in (cfg.get("pregoes_descartados") or {}).items()},
         pregoes_mantidos={str(k): v for k, v in (cfg.get("pregoes_mantidos") or {}).items()},
         perfil_padrao=cfg.get("perfil_padrao"),
+        faixas=cfg.get("faixas"),
     )
 
 
@@ -203,6 +205,24 @@ def hora_do_pregao_para_exibir(h: int, f: Ficha | None) -> int:
 
 def perfil_padrao(f: Ficha) -> dict | None:
     return f.perfil_padrao
+
+
+def faixas_do_ativo(simbolo: str | None, estrategia: str | None = None) -> dict[str, dict]:
+    """Faixas de mineração do ativo para a tela: `comum` (stop, alvo e trailing)
+    junto com o bloco da estratégia. Cada item é {valor, de, passo, ate}.
+
+    Sempre uma cópia; `{}` sem símbolo, sem YAML ou sem `faixas` (o WIN)."""
+    if not simbolo:
+        return {}
+    try:
+        bloco = ficha(simbolo).faixas
+    except FileNotFoundError:
+        return {}
+    if not bloco:
+        return {}
+    juntas = {**(bloco.get("comum") or {}), **((bloco.get(estrategia) or {})
+                                               if estrategia else {})}
+    return {k: dict(v) for k, v in juntas.items()}
 
 
 def janela_valida(ini: str, fim: str, f: Ficha | None,

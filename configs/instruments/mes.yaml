@@ -72,7 +72,7 @@ pregoes_descartados:
 pregoes_mantidos: {}
 
 # Perfil padrao da camada 4 quando este ativo e escolhido na tela
-# (horas em NY). stop_pontos/alvo_pontos sao PROVISORIOS ate a etapa 4.
+# (horas em NY). stop_pontos/alvo_pontos vem de faixas.comum (abaixo).
 perfil_padrao:
   entrada_inicio: "18:00"
   entrada_fim: "16:30"
@@ -80,5 +80,22 @@ perfil_padrao:
   corretagem: 0.60
   emolumentos: 0.0
   slippage_ticks: 1
-  stop_pontos: 10
-  alvo_pontos: 20
+  stop_pontos: 8
+  alvo_pontos: 16
+
+# Faixas de mineracao e valores iniciais que a tela mostra para este ativo.
+# Aprovadas em 30/10/2026; so preenchem a tela (o motor nao le daqui).
+# Cada item: valor (inicial), de, passo, ate - em pontos inteiros.
+faixas:
+  comum:
+    stop_pontos: {valor: 8, de: 3, passo: 1, ate: 16}
+    alvo_pontos: {valor: 16, de: 6, passo: 2, ate: 32}
+    trailing_pontos: {valor: 0, de: 0, passo: 2, ate: 14}
+  rompimento_abertura:
+    filtro_amplitude: {valor: 0, de: 0, passo: 2, ate: 40}
+  rompimento_canal:
+    filtro_amplitude: {valor: 0, de: 0, passo: 2, ate: 80}
+  rompimento_ema_abertura:
+    distancia_abertura: {valor: 0, de: 0, passo: 2, ate: 80}
+  adx_direcao:
+    amplitude_max: {valor: 25, de: 5, passo: 5, ate: 80}
