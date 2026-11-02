@@ -168,19 +168,24 @@ def test_wfa_listas_filtram_pelo_ativo(fns, sem_varredura, monkeypatch):
     opts, *_ = fns["wfa_guardar"](0, None, "rompimento_canal", None,
                                   "WIN$N", "")
     assert _valores(opts) == [10]
+    # sem ativo, lista vazia (como `wfa_mineracoes`), não a lista inteira
+    opts, *_ = fns["wfa_guardar"](0, None, "rompimento_canal", None, None, "")
+    assert opts == []
 
 
 def test_cand_ativo_ao_entrar(fns):
     f = fns["cand_ativo_ao_entrar"]
-    # nada aberto: o do menu
-    opts, valor = f("candidata", "WIN$N", None, None, None)
+    # nada aberto na aba Walk-Forward: o do menu
+    opts, valor = f("candidata", "WIN$N", None, None)
     assert set(_valores(opts)) == set(ATIVOS) and valor == "WIN$N"
-    # walk-forward aberto aqui é do MES: o seletor vai para o MES
-    assert f("candidata", "WIN$N", 11, None, None)[1] == "MES"
-    # sem nenhum aqui, herda o aberto na aba Walk-Forward
-    assert f("candidata", "WIN$N", None, 12, None)[1] == "MES"
-    assert f("candidata", "WIN$N", 11, None, "MES")[1] is no_update
-    assert f("wfa", "WIN$N", None, None, None) == (no_update, no_update)
+    assert f("candidata", "MES", None, None)[1] == "MES"
+    # a única exceção: o walk-forward aberto na aba Walk-Forward (MES)
+    assert f("candidata", "WIN$N", 12, None)[1] == "MES"
+    assert f("candidata", "MES", 10, None)[1] == "WIN$N"
+    # o seletor daqui já no MES não prende: o menu manda de novo
+    assert f("candidata", "WIN$N", None, "MES")[1] == "WIN$N"
+    assert f("candidata", "WIN$N", 11, "MES")[1] is no_update
+    assert f("wfa", "WIN$N", None, None) == (no_update, no_update)
 
 
 def test_cand_listas_filtram_pelo_ativo(fns):

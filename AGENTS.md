@@ -436,7 +436,9 @@ corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
   faixas no YAML dos micros e `faixas_do_ativo`; passo 1 nos micros. Stop/alvo
   padrão: MES 8/16, MNQ 45/90. Trocar o ativo sem mineração na tela refaz
   parâmetros e stop/alvo/trailing (zera o que foi digitado e as marcas de
-  "minerar"); com mineração na tela não refaz nada nem a interrompe. Mineração
+  "minerar"). Com mineração parada na tela (do banco ou recém-rodada, salva
+  ou não), a troca a tira da tela, como a troca de estratégia, e refaz tudo
+  para o ativo novo; rodando, o seletor do ativo fica desligado. Mineração
   carregada ajusta stop/alvo/trailing ao ativo dela (no WIN, os não varridos
   voltam a 300/600/0). Suíte: 2.713 testes. Spec: "Estado depois da etapa 4".
 - Pendências pequenas em "Estado depois da etapa 2" e "Estado depois da etapa 3" da spec.

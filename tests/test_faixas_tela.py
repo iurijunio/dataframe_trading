@@ -193,16 +193,61 @@ def test_trocar_ativo_sem_mineracao_reconstroi_a_secao(espiao):
     assert espiao == []
 
 
-@pytest.mark.parametrize("estado", [{"rodando": True, "trials": []},
-                                    {"rodando": False, "trials": [{"x": 1}]}])
-def test_trocar_ativo_com_mineracao_na_tela_nao_mexe(espiao, estado):
-    MINERACAO.estado.update(estado)
+@pytest.mark.parametrize("trials", [[], [{"x": 1}]])
+def test_trocar_ativo_com_mineracao_rodando_nao_mexe(espiao, trials):
+    MINERACAO.estado.update(rodando=True, trials=trials)
     assert CB._mineracao_na_tela()
     r = CB._estrategia_ou_mineracao("ativo", "rompimento_canal", None, "MES",
                                     [{"p": "a"}], [], [])
     assert r[2] is no_update
     assert r == _r_vazio(1)
     assert espiao == []
+
+
+def test_trocar_ativo_com_mineracao_parada_tira_ela_da_tela(espiao):
+    """Carregada do banco ou recém-rodada (salva ou não): sai da tela, como
+    na troca de estratégia, e a seção nasce na escala do ativo novo."""
+    MINERACAO.estado.update(rodando=False, trials=[{"x": 1}])
+    r = CB._estrategia_ou_mineracao("ativo", "rompimento_canal", None, "MES",
+                                    [{"p": "a"}], [], [])
+    assert espiao == ["esquecer"]
+    assert _faixa(r[2], "filtro_amplitude")["ate"] == 80
+    assert r[0] is no_update                   # a estratégia continua
+    assert r[1] is None                        # seletor da mineração vazio
+    assert r[3] == "" and r[4] == [] and r[7:9] == [[], []]
+    assert r[5] is not no_update and r[6] is not no_update  # nuvem e cards
+    # o resto fica com o dono de cada campo (camada 4, perfil do ativo)
+    assert r[9:] == _r_vazio(1)[9:]
+
+
+def test_trocar_ativo_esquece_de_verdade(monkeypatch):
+    """Sem espião: o estado da mineração fica vazio depois da troca."""
+    MINERACAO.estado.update(rodando=False, trials=[{"x": 1}], run_id=7)
+    monkeypatch.setattr(MINERACAO, "parar", lambda: None)
+    CB._estrategia_ou_mineracao("ativo", "rompimento_canal", None, "MES",
+                                [], [], [])
+    assert MINERACAO.estado["trials"] == []
+    assert MINERACAO.estado["run_id"] is None
+    assert not CB._mineracao_na_tela()
+
+
+@pytest.mark.parametrize("rodando, gatilho, esperado", [
+    (False, "ativo", None), (True, "ativo", no_update),
+    (True, "estrategia", None), (True, "mine-carregar", None),
+    (False, "estrategia", None)])
+def test_esquecer_combinacao(rodando, gatilho, esperado):
+    """Trocar o ativo com a varredura parada tira a mineração da tela, e a
+    combinação aberta vai junto; rodando, nada sai."""
+    MINERACAO.estado.update(rodando=rodando)
+    assert CB._esquecer_combinacao(gatilho) is esperado
+
+
+@pytest.mark.parametrize("rodando, agora, esperado", [
+    (True, None, True), (True, False, True), (True, True, no_update),
+    (False, True, False), (False, None, no_update), (False, False, no_update)])
+def test_ativo_desligado_segue_a_mineracao_rodando(rodando, agora, esperado):
+    MINERACAO.estado.update(rodando=rodando, trials=[{"x": 1}])
+    assert CB._ativo_desligado(agora) is esperado
 
 
 def test_sem_mineracao_nada_na_tela():
@@ -374,13 +419,22 @@ def test_padrao_c4_sao_os_literais_de_hoje():
         "trailing_pontos": (0, 0, 50, 500, 10)}
 
 
-@pytest.mark.parametrize("estado", [{"rodando": True, "trials": []},
-                                    {"rodando": False, "trials": [{"x": 1}]}])
-def test_camada4_com_mineracao_na_tela_nao_mexe(estado):
-    MINERACAO.estado.update(estado)
+@pytest.mark.parametrize("trials", [[], [{"x": 1}]])
+def test_camada4_com_mineracao_rodando_nao_mexe(trials):
+    MINERACAO.estado.update(rodando=True, trials=trials)
     r = CB._camada4_do_ativo("MES")
     assert len(r) == len(CB.SAIDAS_C4)
     assert all(x is no_update for x in r)
+
+
+def test_camada4_com_mineracao_parada_segue_o_ativo():
+    """A tabela parada sai na mesma troca (`_trocar_ativo`), que corre junto
+    com este callback: a guarda não pode depender de ela já ter saído."""
+    MINERACAO.estado.update(rodando=False, trials=[{"x": 1}])
+    com = CB._camada4_do_ativo("MES")
+    MINERACAO.estado.update(trials=[])
+    assert com == CB._camada4_do_ativo("MES")
+    assert not any(x is no_update for x in com)
 
 
 def test_camada4_cobre_valor_faixa_e_step_dos_tres_campos():

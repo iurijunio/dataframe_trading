@@ -135,15 +135,14 @@ def _valor_do_seletor(atual, ids: set, aberto_no_wfa, padrao=None):
     return padrao
 
 
-def _ativo_ao_entrar(do_menu, aberto_aqui, aberto_no_wfa, validos: set):
-    """O ativo com que a Candidata abre: o do walk-forward aberto aqui; sem
-    ele, o do aberto na aba Walk-Forward (o que `_valor_do_seletor` herda);
-    sem nenhum, o do menu. Assim a lista nunca esconde o walk-forward que a
-    tela está mostrando — ela troca de ativo junto com ele."""
-    for wid in (aberto_aqui, aberto_no_wfa):
-        dele = wfa_store.simbolo(wid) if wid else None
-        if dele in validos:
-            return dele
+def _ativo_ao_entrar(do_menu, aberto_no_wfa, validos: set):
+    """O ativo com que a Candidata abre: o do menu. A única exceção é o
+    walk-forward aberto na aba Walk-Forward (o que `_valor_do_seletor`
+    herda): aí vale o ativo dele, para a lista não esconder o que vai abrir.
+    O que estava aberto aqui não prende — a próxima entrada segue o menu."""
+    dele = wfa_store.simbolo(aberto_no_wfa) if aberto_no_wfa else None
+    if dele in validos:
+        return dele
     return do_menu or D.simbolo_padrao()
 
 
@@ -343,17 +342,16 @@ def register(app):
         Output("cand-ativo", "value"),
         Input("modo", "value"),
         State("ativo", "value"),
-        State("cand-wfa", "value"),
         State("wfa-salvos", "value"),
         State("cand-ativo", "value"),
     )
-    def cand_ativo_ao_entrar(qual, do_menu, aberto, aberto_no_wfa, atual):
+    def cand_ativo_ao_entrar(qual, do_menu, aberto_no_wfa, atual):
         """O ativo da Candidata, escolhido ao entrar no modo. Só escreve no
         seletor daqui: trocar este não mexe no do menu."""
         if qual != "candidata":
             return no_update, no_update
         opts = D.opcoes_ativo()
-        valor = _ativo_ao_entrar(do_menu, aberto, aberto_no_wfa,
+        valor = _ativo_ao_entrar(do_menu, aberto_no_wfa,
                                  {o["value"] for o in opts})
         return opts, (no_update if valor == atual else valor)
 

@@ -537,13 +537,18 @@ def _chave_matriz(run_id, geracao, estende, trava, valores=None) -> str:
 
 def _mineracao_na_tela() -> bool:
     """Há uma mineração rodando, ou uma tabela dela (recém-rodada ou
-    carregada do banco) na tela.
-
-    Trocar o ativo nessa hora não pode refazer campos nem interromper nada:
-    as faixas na tela são as da varredura, e reescrevê-las com as do ativo
-    novo deixaria a tabela descrevendo outra coisa."""
+    carregada do banco) na tela."""
     e = MINERACAO.estado
     return bool(e.get("rodando") or e.get("trials"))
+
+
+def _mineracao_rodando() -> bool:
+    """Trocar o ativo com a varredura correndo não pode refazer campos nem
+    interromper nada (o seletor fica desligado; isto cobre a corrida). Parada,
+    a troca tira a mineração da tela (`_trocar_ativo`) e os campos seguem o
+    ativo novo — reescrevê-los com ela na tela deixaria a tabela descrevendo
+    outra coisa."""
+    return bool(MINERACAO.estado.get("rodando"))
 
 
 # Saídas da camada 4 que seguem o ativo, na ordem de `_camada4_do_ativo`:
@@ -587,8 +592,11 @@ def _camada4_do_ativo(simbolo) -> list:
     """Valores de `SAIDAS_C4` para o ativo (`_tabela_c4`) — é o que faz a
     volta do MES para o WIN restaurar a tela.
 
-    Com mineração na tela nada muda: os campos são os da varredura."""
-    if _mineracao_na_tela():
+    Com mineração rodando nada muda: os campos são os da varredura. Parada,
+    ela sai da tela na mesma troca (`_trocar_ativo`), então os campos seguem
+    o ativo — a guarda não pode olhar a tabela: os dois callbacks do `ativo`
+    correm juntos, e ela pode ainda não ter sido esquecida."""
+    if _mineracao_rodando():
         return [no_update] * len(SAIDAS_C4)
     tabela = _tabela_c4(_simbolo(simbolo))
     return [tabela[ident["p"]][chave] for ident, _prop, chave in SAIDAS_C4]
@@ -615,18 +623,34 @@ def _estrategia_ou_mineracao(gatilho, nome, run_id, simbolo, ids_val,
 
 
 def _trocar_ativo(nome, simbolo, r):
-    """Refaz só a seção de parâmetros na escala do ativo novo.
+    """Refaz a seção de parâmetros na escala do ativo novo.
 
-    Com mineração na tela não mexe em nada (`_mineracao_na_tela`): nem
-    seção, nem `esquecer`/`parar` — trocar o ativo não é motivo para
-    perder uma varredura."""
-    if _mineracao_na_tela():
+    Com mineração rodando não mexe em nada: nem seção, nem `esquecer`/`parar`
+    (o seletor do ativo fica desligado enquanto ela corre). Com uma tabela
+    parada na tela — carregada do banco ou recém-rodada, salva ou não — ela
+    sai, como na troca de estratégia: a varredura é de outro ativo, e os
+    campos vão seguir o novo. Sem mineração, só a seção."""
+    if _mineracao_rodando():
         return r
     nome = nome or registry.nome_atual()
-    r[2] = controls.campos_da_estrategia(
+    secao = controls.campos_da_estrategia(
         registry.carregar(nome), None,
         ativo_mod.faixas_do_ativo(_simbolo(simbolo), nome))
+    if _mineracao_na_tela():
+        MINERACAO.esquecer()
+        r[1:9] = _tela_sem_mineracao(secao)
+    else:
+        r[2] = secao
     return r
+
+
+def _tela_sem_mineracao(secao) -> tuple:
+    """`r[1:9]` de `estrategia_ou_mineracao` com a mineração fora da tela:
+    seletor vazio (o `progresso` refaz a marca e as análises esvaziam), a
+    seção dada, nota, tabela, nuvem, cards, trades e curva."""
+    return (None, secao, "", [],
+            scatter.vazio("Rode uma mineração para ver a nuvem de parâmetros."),
+            stats_cards.vazio(), [], [])
 
 
 def _trocar_estrategia(nome, r, simbolo=None):
@@ -639,12 +663,8 @@ def _trocar_estrategia(nome, r, simbolo=None):
     """
     mod = registry.definir(nome)
     MINERACAO.esquecer()
-    r[1:9] = (None,
-              controls.campos_da_estrategia(
-                  mod, None, ativo_mod.faixas_do_ativo(simbolo, nome)),
-              "", [],
-              scatter.vazio("Rode uma mineração para ver a nuvem de parâmetros."),
-              stats_cards.vazio(), [], [])
+    r[1:9] = _tela_sem_mineracao(controls.campos_da_estrategia(
+        mod, None, ativo_mod.faixas_do_ativo(simbolo, nome)))
     return r
 
 
@@ -727,6 +747,23 @@ def _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on, r):
     r[_INICIO_STEP:] = [c4[ident["p"]]["step"]
                         for ident, _prop, _chave in SAIDAS_C4_STEP]
     return r
+
+
+def _esquecer_combinacao(gatilho):
+    """O `store-combinacao` depois da troca. O ativo trocado com a varredura
+    correndo não tira nada da tela (`_trocar_ativo`), então a combinação
+    aberta continua valendo."""
+    if gatilho == "ativo" and _mineracao_rodando():
+        return no_update
+    return None
+
+
+def _ativo_desligado(desligado_agora):
+    """`ativo.disabled`: desligado enquanto a mineração corre — trocar o
+    ativo no meio da varredura mudaria os campos que ela lê. `no_update`
+    quando não muda, para o dropdown não redesenhar a cada 800 ms."""
+    novo = _mineracao_rodando()
+    return no_update if bool(desligado_agora) == novo else novo
 
 
 # ------------------------------------- a combinação aberta na subtela Backtest
@@ -1503,6 +1540,19 @@ def register(app):
         janelas de comparação o score de vizinhança não existe."""
         return MINERACAO.estado["rodando"] or _COMBOS.get("n", 0) < 2
 
+    # o ativo do menu fica desligado enquanto a mineração corre. O
+    # `tick.disabled` é Input para pegar o fim: o relógio para e este
+    # callback ainda roda uma vez, já com a varredura terminada. Sem
+    # prevent_initial_call: depois de um F5 a mineração continua viva.
+    @app.callback(
+        Output("ativo", "disabled"),
+        Input("btn-minerar", "n_clicks"), Input("tick", "n_intervals"),
+        Input("tick", "disabled"),
+        State("ativo", "disabled"),
+    )
+    def ativo_desligado(_n, _t, _parado, desligado):
+        return _ativo_desligado(desligado)
+
     # ----------------------------------------- carregar mineração salva
     @app.callback(
         Output("mine-carregar", "options"),
@@ -1734,17 +1784,18 @@ def register(app):
             ids_val, valores_val, holdout,
             {cid: v for (cid, _p), v in zip(MENU_COMBINACAO, menu)}))
 
-    # trocar de estratégia ou carregar mineração salva: a combinação aberta
-    # não é mais a da tela. Callback à parte — `estrategia_ou_mineracao`
-    # indexa as saídas por posição
+    # trocar de estratégia, carregar mineração salva ou trocar o ativo: a
+    # combinação aberta não é mais a da tela. Callback à parte —
+    # `estrategia_ou_mineracao` indexa as saídas por posição
     @app.callback(
         Output("store-combinacao", "data", allow_duplicate=True),
         Input("estrategia", "value"),
         Input("mine-carregar", "value"),
+        Input("ativo", "value"),
         prevent_initial_call=True,
     )
-    def esquecer_combinacao(_estrategia, _run_id):
-        return None
+    def esquecer_combinacao(_estrategia, _run_id, _ativo):
+        return _esquecer_combinacao(ctx.triggered_id)
 
     # ------------------------------- passo 5: a regiao, e nao o campeao
     @app.callback(
@@ -2416,9 +2467,10 @@ def register(app):
             aviso = no_update           # quem excluiu já escreveu o aviso
 
         # o dropdown lê label/value; `listar` devolve o registro inteiro,
-        # que serve para gravar mas não para desenhar
+        # que serve para gravar mas não para desenhar. Sem ativo, lista
+        # vazia, como `wfa_mineracoes`: `symbol=None` seria a lista inteira
         salvos = wfa_store.listar(estrategia or registry.nome_atual(),
-                                  symbol=ativo)
+                                  symbol=ativo) if ativo else []
         return ([{"label": w["rotulo"], "value": w["wfa_id"]} for w in salvos],
                 aviso, "Salvar")
 
