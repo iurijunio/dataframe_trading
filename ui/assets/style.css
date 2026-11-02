@@ -841,7 +841,7 @@ body{
 #painel-wfa .panel-equity .graph{flex:1;min-height:0;position:relative;}
 #painel-wfa .panel-grid{min-height:340px;}
 /* campos · progresso · Executar: o progresso encosta no botão que o dispara */
-.wfa-barra{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) auto;}
+.wfa-barra{grid-template-columns:minmax(0,.45fr) minmax(0,1fr) minmax(0,1.6fr) auto;}
 .barra-wfa{flex-direction:column;align-items:stretch;gap:7px;}
 .barra-wfa>.wfa-trava{display:none;}
 
@@ -1058,6 +1058,7 @@ body{
    o seletor tem a largura do rótulo curto — esticado até a borda, ele
    empurrava o resumo para a linha de baixo sem mostrar nada a mais */
 .cand-topo{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.dd-cand-ativo{flex:0 0 110px;}
 .dd-cand-est{flex:0 0 220px;}
 .dd-wfa{flex:0 1 400px;min-width:240px;}
 .cand-resumo{font-family:var(--mono);font-size:var(--fs-sm);color:var(--ink-2);}

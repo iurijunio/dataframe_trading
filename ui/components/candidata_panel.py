@@ -632,8 +632,11 @@ def painel():
         [
             html.Div(
                 [
-                    # os dois nascem vazios: quem preenche são os callbacks
-                    # `cand_estrategias` e `cand_opcoes`
+                    # nascem vazios: quem preenche são os callbacks
+                    # `cand_ativo_ao_entrar`, `cand_estrategias` e `cand_opcoes`
+                    dcc.Dropdown(id="cand-ativo", className="dd dd-cand-ativo",
+                                 placeholder="ativo…", clearable=False,
+                                 options=[], value=None),
                     dcc.Dropdown(id="cand-estrategia", className="dd dd-cand-est",
                                  placeholder="estratégia…", clearable=False,
                                  options=[], value=None),

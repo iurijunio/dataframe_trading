@@ -234,6 +234,12 @@ def instrumentos() -> list[dict]:
     return [{"symbol": s, "descricao": d, "barras": int(n)} for s, d, n in linhas]
 
 
+def opcoes_ativo() -> list[dict]:
+    """As opções do seletor de ativo — as mesmas do menu, para os seletores
+    do Walk-Forward e da Candidata."""
+    return [{"label": i["symbol"], "value": i["symbol"]} for i in instrumentos()]
+
+
 def instrument(symbol: str) -> dict:
     if symbol not in _meta_cache:
         _meta_cache[symbol] = db.load_instrument_yaml(symbol)

@@ -20,6 +20,7 @@ from core.candidata_runner import TESTES
 
 from strategies import registry
 
+from . import data as D
 from .components import candidata_panel as CP
 from .components.cartao import simbolo_moeda
 from .components import wfa_panel as WP
@@ -132,6 +133,18 @@ def _valor_do_seletor(atual, ids: set, aberto_no_wfa, padrao=None):
     if aberto_no_wfa in ids:
         return aberto_no_wfa
     return padrao
+
+
+def _ativo_ao_entrar(do_menu, aberto_aqui, aberto_no_wfa, validos: set):
+    """O ativo com que a Candidata abre: o do walk-forward aberto aqui; sem
+    ele, o do aberto na aba Walk-Forward (o que `_valor_do_seletor` herda);
+    sem nenhum, o do menu. Assim a lista nunca esconde o walk-forward que a
+    tela está mostrando — ela troca de ativo junto com ele."""
+    for wid in (aberto_aqui, aberto_no_wfa):
+        dele = wfa_store.simbolo(wid) if wid else None
+        if dele in validos:
+            return dele
+    return do_menu or D.simbolo_padrao()
 
 
 def _gates_e_leitura(wfa_id: int, d: dict):
@@ -326,23 +339,44 @@ def _pnl_do_wfa(trades: list[dict], de, ate):
 
 def register(app):
     @app.callback(
+        Output("cand-ativo", "options"),
+        Output("cand-ativo", "value"),
+        Input("modo", "value"),
+        State("ativo", "value"),
+        State("cand-wfa", "value"),
+        State("wfa-salvos", "value"),
+        State("cand-ativo", "value"),
+    )
+    def cand_ativo_ao_entrar(qual, do_menu, aberto, aberto_no_wfa, atual):
+        """O ativo da Candidata, escolhido ao entrar no modo. Só escreve no
+        seletor daqui: trocar este não mexe no do menu."""
+        if qual != "candidata":
+            return no_update, no_update
+        opts = D.opcoes_ativo()
+        valor = _ativo_ao_entrar(do_menu, aberto, aberto_no_wfa,
+                                 {o["value"] for o in opts})
+        return opts, (no_update if valor == atual else valor)
+
+    @app.callback(
         Output("cand-estrategia", "options"),
         Output("cand-estrategia", "value"),
         Input("modo", "value"),
         Input("store-wfa-lista", "data"),
+        Input("cand-ativo", "value"),
         State("cand-estrategia", "value"),
         State("wfa-estrategia", "value"),
     )
-    def cand_estrategias(qual, _lista, atual, na_aba_wfa):
-        """Só as estratégias que têm walk-forward salvo — as outras abririam
-        uma lista vazia. Começa pela estratégia aberta na aba Walk-Forward.
+    def cand_estrategias(qual, _lista, ativo, atual, na_aba_wfa):
+        """Só as estratégias que têm walk-forward salvo NO ATIVO escolhido —
+        as outras abririam uma lista vazia. Começa pela estratégia aberta na
+        aba Walk-Forward.
 
         O valor só é reescrito quando muda: devolver o mesmo valor faria o
         Dash recalcular a tela inteira a cada entrada no modo.
         """
-        if qual != "candidata":
+        if qual != "candidata" or not ativo:
             return no_update, no_update
-        nomes = wfa_store.estrategias()
+        nomes = wfa_store.estrategias(ativo)
         valor = _valor_do_seletor(atual, set(nomes), na_aba_wfa,
                                   padrao=nomes[0] if nomes else None)
         # o valor é o módulo (o que o banco guarda); o rótulo é o nome que
@@ -355,13 +389,15 @@ def register(app):
         Output("cand-wfa", "value"),
         Input("cand-estrategia", "value"),
         Input("store-wfa-lista", "data"),
+        Input("cand-ativo", "value"),
         State("cand-wfa", "value"),
         State("wfa-salvos", "value"),
     )
-    def cand_opcoes(estrategia, _lista, atual, aberto):
-        """Os walk-forwards salvos da estratégia escolhida, refeitos também
-        quando um é salvo ou excluído na aba Walk-Forward."""
-        salvos = wfa_store.listar(estrategia) if estrategia else []
+    def cand_opcoes(estrategia, _lista, ativo, atual, aberto):
+        """Os walk-forwards salvos da estratégia e do ativo escolhidos,
+        refeitos também quando um é salvo ou excluído na aba Walk-Forward."""
+        salvos = (wfa_store.listar(estrategia, symbol=ativo)
+                  if estrategia and ativo else [])
         opcoes = [{"label": _rotulo_curto(w), "value": w["wfa_id"]}
                   for w in salvos]
         valor = _valor_do_seletor(atual, {w["wfa_id"] for w in salvos}, aberto)

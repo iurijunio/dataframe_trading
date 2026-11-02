@@ -595,30 +595,49 @@ class Mineracao:
         ]
 
 
-def listar_salvas(estrategia: str | None = None) -> list[dict]:
-    """Minerações da estratégia pedida, mais recentes primeiro.
+def listar_salvas(estrategia: str | None = None,
+                  simbolo: str | None = None) -> list[dict]:
+    """Minerações da estratégia (e do ativo) pedidos, mais recentes primeiro.
 
     Uma varredura de rompimento de canal não tem o que fazer na lista de um
     cruzamento de médias: os parâmetros não existem lá. A troca de estratégia
     é Input do callback que monta esta lista, para ela nunca ficar mostrando
-    as da estratégia anterior.
+    as da estratégia anterior. O ativo, pelo mesmo motivo: uma varredura do
+    MES na lista do WIN abriria faixas e custos de outra escala.
     """
-    where, args = "", []
+    where, args = [], []
     if estrategia:
-        where, args = "WHERE strategy = ?", [estrategia]
+        where.append("strategy = ?")
+        args.append(estrategia)
+    if simbolo:
+        where.append("symbol = ?")
+        args.append(simbolo)
+    filtro = ("WHERE " + " AND ".join(where)) if where else ""
     with db.connect(read_only=True) as con:
         linhas = con.execute(
-            f"SELECT run_id, created_at, nome, n_combinacoes, status, strategy "
-            f"FROM mining_runs {where} ORDER BY run_id DESC LIMIT 50", args
+            f"SELECT run_id, created_at, nome, n_combinacoes, status, strategy, "
+            f"symbol FROM mining_runs {filtro} ORDER BY run_id DESC LIMIT 50",
+            args
         ).fetchall()
     return [
         {"run_id": r[0],
          "estrategia": r[5],
+         "simbolo": r[6],
          "rotulo": (f"#{r[0]} · {r[2] or 'sem nome'} · "
                     f"{r[3]:,} comb · {r[1]:%d/%m %H:%M}".replace(",", ".")
                     + ("" if r[4] == "concluida" else f" · {r[4]}"))}
         for r in linhas
     ]
+
+
+def simbolo_salva(run_id) -> str | None:
+    """O ativo de uma mineração salva (None se ela não existe mais)."""
+    if run_id is None:
+        return None
+    with db.connect(read_only=True) as con:
+        r = con.execute("SELECT symbol FROM mining_runs WHERE run_id = ?",
+                        [int(run_id)]).fetchone()
+    return r[0] if r else None
 
 
 def fim_otimizacao_salva(run_id: int) -> str | None:

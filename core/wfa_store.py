@@ -118,7 +118,15 @@ def salvar(*, run_id, symbol, strategy, nome, is_meses, oos_meses,
     return int(wfa_id)
 
 
-def listar(strategy: str | None = None, run_id: int | None = None) -> list[dict]:
+# O ativo de um walk-forward é o da mineração que lhe deu o espaço de busca;
+# o `symbol` da própria linha só vale de reserva, quando a mineração já foi
+# excluída (o registro continua na lista, e precisa continuar no ativo dele).
+_SIMBOLO = ("COALESCE((SELECT m.symbol FROM mining_runs m "
+            "WHERE m.run_id = wfa_runs.run_id), wfa_runs.symbol)")
+
+
+def listar(strategy: str | None = None, run_id: int | None = None,
+           symbol: str | None = None) -> list[dict]:
     """Os walk-forwards gravados, mais recentes primeiro."""
     where, args = [], []
     if strategy:
@@ -127,10 +135,14 @@ def listar(strategy: str | None = None, run_id: int | None = None) -> list[dict]
     if run_id is not None:
         where.append("run_id = ?")
         args.append(run_id)
+    if symbol:
+        where.append(f"{_SIMBOLO} = ?")
+        args.append(symbol)
     sql = ("SELECT wfa_id, run_id, nome, is_meses, oos_meses, inteligencia, "
            "holdout, wfe_global, consistencia, oos_lucro, veredito, created_at, "
            "(SELECT count(*) FROM planos_operacao p "
-           "WHERE p.wfa_id = wfa_runs.wfa_id) "
+           "WHERE p.wfa_id = wfa_runs.wfa_id), "
+           f"{_SIMBOLO} "
            "FROM wfa_runs"
            + (" WHERE " + " AND ".join(where) if where else "")
            + " ORDER BY wfa_id DESC LIMIT 50")
@@ -139,7 +151,7 @@ def listar(strategy: str | None = None, run_id: int | None = None) -> list[dict]
 
     fora = []
     for (wid, rid, nome, is_m, oos_m, intel, hold, wfe, cons, lucro,
-         ver, quando, n_planos) in linhas:
+         ver, quando, n_planos, sim) in linhas:
         wfe_txt = f"WFE {wfe * 100:.0f}%" if wfe is not None else "WFE —"
         fora.append({
             "wfa_id": wid, "run_id": rid, "veredito": ver,
@@ -153,15 +165,31 @@ def listar(strategy: str | None = None, run_id: int | None = None) -> list[dict]
             # separados do rótulo: a tela Candidata monta um rótulo curto
             "nome": nome, "quando": quando,
             "tem_plano": bool(n_planos),
+            "symbol": sim,
         })
     return fora
 
 
-def estrategias() -> list[str]:
-    """As estratégias que têm pelo menos um walk-forward salvo."""
+def estrategias(symbol: str | None = None) -> list[str]:
+    """As estratégias que têm pelo menos um walk-forward salvo (no ativo
+    pedido, quando há um)."""
+    where, args = "", []
+    if symbol:
+        where, args = f" WHERE {_SIMBOLO} = ?", [symbol]
     with db.connect(read_only=True) as con:
         return [r[0] for r in con.execute(
-            "SELECT DISTINCT strategy FROM wfa_runs ORDER BY 1").fetchall()]
+            f"SELECT DISTINCT strategy FROM wfa_runs{where} ORDER BY 1",
+            args).fetchall()]
+
+
+def simbolo(wfa_id) -> str | None:
+    """O ativo de um walk-forward salvo, pela mesma regra de `listar`."""
+    if wfa_id is None:
+        return None
+    with db.connect(read_only=True) as con:
+        r = con.execute(f"SELECT {_SIMBOLO} FROM wfa_runs WHERE wfa_id = ?",
+                        [int(wfa_id)]).fetchone()
+    return r[0] if r else None
 
 
 def detalhes(wfa_id: int) -> dict | None:

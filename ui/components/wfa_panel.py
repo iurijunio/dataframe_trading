@@ -498,6 +498,12 @@ def painel():
             html.Div(id="wfa-trava-matriz", className="wfa-trava"),
             html.Div(id="wfa-trava-janelas", className="wfa-trava"),
             html.Div([
+                # o mesmo seletor do menu, mas só deste modo: quem o preenche
+                # ao entrar é `wfa_ativo_ao_entrar`
+                html.Div([html.Label("ativo", className="fld-label"),
+                          dcc.Dropdown(id="wfa-ativo", className="dd",
+                                       clearable=False, options=[])],
+                         className="fld fld-ativo"),
                 html.Div([html.Label("estratégia", className="fld-label"),
                           dcc.Dropdown(id="wfa-estrategia", className="dd",
                                        clearable=False, options=[])],

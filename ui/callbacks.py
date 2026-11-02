@@ -58,6 +58,24 @@ def _simbolo(valor: str | None) -> str:
     return valor or D.simbolo_padrao()
 
 
+def _ativo_ao_entrar_wfa(do_menu, aberta, validos: set):
+    """O ativo com que o Walk-Forward abre.
+
+    O do menu, salvo quando há varredura na memória (a barra de progresso e
+    o resultado são dela) e a mineração aberta é essa, ou nenhuma está aberta
+    (depois de um F5): aí vale o ativo DELA, para a lista não esconder o que
+    a tela está mostrando. Uma mineração só escolhida, sem varredura, não
+    prende o seletor — trocar o ativo no menu volta a valer.
+    """
+    na_memoria = VARREDURA.estado.get("run_id")
+    if na_memoria is not None and aberta in (None, na_memoria):
+        dela = (optimizer.simbolo_salva(na_memoria)
+                or VARREDURA.estado.get("simbolo"))
+        if dela in validos:
+            return dela
+    return _simbolo(do_menu)
+
+
 def _moeda_da_mineracao() -> str:
     """A moeda do ativo que a mineração em tela varreu (e não a do seletor)."""
     return ativo_mod.moeda_de(MINERACAO.estado.get("symbol"))
@@ -1490,18 +1508,20 @@ def register(app):
         Output("mine-carregar", "options"),
         Input("tick", "n_intervals"), Input("btn-salvar", "n_clicks"),
         Input("modo", "value"), Input("estrategia", "value"),
+        Input("ativo", "value"),
     )
-    def listar_salvas(_t, _s, _modo, _estrategia):
-        """A lista é sempre da estratégia ATIVA.
+    def listar_salvas(_t, _s, _modo, _estrategia, ativo):
+        """A lista é sempre da estratégia ATIVA, no ativo do menu.
 
         `estrategia` precisa ser Input, não apenas leitura: o relógio fica
         parado quando não há mineração, então sem este gatilho a lista
         continuava mostrando as varreduras da estratégia anterior — e
         carregar uma delas trazia combinações com parâmetros que nem
-        existem nos campos.
+        existem nos campos. O `ativo` é Input pelo mesmo motivo.
         """
         return [{"label": r["rotulo"], "value": r["run_id"]}
-                for r in optimizer.listar_salvas(registry.nome_atual())]
+                for r in optimizer.listar_salvas(registry.nome_atual(),
+                                                 simbolo=_simbolo(ativo))]
 
     # o relogio so bate enquanto ha o que atualizar
     @app.callback(Output("tick", "disabled"),
@@ -1840,21 +1860,40 @@ def register(app):
         return opts, atual or registry.nome_atual()
 
     @app.callback(
+        Output("wfa-ativo", "options"), Output("wfa-ativo", "value"),
+        Input("modo", "value"),
+        State("ativo", "value"),
+        State("wfa-mineracao", "value"),
+        State("wfa-ativo", "value"),
+    )
+    def wfa_ativo_ao_entrar(qual, do_menu, aberta, atual):
+        """O ativo do Walk-Forward, escolhido ao entrar no modo.
+
+        Só escreve no seletor daqui: o do menu continua sendo do Backtest e
+        da Mineração, e trocar este não o mexe."""
+        if qual != "wfa":
+            return no_update, no_update
+        opts = D.opcoes_ativo()
+        valor = _ativo_ao_entrar_wfa(do_menu, aberta, {o["value"] for o in opts})
+        return opts, (no_update if valor == atual else valor)
+
+    @app.callback(
         Output("wfa-mineracao", "options"), Output("wfa-mineracao", "value"),
         Input("wfa-estrategia", "value"),
+        Input("wfa-ativo", "value"),
         State("wfa-mineracao", "value"),
     )
-    def wfa_mineracoes(estrategia, atual):
-        """Minerações salvas DA estratégia escolhida.
+    def wfa_mineracoes(estrategia, ativo, atual):
+        """Minerações salvas DA estratégia escolhida, no ativo escolhido.
 
         O espaço de busca que o walk-forward reotimiza vem da mineração: é
         ela que gravou as faixas de cada parâmetro. Por isso a lista é
         filtrada — uma varredura de rompimento de canal não tem espaço que
-        sirva a um cruzamento de médias.
+        sirva a um cruzamento de médias, nem uma do MES ao WIN.
         """
-        if not estrategia:
+        if not estrategia or not ativo:
             return [], None
-        salvas = optimizer.listar_salvas(estrategia)
+        salvas = optimizer.listar_salvas(estrategia, simbolo=ativo)
         opts = [{"label": s["rotulo"], "value": s["run_id"]} for s in salvas]
         # a que já está escolhida fica, se for desta estratégia: é o caso de
         # um walk-forward salvo que acabou de escrever estratégia e mineração
@@ -2320,9 +2359,10 @@ def register(app):
         Input("store-wfa-lista", "data"),
         Input("wfa-estrategia", "value"),
         Input("store-wfa", "data"),
+        Input("wfa-ativo", "value"),
         State("wfa-nome", "value"),
     )
-    def wfa_guardar(_s, _lista, estrategia, _store, nome):
+    def wfa_guardar(_s, _lista, estrategia, _store, ativo, nome):
         """Salvar grava o REGISTRO da decisão, não a performance.
 
         O resultado é barato de recalcular — o custo está na varredura. O que
@@ -2377,7 +2417,8 @@ def register(app):
 
         # o dropdown lê label/value; `listar` devolve o registro inteiro,
         # que serve para gravar mas não para desenhar
-        salvos = wfa_store.listar(estrategia or registry.nome_atual())
+        salvos = wfa_store.listar(estrategia or registry.nome_atual(),
+                                  symbol=ativo)
         return ([{"label": w["rotulo"], "value": w["wfa_id"]} for w in salvos],
                 aviso, "Salvar")
 
