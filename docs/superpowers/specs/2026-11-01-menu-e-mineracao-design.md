@@ -143,7 +143,10 @@ Base: o branch da etapa 4 da CME (`cme-etapa4`), depois de juntado no `master`.
   ADX, "cobrado por ponta…" etc.) vão para o "(?)" do campo ou grupo; nenhum
   fica visível solto.
 - **Cada campo continua no grupo em que está hoje**; os grupos vão para as
-  abas pela tabela acima. (A tabela do rascunho cita "dias" sob Filtro de
+  abas pela tabela acima. Exceções que a tabela e o rascunho aprovados já
+  pedem: "direção" e "sem entradas · 1/2/3" saem de Janela e vão para a aba
+  Entrada; "Trailing (pontos)" sai de Proteções e vai para Gestão (stop, alvo
+  e trailing na mesma linha). (A tabela do rascunho cita "dias" sob Filtro de
   mercado só como exemplo; vale o grupo de hoje.) Linhas de estado do menu
   (`wf-resumo` etc.) ficam com o grupo a que pertencem hoje — `wf-resumo` vai
   com Consistência entre períodos, na aba Períodos.
