@@ -1,0 +1,104 @@
+<style>
+  .wrap{display:flex;gap:28px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+  .sb{background:#0b0b0d;border:1px solid #23232a;border-radius:8px;width:400px;height:600px;overflow:hidden;
+      font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#d8d8de;display:flex;flex-direction:column}
+  .sb .fix{background:#111116;border-bottom:1px solid #2a2a33;padding:10px 12px}
+  .sb .scroll{flex:1;overflow:hidden;padding:8px 12px}
+  .sb .lbl{font-size:10px;color:#8a8a96;margin:6px 0 3px}
+  .sb .dd{background:#17171d;border:1px solid #2c2c36;border-radius:5px;padding:6px 8px;display:flex;justify-content:space-between}
+  .sb .num{background:#17171d;border:1px solid #2c2c36;border-radius:5px;padding:5px 8px;display:flex;justify-content:space-between}
+  .sb .row{display:flex;gap:8px}.sb .row>*{flex:1}
+  .sb .acc{border:1px solid #2a2a33;border-radius:6px;margin:6px 0;padding:7px 9px;display:flex;justify-content:space-between;background:#121217}
+  .sb .acc .s{color:#7d7d8a;font-size:10px}
+  .sb .acc.open{border-color:#22d3ee55;display:block}
+  .sb .tabs{display:flex;gap:3px;margin-top:10px}
+  .sb .tabs span{flex:1;text-align:center;padding:6px 0;border-radius:4px;background:#17171d;color:#8a8a96;font-size:11px;position:relative}
+  .sb .tabs span.on{background:#22d3ee;color:#000;font-weight:700}
+  .sb .tabs span .dot{position:absolute;top:3px;right:5px;width:5px;height:5px;border-radius:50%;background:#22d3ee}
+  .sb .tabs span.on .dot{background:#000}
+  .sb .min{color:#22d3ee;font-size:10px}
+  .sb .g2{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}
+  .sb .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 10px}
+  .sb .chk{display:flex;gap:6px;align-items:center;margin-top:6px}
+  .sb .box{width:11px;height:11px;border:1px solid #555;border-radius:2px}
+  .sb .box.on{background:#22d3ee;border-color:#22d3ee}
+  .cap{text-align:center;font-size:12px;color:#999;margin-top:6px}
+  table.map{border-collapse:collapse;font-size:13px;margin:18px auto 0}
+  table.map td,table.map th{border:1px solid #333;padding:6px 12px;text-align:left}
+</style>
+
+<h2>Topo fixo + abas + gavetas</h2>
+<p class="subtitle">Aba com um grupo só mostra os campos direto. Aba com 2 ou mais grupos mostra gavetas que abrem e fecham, com resumo quando fechadas.</p>
+
+<div class="wrap">
+  <div>
+    <div class="sb">
+      <div class="fix">
+        <div class="row">
+          <div><div class="lbl">ativo</div><div class="dd">MES <span>▾</span></div></div>
+          <div style="flex:2.2"><div class="lbl">estratégia</div><div class="dd">Rompimento de canal <span>▾</span></div></div>
+        </div>
+        <div class="row">
+          <div><div class="lbl">de</div><div class="dd">16/03/2021</div></div>
+          <div><div class="lbl">até</div><div class="dd">30/10/2026</div></div>
+          <div style="flex:.6"><div class="lbl">tempo</div><div class="dd">M5 <span>▾</span></div></div>
+        </div>
+        <div class="tabs"><span>Entrada<i class="dot"></i></span><span class="on">Saída<i class="dot"></i></span><span>Filtros</span><span>Risco</span><span>Períodos</span></div>
+      </div>
+      <div class="scroll">
+        <div class="acc open"><div style="display:flex;justify-content:space-between"><b>Gestão</b><span>▴</span></div>
+          <div class="g2">
+            <div><div class="lbl">tipo de stop</div><div class="dd">pontos fixos <span>▾</span></div></div>
+            <div><div class="lbl">tipo de alvo</div><div class="dd">pontos fixos <span>▾</span></div></div>
+          </div>
+          <div class="g3">
+            <div><div class="lbl">stop <span class="min">· 3–16</span></div><div class="num"><span>−</span>8<span>+</span></div></div>
+            <div><div class="lbl">alvo</div><div class="num"><span>−</span>16<span>+</span></div></div>
+            <div><div class="lbl">trailing</div><div class="num"><span>−</span>0<span>+</span></div></div>
+          </div>
+          <div class="chk"><span class="box on"></span><span class="min">minerar stop</span></div>
+        </div>
+        <div class="acc"><span><b>Proteções</b><br><span class="s">breakeven e stop móvel desligados</span></span><span>▾</span></div>
+      </div>
+    </div>
+    <div class="cap">aba "Saída" aberta: 2 grupos → gavetas</div>
+  </div>
+
+  <div>
+    <div class="sb">
+      <div class="fix">
+        <div class="row">
+          <div><div class="lbl">ativo</div><div class="dd">MES <span>▾</span></div></div>
+          <div style="flex:2.2"><div class="lbl">estratégia</div><div class="dd">Rompimento de canal <span>▾</span></div></div>
+        </div>
+        <div class="row">
+          <div><div class="lbl">de</div><div class="dd">16/03/2021</div></div>
+          <div><div class="lbl">até</div><div class="dd">30/10/2026</div></div>
+          <div style="flex:.6"><div class="lbl">tempo</div><div class="dd">M5 <span>▾</span></div></div>
+        </div>
+        <div class="tabs"><span class="on">Entrada<i class="dot"></i></span><span>Saída<i class="dot"></i></span><span>Filtros</span><span>Risco</span><span>Períodos</span></div>
+      </div>
+      <div class="scroll">
+        <div class="g2">
+          <div><div class="lbl">período do canal <span class="min">· 15–29</span></div><div class="num"><span>−</span>21<span>+</span></div></div>
+          <div><div class="lbl">folga do rompimento</div><div class="num"><span>−</span>16<span>+</span></div></div>
+          <div><div class="lbl">filtro de amplitude</div><div class="num"><span>−</span>0<span>+</span></div></div>
+          <div><div class="lbl">direção</div><div class="dd">compra e venda <span>▾</span></div></div>
+        </div>
+        <div class="lbl">sem entradas</div>
+        <div class="g3"><div class="dd">— <span>▾</span></div><div class="dd">— <span>▾</span></div><div class="dd">— <span>▾</span></div></div>
+      </div>
+    </div>
+    <div class="cap">aba "Entrada" aberta: 1 grupo → campos direto</div>
+  </div>
+</div>
+
+<table class="map">
+  <tr><th>Aba</th><th>O que vai dentro (grupos de hoje)</th></tr>
+  <tr><td>Entrada</td><td>Parâmetros da estratégia, direção, sem entradas</td></tr>
+  <tr><td>Saída</td><td>Gestão (stop, alvo, trailing) · Proteções</td></tr>
+  <tr><td>Filtros</td><td>Filtro de mercado (dias, ADX…) · Janela (horários) · Filtro de mineração</td></tr>
+  <tr><td>Risco</td><td>Limites diários · Custos · Posição</td></tr>
+  <tr><td>Períodos</td><td>Consistência entre períodos (treino, teste, passo, holdout, processos)</td></tr>
+</table>
+<p class="subtitle" style="text-align:center;margin-top:8px">O pontinho na aba = tem campo marcado para minerar ali dentro.</p>

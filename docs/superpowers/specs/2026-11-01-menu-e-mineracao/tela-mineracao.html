@@ -1,0 +1,55 @@
+<style>
+  .app{background:#060608;border:1px solid #23232a;border-radius:8px;font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#d8d8de;overflow:hidden;max-width:1100px;margin:0 auto}
+  .top{display:flex;align-items:center;gap:14px;padding:8px 12px;border-bottom:1px solid #23232a;background:#0d0d11}
+  .top .brand{font-weight:800;color:#fff;font-size:14px}
+  .top .nav span{padding:6px 10px;border-radius:5px;color:#aaa}
+  .top .nav span.on{background:#22d3ee;color:#000;font-weight:700}
+  .top .right{margin-left:auto;display:flex;gap:10px;align-items:center}
+  .top .selo{color:#888;font-size:11px}
+  .top .zerar{border:1px solid #f43f5e;color:#f43f5e;border-radius:5px;padding:5px 8px;font-size:11px}
+  .body{display:flex;height:440px}
+  .side{width:260px;border-right:1px solid #23232a;background:#0b0b0d;padding:10px;color:#777}
+  .side .tabs{display:flex;gap:2px;margin-top:8px}.side .tabs span{flex:1;text-align:center;padding:4px 0;border-radius:3px;background:#17171d;font-size:9px}
+  .side .tabs span.on{background:#22d3ee;color:#000}
+  .side .blk{background:#17171d;border:1px solid #2c2c36;border-radius:5px;height:22px;margin:6px 0}
+  .main{flex:1;padding:10px 14px}
+  .sub{display:flex;gap:4px;border-bottom:1px solid #2a2a33;margin-bottom:10px}
+  .sub span{padding:7px 14px;color:#888}
+  .sub span.on{color:#22d3ee;border-bottom:2px solid #22d3ee}
+  .bar{display:flex;gap:8px;margin-bottom:10px}.bar .b{background:#22d3ee;color:#000;border-radius:5px;padding:6px 12px;font-weight:700}
+  .bar .o{border:1px solid #2c2c36;border-radius:5px;padding:6px 12px;color:#aaa}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .cards div{background:#111116;border:1px solid #23232a;border-radius:6px;padding:8px;height:44px;font-size:10px;color:#888}
+  .chart{background:#111116;border:1px solid #23232a;border-radius:6px;height:150px;margin-top:8px;display:flex;align-items:center;justify-content:center;color:#555}
+  .grid{background:#111116;border:1px solid #23232a;border-radius:6px;height:90px;margin-top:8px;display:flex;align-items:center;justify-content:center;color:#555}
+  .crumb{font-size:11px;color:#22d3ee;margin-bottom:8px}
+  .gone{color:#f43f5e;text-decoration:line-through;font-size:11px}
+</style>
+
+<h2>Mineração com a subtela Backtest</h2>
+<p class="subtitle">Topo sem ativo e sem "Sincronizar com MT5"; aba Backtest some do topo e vira subtela dentro da Mineração.</p>
+
+<div class="app">
+  <div class="top">
+    <span class="brand">Dataframe</span>
+    <span class="nav"><span class="on">Mineração</span><span>Walk-Forward</span><span>Candidata</span><span>Estratégias</span><span>Portfólio</span><span>Ao vivo</span></span>
+    <span class="right"><span class="selo">● Ordens paradas · sem captura</span><span class="zerar">⏻ Zerar tudo e desligar envio</span></span>
+  </div>
+  <div class="body">
+    <div class="side">
+      <div class="blk"></div><div class="blk"></div>
+      <div class="tabs"><span class="on">Entrada</span><span>Saída</span><span>Filtros</span><span>Risco</span><span>Períodos</span></div>
+      <div class="blk"></div><div class="blk"></div><div class="blk"></div>
+      <div style="font-size:10px;text-align:center;margin-top:20px">menu (abas + gavetas)</div>
+    </div>
+    <div class="main">
+      <div class="sub"><span>Varredura</span><span class="on">Backtest</span></div>
+      <div class="crumb">linha #3 · stop_pontos=10 · sem sexta</div>
+      <div class="bar"><span class="b">Rodar backtest</span><span class="o">Visualizar estratégia</span></div>
+      <div class="cards"><div>lucro líquido</div><div>max drawdown</div><div>profit factor</div><div>trades</div></div>
+      <div class="chart">curva de capital</div>
+      <div class="grid">diagnóstico · hora · dia · mês · MAE/MFE · trades…</div>
+    </div>
+  </div>
+</div>
+<p class="subtitle" style="text-align:center;margin-top:10px">"Varredura" = o que a Mineração mostra hoje (botões Minerar/Parar, nuvem, tabela). "Backtest" = a tela Backtest de hoje, inteira.</p>
