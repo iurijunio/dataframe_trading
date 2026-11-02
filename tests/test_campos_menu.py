@@ -8,9 +8,15 @@ from dash import dcc, html
 
 from scripts import campos_menu as cm
 
-# as únicas trocas de rótulo permitidas no menu novo
+# as únicas trocas de rótulo permitidas no menu novo (rascunho aprovado)
 ROTULOS_NOVOS = {"Alvo (pontos)": "alvo", "Stop (pontos)": "stop",
-                 "Trailing (pontos)": "trailing"}
+                 "Trailing (pontos)": "trailing", "tempo gráfico": "tempo"}
+
+# "sem entradas" virou um rótulo só sobre os três seletores: cada seletor
+# perde o seu (fica sem rótulo, None)
+ROTULOS_PERDIDOS = {"e-sem-ent1": "sem entradas · 1",
+                    "e-sem-ent2": "sem entradas · 2",
+                    "e-sem-ent3": "sem entradas · 3"}
 
 
 # o menu antigo não tinha rótulo visível sobre estes dois seletores; o novo
@@ -21,6 +27,8 @@ ROTULOS_GANHOS = {"ativo": "ativo", "estrategia": "estratégia"}
 def _rotulo(c):
     if c["rotulo"] is None and c["id"] in ROTULOS_GANHOS:
         return ROTULOS_GANHOS[c["id"]]
+    if ROTULOS_PERDIDOS.get(c["id"]) == c["rotulo"]:
+        return None
     return ROTULOS_NOVOS.get(c["rotulo"], c["rotulo"])
 
 

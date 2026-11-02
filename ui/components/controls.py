@@ -193,7 +193,7 @@ def topo_menu(simbolo, inicio, fim, ativos=None):
                 _field("até", dcc.DatePickerSingle(
                     id="d-ate", date=fim.date(), display_format="DD/MM/YYYY",
                     min_date_allowed=inicio.date(), max_date_allowed=fim.date())),
-                _field("tempo gráfico", dcc.Dropdown(
+                _field("tempo", dcc.Dropdown(
                     id="e-timeframe", value="M5", clearable=False, className="dd",
                     options=[{"label": k, "value": k} for k in TIMEFRAMES]),
                     classe="fld fld-tempo"),
@@ -234,17 +234,16 @@ def grupo_direcao():
 
 
 def grupo_sem_entradas():
+    """Um rótulo só sobre os três seletores (rascunho aprovado). O rótulo
+    fica FORA de qualquer `.fld`: dentro de um, daria nome a um seletor só."""
     return html.Div([
-        _field("sem entradas · 1", dcc.Dropdown(
-            id="e-sem-ent1", value="", clearable=False, className="dd",
-            options=opcoes("hora"))),
-        _field("sem entradas · 2", dcc.Dropdown(
-            id="e-sem-ent2", value="", clearable=False, className="dd",
-            options=opcoes("hora"))),
-        _field("sem entradas · 3", dcc.Dropdown(
-            id="e-sem-ent3", value="", clearable=False, className="dd",
-            options=opcoes("hora"))),
-    ], className="grid-3")
+        html.Label("sem entradas", className="fld-label"),
+        html.Div([
+            dcc.Dropdown(id=f"e-sem-ent{i}", value="", clearable=False,
+                         className="dd", options=opcoes("hora"))
+            for i in (1, 2, 3)
+        ], className="grid-3"),
+    ], className="sem-entradas")
 
 
 def grupo_filtro_mercado():
@@ -334,7 +333,7 @@ def grupo_gestao():
 
 
 def grupo_protecoes():
-    return [
+    return [html.Div([
         _opt("breakeven_pct", "Breakeven — gatilho (% do alvo)", 0, 0, 10, 100,
              5, 0, "0 desliga"),
         _opt("step_gatilho_pct", "Stop móvel — gatilho (% do alvo)", 0, 0, 10, 100,
@@ -342,7 +341,7 @@ def grupo_protecoes():
         _opt("step_distancia_pct", "Stop móvel — trava (% do alvo)", 0, 0, 10, 100,
              5, 0, "onde o stop vai parar, a favor"),
         _field("tempo máximo (barras)", _num("e-max-barras", 0, 10, 0), "0 desliga"),
-    ]
+    ], className="grid-2")]
 
 
 def grupo_limites():
@@ -420,9 +419,12 @@ def gaveta(grupo, titulo, corpo, aberta=False, hint=None):
     if hint:
         cab.append(dica(hint))
     return html.Details(
-        [html.Summary([html.Span(cab, className="gaveta-cab"),
-                       html.Span(id={"type": "gaveta-resumo", "g": grupo},
-                                 className="gaveta-resumo")],
+        # título e, na linha de baixo, o resumo (rascunho aprovado)
+        [html.Summary(html.Span([html.Span(cab, className="gaveta-cab"),
+                                 html.Span(id={"type": "gaveta-resumo",
+                                               "g": grupo},
+                                           className="gaveta-resumo")],
+                                className="gaveta-txt"),
                       className="gaveta-sum"),
          html.Div(corpo, className="gaveta-corpo")],
         open=aberta, id={"type": "gaveta", "g": grupo}, className="gaveta",

@@ -1121,15 +1121,15 @@
           {
            "ns": "dash_html_components",
            "props": {
+            "children": "sem entradas",
+            "className": "fld-label"
+           },
+           "type": "Label"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
             "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": "sem entradas · 1",
-               "className": "fld-label"
-              },
-              "type": "Label"
-             },
              {
               "ns": "dash_core_components",
               "props": {
@@ -1241,23 +1241,6 @@
                "value": ""
               },
               "type": "Dropdown"
-             }
-            ],
-            "className": "fld"
-           },
-           "type": "Div"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": "sem entradas · 2",
-               "className": "fld-label"
-              },
-              "type": "Label"
              },
              {
               "ns": "dash_core_components",
@@ -1370,23 +1353,6 @@
                "value": ""
               },
               "type": "Dropdown"
-             }
-            ],
-            "className": "fld"
-           },
-           "type": "Div"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": "sem entradas · 3",
-               "className": "fld-label"
-              },
-              "type": "Label"
              },
              {
               "ns": "dash_core_components",
@@ -1501,12 +1467,12 @@
               "type": "Dropdown"
              }
             ],
-            "className": "fld"
+            "className": "grid-3"
            },
            "type": "Div"
           }
          ],
-         "className": "grid-3"
+         "className": "sem-entradas"
         },
         "type": "Div"
        },
@@ -3617,78 +3583,202 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "Breakeven — gatilho (% do alvo)",
-                  "className": "fld-label"
-                 },
-                 "type": "Label"
-                },
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "aria-label": "0 desliga",
-                  "children": "?",
-                  "className": "dica-mark",
-                  "data-dica": "0 desliga",
-                  "role": "button",
-                  "tabIndex": "0"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "Breakeven — gatilho (% do alvo)",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "aria-label": "0 desliga",
+                     "children": "?",
+                     "className": "dica-mark",
+                     "data-dica": "0 desliga",
+                     "role": "button",
+                     "tabIndex": "0"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "fld-rot"
                  },
                  "type": "Span"
+                },
+                {
+                 "ns": "dash_core_components",
+                 "props": {
+                  "className": "opt-toggle",
+                  "id": {
+                   "p": "breakeven_pct",
+                   "type": "opt-on"
+                  },
+                  "options": [
+                   {
+                    "label": "minerar",
+                    "value": "on"
+                   }
+                  ],
+                  "value": []
+                 },
+                 "type": "Checklist"
                 }
                ],
-               "className": "fld-rot"
+               "className": "fld-top"
               },
-              "type": "Span"
+              "type": "Div"
              },
              {
-              "ns": "dash_core_components",
+              "ns": "dash_html_components",
               "props": {
-               "className": "opt-toggle",
+               "children": {
+                "ns": "dash_core_components",
+                "props": {
+                 "className": "inp",
+                 "debounce": true,
+                 "id": {
+                  "p": "breakeven_pct",
+                  "type": "val"
+                 },
+                 "min": 0,
+                 "step": 5,
+                 "type": "number",
+                 "value": 0
+                },
+                "type": "Input"
+               },
                "id": {
                 "p": "breakeven_pct",
-                "type": "opt-on"
-               },
-               "options": [
+                "type": "valwrap"
+               }
+              },
+              "type": "Div"
+             },
+             null,
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": [
                 {
-                 "label": "minerar",
-                 "value": "on"
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "de",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "de",
+                      "p": "breakeven_pct",
+                      "type": "opt"
+                     },
+                     "min": 0,
+                     "step": 5,
+                     "type": "number",
+                     "value": 0
+                    },
+                    "type": "Input"
+                   }
+                  ]
+                 },
+                 "type": "Div"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "passo",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "passo",
+                      "p": "breakeven_pct",
+                      "type": "opt"
+                     },
+                     "min": null,
+                     "step": 5,
+                     "type": "number",
+                     "value": 10
+                    },
+                    "type": "Input"
+                   }
+                  ]
+                 },
+                 "type": "Div"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "até",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "ate",
+                      "p": "breakeven_pct",
+                      "type": "opt"
+                     },
+                     "min": null,
+                     "step": 5,
+                     "type": "number",
+                     "value": 100
+                    },
+                    "type": "Input"
+                   }
+                  ]
+                 },
+                 "type": "Div"
                 }
                ],
-               "value": []
+               "className": "opt",
+               "id": {
+                "p": "breakeven_pct",
+                "type": "optrow"
+               },
+               "style": {
+                "display": "none"
+               }
               },
-              "type": "Checklist"
+              "type": "Div"
              }
             ],
-            "className": "fld-top"
+            "className": "fld"
            },
            "type": "Div"
           },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": {
-             "ns": "dash_core_components",
-             "props": {
-              "className": "inp",
-              "debounce": true,
-              "id": {
-               "p": "breakeven_pct",
-               "type": "val"
-              },
-              "min": 0,
-              "step": 5,
-              "type": "number",
-              "value": 0
-             },
-             "type": "Input"
-            },
-            "id": {
-             "p": "breakeven_pct",
-             "type": "valwrap"
-            }
-           },
-           "type": "Div"
-          },
-          null,
           {
            "ns": "dash_html_components",
            "props": {
@@ -3700,32 +3790,82 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "de",
-                  "className": "opt-k"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "Stop móvel — gatilho (% do alvo)",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "aria-label": "0 desliga",
+                     "children": "?",
+                     "className": "dica-mark",
+                     "data-dica": "0 desliga",
+                     "role": "button",
+                     "tabIndex": "0"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "fld-rot"
                  },
                  "type": "Span"
                 },
                 {
                  "ns": "dash_core_components",
                  "props": {
-                  "className": "inp",
-                  "debounce": true,
+                  "className": "opt-toggle",
                   "id": {
-                   "k": "de",
-                   "p": "breakeven_pct",
-                   "type": "opt"
+                   "p": "step_gatilho_pct",
+                   "type": "opt-on"
                   },
-                  "min": 0,
-                  "step": 5,
-                  "type": "number",
-                  "value": 0
+                  "options": [
+                   {
+                    "label": "minerar",
+                    "value": "on"
+                   }
+                  ],
+                  "value": []
                  },
-                 "type": "Input"
+                 "type": "Checklist"
                 }
-               ]
+               ],
+               "className": "fld-top"
               },
               "type": "Div"
              },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": {
+                "ns": "dash_core_components",
+                "props": {
+                 "className": "inp",
+                 "debounce": true,
+                 "id": {
+                  "p": "step_gatilho_pct",
+                  "type": "val"
+                 },
+                 "min": 0,
+                 "step": 5,
+                 "type": "number",
+                 "value": 0
+                },
+                "type": "Input"
+               },
+               "id": {
+                "p": "step_gatilho_pct",
+                "type": "valwrap"
+               }
+              },
+              "type": "Div"
+             },
+             null,
              {
               "ns": "dash_html_components",
               "props": {
@@ -3733,86 +3873,119 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "passo",
-                  "className": "opt-k"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "de",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "de",
+                      "p": "step_gatilho_pct",
+                      "type": "opt"
+                     },
+                     "min": 0,
+                     "step": 5,
+                     "type": "number",
+                     "value": 0
+                    },
+                    "type": "Input"
+                   }
+                  ]
                  },
-                 "type": "Span"
+                 "type": "Div"
                 },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "passo",
-                   "p": "breakeven_pct",
-                   "type": "opt"
-                  },
-                  "min": null,
-                  "step": 5,
-                  "type": "number",
-                  "value": 10
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "até",
-                  "className": "opt-k"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "passo",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "passo",
+                      "p": "step_gatilho_pct",
+                      "type": "opt"
+                     },
+                     "min": null,
+                     "step": 5,
+                     "type": "number",
+                     "value": 10
+                    },
+                    "type": "Input"
+                   }
+                  ]
                  },
-                 "type": "Span"
+                 "type": "Div"
                 },
                 {
-                 "ns": "dash_core_components",
+                 "ns": "dash_html_components",
                  "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "ate",
-                   "p": "breakeven_pct",
-                   "type": "opt"
-                  },
-                  "min": null,
-                  "step": 5,
-                  "type": "number",
-                  "value": 100
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "até",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "ate",
+                      "p": "step_gatilho_pct",
+                      "type": "opt"
+                     },
+                     "min": null,
+                     "step": 5,
+                     "type": "number",
+                     "value": 100
+                    },
+                    "type": "Input"
+                   }
+                  ]
                  },
-                 "type": "Input"
+                 "type": "Div"
                 }
-               ]
+               ],
+               "className": "opt",
+               "id": {
+                "p": "step_gatilho_pct",
+                "type": "optrow"
+               },
+               "style": {
+                "display": "none"
+               }
               },
               "type": "Div"
              }
             ],
-            "className": "opt",
-            "id": {
-             "p": "breakeven_pct",
-             "type": "optrow"
-            },
-            "style": {
-             "display": "none"
-            }
+            "className": "fld"
            },
            "type": "Div"
-          }
-         ],
-         "className": "fld"
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": [
+          },
           {
            "ns": "dash_html_components",
            "props": {
@@ -3824,7 +3997,214 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "Stop móvel — gatilho (% do alvo)",
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "Stop móvel — trava (% do alvo)",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "aria-label": "onde o stop vai parar, a favor",
+                     "children": "?",
+                     "className": "dica-mark",
+                     "data-dica": "onde o stop vai parar, a favor",
+                     "role": "button",
+                     "tabIndex": "0"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "fld-rot"
+                 },
+                 "type": "Span"
+                },
+                {
+                 "ns": "dash_core_components",
+                 "props": {
+                  "className": "opt-toggle",
+                  "id": {
+                   "p": "step_distancia_pct",
+                   "type": "opt-on"
+                  },
+                  "options": [
+                   {
+                    "label": "minerar",
+                    "value": "on"
+                   }
+                  ],
+                  "value": []
+                 },
+                 "type": "Checklist"
+                }
+               ],
+               "className": "fld-top"
+              },
+              "type": "Div"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": {
+                "ns": "dash_core_components",
+                "props": {
+                 "className": "inp",
+                 "debounce": true,
+                 "id": {
+                  "p": "step_distancia_pct",
+                  "type": "val"
+                 },
+                 "min": 0,
+                 "step": 5,
+                 "type": "number",
+                 "value": 0
+                },
+                "type": "Input"
+               },
+               "id": {
+                "p": "step_distancia_pct",
+                "type": "valwrap"
+               }
+              },
+              "type": "Div"
+             },
+             null,
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": [
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "de",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "de",
+                      "p": "step_distancia_pct",
+                      "type": "opt"
+                     },
+                     "min": 0,
+                     "step": 5,
+                     "type": "number",
+                     "value": 0
+                    },
+                    "type": "Input"
+                   }
+                  ]
+                 },
+                 "type": "Div"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "passo",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "passo",
+                      "p": "step_distancia_pct",
+                      "type": "opt"
+                     },
+                     "min": null,
+                     "step": 5,
+                     "type": "number",
+                     "value": 10
+                    },
+                    "type": "Input"
+                   }
+                  ]
+                 },
+                 "type": "Div"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "até",
+                     "className": "opt-k"
+                    },
+                    "type": "Span"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "inp",
+                     "debounce": true,
+                     "id": {
+                      "k": "ate",
+                      "p": "step_distancia_pct",
+                      "type": "opt"
+                     },
+                     "min": null,
+                     "step": 5,
+                     "type": "number",
+                     "value": 100
+                    },
+                    "type": "Input"
+                   }
+                  ]
+                 },
+                 "type": "Div"
+                }
+               ],
+               "className": "opt",
+               "id": {
+                "p": "step_distancia_pct",
+                "type": "optrow"
+               },
+               "style": {
+                "display": "none"
+               }
+              },
+              "type": "Div"
+             }
+            ],
+            "className": "fld"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": [
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": "tempo máximo (barras)",
                   "className": "fld-label"
                  },
                  "type": "Label"
@@ -3849,430 +4229,25 @@
              {
               "ns": "dash_core_components",
               "props": {
-               "className": "opt-toggle",
-               "id": {
-                "p": "step_gatilho_pct",
-                "type": "opt-on"
-               },
-               "options": [
-                {
-                 "label": "minerar",
-                 "value": "on"
-                }
-               ],
-               "value": []
+               "className": "inp",
+               "debounce": true,
+               "id": "e-max-barras",
+               "max": null,
+               "min": 0,
+               "placeholder": null,
+               "step": 10,
+               "type": "number",
+               "value": 0
               },
-              "type": "Checklist"
+              "type": "Input"
              }
             ],
-            "className": "fld-top"
-           },
-           "type": "Div"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": {
-             "ns": "dash_core_components",
-             "props": {
-              "className": "inp",
-              "debounce": true,
-              "id": {
-               "p": "step_gatilho_pct",
-               "type": "val"
-              },
-              "min": 0,
-              "step": 5,
-              "type": "number",
-              "value": 0
-             },
-             "type": "Input"
-            },
-            "id": {
-             "p": "step_gatilho_pct",
-             "type": "valwrap"
-            }
-           },
-           "type": "Div"
-          },
-          null,
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "de",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "de",
-                   "p": "step_gatilho_pct",
-                   "type": "opt"
-                  },
-                  "min": 0,
-                  "step": 5,
-                  "type": "number",
-                  "value": 0
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "passo",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "passo",
-                   "p": "step_gatilho_pct",
-                   "type": "opt"
-                  },
-                  "min": null,
-                  "step": 5,
-                  "type": "number",
-                  "value": 10
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "até",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "ate",
-                   "p": "step_gatilho_pct",
-                   "type": "opt"
-                  },
-                  "min": null,
-                  "step": 5,
-                  "type": "number",
-                  "value": 100
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             }
-            ],
-            "className": "opt",
-            "id": {
-             "p": "step_gatilho_pct",
-             "type": "optrow"
-            },
-            "style": {
-             "display": "none"
-            }
+            "className": "fld"
            },
            "type": "Div"
           }
          ],
-         "className": "fld"
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": [
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "Stop móvel — trava (% do alvo)",
-                  "className": "fld-label"
-                 },
-                 "type": "Label"
-                },
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "aria-label": "onde o stop vai parar, a favor",
-                  "children": "?",
-                  "className": "dica-mark",
-                  "data-dica": "onde o stop vai parar, a favor",
-                  "role": "button",
-                  "tabIndex": "0"
-                 },
-                 "type": "Span"
-                }
-               ],
-               "className": "fld-rot"
-              },
-              "type": "Span"
-             },
-             {
-              "ns": "dash_core_components",
-              "props": {
-               "className": "opt-toggle",
-               "id": {
-                "p": "step_distancia_pct",
-                "type": "opt-on"
-               },
-               "options": [
-                {
-                 "label": "minerar",
-                 "value": "on"
-                }
-               ],
-               "value": []
-              },
-              "type": "Checklist"
-             }
-            ],
-            "className": "fld-top"
-           },
-           "type": "Div"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": {
-             "ns": "dash_core_components",
-             "props": {
-              "className": "inp",
-              "debounce": true,
-              "id": {
-               "p": "step_distancia_pct",
-               "type": "val"
-              },
-              "min": 0,
-              "step": 5,
-              "type": "number",
-              "value": 0
-             },
-             "type": "Input"
-            },
-            "id": {
-             "p": "step_distancia_pct",
-             "type": "valwrap"
-            }
-           },
-           "type": "Div"
-          },
-          null,
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "de",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "de",
-                   "p": "step_distancia_pct",
-                   "type": "opt"
-                  },
-                  "min": 0,
-                  "step": 5,
-                  "type": "number",
-                  "value": 0
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "passo",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "passo",
-                   "p": "step_distancia_pct",
-                   "type": "opt"
-                  },
-                  "min": null,
-                  "step": 5,
-                  "type": "number",
-                  "value": 10
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "até",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "ate",
-                   "p": "step_distancia_pct",
-                   "type": "opt"
-                  },
-                  "min": null,
-                  "step": 5,
-                  "type": "number",
-                  "value": 100
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             }
-            ],
-            "className": "opt",
-            "id": {
-             "p": "step_distancia_pct",
-             "type": "optrow"
-            },
-            "style": {
-             "display": "none"
-            }
-           },
-           "type": "Div"
-          }
-         ],
-         "className": "fld"
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": [
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": "tempo máximo (barras)",
-               "className": "fld-label"
-              },
-              "type": "Label"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "aria-label": "0 desliga",
-               "children": "?",
-               "className": "dica-mark",
-               "data-dica": "0 desliga",
-               "role": "button",
-               "tabIndex": "0"
-              },
-              "type": "Span"
-             }
-            ],
-            "className": "fld-rot"
-           },
-           "type": "Span"
-          },
-          {
-           "ns": "dash_core_components",
-           "props": {
-            "className": "inp",
-            "debounce": true,
-            "id": "e-max-barras",
-            "max": null,
-            "min": 0,
-            "placeholder": null,
-            "step": 10,
-            "type": "number",
-            "value": 0
-           },
-           "type": "Input"
-          }
-         ],
-         "className": "fld"
+         "className": "grid-2"
         },
         "type": "Div"
        },

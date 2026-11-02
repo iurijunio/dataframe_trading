@@ -226,3 +226,41 @@ def test_trocar_estrategia_mantem_aba(app):
     assert len(donos_aba) == 1
     entradas = app.callback_map[donos_aba[0]]["inputs"]
     assert {e["id"] for e in entradas} <= {"menu-aba", "modo", "mine-subtela"}
+
+
+# ------------------------------------------------- ajustes da revisão (rodada 1)
+def test_protecoes_em_duas_colunas(app):
+    prot = _achar(_achar(app.layout, "sidebar"), {"type": "gaveta", "g": "protecoes"})
+    corpo = next(x for x in _todos(prot)
+                 if "gaveta-corpo" in (getattr(x, "className", None) or "").split())
+    grades = [x for x in _todos(corpo)
+              if "grid-2" in (getattr(x, "className", None) or "").split()]
+    assert grades
+    for i in ({"type": "val", "p": "breakeven_pct"}, "e-max-barras"):
+        assert _achar(grades[0], i) is not None, i
+
+
+def test_resumo_na_linha_de_baixo_do_titulo(app):
+    """Rascunho: título e, embaixo, o resumo — os dois num bloco só, a seta à
+    direita (CSS)."""
+    for g in _todos(_achar(app.layout, "sidebar")):
+        if isinstance(g, html.Details):
+            txt = next(x for x in _todos(g.children[0])
+                       if getattr(x, "className", None) == "gaveta-txt")
+            classes = [getattr(f, "className", None) for f in _filhos(txt)]
+            assert classes == ["gaveta-cab", "gaveta-resumo"]
+
+
+def test_rotulos_do_rascunho(app):
+    sb = _achar(app.layout, "sidebar")
+    rotulos = [_texto(l).strip() for l in _todos(sb) if isinstance(l, html.Label)]
+    assert "tempo" in rotulos and "tempo gráfico" not in rotulos
+    assert rotulos.count("sem entradas") == 1
+    assert not [r for r in rotulos if r.startswith("sem entradas ·")]
+
+
+def test_abas_vencem_o_hover_do_dash():
+    css = (Path(__file__).resolve().parent.parent / "ui" / "assets"
+           / "style.css").read_text(encoding="utf-8")
+    assert "#sidebar .menu-abas label:has(input:checked):focus-within" in css
+    assert "#sidebar .menu-abas label:hover" in css
