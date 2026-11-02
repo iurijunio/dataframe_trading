@@ -50,8 +50,27 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
     layout fixo ficam em R$ (decisão do usuário). Garantia do WIN: referência
     das telas gravada antes da etapa e idêntica no fim; a foto do motor também.
     Suíte: 2.654 testes.
-  - **Falta:** etapa 4 (faixas de mineração por ativo). Até lá, não salvar
-    planos em MES/MNQ.
+  - **Etapa 4: faixas de mineração por ativo** (`configs/instruments/mes.yaml`
+    e `mnq.yaml`, `core/ativo.py:faixas_do_ativo`, `ui/`,
+    `scripts/referencia_telas.py`, `tests/dados/telas_win/parametros.json`;
+    plano em `docs/superpowers/plans/2026-10-30-ativos-cme-etapa4.md`). Cada
+    ficha de micro ganhou `faixas:` (bloco `comum` com stop, alvo e trailing,
+    mais um bloco por estratégia). Elas só preenchem a tela (valor, de, até,
+    passo): motor, otimizador, validação, Walk-Forward e Candidata não as
+    conhecem. A ordem, campo a campo, é mineração carregada > faixa do ativo >
+    padrão da estratégia (ou `PADRAO_C4` na camada 4). Nos micros o passo é 1.
+    Stop e alvo padrão deixaram de ser provisórios: MES 8/16 e MNQ 45/90 (um
+    teste garante que batem com o `valor` da faixa). Tabela completa na spec.
+    - **Trocar o ativo** sem mineração na tela refaz os parâmetros e o
+      stop/alvo/trailing com as faixas do ativo novo (zera valores digitados e
+      marcas de "minerar"). Com mineração na tela nada é refeito e a
+      mineração não é interrompida; só horários e custos trocam.
+    - **Mineração carregada** ajusta stop, alvo e trailing ao ativo dela; no
+      WIN, os que não foram varridos voltam a 300/600/0.
+    - A automação futura de mineração deve pedir as faixas a `faixas_do_ativo`.
+    - A referência das telas ganhou `parametros.json`; a tela do WIN segue
+      idêntica. Conferido no app em 01/11 com o app real fechado.
+      Suíte: 2.713 testes.
 - **Estratégia `adx_direcao`** (`strategies/adx_direcao.py`): candle mais ADX
   subindo/caindo, com filtro de amplitude. Parâmetros próprios `di_periodo` e
   `adx_suavizacao`; um teste trava colisão de nome com o perfil

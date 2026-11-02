@@ -21,7 +21,7 @@ substituindo o fluxo que antes vivia no MT5. Branch de trabalho:
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.654 testes coletados em 29/10/2026)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.713 testes em 01/11/2026)
 ```
 
 - Para ver o app: rode `ui/app.py` e abra http://127.0.0.1:8050. Quem tiver
@@ -278,8 +278,15 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
     `codigo_hash` a cada ciclo: troque só fora do pregão, com o app e a
     captura fechados. Planos 5, 6 e 7 reassinados em 29/10/2026, trades
     idênticos (backup em `backups/2026-10-29-antes-reassinar/`).
-  - **Até a etapa 4, não salve planos em MES/MNQ** (faixas de mineração ainda
-    são as do WIN).
+  - **Faixas por ativo (etapa 4):** vêm de `faixas:` em `mes.yaml`/`mnq.yaml`
+    via `core.ativo.faixas_do_ativo(simbolo, estrategia=None)` e **só
+    preenchem a tela**; motor, otimizador, validação, WFA e Candidata não as
+    conhecem. Ordem, campo a campo: mineração > faixa do ativo > padrão da
+    estratégia / `PADRAO_C4`. Automação futura de mineração tem de pedir as
+    faixas a `faixas_do_ativo`, não ao schema. Stop/alvo padrão aprovados:
+    MES 8/16, MNQ 45/90 (tabela na spec).
+  - **Salvar plano em MES/MNQ já é permitido na pesquisa**, mas operar não:
+    não há corretora para os micros.
   - **Dinheiro na tela: sempre `cartao.dinheiro(v, moeda)`**, com a moeda de
     `ativo.moeda_de(simbolo)`. Componentes recebem `moeda="BRL"` como padrão.
   - **Mexeu em tela da pesquisa? Rode `scripts/referencia_telas.py conferir`**
@@ -311,16 +318,16 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 
 ## Documentos: qual confiar
 
-| Documento | Estado (29/10/2026) |
+| Documento | Estado (01/11/2026) |
 |---|---|
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
 | `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
-| `docs/superpowers/specs/2026-10-28-ativos-cme-design.md` + `plans/2026-10-28-ativos-cme-etapa1.md`, `2026-10-29-ativos-cme-etapa2.md` | ativos da CME; as seções "Herança da etapa 1", "Estado depois da etapa 2" e "Estado depois da etapa 3" dizem o que ficou |
-| `CHANGELOG.md` | atualizado até os ativos da CME, etapas 1 a 3 (29/10/2026); **não cobre variantes, portfólio nem gatilho** |
-| `README.md` | atualizado até os ativos da CME (29/10/2026); o texto do MVP segue como história |
-| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 29/10/2026 |
+| `docs/superpowers/specs/2026-10-28-ativos-cme-design.md` + `plans/2026-10-28-ativos-cme-etapa1.md`, `2026-10-29-ativos-cme-etapa2.md`, `2026-10-30-ativos-cme-etapa4.md` | ativos da CME; as seções "Herança da etapa 1", "Estado depois da etapa 2", "Estado depois da etapa 3" e "Estado depois da etapa 4" dizem o que ficou |
+| `CHANGELOG.md` | atualizado até os ativos da CME, etapas 1 a 4 (01/11/2026); **não cobre variantes, portfólio nem gatilho** |
+| `README.md` | atualizado até os ativos da CME, etapa 4 (01/11/2026); o texto do MVP segue como história |
+| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 01/11/2026 |
 
 Na dúvida entre documento e código, o código manda. Use o agente
 `documentador` para pôr a documentação em dia depois de uma entrega.
@@ -425,9 +432,18 @@ corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
   do portfólio na escala do ativo, capital "10.000" = dez mil, referência das
   telas do WIN (`scripts/referencia_telas.py`). O portão "Aguenta custo
   maior?" só vale para moeda BRL.
-- **Etapa 4 (faixas de mineração por ativo) ❌:** as faixas ainda são as do
-  WIN; stop/alvo padrão do MES (10/20) e do MNQ (40/80) são provisórios.
+- **Etapa 4 (faixas de mineração por ativo) ✅ (30/10/2026, no `master`):**
+  faixas no YAML dos micros e `faixas_do_ativo`; passo 1 nos micros. Stop/alvo
+  padrão: MES 8/16, MNQ 45/90. Trocar o ativo sem mineração na tela refaz
+  parâmetros e stop/alvo/trailing (zera o que foi digitado e as marcas de
+  "minerar"); com mineração na tela não refaz nada nem a interrompe. Mineração
+  carregada ajusta stop/alvo/trailing ao ativo dela (no WIN, os não varridos
+  voltam a 300/600/0). Suíte: 2.713 testes. Spec: "Estado depois da etapa 4".
 - Pendências pequenas em "Estado depois da etapa 2" e "Estado depois da etapa 3" da spec.
+- **A investigar:** erro React #31 (2 vezes) ao abrir o app; já existe no
+  `master`, causa desconhecida.
+- **Seletor de ativo não acompanha a mineração carregada** (mostra o ativo
+  antigo). Será resolvido pelo redesenho do menu, próximo trabalho.
 
 Também entraram em 21–23/10: stop e alvo em porcentagem do preço de entrada
 (`7d1d272`) e a estratégia `adx_direcao` (`cdb74bc`, `8eaca51`: parâmetros

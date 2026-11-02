@@ -8,7 +8,8 @@ dashboard · F3 mineração · F4 dispersão) mais Walk-Forward, Candidata,
 Estratégias, Portfólio e a tela **Ao vivo** (captura, papel e ordens na conta
 demo e real). Na pesquisa também há os micros da CME, **MES** e **MNQ**
 (horário de Nova York, preço em pontos, dinheiro em US$); as faixas de
-mineração por ativo ainda faltam.
+mineração de cada micro (stop, alvo, trailing e o filtro de cada estratégia)
+vêm da ficha do ativo e preenchem a tela ao trocar o ativo.
 
 ```bash
 iniciar.bat                            # abre o app e o serviço de captura
@@ -195,7 +196,7 @@ core/importar_lse.py       importação dos candles da CME (cli.py importar-lse)
 configs/instruments/       win.yaml, mes.yaml, mnq.yaml
 scripts/foto_win.py        foto do WIN: prova resultado idêntico após mexer no motor
 scripts/reassinar_codigo.py  reassina o hash de planos quando o código muda sem mudar trades
-tests/                     2.654 testes
+tests/                     2.713 testes
 ```
 
 ## O dashboard
