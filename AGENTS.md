@@ -113,8 +113,8 @@ Os sete modos do topo (`ui/app.py`) e onde vivem:
 | Portfólio | `portfolio.py` | `callbacks_portfolio.py`, `components/portfolio_panel.py` |
 | Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`), `papel.py`, `papel_leitura.py`, `papel_vivo.py`, `papel_backtest.py`, `corretora.py`, `ordens.py`, `diario_ordens.py`, `comandos.py`, `contrato_dia.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py`, `callbacks_operacao.py`, `components/operacao_panel.py`, `components/ordens_panel.py` |
 
-Outros: `core/mt5_source.py` + `ui/callbacks_mt5.py` (botão "Sincronizar com
-MT5"); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
+Outros: `core/mt5_source.py` (sincronização com o MT5, sem botão na tela — a
+captura já preenche o que falta); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
 `ui/callbacks.py:register` registra todos os `callbacks_*.py`.
 
 Fluxo do dado: mineração (`mining_runs`, com `variante_id`) → walk-forward

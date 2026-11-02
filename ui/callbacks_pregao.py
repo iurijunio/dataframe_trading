@@ -53,18 +53,12 @@ def register(app):
         Output("captura-selo", "className"),
         Output("captura-selo", "style"),
         Output("captura-selo", "title"),
-        Output("btn-mt5-sync", "disabled"),
-        Output("btn-mt5-sync", "title"),
         Input("captura-intervalo", "n_intervals"),
     )
     def selo_captura(_n):
         sit = PP.situacao(D.estado_captura(), datetime.now())
         filhos, classe, estilo = PP.selo(sit)
-        if sit["ativa"]:
-            botao = f"Desligado: {PP.MOTIVO_CAPTURA}"
-        else:
-            botao = "Busca no MT5 os candles que faltam no banco"
-        return filhos, classe, estilo, PP.dica(sit), sit["ativa"], botao
+        return filhos, classe, estilo, PP.dica(sit)
 
     @app.callback(
         Output("d-ate", "date", allow_duplicate=True),

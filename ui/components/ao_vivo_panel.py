@@ -98,7 +98,6 @@ def painel():
             html.Div([html.H2("Ao vivo", className="panel-title av-titulo"),
                       dcc.RadioItems(
                           id="av-subtela", value="estrategias",
-                          persistence=True, persistence_type="local",
                           className="av-subtelas",
                           options=[{"label": "Estratégias",
                                     "value": "estrategias"},

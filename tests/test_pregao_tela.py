@@ -308,33 +308,6 @@ def test_bars_devolve_o_que_carregou_mesmo_com_clear_no_meio(monkeypatch):
     assert D.bars("WIN$N") is carregado
 
 
-# ---- Sincronizar com MT5 ----
-
-def test_sincronizar_recusa_com_a_captura_ativa(monkeypatch):
-    from ui import callbacks_mt5 as CM
-    monkeypatch.setattr(CM.D, "estado_captura",
-                        lambda: {"atualizado_em": datetime.now().isoformat()})
-    assert "captura" in CM.motivo_bloqueio()
-    monkeypatch.setattr(CM.D, "estado_captura", lambda: None)
-    assert CM.motivo_bloqueio() is None
-
-
-def test_sincronizar_com_captura_ativa_nao_chama_o_mt5(monkeypatch):
-    from ui import callbacks_mt5 as CM
-    monkeypatch.setattr(CM.D, "estado_captura",
-                        lambda: {"atualizado_em": datetime.now().isoformat()})
-
-    def explode(*a, **k):
-        raise AssertionError("não devia sincronizar")
-
-    monkeypatch.setattr(CM.src, "sincronizar", explode)
-    monkeypatch.setattr(CM.db, "connect_write", explode)
-    saida = CM.executar_sincronizacao("WIN$N")
-    assert "captura" in saida[0]
-    assert saida[1] == "mt5-sync-status"
-    assert saida[2:] == (no_update, no_update, no_update)
-
-
 # ---- calendário do Backtest ----
 
 def test_calendario_so_muda_com_conferencia_nova(monkeypatch):

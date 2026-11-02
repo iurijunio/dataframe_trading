@@ -82,15 +82,10 @@ def topbar(simbolo):
             ),
             html.Div(
                 [
-                    # o selo e o botão juntos: com a captura ativa o botão
-                    # desliga, e o selo ao lado diz por quê
                     html.Span(id="captura-selo", className="captura-selo",
                               style={"display": "none"}),
                     # parte 4: o Envio de ordens, ao lado da captura que o faz
                     html.Span(id="ord-selo", className="ord-selo"),
-                    html.Button("Sincronizar com MT5", id="btn-mt5-sync",
-                                n_clicks=0, className="btn-ghost"),
-                    html.Span(id="mt5-sync-status", className="mt5-sync-status"),
                     # o aviso antes do botão: o botão de pânico fica sempre
                     # no mesmo lugar, no canto, e não anda quando o aviso muda
                     html.Span(id="ord-zerar-aviso", className="ord-zerar-aviso"),

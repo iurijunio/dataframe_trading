@@ -2398,9 +2398,6 @@ def register(app):
     from ui import callbacks_candidata
     callbacks_candidata.register(app)
 
-    from ui import callbacks_mt5
-    callbacks_mt5.register(app)
-
     from ui import callbacks_estrategias
     callbacks_estrategias.register(app)
 
