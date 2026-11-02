@@ -13,9 +13,19 @@ ROTULOS_NOVOS = {"Alvo (pontos)": "alvo", "Stop (pontos)": "stop",
                  "Trailing (pontos)": "trailing"}
 
 
+# o menu antigo não tinha rótulo visível sobre estes dois seletores; o novo
+# tem (rascunho aprovado). Só estes dois ganham rótulo onde não havia.
+ROTULOS_GANHOS = {"ativo": "ativo", "estrategia": "estratégia"}
+
+
+def _rotulo(c):
+    if c["rotulo"] is None and c["id"] in ROTULOS_GANHOS:
+        return ROTULOS_GANHOS[c["id"]]
+    return ROTULOS_NOVOS.get(c["rotulo"], c["rotulo"])
+
+
 def _normaliza(campos):
-    return {c["id"]: {**c, "rotulo": ROTULOS_NOVOS.get(c["rotulo"], c["rotulo"])}
-            for c in campos}
+    return {c["id"]: {**c, "rotulo": _rotulo(c)} for c in campos}
 
 
 def test_campos_do_menu_iguais_a_referencia():

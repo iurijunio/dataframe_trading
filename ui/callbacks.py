@@ -79,6 +79,183 @@ def rotulos_moeda(ativo: str | None, n: int) -> list[str]:
     return [simbolo_moeda(ativo_mod.moeda_de(ativo))] * n
 
 
+# ------------------------------------------------- menu: abas e gavetas
+def menu_abas(aba, qual, subtela):
+    """Qual painel do menu aparece; o que é só da varredura some fora dela.
+
+    No Backtest não há aba Períodos nem gaveta Filtro de mineração: se a aba
+    ativa era Períodos, cai para Entrada. Fora da Mineração o menu nem está
+    na tela — nada muda, e a aba fica como o usuário deixou.
+    Devolve (aba, opções, um estilo por aba de `ABAS_MENU`, estilo da gaveta
+    Filtro de mineração).
+    """
+    abas = controls.ABAS_MENU
+    if qual != "mineracao":
+        return (no_update, no_update, *[no_update] * len(abas), no_update)
+    varredura = subtela == "varredura"
+    visiveis = [a for a in abas if varredura or a != "periodos"]
+    efetiva = aba if aba in visiveis else "entrada"
+    opcoes = [{"label": controls.ROTULOS_ABA[a], "value": a} for a in visiveis]
+    return (efetiva if efetiva != aba else no_update, opcoes,
+            *[VISIVEL if a == efetiva else OCULTO for a in abas],
+            VISIVEL if varredura else OCULTO)
+
+
+def pontinhos(ligados, ids, qual, subtela) -> str:
+    """Classe das abas: `dot-<aba>` em cada aba com campo marcado para
+    minerar. Só na Varredura — no Backtest não existe minerar."""
+    base = "menu-abas"
+    if qual != "mineracao" or subtela != "varredura":
+        return base
+    marcadas = {controls.ABA_DO_CAMPO.get(i["p"], "entrada")
+                for i, v in zip(ids, ligados) if v}
+    return " ".join([base] + [f"dot-{a}" for a in controls.ABAS_MENU
+                              if a in marcadas])
+
+
+def _n(v) -> str:
+    """Número curto para o resumo: 8, 1,5 (sem ",0" à toa); vazio vira "—"."""
+    if v is None or v == "":
+        return "—"
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    if f == int(f):
+        return str(int(f))
+    return f"{f:g}".replace(".", ",")
+
+
+def resumo_gestao(stop_tipo, alvo_tipo, stop, alvo, trailing,
+                  stop_atr=(None, None), stop_pct=None, alvo_atr=(None, None),
+                  alvo_razao=None, alvo_pct=None) -> str:
+    if stop_tipo == "atr":
+        s = f"stop ATR {_n(stop_atr[0])}×{_n(stop_atr[1])}"
+    elif stop_tipo == "percentual":
+        s = f"stop {_n(stop_pct)}%"
+    else:
+        s = f"stop {_n(stop)}"
+    if alvo_tipo == "atr":
+        a = f"alvo ATR {_n(alvo_atr[0])}×{_n(alvo_atr[1])}"
+    elif alvo_tipo == "multiplicador":
+        a = f"alvo {_n(alvo_razao)}× stop"
+    elif alvo_tipo == "percentual":
+        a = f"alvo {_n(alvo_pct)}%"
+    else:
+        a = f"alvo {_n(alvo)}"
+    return f"{s} · {a} · trailing {_n(trailing)}"
+
+
+def resumo_protecoes(breakeven, gatilho, trava, max_barras) -> str:
+    partes = []
+    if breakeven:
+        partes.append(f"breakeven {_n(breakeven)}%")
+    if gatilho:
+        partes.append(f"stop móvel {_n(gatilho)}%→{_n(trava)}%")
+    if max_barras:
+        partes.append(f"máx. {_n(max_barras)} barras")
+    return " · ".join(partes) or "desligadas"
+
+
+def resumo_filtro_mercado(regua, periodo, limiar) -> str:
+    if not periodo or not limiar:
+        return "sem filtro"
+    nome = "tendência" if regua == "tendencia" else "rango"
+    return f"{nome} · ADX {_n(periodo)}/{_n(limiar)}"
+
+
+def _dias(dias) -> str:
+    from .components.catalogo import DIAS
+    nomes = {v: n for n, v in DIAS}
+    d = sorted(dias or [])
+    if not d:
+        return "nenhum dia"
+    if len(d) > 2 and d == list(range(d[0], d[-1] + 1)):
+        return f"{nomes.get(d[0], d[0])}–{nomes.get(d[-1], d[-1])}"
+    return ",".join(str(nomes.get(x, x)) for x in d)
+
+
+def resumo_janela(ini, fim, fechamento, dias) -> str:
+    return f"{ini or '—'}–{fim or '—'} · fecha {fechamento or '—'} · {_dias(dias)}"
+
+
+def resumo_limites(ganho, perda, ops, prejuizos, moeda) -> str:
+    partes = []
+    if ganho:
+        partes.append(f"ganho {moeda} {_n(ganho)}")
+    if perda:
+        partes.append(f"perda {moeda} {_n(perda)}")
+    if ops:
+        partes.append(f"{_n(ops)} ops")
+    if prejuizos:
+        partes.append(f"{_n(prejuizos)} prej.")
+    return " · ".join(partes) or "sem limite"
+
+
+def resumo_custos(corretagem, emolumentos, slippage, moeda) -> str:
+    return (f"{moeda} {_n(corretagem)} + {_n(emolumentos)} · "
+            f"slippage {_n(slippage)}")
+
+
+def resumo_posicao(modo, contratos, risco, capital, moeda) -> str:
+    if modo == "risco_fixo":
+        p = f"risco {moeda} {_n(risco)}"
+    else:
+        p = f"{_n(contratos)} contrato{'' if contratos in (1, None) else 's'}"
+    return f"{p} · capital {moeda} {_n(capital)}"
+
+
+def resumo_filtro_mineracao(min_ops) -> str:
+    return f"mín. {_n(min_ops)} operações" if min_ops else "sem mínimo"
+
+
+# o que `resumos` lê, na ordem dos argumentos
+ENTRADAS_RESUMO = [
+    ("e-stop-tipo", "value"), ("e-alvo-tipo", "value"),
+    *[({"type": "val", "p": p}, "value")
+      for p in ("stop_pontos", "alvo_pontos", "trailing_pontos",
+                "stop_atr_periodo", "stop_atr_mult", "stop_pct",
+                "alvo_atr_periodo", "alvo_atr_mult", "alvo_razao", "alvo_pct",
+                "breakeven_pct", "step_gatilho_pct", "step_distancia_pct")],
+    ("e-max-barras", "value"),
+    ("e-filtro-adx", "value"),
+    ({"type": "val", "p": "adx_periodo"}, "value"),
+    ({"type": "val", "p": "adx_limiar"}, "value"),
+    ("e-ent-ini", "value"), ("e-ent-fim", "value"), ("e-fechamento", "value"),
+    ("e-dias", "value"),
+    ("e-min-ops", "value"),
+    ("e-lim-ganho", "value"), ("e-lim-perda", "value"),
+    ("e-max-trades", "value"), ("e-max-loss", "value"),
+    ("e-corretagem", "value"), ("e-emolumentos", "value"),
+    ("e-slippage", "value"),
+    ("e-modo", "value"), ("e-contratos", "value"), ("e-risco", "value"),
+    ("e-capital", "value"),
+    ("ativo", "value"),
+]
+
+
+def resumos(stop_tipo, alvo_tipo, stop, alvo, trailing, s_atr_p, s_atr_m,
+            s_pct, a_atr_p, a_atr_m, a_razao, a_pct, breakeven, gatilho, trava,
+            max_barras, regua, adx_p, adx_l, ini, fim, fech, dias, min_ops,
+            ganho, perda, ops, prej, corretagem, emolumentos, slippage,
+            modo_pos, contratos, risco, capital, simbolo):
+    """O resumo de cada gaveta, na ordem de `controls.GRUPOS_GAVETA`."""
+    moeda = rotulos_moeda(simbolo, 1)[0]
+    por_grupo = {
+        "gestao": resumo_gestao(stop_tipo, alvo_tipo, stop, alvo, trailing,
+                                (s_atr_p, s_atr_m), s_pct, (a_atr_p, a_atr_m),
+                                a_razao, a_pct),
+        "protecoes": resumo_protecoes(breakeven, gatilho, trava, max_barras),
+        "filtro-mercado": resumo_filtro_mercado(regua, adx_p, adx_l),
+        "janela": resumo_janela(ini, fim, fech, dias),
+        "filtro-mineracao": resumo_filtro_mineracao(min_ops),
+        "limites": resumo_limites(ganho, perda, ops, prej, moeda),
+        "custos": resumo_custos(corretagem, emolumentos, slippage, moeda),
+        "posicao": resumo_posicao(modo_pos, contratos, risco, capital, moeda),
+    }
+    return [por_grupo[g] for g in controls.GRUPOS_GAVETA]
+
+
 _runs: dict[str, dict] = {}
 
 
@@ -705,6 +882,31 @@ def register(app):
                             "aovivo")
                 else {"display": "block"},
                 v(mineracao and not backtest))
+
+    # ---------------------------- menu: aba visível, pontinho e resumos
+    # Único dono de `menu-aba`: trocar de estratégia ou de ativo (quem
+    # reconstrói `params-body`) não mexe na aba escolhida.
+    app.callback(
+        Output("menu-aba", "value"), Output("menu-aba", "options"),
+        *[Output({"type": "menu-pane", "aba": a}, "style")
+          for a in controls.ABAS_MENU],
+        Output({"type": "gaveta", "g": "filtro-mineracao"}, "style"),
+        Input("menu-aba", "value"),
+        Input("modo", "value"), Input("mine-subtela", "value"),
+    )(menu_abas)
+
+    app.callback(
+        Output("menu-aba", "className"),
+        Input({"type": "opt-on", "p": ALL}, "value"),
+        State({"type": "opt-on", "p": ALL}, "id"),
+        Input("modo", "value"), Input("mine-subtela", "value"),
+    )(pontinhos)
+
+    app.callback(
+        [Output({"type": "gaveta-resumo", "g": g}, "children")
+         for g in controls.GRUPOS_GAVETA],
+        [Input(i, p) for i, p in ENTRADAS_RESUMO],
+    )(resumos)
 
     # A curva de capital é desenhada com a subtela Backtest escondida (o
     # primeiro `rodar` e o clique numa linha da Varredura): sem largura, ela

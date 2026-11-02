@@ -452,7 +452,7 @@ def test_timeframes_novos_agregam_sem_quebrar():
 def test_dropdown_do_backtest_mostra_os_timeframes_novos():
     """O seletor da barra lateral itera o dict do core: se um dia alguem
     trocar por lista escrita a mao, este teste acusa."""
-    from ui.components.controls import periodo
+    from ui.components.controls import topo_menu
 
     def achando(c, alvo):
         if isinstance(c, (list, tuple)):
@@ -466,7 +466,8 @@ def test_dropdown_do_backtest_mostra_os_timeframes_novos():
         filhos = getattr(c, "children", None)
         return None if filhos is None else achando(filhos, alvo)
 
-    comp = achando(periodo(datetime(2026, 1, 5), datetime(2026, 1, 10)),
+    comp = achando(topo_menu("WIN$N", datetime(2026, 1, 5),
+                             datetime(2026, 1, 10), ativos=["WIN$N"]),
                    "e-timeframe")
     assert comp is not None
     vistos = {o["value"] for o in comp.options}

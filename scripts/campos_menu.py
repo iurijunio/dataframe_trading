@@ -155,25 +155,16 @@ def _aplicar_camada4(arvore, simbolo) -> None:
 
 
 def menu(simbolo: str, estrategia: str) -> list[dict]:
+    """O menu novo (topo fixo + abas), como `ui.app.sidebar` o monta."""
     from core import ativo as ativo_mod
     from strategies import registry
-    from ui.components import controls, mining
+    from ui.components import controls
 
     mod = registry.carregar(estrategia)
-    seletor_ativo = dcc.Dropdown(
-        id="ativo", value=simbolo, clearable=False, className="dd dd-ativo",
-        options=[{"label": s, "value": s} for s in INSTRUMENTOS])
     with mock.patch.object(registry, "nome_atual", lambda: estrategia):
         blocos = [
-            seletor_ativo,
-            controls.periodo(INICIO, FIM),
-            mining.controles(),
-            controls.seletor_estrategia(),
-            controls._section("Parâmetros", html.Div(
-                controls.campos_da_estrategia(
-                    mod, None, ativo_mod.faixas_do_ativo(simbolo, estrategia)),
-                id="params-body")),
-            controls.execucao(),
+            controls.topo_menu(simbolo, INICIO, FIM, ativos=INSTRUMENTOS),
+            controls.abas_menu(mod, ativo_mod.faixas_do_ativo(simbolo, estrategia)),
         ]
     _aplicar_camada4(blocos, simbolo)
     return extrair(blocos)

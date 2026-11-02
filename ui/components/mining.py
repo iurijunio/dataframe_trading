@@ -63,19 +63,16 @@ def controles():
         return dcc.Input(id=id_, type="number", value=v, step=step, min=minimo,
                          className="inp", debounce=True)
 
-    def fld(label, comp, hint=None):
-        return html.Div([html.Label(label, className="fld-label"), comp,
-                         html.Span(hint, className="fld-hint") if hint else None],
+    def fld(label, comp):
+        return html.Div([html.Label(label, className="fld-label"), comp],
                         className="fld")
 
+    # Consistência entre períodos (NAO "Walk-forward": aqui os parametros
+    # sao FIXOS em todas as janelas; o walk-forward de verdade, que
+    # REOTIMIZA a cada janela, e o terceiro modo da plataforma). Sem titulo
+    # proprio: mora sozinho na aba Períodos do menu, que ja da o nome.
     return html.Section(
         [
-            # NAO se chama "Walk-forward": aqui os parametros sao FIXOS em
-            # todas as janelas. O que se mede e consistencia entre periodos.
-            # O walk-forward de verdade - que REOTIMIZA a cada janela - e o
-            # terceiro modo da plataforma.
-            html.Div(html.H2("Consistência entre períodos", className="sec-title"),
-                     className="sec-head"),
             html.Div(
                 [
                     html.Div([

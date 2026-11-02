@@ -23,10 +23,31 @@
           {
            "ns": "dash_html_components",
            "props": {
-            "children": "régua (ADX)",
-            "className": "fld-label"
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "régua (ADX)",
+               "className": "fld-label"
+              },
+              "type": "Label"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "aria-label": "Em tendência, só entra com ADX no limiar ou acima; em rango, só com ADX abaixo. 0 em período ou limiar desliga o filtro — e é o que deixa minerar ligado x desligado na mesma varredura.",
+               "children": "?",
+               "className": "dica-mark",
+               "data-dica": "Em tendência, só entra com ADX no limiar ou acima; em rango, só com ADX abaixo. 0 em período ou limiar desliga o filtro — e é o que deixa minerar ligado x desligado na mesma varredura.",
+               "role": "button",
+               "tabIndex": "0"
+              },
+              "type": "Span"
+             }
+            ],
+            "className": "fld-rot"
            },
-           "type": "Label"
+           "type": "Span"
           },
           {
            "ns": "dash_core_components",
@@ -47,8 +68,7 @@
             "value": "tendencia"
            },
            "type": "Dropdown"
-          },
-          null
+          }
          ],
          "className": "fld"
         },
@@ -69,10 +89,31 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "ADX · período",
-                  "className": "fld-label"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "ADX · período",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "aria-label": "0 desliga",
+                     "children": "?",
+                     "className": "dica-mark",
+                     "data-dica": "0 desliga",
+                     "role": "button",
+                     "tabIndex": "0"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "fld-rot"
                  },
-                 "type": "Label"
+                 "type": "Span"
                 },
                 {
                  "ns": "dash_core_components",
@@ -123,14 +164,7 @@
               },
               "type": "Div"
              },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": "0 desliga",
-               "className": "fld-hint"
-              },
-              "type": "Span"
-             },
+             null,
              {
               "ns": "dash_html_components",
               "props": {
@@ -262,10 +296,31 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "ADX · limiar",
-                  "className": "fld-label"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "ADX · limiar",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "aria-label": "0 desliga",
+                     "children": "?",
+                     "className": "dica-mark",
+                     "data-dica": "0 desliga",
+                     "role": "button",
+                     "tabIndex": "0"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "fld-rot"
                  },
-                 "type": "Label"
+                 "type": "Span"
                 },
                 {
                  "ns": "dash_core_components",
@@ -316,14 +371,7 @@
               },
               "type": "Div"
              },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": "0 desliga",
-               "className": "fld-hint"
-              },
-              "type": "Span"
-             },
+             null,
              {
               "ns": "dash_html_components",
               "props": {
@@ -464,10 +512,31 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "DI confirma o lado",
-                  "className": "fld-label"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "DI confirma o lado",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "aria-label": "só na tendência: compra com DI+ acima de DI−, e o contrário na venda",
+                     "children": "?",
+                     "className": "dica-mark",
+                     "data-dica": "só na tendência: compra com DI+ acima de DI−, e o contrário na venda",
+                     "role": "button",
+                     "tabIndex": "0"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "fld-rot"
                  },
-                 "type": "Label"
+                 "type": "Span"
                 },
                 {
                  "ns": "dash_core_components",
@@ -518,14 +587,7 @@
               },
               "type": "Div"
              },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": "só na tendência: compra com DI+ acima de DI−, e o contrário na venda",
-               "className": "fld-hint"
-              },
-              "type": "Span"
-             },
+             null,
              {
               "ns": "dash_html_components",
               "props": {
@@ -657,10 +719,31 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "ADX subindo",
-                  "className": "fld-label"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "ADX subindo",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "aria-label": "só na tendência: barra atual acima da anterior",
+                     "children": "?",
+                     "className": "dica-mark",
+                     "data-dica": "só na tendência: barra atual acima da anterior",
+                     "role": "button",
+                     "tabIndex": "0"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "fld-rot"
                  },
-                 "type": "Label"
+                 "type": "Span"
                 },
                 {
                  "ns": "dash_core_components",
@@ -711,14 +794,7 @@
               },
               "type": "Div"
              },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": "só na tendência: barra atual acima da anterior",
-               "className": "fld-hint"
-              },
-              "type": "Span"
-             },
+             null,
              {
               "ns": "dash_html_components",
               "props": {
@@ -847,14 +923,6 @@
        {
         "ns": "dash_html_components",
         "props": {
-         "children": "Em tendência, só entra com ADX no limiar ou acima; em rango, só com ADX abaixo. 0 em período ou limiar desliga o filtro — e é o que deixa minerar ligado x desligado na mesma varredura.",
-         "className": "fld-hint solo"
-        },
-        "type": "P"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
          "children": "Janela",
          "className": "grp"
         },
@@ -885,8 +953,7 @@
                "value": "09:00"
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -913,43 +980,41 @@
                "value": "17:00"
               },
               "type": "Input"
+             }
+            ],
+            "className": "fld"
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "fechar posições às",
+               "className": "fld-label"
+              },
+              "type": "Label"
              },
-             null
+             {
+              "ns": "dash_core_components",
+              "props": {
+               "className": "inp",
+               "id": "e-fechamento",
+               "type": "text",
+               "value": "17:30"
+              },
+              "type": "Input"
+             }
             ],
             "className": "fld"
            },
            "type": "Div"
           }
          ],
-         "className": "grid-2"
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": [
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "fechar posições às",
-            "className": "fld-label"
-           },
-           "type": "Label"
-          },
-          {
-           "ns": "dash_core_components",
-           "props": {
-            "className": "inp",
-            "id": "e-fechamento",
-            "type": "text",
-            "value": "17:30"
-           },
-           "type": "Input"
-          },
-          null
-         ],
-         "className": "fld"
+         "className": "grid-3"
         },
         "type": "Div"
        },
@@ -1002,8 +1067,7 @@
             ]
            },
            "type": "Checklist"
-          },
-          null
+          }
          ],
          "className": "fld"
         },
@@ -1044,8 +1108,7 @@
             "value": "ambas"
            },
            "type": "Dropdown"
-          },
-          null
+          }
          ],
          "className": "fld"
         },
@@ -1178,8 +1241,7 @@
                "value": ""
               },
               "type": "Dropdown"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -1308,8 +1370,7 @@
                "value": ""
               },
               "type": "Dropdown"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -1438,8 +1499,7 @@
                "value": ""
               },
               "type": "Dropdown"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -1465,235 +1525,91 @@
           {
            "ns": "dash_html_components",
            "props": {
-            "children": "tipo de alvo",
-            "className": "fld-label"
-           },
-           "type": "Label"
-          },
-          {
-           "ns": "dash_core_components",
-           "props": {
-            "className": "dd",
-            "clearable": false,
-            "id": "e-alvo-tipo",
-            "options": [
+            "children": [
              {
-              "label": "pontos fixos",
-              "value": "pontos"
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tipo de stop",
+               "className": "fld-label"
+              },
+              "type": "Label"
              },
              {
-              "label": "múltiplo de ATR",
-              "value": "atr"
-             },
-             {
-              "label": "múltiplo do stop",
-              "value": "multiplicador"
-             },
-             {
-              "label": "porcentagem do preço",
-              "value": "percentual"
+              "ns": "dash_core_components",
+              "props": {
+               "className": "dd",
+               "clearable": false,
+               "id": "e-stop-tipo",
+               "options": [
+                {
+                 "label": "pontos fixos",
+                 "value": "pontos"
+                },
+                {
+                 "label": "múltiplo de ATR",
+                 "value": "atr"
+                },
+                {
+                 "label": "porcentagem do preço",
+                 "value": "percentual"
+                }
+               ],
+               "value": "pontos"
+              },
+              "type": "Dropdown"
              }
             ],
-            "value": "pontos"
+            "className": "fld"
            },
-           "type": "Dropdown"
+           "type": "Div"
           },
-          null
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "tipo de alvo",
+               "className": "fld-label"
+              },
+              "type": "Label"
+             },
+             {
+              "ns": "dash_core_components",
+              "props": {
+               "className": "dd",
+               "clearable": false,
+               "id": "e-alvo-tipo",
+               "options": [
+                {
+                 "label": "pontos fixos",
+                 "value": "pontos"
+                },
+                {
+                 "label": "múltiplo de ATR",
+                 "value": "atr"
+                },
+                {
+                 "label": "múltiplo do stop",
+                 "value": "multiplicador"
+                },
+                {
+                 "label": "porcentagem do preço",
+                 "value": "percentual"
+                }
+               ],
+               "value": "pontos"
+              },
+              "type": "Dropdown"
+             }
+            ],
+            "className": "fld"
+           },
+           "type": "Div"
+          }
          ],
-         "className": "fld"
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": {
-          "ns": "dash_html_components",
-          "props": {
-           "children": [
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": "Alvo (pontos)",
-                 "className": "fld-label"
-                },
-                "type": "Label"
-               },
-               {
-                "ns": "dash_core_components",
-                "props": {
-                 "className": "opt-toggle",
-                 "id": {
-                  "p": "alvo_pontos",
-                  "type": "opt-on"
-                 },
-                 "options": [
-                  {
-                   "label": "minerar",
-                   "value": "on"
-                  }
-                 ],
-                 "value": []
-                },
-                "type": "Checklist"
-               }
-              ],
-              "className": "fld-top"
-             },
-             "type": "Div"
-            },
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": {
-               "ns": "dash_core_components",
-               "props": {
-                "className": "inp",
-                "debounce": true,
-                "id": {
-                 "p": "alvo_pontos",
-                 "type": "val"
-                },
-                "min": 0,
-                "step": 10,
-                "type": "number",
-                "value": 600
-               },
-               "type": "Input"
-              },
-              "id": {
-               "p": "alvo_pontos",
-               "type": "valwrap"
-              }
-             },
-             "type": "Div"
-            },
-            null,
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "de",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "de",
-                     "p": "alvo_pontos",
-                     "type": "opt"
-                    },
-                    "min": 0,
-                    "step": 10,
-                    "type": "number",
-                    "value": 200
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "passo",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "passo",
-                     "p": "alvo_pontos",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 10,
-                    "type": "number",
-                    "value": 100
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "até",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "ate",
-                     "p": "alvo_pontos",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 10,
-                    "type": "number",
-                    "value": 1200
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               }
-              ],
-              "className": "opt",
-              "id": {
-               "p": "alvo_pontos",
-               "type": "optrow"
-              },
-              "style": {
-               "display": "none"
-              }
-             },
-             "type": "Div"
-            }
-           ],
-           "className": "fld"
-          },
-          "type": "Div"
-         },
-         "id": "blk-alvo-pontos"
+         "className": "grid-2"
         },
         "type": "Div"
        },
@@ -1704,186 +1620,193 @@
           {
            "ns": "dash_html_components",
            "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "ATR período",
-                  "className": "fld-label"
-                 },
-                 "type": "Label"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "opt-toggle",
-                  "id": {
-                   "p": "alvo_atr_periodo",
-                   "type": "opt-on"
-                  },
-                  "options": [
-                   {
-                    "label": "minerar",
-                    "value": "on"
-                   }
-                  ],
-                  "value": []
-                 },
-                 "type": "Checklist"
-                }
-               ],
-               "className": "fld-top"
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": {
-                "ns": "dash_core_components",
+            "children": {
+             "ns": "dash_html_components",
+             "props": {
+              "children": [
+               {
+                "ns": "dash_html_components",
                 "props": {
-                 "className": "inp",
-                 "debounce": true,
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": "stop",
+                    "className": "fld-label"
+                   },
+                   "type": "Label"
+                  },
+                  {
+                   "ns": "dash_core_components",
+                   "props": {
+                    "className": "opt-toggle",
+                    "id": {
+                     "p": "stop_pontos",
+                     "type": "opt-on"
+                    },
+                    "options": [
+                     {
+                      "label": "minerar",
+                      "value": "on"
+                     }
+                    ],
+                    "value": []
+                   },
+                   "type": "Checklist"
+                  }
+                 ],
+                 "className": "fld-top"
+                },
+                "type": "Div"
+               },
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": {
+                  "ns": "dash_core_components",
+                  "props": {
+                   "className": "inp",
+                   "debounce": true,
+                   "id": {
+                    "p": "stop_pontos",
+                    "type": "val"
+                   },
+                   "min": 0,
+                   "step": 10,
+                   "type": "number",
+                   "value": 300
+                  },
+                  "type": "Input"
+                 },
                  "id": {
-                  "p": "alvo_atr_periodo",
-                  "type": "val"
-                 },
-                 "min": 2,
-                 "step": 1,
-                 "type": "number",
-                 "value": 20
+                  "p": "stop_pontos",
+                  "type": "valwrap"
+                 }
                 },
-                "type": "Input"
+                "type": "Div"
                },
-               "id": {
-                "p": "alvo_atr_periodo",
-                "type": "valwrap"
+               null,
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "de",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "de",
+                        "p": "stop_pontos",
+                        "type": "opt"
+                       },
+                       "min": 0,
+                       "step": 10,
+                       "type": "number",
+                       "value": 100
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "passo",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "passo",
+                        "p": "stop_pontos",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 10,
+                       "type": "number",
+                       "value": 50
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "até",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "ate",
+                        "p": "stop_pontos",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 10,
+                       "type": "number",
+                       "value": 600
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  }
+                 ],
+                 "className": "opt",
+                 "id": {
+                  "p": "stop_pontos",
+                  "type": "optrow"
+                 },
+                 "style": {
+                  "display": "none"
+                 }
+                },
+                "type": "Div"
                }
-              },
-              "type": "Div"
+              ],
+              "className": "fld"
              },
-             null,
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": [
-                   {
-                    "ns": "dash_html_components",
-                    "props": {
-                     "children": "de",
-                     "className": "opt-k"
-                    },
-                    "type": "Span"
-                   },
-                   {
-                    "ns": "dash_core_components",
-                    "props": {
-                     "className": "inp",
-                     "debounce": true,
-                     "id": {
-                      "k": "de",
-                      "p": "alvo_atr_periodo",
-                      "type": "opt"
-                     },
-                     "min": 2,
-                     "step": 1,
-                     "type": "number",
-                     "value": 5
-                    },
-                    "type": "Input"
-                   }
-                  ]
-                 },
-                 "type": "Div"
-                },
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": [
-                   {
-                    "ns": "dash_html_components",
-                    "props": {
-                     "children": "passo",
-                     "className": "opt-k"
-                    },
-                    "type": "Span"
-                   },
-                   {
-                    "ns": "dash_core_components",
-                    "props": {
-                     "className": "inp",
-                     "debounce": true,
-                     "id": {
-                      "k": "passo",
-                      "p": "alvo_atr_periodo",
-                      "type": "opt"
-                     },
-                     "min": null,
-                     "step": 1,
-                     "type": "number",
-                     "value": 1
-                    },
-                    "type": "Input"
-                   }
-                  ]
-                 },
-                 "type": "Div"
-                },
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": [
-                   {
-                    "ns": "dash_html_components",
-                    "props": {
-                     "children": "até",
-                     "className": "opt-k"
-                    },
-                    "type": "Span"
-                   },
-                   {
-                    "ns": "dash_core_components",
-                    "props": {
-                     "className": "inp",
-                     "debounce": true,
-                     "id": {
-                      "k": "ate",
-                      "p": "alvo_atr_periodo",
-                      "type": "opt"
-                     },
-                     "min": null,
-                     "step": 1,
-                     "type": "number",
-                     "value": 60
-                    },
-                    "type": "Input"
-                   }
-                  ]
-                 },
-                 "type": "Div"
-                }
-               ],
-               "className": "opt",
-               "id": {
-                "p": "alvo_atr_periodo",
-                "type": "optrow"
-               },
-               "style": {
-                "display": "none"
-               }
-              },
-              "type": "Div"
-             }
-            ],
-            "className": "fld"
+             "type": "Div"
+            },
+            "id": "blk-stop-pontos"
            },
            "type": "Div"
           },
@@ -1898,61 +1821,185 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "ATR multiplicador",
-                  "className": "fld-label"
-                 },
-                 "type": "Label"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "opt-toggle",
-                  "id": {
-                   "p": "alvo_atr_mult",
-                   "type": "opt-on"
-                  },
-                  "options": [
+                  "children": [
                    {
-                    "label": "minerar",
-                    "value": "on"
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "ATR período",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "opt-toggle",
+                     "id": {
+                      "p": "stop_atr_periodo",
+                      "type": "opt-on"
+                     },
+                     "options": [
+                      {
+                       "label": "minerar",
+                       "value": "on"
+                      }
+                     ],
+                     "value": []
+                    },
+                    "type": "Checklist"
                    }
                   ],
-                  "value": []
+                  "className": "fld-top"
                  },
-                 "type": "Checklist"
+                 "type": "Div"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": {
+                   "ns": "dash_core_components",
+                   "props": {
+                    "className": "inp",
+                    "debounce": true,
+                    "id": {
+                     "p": "stop_atr_periodo",
+                     "type": "val"
+                    },
+                    "min": 2,
+                    "step": 1,
+                    "type": "number",
+                    "value": 20
+                   },
+                   "type": "Input"
+                  },
+                  "id": {
+                   "p": "stop_atr_periodo",
+                   "type": "valwrap"
+                  }
+                 },
+                 "type": "Div"
+                },
+                null,
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "de",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "de",
+                         "p": "stop_atr_periodo",
+                         "type": "opt"
+                        },
+                        "min": 2,
+                        "step": 1,
+                        "type": "number",
+                        "value": 5
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "passo",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "passo",
+                         "p": "stop_atr_periodo",
+                         "type": "opt"
+                        },
+                        "min": null,
+                        "step": 1,
+                        "type": "number",
+                        "value": 1
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "até",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "ate",
+                         "p": "stop_atr_periodo",
+                         "type": "opt"
+                        },
+                        "min": null,
+                        "step": 1,
+                        "type": "number",
+                        "value": 60
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   }
+                  ],
+                  "className": "opt",
+                  "id": {
+                   "p": "stop_atr_periodo",
+                   "type": "optrow"
+                  },
+                  "style": {
+                   "display": "none"
+                  }
+                 },
+                 "type": "Div"
                 }
                ],
-               "className": "fld-top"
+               "className": "fld"
               },
               "type": "Div"
              },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": {
-                "ns": "dash_core_components",
-                "props": {
-                 "className": "inp",
-                 "debounce": true,
-                 "id": {
-                  "p": "alvo_atr_mult",
-                  "type": "val"
-                 },
-                 "min": 0.1,
-                 "step": 0.1,
-                 "type": "number",
-                 "value": 3.0
-                },
-                "type": "Input"
-               },
-               "id": {
-                "p": "alvo_atr_mult",
-                "type": "valwrap"
-               }
-              },
-              "type": "Div"
-             },
-             null,
              {
               "ns": "dash_html_components",
               "props": {
@@ -1964,945 +2011,576 @@
                    {
                     "ns": "dash_html_components",
                     "props": {
-                     "children": "de",
-                     "className": "opt-k"
+                     "children": "ATR multiplicador",
+                     "className": "fld-label"
                     },
-                    "type": "Span"
+                    "type": "Label"
                    },
                    {
                     "ns": "dash_core_components",
                     "props": {
-                     "className": "inp",
-                     "debounce": true,
+                     "className": "opt-toggle",
                      "id": {
-                      "k": "de",
-                      "p": "alvo_atr_mult",
-                      "type": "opt"
+                      "p": "stop_atr_mult",
+                      "type": "opt-on"
                      },
-                     "min": 0.1,
-                     "step": 0.1,
-                     "type": "number",
-                     "value": 1.0
+                     "options": [
+                      {
+                       "label": "minerar",
+                       "value": "on"
+                      }
+                     ],
+                     "value": []
                     },
-                    "type": "Input"
+                    "type": "Checklist"
                    }
-                  ]
+                  ],
+                  "className": "fld-top"
                  },
                  "type": "Div"
                 },
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": [
-                   {
-                    "ns": "dash_html_components",
-                    "props": {
-                     "children": "passo",
-                     "className": "opt-k"
-                    },
-                    "type": "Span"
-                   },
-                   {
-                    "ns": "dash_core_components",
-                    "props": {
-                     "className": "inp",
-                     "debounce": true,
-                     "id": {
-                      "k": "passo",
-                      "p": "alvo_atr_mult",
-                      "type": "opt"
-                     },
-                     "min": null,
-                     "step": 0.1,
-                     "type": "number",
-                     "value": 0.1
-                    },
-                    "type": "Input"
-                   }
-                  ]
-                 },
-                 "type": "Div"
-                },
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": [
-                   {
-                    "ns": "dash_html_components",
-                    "props": {
-                     "children": "até",
-                     "className": "opt-k"
-                    },
-                    "type": "Span"
-                   },
-                   {
-                    "ns": "dash_core_components",
-                    "props": {
-                     "className": "inp",
-                     "debounce": true,
-                     "id": {
-                      "k": "ate",
-                      "p": "alvo_atr_mult",
-                      "type": "opt"
-                     },
-                     "min": null,
-                     "step": 0.1,
-                     "type": "number",
-                     "value": 6.0
-                    },
-                    "type": "Input"
-                   }
-                  ]
-                 },
-                 "type": "Div"
-                }
-               ],
-               "className": "opt",
-               "id": {
-                "p": "alvo_atr_mult",
-                "type": "optrow"
-               },
-               "style": {
-                "display": "none"
-               }
-              },
-              "type": "Div"
-             }
-            ],
-            "className": "fld"
-           },
-           "type": "Div"
-          }
-         ],
-         "className": "grid-2",
-         "id": "blk-alvo-atr",
-         "style": {
-          "display": "none"
-         }
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": {
-          "ns": "dash_html_components",
-          "props": {
-           "children": [
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": "Alvo · vezes o stop",
-                 "className": "fld-label"
-                },
-                "type": "Label"
-               },
-               {
-                "ns": "dash_core_components",
-                "props": {
-                 "className": "opt-toggle",
-                 "id": {
-                  "p": "alvo_razao",
-                  "type": "opt-on"
-                 },
-                 "options": [
-                  {
-                   "label": "minerar",
-                   "value": "on"
-                  }
-                 ],
-                 "value": []
-                },
-                "type": "Checklist"
-               }
-              ],
-              "className": "fld-top"
-             },
-             "type": "Div"
-            },
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": {
-               "ns": "dash_core_components",
-               "props": {
-                "className": "inp",
-                "debounce": true,
-                "id": {
-                 "p": "alvo_razao",
-                 "type": "val"
-                },
-                "min": 0.1,
-                "step": 0.1,
-                "type": "number",
-                "value": 2.0
-               },
-               "type": "Input"
-              },
-              "id": {
-               "p": "alvo_razao",
-               "type": "valwrap"
-              }
-             },
-             "type": "Div"
-            },
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": "risco:retorno — 2,0 = alvo a duas vezes o stop",
-              "className": "fld-hint"
-             },
-             "type": "Span"
-            },
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "de",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
+                  "children": {
                    "ns": "dash_core_components",
                    "props": {
                     "className": "inp",
                     "debounce": true,
                     "id": {
-                     "k": "de",
-                     "p": "alvo_razao",
-                     "type": "opt"
+                     "p": "stop_atr_mult",
+                     "type": "val"
                     },
                     "min": 0.1,
                     "step": 0.1,
                     "type": "number",
-                    "value": 1.0
+                    "value": 1.5
                    },
                    "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "passo",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
                   },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "passo",
-                     "p": "alvo_razao",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 0.1,
-                    "type": "number",
-                    "value": 0.5
-                   },
-                   "type": "Input"
+                  "id": {
+                   "p": "stop_atr_mult",
+                   "type": "valwrap"
                   }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "até",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "ate",
-                     "p": "alvo_razao",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 0.1,
-                    "type": "number",
-                    "value": 5.0
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               }
-              ],
-              "className": "opt",
-              "id": {
-               "p": "alvo_razao",
-               "type": "optrow"
-              },
-              "style": {
-               "display": "none"
-              }
-             },
-             "type": "Div"
-            }
-           ],
-           "className": "fld"
-          },
-          "type": "Div"
-         },
-         "id": "blk-alvo-razao",
-         "style": {
-          "display": "none"
-         }
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": {
-          "ns": "dash_html_components",
-          "props": {
-           "children": [
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": "Alvo (%)",
-                 "className": "fld-label"
-                },
-                "type": "Label"
-               },
-               {
-                "ns": "dash_core_components",
-                "props": {
-                 "className": "opt-toggle",
-                 "id": {
-                  "p": "alvo_pct",
-                  "type": "opt-on"
                  },
-                 "options": [
-                  {
-                   "label": "minerar",
-                   "value": "on"
-                  }
-                 ],
-                 "value": []
+                 "type": "Div"
                 },
-                "type": "Checklist"
-               }
-              ],
-              "className": "fld-top"
-             },
-             "type": "Div"
-            },
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": {
-               "ns": "dash_core_components",
-               "props": {
-                "className": "inp",
-                "debounce": true,
-                "id": {
-                 "p": "alvo_pct",
-                 "type": "val"
-                },
-                "min": 0,
-                "step": 0.01,
-                "type": "number",
-                "value": 1.0
-               },
-               "type": "Input"
-              },
-              "id": {
-               "p": "alvo_pct",
-               "type": "valwrap"
-              }
-             },
-             "type": "Div"
-            },
-            null,
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "de",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "de",
-                     "p": "alvo_pct",
-                     "type": "opt"
-                    },
-                    "min": 0,
-                    "step": 0.01,
-                    "type": "number",
-                    "value": 0.5
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "passo",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "passo",
-                     "p": "alvo_pct",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 0.01,
-                    "type": "number",
-                    "value": 0.5
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "até",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "ate",
-                     "p": "alvo_pct",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 0.01,
-                    "type": "number",
-                    "value": 3.0
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               }
-              ],
-              "className": "opt",
-              "id": {
-               "p": "alvo_pct",
-               "type": "optrow"
-              },
-              "style": {
-               "display": "none"
-              }
-             },
-             "type": "Div"
-            }
-           ],
-           "className": "fld"
-          },
-          "type": "Div"
-         },
-         "id": "blk-alvo-pct",
-         "style": {
-          "display": "none"
-         }
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": [
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "tipo de stop",
-            "className": "fld-label"
-           },
-           "type": "Label"
-          },
-          {
-           "ns": "dash_core_components",
-           "props": {
-            "className": "dd",
-            "clearable": false,
-            "id": "e-stop-tipo",
-            "options": [
-             {
-              "label": "pontos fixos",
-              "value": "pontos"
-             },
-             {
-              "label": "múltiplo de ATR",
-              "value": "atr"
-             },
-             {
-              "label": "porcentagem do preço",
-              "value": "percentual"
-             }
-            ],
-            "value": "pontos"
-           },
-           "type": "Dropdown"
-          },
-          null
-         ],
-         "className": "fld"
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": {
-          "ns": "dash_html_components",
-          "props": {
-           "children": [
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": "Stop (pontos)",
-                 "className": "fld-label"
-                },
-                "type": "Label"
-               },
-               {
-                "ns": "dash_core_components",
-                "props": {
-                 "className": "opt-toggle",
-                 "id": {
-                  "p": "stop_pontos",
-                  "type": "opt-on"
-                 },
-                 "options": [
-                  {
-                   "label": "minerar",
-                   "value": "on"
-                  }
-                 ],
-                 "value": []
-                },
-                "type": "Checklist"
-               }
-              ],
-              "className": "fld-top"
-             },
-             "type": "Div"
-            },
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": {
-               "ns": "dash_core_components",
-               "props": {
-                "className": "inp",
-                "debounce": true,
-                "id": {
-                 "p": "stop_pontos",
-                 "type": "val"
-                },
-                "min": 0,
-                "step": 10,
-                "type": "number",
-                "value": 300
-               },
-               "type": "Input"
-              },
-              "id": {
-               "p": "stop_pontos",
-               "type": "valwrap"
-              }
-             },
-             "type": "Div"
-            },
-            null,
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "de",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "de",
-                     "p": "stop_pontos",
-                     "type": "opt"
-                    },
-                    "min": 0,
-                    "step": 10,
-                    "type": "number",
-                    "value": 100
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "passo",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "passo",
-                     "p": "stop_pontos",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 10,
-                    "type": "number",
-                    "value": 50
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "até",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "ate",
-                     "p": "stop_pontos",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 10,
-                    "type": "number",
-                    "value": 600
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               }
-              ],
-              "className": "opt",
-              "id": {
-               "p": "stop_pontos",
-               "type": "optrow"
-              },
-              "style": {
-               "display": "none"
-              }
-             },
-             "type": "Div"
-            }
-           ],
-           "className": "fld"
-          },
-          "type": "Div"
-         },
-         "id": "blk-stop-pontos"
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": [
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
+                null,
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "ATR período",
-                  "className": "fld-label"
-                 },
-                 "type": "Label"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "opt-toggle",
-                  "id": {
-                   "p": "stop_atr_periodo",
-                   "type": "opt-on"
-                  },
-                  "options": [
+                  "children": [
                    {
-                    "label": "minerar",
-                    "value": "on"
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "de",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "de",
+                         "p": "stop_atr_mult",
+                         "type": "opt"
+                        },
+                        "min": 0.1,
+                        "step": 0.1,
+                        "type": "number",
+                        "value": 1.0
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "passo",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "passo",
+                         "p": "stop_atr_mult",
+                         "type": "opt"
+                        },
+                        "min": null,
+                        "step": 0.1,
+                        "type": "number",
+                        "value": 0.1
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "até",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "ate",
+                         "p": "stop_atr_mult",
+                         "type": "opt"
+                        },
+                        "min": null,
+                        "step": 0.1,
+                        "type": "number",
+                        "value": 4.0
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
                    }
                   ],
-                  "value": []
-                 },
-                 "type": "Checklist"
-                }
-               ],
-               "className": "fld-top"
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": {
-                "ns": "dash_core_components",
-                "props": {
-                 "className": "inp",
-                 "debounce": true,
-                 "id": {
-                  "p": "stop_atr_periodo",
-                  "type": "val"
-                 },
-                 "min": 2,
-                 "step": 1,
-                 "type": "number",
-                 "value": 20
-                },
-                "type": "Input"
-               },
-               "id": {
-                "p": "stop_atr_periodo",
-                "type": "valwrap"
-               }
-              },
-              "type": "Div"
-             },
-             null,
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": [
-                   {
-                    "ns": "dash_html_components",
-                    "props": {
-                     "children": "de",
-                     "className": "opt-k"
-                    },
-                    "type": "Span"
-                   },
-                   {
-                    "ns": "dash_core_components",
-                    "props": {
-                     "className": "inp",
-                     "debounce": true,
-                     "id": {
-                      "k": "de",
-                      "p": "stop_atr_periodo",
-                      "type": "opt"
-                     },
-                     "min": 2,
-                     "step": 1,
-                     "type": "number",
-                     "value": 5
-                    },
-                    "type": "Input"
-                   }
-                  ]
-                 },
-                 "type": "Div"
-                },
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": [
-                   {
-                    "ns": "dash_html_components",
-                    "props": {
-                     "children": "passo",
-                     "className": "opt-k"
-                    },
-                    "type": "Span"
-                   },
-                   {
-                    "ns": "dash_core_components",
-                    "props": {
-                     "className": "inp",
-                     "debounce": true,
-                     "id": {
-                      "k": "passo",
-                      "p": "stop_atr_periodo",
-                      "type": "opt"
-                     },
-                     "min": null,
-                     "step": 1,
-                     "type": "number",
-                     "value": 1
-                    },
-                    "type": "Input"
-                   }
-                  ]
-                 },
-                 "type": "Div"
-                },
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": [
-                   {
-                    "ns": "dash_html_components",
-                    "props": {
-                     "children": "até",
-                     "className": "opt-k"
-                    },
-                    "type": "Span"
-                   },
-                   {
-                    "ns": "dash_core_components",
-                    "props": {
-                     "className": "inp",
-                     "debounce": true,
-                     "id": {
-                      "k": "ate",
-                      "p": "stop_atr_periodo",
-                      "type": "opt"
-                     },
-                     "min": null,
-                     "step": 1,
-                     "type": "number",
-                     "value": 60
-                    },
-                    "type": "Input"
-                   }
-                  ]
+                  "className": "opt",
+                  "id": {
+                   "p": "stop_atr_mult",
+                   "type": "optrow"
+                  },
+                  "style": {
+                   "display": "none"
+                  }
                  },
                  "type": "Div"
                 }
                ],
-               "className": "opt",
-               "id": {
-                "p": "stop_atr_periodo",
-                "type": "optrow"
-               },
-               "style": {
-                "display": "none"
-               }
+               "className": "fld"
               },
               "type": "Div"
              }
             ],
-            "className": "fld"
+            "className": "grid-2 blk-largo",
+            "id": "blk-stop-atr",
+            "style": {
+             "display": "none"
+            }
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": {
+             "ns": "dash_html_components",
+             "props": {
+              "children": [
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": "Stop (%)",
+                    "className": "fld-label"
+                   },
+                   "type": "Label"
+                  },
+                  {
+                   "ns": "dash_core_components",
+                   "props": {
+                    "className": "opt-toggle",
+                    "id": {
+                     "p": "stop_pct",
+                     "type": "opt-on"
+                    },
+                    "options": [
+                     {
+                      "label": "minerar",
+                      "value": "on"
+                     }
+                    ],
+                    "value": []
+                   },
+                   "type": "Checklist"
+                  }
+                 ],
+                 "className": "fld-top"
+                },
+                "type": "Div"
+               },
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": {
+                  "ns": "dash_core_components",
+                  "props": {
+                   "className": "inp",
+                   "debounce": true,
+                   "id": {
+                    "p": "stop_pct",
+                    "type": "val"
+                   },
+                   "min": 0,
+                   "step": 0.01,
+                   "type": "number",
+                   "value": 0.5
+                  },
+                  "type": "Input"
+                 },
+                 "id": {
+                  "p": "stop_pct",
+                  "type": "valwrap"
+                 }
+                },
+                "type": "Div"
+               },
+               null,
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "de",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "de",
+                        "p": "stop_pct",
+                        "type": "opt"
+                       },
+                       "min": 0,
+                       "step": 0.01,
+                       "type": "number",
+                       "value": 0.25
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "passo",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "passo",
+                        "p": "stop_pct",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 0.01,
+                       "type": "number",
+                       "value": 0.25
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "até",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "ate",
+                        "p": "stop_pct",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 0.01,
+                       "type": "number",
+                       "value": 2.0
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  }
+                 ],
+                 "className": "opt",
+                 "id": {
+                  "p": "stop_pct",
+                  "type": "optrow"
+                 },
+                 "style": {
+                  "display": "none"
+                 }
+                },
+                "type": "Div"
+               }
+              ],
+              "className": "fld"
+             },
+             "type": "Div"
+            },
+            "id": "blk-stop-pct",
+            "style": {
+             "display": "none"
+            }
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": {
+             "ns": "dash_html_components",
+             "props": {
+              "children": [
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": "alvo",
+                    "className": "fld-label"
+                   },
+                   "type": "Label"
+                  },
+                  {
+                   "ns": "dash_core_components",
+                   "props": {
+                    "className": "opt-toggle",
+                    "id": {
+                     "p": "alvo_pontos",
+                     "type": "opt-on"
+                    },
+                    "options": [
+                     {
+                      "label": "minerar",
+                      "value": "on"
+                     }
+                    ],
+                    "value": []
+                   },
+                   "type": "Checklist"
+                  }
+                 ],
+                 "className": "fld-top"
+                },
+                "type": "Div"
+               },
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": {
+                  "ns": "dash_core_components",
+                  "props": {
+                   "className": "inp",
+                   "debounce": true,
+                   "id": {
+                    "p": "alvo_pontos",
+                    "type": "val"
+                   },
+                   "min": 0,
+                   "step": 10,
+                   "type": "number",
+                   "value": 600
+                  },
+                  "type": "Input"
+                 },
+                 "id": {
+                  "p": "alvo_pontos",
+                  "type": "valwrap"
+                 }
+                },
+                "type": "Div"
+               },
+               null,
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "de",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "de",
+                        "p": "alvo_pontos",
+                        "type": "opt"
+                       },
+                       "min": 0,
+                       "step": 10,
+                       "type": "number",
+                       "value": 200
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "passo",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "passo",
+                        "p": "alvo_pontos",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 10,
+                       "type": "number",
+                       "value": 100
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "até",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "ate",
+                        "p": "alvo_pontos",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 10,
+                       "type": "number",
+                       "value": 1200
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  }
+                 ],
+                 "className": "opt",
+                 "id": {
+                  "p": "alvo_pontos",
+                  "type": "optrow"
+                 },
+                 "style": {
+                  "display": "none"
+                 }
+                },
+                "type": "Div"
+               }
+              ],
+              "className": "fld"
+             },
+             "type": "Div"
+            },
+            "id": "blk-alvo-pontos"
            },
            "type": "Div"
           },
@@ -2917,17 +2595,836 @@
                 {
                  "ns": "dash_html_components",
                  "props": {
-                  "children": "ATR multiplicador",
-                  "className": "fld-label"
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "ATR período",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "opt-toggle",
+                     "id": {
+                      "p": "alvo_atr_periodo",
+                      "type": "opt-on"
+                     },
+                     "options": [
+                      {
+                       "label": "minerar",
+                       "value": "on"
+                      }
+                     ],
+                     "value": []
+                    },
+                    "type": "Checklist"
+                   }
+                  ],
+                  "className": "fld-top"
                  },
-                 "type": "Label"
+                 "type": "Div"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": {
+                   "ns": "dash_core_components",
+                   "props": {
+                    "className": "inp",
+                    "debounce": true,
+                    "id": {
+                     "p": "alvo_atr_periodo",
+                     "type": "val"
+                    },
+                    "min": 2,
+                    "step": 1,
+                    "type": "number",
+                    "value": 20
+                   },
+                   "type": "Input"
+                  },
+                  "id": {
+                   "p": "alvo_atr_periodo",
+                   "type": "valwrap"
+                  }
+                 },
+                 "type": "Div"
+                },
+                null,
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "de",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "de",
+                         "p": "alvo_atr_periodo",
+                         "type": "opt"
+                        },
+                        "min": 2,
+                        "step": 1,
+                        "type": "number",
+                        "value": 5
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "passo",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "passo",
+                         "p": "alvo_atr_periodo",
+                         "type": "opt"
+                        },
+                        "min": null,
+                        "step": 1,
+                        "type": "number",
+                        "value": 1
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "até",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "ate",
+                         "p": "alvo_atr_periodo",
+                         "type": "opt"
+                        },
+                        "min": null,
+                        "step": 1,
+                        "type": "number",
+                        "value": 60
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   }
+                  ],
+                  "className": "opt",
+                  "id": {
+                   "p": "alvo_atr_periodo",
+                   "type": "optrow"
+                  },
+                  "style": {
+                   "display": "none"
+                  }
+                 },
+                 "type": "Div"
+                }
+               ],
+               "className": "fld"
+              },
+              "type": "Div"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": [
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "ATR multiplicador",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_core_components",
+                    "props": {
+                     "className": "opt-toggle",
+                     "id": {
+                      "p": "alvo_atr_mult",
+                      "type": "opt-on"
+                     },
+                     "options": [
+                      {
+                       "label": "minerar",
+                       "value": "on"
+                      }
+                     ],
+                     "value": []
+                    },
+                    "type": "Checklist"
+                   }
+                  ],
+                  "className": "fld-top"
+                 },
+                 "type": "Div"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": {
+                   "ns": "dash_core_components",
+                   "props": {
+                    "className": "inp",
+                    "debounce": true,
+                    "id": {
+                     "p": "alvo_atr_mult",
+                     "type": "val"
+                    },
+                    "min": 0.1,
+                    "step": 0.1,
+                    "type": "number",
+                    "value": 3.0
+                   },
+                   "type": "Input"
+                  },
+                  "id": {
+                   "p": "alvo_atr_mult",
+                   "type": "valwrap"
+                  }
+                 },
+                 "type": "Div"
+                },
+                null,
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "de",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "de",
+                         "p": "alvo_atr_mult",
+                         "type": "opt"
+                        },
+                        "min": 0.1,
+                        "step": 0.1,
+                        "type": "number",
+                        "value": 1.0
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "passo",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "passo",
+                         "p": "alvo_atr_mult",
+                         "type": "opt"
+                        },
+                        "min": null,
+                        "step": 0.1,
+                        "type": "number",
+                        "value": 0.1
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": [
+                      {
+                       "ns": "dash_html_components",
+                       "props": {
+                        "children": "até",
+                        "className": "opt-k"
+                       },
+                       "type": "Span"
+                      },
+                      {
+                       "ns": "dash_core_components",
+                       "props": {
+                        "className": "inp",
+                        "debounce": true,
+                        "id": {
+                         "k": "ate",
+                         "p": "alvo_atr_mult",
+                         "type": "opt"
+                        },
+                        "min": null,
+                        "step": 0.1,
+                        "type": "number",
+                        "value": 6.0
+                       },
+                       "type": "Input"
+                      }
+                     ]
+                    },
+                    "type": "Div"
+                   }
+                  ],
+                  "className": "opt",
+                  "id": {
+                   "p": "alvo_atr_mult",
+                   "type": "optrow"
+                  },
+                  "style": {
+                   "display": "none"
+                  }
+                 },
+                 "type": "Div"
+                }
+               ],
+               "className": "fld"
+              },
+              "type": "Div"
+             }
+            ],
+            "className": "grid-2 blk-largo",
+            "id": "blk-alvo-atr",
+            "style": {
+             "display": "none"
+            }
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": {
+             "ns": "dash_html_components",
+             "props": {
+              "children": [
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "Alvo · vezes o stop",
+                       "className": "fld-label"
+                      },
+                      "type": "Label"
+                     },
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "aria-label": "risco:retorno — 2,0 = alvo a duas vezes o stop",
+                       "children": "?",
+                       "className": "dica-mark",
+                       "data-dica": "risco:retorno — 2,0 = alvo a duas vezes o stop",
+                       "role": "button",
+                       "tabIndex": "0"
+                      },
+                      "type": "Span"
+                     }
+                    ],
+                    "className": "fld-rot"
+                   },
+                   "type": "Span"
+                  },
+                  {
+                   "ns": "dash_core_components",
+                   "props": {
+                    "className": "opt-toggle",
+                    "id": {
+                     "p": "alvo_razao",
+                     "type": "opt-on"
+                    },
+                    "options": [
+                     {
+                      "label": "minerar",
+                      "value": "on"
+                     }
+                    ],
+                    "value": []
+                   },
+                   "type": "Checklist"
+                  }
+                 ],
+                 "className": "fld-top"
+                },
+                "type": "Div"
+               },
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": {
+                  "ns": "dash_core_components",
+                  "props": {
+                   "className": "inp",
+                   "debounce": true,
+                   "id": {
+                    "p": "alvo_razao",
+                    "type": "val"
+                   },
+                   "min": 0.1,
+                   "step": 0.1,
+                   "type": "number",
+                   "value": 2.0
+                  },
+                  "type": "Input"
+                 },
+                 "id": {
+                  "p": "alvo_razao",
+                  "type": "valwrap"
+                 }
+                },
+                "type": "Div"
+               },
+               null,
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "de",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "de",
+                        "p": "alvo_razao",
+                        "type": "opt"
+                       },
+                       "min": 0.1,
+                       "step": 0.1,
+                       "type": "number",
+                       "value": 1.0
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "passo",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "passo",
+                        "p": "alvo_razao",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 0.1,
+                       "type": "number",
+                       "value": 0.5
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "até",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "ate",
+                        "p": "alvo_razao",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 0.1,
+                       "type": "number",
+                       "value": 5.0
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  }
+                 ],
+                 "className": "opt",
+                 "id": {
+                  "p": "alvo_razao",
+                  "type": "optrow"
+                 },
+                 "style": {
+                  "display": "none"
+                 }
+                },
+                "type": "Div"
+               }
+              ],
+              "className": "fld"
+             },
+             "type": "Div"
+            },
+            "id": "blk-alvo-razao",
+            "style": {
+             "display": "none"
+            }
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": {
+             "ns": "dash_html_components",
+             "props": {
+              "children": [
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": "Alvo (%)",
+                    "className": "fld-label"
+                   },
+                   "type": "Label"
+                  },
+                  {
+                   "ns": "dash_core_components",
+                   "props": {
+                    "className": "opt-toggle",
+                    "id": {
+                     "p": "alvo_pct",
+                     "type": "opt-on"
+                    },
+                    "options": [
+                     {
+                      "label": "minerar",
+                      "value": "on"
+                     }
+                    ],
+                    "value": []
+                   },
+                   "type": "Checklist"
+                  }
+                 ],
+                 "className": "fld-top"
+                },
+                "type": "Div"
+               },
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": {
+                  "ns": "dash_core_components",
+                  "props": {
+                   "className": "inp",
+                   "debounce": true,
+                   "id": {
+                    "p": "alvo_pct",
+                    "type": "val"
+                   },
+                   "min": 0,
+                   "step": 0.01,
+                   "type": "number",
+                   "value": 1.0
+                  },
+                  "type": "Input"
+                 },
+                 "id": {
+                  "p": "alvo_pct",
+                  "type": "valwrap"
+                 }
+                },
+                "type": "Div"
+               },
+               null,
+               {
+                "ns": "dash_html_components",
+                "props": {
+                 "children": [
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "de",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "de",
+                        "p": "alvo_pct",
+                        "type": "opt"
+                       },
+                       "min": 0,
+                       "step": 0.01,
+                       "type": "number",
+                       "value": 0.5
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "passo",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "passo",
+                        "p": "alvo_pct",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 0.01,
+                       "type": "number",
+                       "value": 0.5
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  },
+                  {
+                   "ns": "dash_html_components",
+                   "props": {
+                    "children": [
+                     {
+                      "ns": "dash_html_components",
+                      "props": {
+                       "children": "até",
+                       "className": "opt-k"
+                      },
+                      "type": "Span"
+                     },
+                     {
+                      "ns": "dash_core_components",
+                      "props": {
+                       "className": "inp",
+                       "debounce": true,
+                       "id": {
+                        "k": "ate",
+                        "p": "alvo_pct",
+                        "type": "opt"
+                       },
+                       "min": null,
+                       "step": 0.01,
+                       "type": "number",
+                       "value": 3.0
+                      },
+                      "type": "Input"
+                     }
+                    ]
+                   },
+                   "type": "Div"
+                  }
+                 ],
+                 "className": "opt",
+                 "id": {
+                  "p": "alvo_pct",
+                  "type": "optrow"
+                 },
+                 "style": {
+                  "display": "none"
+                 }
+                },
+                "type": "Div"
+               }
+              ],
+              "className": "fld"
+             },
+             "type": "Div"
+            },
+            "id": "blk-alvo-pct",
+            "style": {
+             "display": "none"
+            }
+           },
+           "type": "Div"
+          },
+          {
+           "ns": "dash_html_components",
+           "props": {
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": [
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": [
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "children": "trailing",
+                     "className": "fld-label"
+                    },
+                    "type": "Label"
+                   },
+                   {
+                    "ns": "dash_html_components",
+                    "props": {
+                     "aria-label": "0 desliga",
+                     "children": "?",
+                     "className": "dica-mark",
+                     "data-dica": "0 desliga",
+                     "role": "button",
+                     "tabIndex": "0"
+                    },
+                    "type": "Span"
+                   }
+                  ],
+                  "className": "fld-rot"
+                 },
+                 "type": "Span"
                 },
                 {
                  "ns": "dash_core_components",
                  "props": {
                   "className": "opt-toggle",
                   "id": {
-                   "p": "stop_atr_mult",
+                   "p": "trailing_pontos",
                    "type": "opt-on"
                   },
                   "options": [
@@ -2954,18 +3451,18 @@
                  "className": "inp",
                  "debounce": true,
                  "id": {
-                  "p": "stop_atr_mult",
+                  "p": "trailing_pontos",
                   "type": "val"
                  },
-                 "min": 0.1,
-                 "step": 0.1,
+                 "min": 0,
+                 "step": 10,
                  "type": "number",
-                 "value": 1.5
+                 "value": 0
                 },
                 "type": "Input"
                },
                "id": {
-                "p": "stop_atr_mult",
+                "p": "trailing_pontos",
                 "type": "valwrap"
                }
               },
@@ -2995,13 +3492,13 @@
                      "debounce": true,
                      "id": {
                       "k": "de",
-                      "p": "stop_atr_mult",
+                      "p": "trailing_pontos",
                       "type": "opt"
                      },
-                     "min": 0.1,
-                     "step": 0.1,
+                     "min": 0,
+                     "step": 10,
                      "type": "number",
-                     "value": 1.0
+                     "value": 0
                     },
                     "type": "Input"
                    }
@@ -3028,13 +3525,13 @@
                      "debounce": true,
                      "id": {
                       "k": "passo",
-                      "p": "stop_atr_mult",
+                      "p": "trailing_pontos",
                       "type": "opt"
                      },
                      "min": null,
-                     "step": 0.1,
+                     "step": 10,
                      "type": "number",
-                     "value": 0.1
+                     "value": 50
                     },
                     "type": "Input"
                    }
@@ -3061,13 +3558,13 @@
                      "debounce": true,
                      "id": {
                       "k": "ate",
-                      "p": "stop_atr_mult",
+                      "p": "trailing_pontos",
                       "type": "opt"
                      },
                      "min": null,
-                     "step": 0.1,
+                     "step": 10,
                      "type": "number",
-                     "value": 4.0
+                     "value": 500
                     },
                     "type": "Input"
                    }
@@ -3078,7 +3575,7 @@
                ],
                "className": "opt",
                "id": {
-                "p": "stop_atr_mult",
+                "p": "trailing_pontos",
                 "type": "optrow"
                },
                "style": {
@@ -3093,207 +3590,7 @@
            "type": "Div"
           }
          ],
-         "className": "grid-2",
-         "id": "blk-stop-atr",
-         "style": {
-          "display": "none"
-         }
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": {
-          "ns": "dash_html_components",
-          "props": {
-           "children": [
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": "Stop (%)",
-                 "className": "fld-label"
-                },
-                "type": "Label"
-               },
-               {
-                "ns": "dash_core_components",
-                "props": {
-                 "className": "opt-toggle",
-                 "id": {
-                  "p": "stop_pct",
-                  "type": "opt-on"
-                 },
-                 "options": [
-                  {
-                   "label": "minerar",
-                   "value": "on"
-                  }
-                 ],
-                 "value": []
-                },
-                "type": "Checklist"
-               }
-              ],
-              "className": "fld-top"
-             },
-             "type": "Div"
-            },
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": {
-               "ns": "dash_core_components",
-               "props": {
-                "className": "inp",
-                "debounce": true,
-                "id": {
-                 "p": "stop_pct",
-                 "type": "val"
-                },
-                "min": 0,
-                "step": 0.01,
-                "type": "number",
-                "value": 0.5
-               },
-               "type": "Input"
-              },
-              "id": {
-               "p": "stop_pct",
-               "type": "valwrap"
-              }
-             },
-             "type": "Div"
-            },
-            null,
-            {
-             "ns": "dash_html_components",
-             "props": {
-              "children": [
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "de",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "de",
-                     "p": "stop_pct",
-                     "type": "opt"
-                    },
-                    "min": 0,
-                    "step": 0.01,
-                    "type": "number",
-                    "value": 0.25
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "passo",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "passo",
-                     "p": "stop_pct",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 0.01,
-                    "type": "number",
-                    "value": 0.25
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               },
-               {
-                "ns": "dash_html_components",
-                "props": {
-                 "children": [
-                  {
-                   "ns": "dash_html_components",
-                   "props": {
-                    "children": "até",
-                    "className": "opt-k"
-                   },
-                   "type": "Span"
-                  },
-                  {
-                   "ns": "dash_core_components",
-                   "props": {
-                    "className": "inp",
-                    "debounce": true,
-                    "id": {
-                     "k": "ate",
-                     "p": "stop_pct",
-                     "type": "opt"
-                    },
-                    "min": null,
-                    "step": 0.01,
-                    "type": "number",
-                    "value": 2.0
-                   },
-                   "type": "Input"
-                  }
-                 ]
-                },
-                "type": "Div"
-               }
-              ],
-              "className": "opt",
-              "id": {
-               "p": "stop_pct",
-               "type": "optrow"
-              },
-              "style": {
-               "display": "none"
-              }
-             },
-             "type": "Div"
-            }
-           ],
-           "className": "fld"
-          },
-          "type": "Div"
-         },
-         "id": "blk-stop-pct",
-         "style": {
-          "display": "none"
-         }
+         "className": "grid-3 linha-saida"
         },
         "type": "Div"
        },
@@ -3316,10 +3613,31 @@
              {
               "ns": "dash_html_components",
               "props": {
-               "children": "Breakeven — gatilho (% do alvo)",
-               "className": "fld-label"
+               "children": [
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": "Breakeven — gatilho (% do alvo)",
+                  "className": "fld-label"
+                 },
+                 "type": "Label"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "aria-label": "0 desliga",
+                  "children": "?",
+                  "className": "dica-mark",
+                  "data-dica": "0 desliga",
+                  "role": "button",
+                  "tabIndex": "0"
+                 },
+                 "type": "Span"
+                }
+               ],
+               "className": "fld-rot"
               },
-              "type": "Label"
+              "type": "Span"
              },
              {
               "ns": "dash_core_components",
@@ -3370,14 +3688,7 @@
            },
            "type": "Div"
           },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "0 desliga",
-            "className": "fld-hint"
-           },
-           "type": "Span"
-          },
+          null,
           {
            "ns": "dash_html_components",
            "props": {
@@ -3509,10 +3820,31 @@
              {
               "ns": "dash_html_components",
               "props": {
-               "children": "Stop móvel — gatilho (% do alvo)",
-               "className": "fld-label"
+               "children": [
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": "Stop móvel — gatilho (% do alvo)",
+                  "className": "fld-label"
+                 },
+                 "type": "Label"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "aria-label": "0 desliga",
+                  "children": "?",
+                  "className": "dica-mark",
+                  "data-dica": "0 desliga",
+                  "role": "button",
+                  "tabIndex": "0"
+                 },
+                 "type": "Span"
+                }
+               ],
+               "className": "fld-rot"
               },
-              "type": "Label"
+              "type": "Span"
              },
              {
               "ns": "dash_core_components",
@@ -3563,14 +3895,7 @@
            },
            "type": "Div"
           },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "0 desliga",
-            "className": "fld-hint"
-           },
-           "type": "Span"
-          },
+          null,
           {
            "ns": "dash_html_components",
            "props": {
@@ -3702,10 +4027,31 @@
              {
               "ns": "dash_html_components",
               "props": {
-               "children": "Stop móvel — trava (% do alvo)",
-               "className": "fld-label"
+               "children": [
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "children": "Stop móvel — trava (% do alvo)",
+                  "className": "fld-label"
+                 },
+                 "type": "Label"
+                },
+                {
+                 "ns": "dash_html_components",
+                 "props": {
+                  "aria-label": "onde o stop vai parar, a favor",
+                  "children": "?",
+                  "className": "dica-mark",
+                  "data-dica": "onde o stop vai parar, a favor",
+                  "role": "button",
+                  "tabIndex": "0"
+                 },
+                 "type": "Span"
+                }
+               ],
+               "className": "fld-rot"
               },
-              "type": "Label"
+              "type": "Span"
              },
              {
               "ns": "dash_core_components",
@@ -3756,14 +4102,7 @@
            },
            "type": "Div"
           },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "onde o stop vai parar, a favor",
-            "className": "fld-hint"
-           },
-           "type": "Span"
-          },
+          null,
           {
            "ns": "dash_html_components",
            "props": {
@@ -3895,199 +4234,27 @@
              {
               "ns": "dash_html_components",
               "props": {
-               "children": "Trailing (pontos)",
+               "children": "tempo máximo (barras)",
                "className": "fld-label"
               },
               "type": "Label"
              },
              {
-              "ns": "dash_core_components",
+              "ns": "dash_html_components",
               "props": {
-               "className": "opt-toggle",
-               "id": {
-                "p": "trailing_pontos",
-                "type": "opt-on"
-               },
-               "options": [
-                {
-                 "label": "minerar",
-                 "value": "on"
-                }
-               ],
-               "value": []
+               "aria-label": "0 desliga",
+               "children": "?",
+               "className": "dica-mark",
+               "data-dica": "0 desliga",
+               "role": "button",
+               "tabIndex": "0"
               },
-              "type": "Checklist"
+              "type": "Span"
              }
             ],
-            "className": "fld-top"
-           },
-           "type": "Div"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": {
-             "ns": "dash_core_components",
-             "props": {
-              "className": "inp",
-              "debounce": true,
-              "id": {
-               "p": "trailing_pontos",
-               "type": "val"
-              },
-              "min": 0,
-              "step": 10,
-              "type": "number",
-              "value": 0
-             },
-             "type": "Input"
-            },
-            "id": {
-             "p": "trailing_pontos",
-             "type": "valwrap"
-            }
-           },
-           "type": "Div"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "0 desliga",
-            "className": "fld-hint"
+            "className": "fld-rot"
            },
            "type": "Span"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": [
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "de",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "de",
-                   "p": "trailing_pontos",
-                   "type": "opt"
-                  },
-                  "min": 0,
-                  "step": 10,
-                  "type": "number",
-                  "value": 0
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "passo",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "passo",
-                   "p": "trailing_pontos",
-                   "type": "opt"
-                  },
-                  "min": null,
-                  "step": 10,
-                  "type": "number",
-                  "value": 50
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             },
-             {
-              "ns": "dash_html_components",
-              "props": {
-               "children": [
-                {
-                 "ns": "dash_html_components",
-                 "props": {
-                  "children": "até",
-                  "className": "opt-k"
-                 },
-                 "type": "Span"
-                },
-                {
-                 "ns": "dash_core_components",
-                 "props": {
-                  "className": "inp",
-                  "debounce": true,
-                  "id": {
-                   "k": "ate",
-                   "p": "trailing_pontos",
-                   "type": "opt"
-                  },
-                  "min": null,
-                  "step": 10,
-                  "type": "number",
-                  "value": 500
-                 },
-                 "type": "Input"
-                }
-               ]
-              },
-              "type": "Div"
-             }
-            ],
-            "className": "opt",
-            "id": {
-             "p": "trailing_pontos",
-             "type": "optrow"
-            },
-            "style": {
-             "display": "none"
-            }
-           },
-           "type": "Div"
-          }
-         ],
-         "className": "fld"
-        },
-        "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": [
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "tempo máximo (barras)",
-            "className": "fld-label"
-           },
-           "type": "Label"
           },
           {
            "ns": "dash_core_components",
@@ -4103,14 +4270,6 @@
             "value": 0
            },
            "type": "Input"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "0 desliga",
-            "className": "fld-hint"
-           },
-           "type": "Span"
           }
          ],
          "className": "fld"
@@ -4169,8 +4328,7 @@
                "value": 0.0
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4216,8 +4374,7 @@
                "value": 0.0
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4249,8 +4406,7 @@
                "value": 0
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4282,8 +4438,7 @@
                "value": 0
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4293,14 +4448,6 @@
          "className": "grid-2"
         },
         "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": "0 desliga o limite. Ao bater, o dia para.",
-         "className": "fld-hint solo"
-        },
-        "type": "P"
        },
        {
         "ns": "dash_html_components",
@@ -4340,8 +4487,7 @@
                "value": 0.5
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4373,8 +4519,7 @@
                "value": 0.27
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4406,25 +4551,16 @@
                "value": 1
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
            "type": "Div"
           }
          ],
-         "className": "grid-2"
+         "className": "grid-3"
         },
         "type": "Div"
-       },
-       {
-        "ns": "dash_html_components",
-        "props": {
-         "children": "cobrado por ponta: entrada e saída",
-         "className": "fld-hint solo"
-        },
-        "type": "P"
        },
        {
         "ns": "dash_html_components",
@@ -4469,8 +4605,7 @@
                "value": "contratos_fixos"
               },
               "type": "Dropdown"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4502,8 +4637,7 @@
                "value": 1
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4548,8 +4682,7 @@
                "value": 200.0
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4594,8 +4727,7 @@
                "value": 10000.0
               },
               "type": "Input"
-             },
-             null
+             }
             ],
             "className": "fld"
            },
@@ -4621,10 +4753,31 @@
           {
            "ns": "dash_html_components",
            "props": {
-            "children": "mínimo de operações",
-            "className": "fld-label"
+            "children": [
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "children": "mínimo de operações",
+               "className": "fld-label"
+              },
+              "type": "Label"
+             },
+             {
+              "ns": "dash_html_components",
+              "props": {
+               "aria-label": "combinação com menos que isso é descartada",
+               "children": "?",
+               "className": "dica-mark",
+               "data-dica": "combinação com menos que isso é descartada",
+               "role": "button",
+               "tabIndex": "0"
+              },
+              "type": "Span"
+             }
+            ],
+            "className": "fld-rot"
            },
-           "type": "Label"
+           "type": "Span"
           },
           {
            "ns": "dash_core_components",
@@ -4640,14 +4793,6 @@
             "value": 0
            },
            "type": "Input"
-          },
-          {
-           "ns": "dash_html_components",
-           "props": {
-            "children": "combinação com menos que isso é descartada",
-            "className": "fld-hint"
-           },
-           "type": "Span"
           }
          ],
          "className": "fld"

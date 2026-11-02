@@ -39,18 +39,14 @@ PRELOAD_FONTES = "\n".join(
 RANGES = [("1D", 1), ("5D", 5), ("1M", 30), ("3M", 90), ("1A", 365), ("Tudo", 0)]
 
 
-def topbar(simbolo):
+def topbar():
+    # o seletor de ativo mora no topo fixo do menu da esquerda, ao lado da
+    # estratégia (`controls.topo_menu`)
     return html.Header(
         [
             html.Div(
                 [
                     html.Span("Dataframe", className="brand"),
-                    dcc.Dropdown(
-                        id="ativo", value=simbolo, clearable=False,
-                        className="dd dd-ativo",
-                        options=[{"label": i["symbol"], "value": i["symbol"]}
-                                 for i in D.instrumentos()],
-                    ),
                     # O backtest não é aba própria: ele só serve para abrir
                     # uma linha da mineração, e mora dentro dela (subtela
                     # Backtest). O app abre em Ao vivo › Estratégias.
@@ -264,11 +260,10 @@ def modal():
     )
 
 
-def sidebar(inicio, fim):
+def sidebar(simbolo, inicio, fim):
+    """Topo fixo (não rola) e, abaixo, as abas do menu."""
     return html.Aside(
-        [controls.periodo(inicio, fim), mining.controles(),
-         controls.seletor_estrategia(), controls.parametros(),
-         controls.execucao()],
+        [controls.topo_menu(simbolo, inicio, fim), controls.abas_menu()],
         className="sidebar", id="sidebar",
     )
 
@@ -340,8 +335,9 @@ def build() -> Dash:
             # valer em qualquer aba.
             html.Div(id="ord-alarme", style={"display": "none"},
                      **{"data-alarme": "0", "data-chaves": ""}),
-            topbar(simbolo),
-            html.Div([sidebar(inicio, fim), painel(inicio, fim)], className="body"),
+            topbar(),
+            html.Div([sidebar(simbolo, inicio, fim), painel(inicio, fim)],
+                     className="body"),
             modal(),
         ],
         className="app",
