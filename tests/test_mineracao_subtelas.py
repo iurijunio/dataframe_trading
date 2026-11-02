@@ -129,6 +129,80 @@ def test_primeira_rodada_nao_e_editado():
     assert CB._linha_combinacao(store, atual) == "linha #3 · stop_pontos=10"
 
 
+# ------------------------------- clicar de novo na linha já carregada (I1)
+def test_reclique_na_linha_carregada_volta_ao_backtest():
+    store = {"origem": "linha", "n": 3, "params": {"stop_pontos": 10}}
+    assert CB._reclique_mesma_linha("grid-mine", [LINHA], None,
+                                    store) == "backtest"
+    apr = [{"n": 2, "params": {"stop_pontos": 10}, "trial_id": 9}]
+    st_apr = {"origem": "aprovada", "n": 2, "params": {"stop_pontos": 10}}
+    assert CB._reclique_mesma_linha("grid-aprovadas", None, apr,
+                                    st_apr) == "backtest"
+
+
+def test_reclique_em_outra_linha_fica_com_a_selecao():
+    store = {"origem": "linha", "n": 3, "params": {"stop_pontos": 10}}
+    outra = {"n": 4, "params": {"stop_pontos": 12}, "trial_id": 4}
+    assert CB._reclique_mesma_linha("grid-mine", [outra], None,
+                                    store) is no_update
+    # nada carregado ainda: o primeiro clique é do caminho da seleção
+    assert CB._reclique_mesma_linha("grid-mine", [LINHA], None,
+                                    None) is no_update
+    assert CB._reclique_mesma_linha("grid-mine", [], None, store) is no_update
+    # mesma "n", outra grade: a aprovada #3 não é a linha #3
+    assert CB._reclique_mesma_linha("grid-aprovadas", None, [LINHA],
+                                    store) is no_update
+    # carregada pela nuvem: clique na tabela segue o caminho da seleção
+    nuvem = {**store, "origem": "nuvem"}
+    assert CB._reclique_mesma_linha("grid-mine", [LINHA], None,
+                                    nuvem) is no_update
+    # mesma "n" de outra mineração (parâmetros diferentes)
+    nova = {"n": 3, "params": {"stop_pontos": 99}, "trial_id": 3}
+    assert CB._reclique_mesma_linha("grid-mine", [nova], None,
+                                    store) is no_update
+
+
+def test_reclique_so_troca_a_subtela(app):
+    achados = [cb for cb in app.callback_map.values()
+               if getattr(cb.get("callback"), "__name__", "")
+               == "reclique_combinacao"]
+    assert len(achados) == 1
+    cb = achados[0]
+    entradas = {(e["id"], e["property"]) for e in cb["inputs"]}
+    assert entradas == {("grid-mine", "cellClicked"),
+                        ("grid-aprovadas", "cellClicked")}
+    assert ("grid-mine", "rowData") not in entradas
+    saida = cb["output"]
+    assert "mine-subtela.value" in str(saida)
+    assert "btn-run" not in str(saida)
+
+
+def test_nuvem_continua_no_caminho_da_selecao(app):
+    # o clique na nuvem segue em carregar_combinacao, não no reclique
+    for cb in app.callback_map.values():
+        entradas = {(e["id"], e["property"]) for e in cb["inputs"]}
+        nome = getattr(cb.get("callback"), "__name__", "")
+        if ("scatter", "clickData") in entradas and "btn-run" in str(cb["output"]):
+            assert nome == "carregar_combinacao"
+        if nome == "reclique_combinacao":
+            assert ("scatter", "clickData") not in entradas
+
+
+# ------------------------------------------------ blocos de ATR em grade (M1)
+def test_blocos_atr_aparecem_em_grade(app):
+    tipos = _funcoes(app)["tipos"]
+    s = dict(zip(["alvo-pontos", "alvo-atr", "alvo-razao", "alvo-pct",
+                  "stop-pontos", "stop-atr", "stop-pct"], tipos("atr", "atr")))
+    assert s["alvo-atr"] == {"display": "grid"}
+    assert s["stop-atr"] == {"display": "grid"}
+    assert s["alvo-pontos"] == CB.OCULTO and s["stop-pontos"] == CB.OCULTO
+    s = dict(zip(list(s), tipos("pontos", "pontos")))
+    assert s["alvo-pontos"] == CB.VISIVEL and s["stop-pontos"] == CB.VISIVEL
+    assert s["alvo-atr"] == CB.OCULTO and s["stop-atr"] == CB.OCULTO
+    s = dict(zip(list(s), tipos("multiplicador", "percentual")))
+    assert s["alvo-razao"] == CB.VISIVEL and s["stop-pct"] == CB.VISIVEL
+
+
 # ------------------------------------------------------- linha da combinação
 def test_linha_da_combinacao():
     base = {"params": {"stop_pontos": 10}, "menu": _menu()}

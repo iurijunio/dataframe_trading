@@ -287,6 +287,7 @@ def _combinacoes(campos: dict) -> int:
 
 OCULTO = {"display": "none"}
 VISIVEL = {"display": "block"}
+VISIVEL_GRADE = {"display": "grid"}   # blocos `.grid-2` que o callback mostra
 
 # tamanho do espaco de busca atual, escrito pelo callback `espaco` e lido por
 # `pode_minerar` - evita recalcular o produto cartesiano so para saber se o
@@ -784,6 +785,28 @@ def _carregar_combinacao(gatilho, selecionadas, clique, aprovadas, ids_val,
             (n_run or 0) + 1, "backtest", store)
 
 
+def _reclique_mesma_linha(gatilho, selecionadas_mine, selecionadas_apr, store):
+    """Clique de novo na linha JÁ carregada volta para a subtela Backtest.
+
+    O AG Grid não dispara `selectedRows` quando a linha clicada já estava
+    selecionada, então `carregar_combinacao` não reage. Aqui só a subtela
+    muda — nada de `btn-run` (o backtest daquela linha já está na tela). Se
+    a linha é outra (ou nada foi carregado), quem age é o caminho da seleção.
+    """
+    selecionadas = {"grid-mine": selecionadas_mine,
+                    "grid-aprovadas": selecionadas_apr}.get(gatilho)
+    if not store or not selecionadas or gatilho not in ORIGEM_GATILHO:
+        return no_update
+    linha = selecionadas[0] or {}
+    params = linha.get("params") or {}
+    if (store.get("origem") == ORIGEM_GATILHO[gatilho]
+            and store.get("n") is not None and store.get("n") == linha.get("n")
+            and all(params.get(k) == v
+                    for k, v in (store.get("params") or {}).items())):
+        return "backtest"
+    return no_update
+
+
 def _linha_combinacao(store, atual) -> str:
     """"linha #3 · stop_pontos=10", com " · editado" se o menu mudou."""
     if not store:
@@ -825,12 +848,14 @@ def register(app):
         Input("e-alvo-tipo", "value"), Input("e-stop-tipo", "value"),
     )
     def tipos(alvo, stop):
+        # os blocos de ATR são `.grid-2`: "block" no style inline venceria a
+        # classe e empilharia período e multiplicador
         return (VISIVEL if alvo == "pontos" else OCULTO,
-                VISIVEL if alvo == "atr" else OCULTO,
+                VISIVEL_GRADE if alvo == "atr" else OCULTO,
                 VISIVEL if alvo == "multiplicador" else OCULTO,
                 VISIVEL if alvo == "percentual" else OCULTO,
                 OCULTO if stop in ("atr", "percentual") else VISIVEL,
-                VISIVEL if stop == "atr" else OCULTO,
+                VISIVEL_GRADE if stop == "atr" else OCULTO,
                 VISIVEL if stop == "percentual" else OCULTO)
 
     # ------------------------------------------------- backtest ou mineração
@@ -1657,6 +1682,21 @@ def register(app):
             ctx.triggered_id, selecionadas, clique, aprovadas, ids_val, linhas,
             n_run, valores_val=valores_val, ids_on=ids_on, ligados=ligados,
             menu={cid: v for (cid, _p), v in zip(MENU_COMBINACAO, menu)})
+
+    # ---- clicar de novo na linha já carregada só volta para o Backtest
+    @app.callback(
+        Output("mine-subtela", "value", allow_duplicate=True),
+        Input("grid-mine", "cellClicked"),
+        Input("grid-aprovadas", "cellClicked"),
+        State("grid-mine", "selectedRows"),
+        State("grid-aprovadas", "selectedRows"),
+        State("store-combinacao", "data"),
+        prevent_initial_call=True,
+    )
+    def reclique_combinacao(_mine, _apr, sel_mine, sel_apr, store):
+        """Sem `grid-mine.rowData` como Input: a tabela é reescrita a cada
+        800 ms durante a varredura."""
+        return _reclique_mesma_linha(ctx.triggered_id, sel_mine, sel_apr, store)
 
     # a linha "linha #3 · stop_pontos=10" no alto da subtela Backtest; o
     # "editado" só se decide ao rodar, comparando o menu com o do clique

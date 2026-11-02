@@ -265,6 +265,10 @@ body{
 /* stop, alvo e trailing na mesma linha; os blocos de ATR ocupam a linha */
 .linha-saida>.blk-largo{grid-column:1/-1;}
 .sidebar .grid-2 .fld-top,.sidebar .grid-3 .fld-top{flex-wrap:wrap;gap:2px 8px;}
+/* o (?) do trailing quebrava só o "minerar" dele: os três campos ficavam em
+   alturas diferentes. Na linha da saída, "minerar" vai sempre embaixo */
+.sidebar .linha-saida .fld-top{flex-direction:column;align-items:flex-start;
+  gap:2px;}
 /* "sem entradas": um rótulo só sobre os três seletores */
 .sem-entradas{margin-bottom:10px;}
 .sem-entradas>.fld-label{display:block;margin-bottom:5px;}
