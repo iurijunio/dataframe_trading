@@ -602,6 +602,19 @@ def _camada4_do_ativo(simbolo) -> list:
     return [tabela[ident["p"]][chave] for ident, _prop, chave in SAIDAS_C4]
 
 
+def _perfil_do_ativo(simbolo) -> tuple:
+    """Saída de `aplicar_perfil_do_ativo`: horários e custos do perfil padrão
+    e a camada 4 (`_camada4_do_ativo`). Com a mineração rodando nada muda —
+    fecha a janela do começo da varredura, antes de o seletor desligar."""
+    if _mineracao_rodando():
+        return (no_update,) * (6 + len(SAIDAS_C4))
+    p = ativo_mod.perfil_padrao(ativo_mod.ficha(_simbolo(simbolo)))
+    perfil = (no_update,) * 6 if not p else tuple(p.get(c, no_update) for c in (
+        "entrada_inicio", "entrada_fim", "fechamento", "corretagem",
+        "emolumentos", "slippage_ticks"))
+    return perfil + tuple(_camada4_do_ativo(simbolo))
+
+
 # posição, na saída de `estrategia_ou_mineracao`, do primeiro `step` da
 # camada 4 (depois dos 17 fixos e de CAMPOS_PERFIL)
 _INICIO_STEP = 17 + len(CAMPOS_PERFIL)
@@ -644,6 +657,10 @@ def _trocar_ativo(nome, simbolo, r):
     return r
 
 
+# Para o `progresso` esvaziar as análises, conta-se com o Dash 4.4.1
+# disparar os callbacks seguintes para TODA prop devolvida, mesmo com o valor
+# igual (dash_renderer, executedCallbacks não compara): com a mineração
+# recém-rodada e não salva, `mine-carregar` já era None.
 def _tela_sem_mineracao(secao) -> tuple:
     """`r[1:9]` de `estrategia_ou_mineracao` com a mineração fora da tela:
     seletor vazio (o `progresso` refaz a marca e as análises esvaziam), a
@@ -759,10 +776,13 @@ def _esquecer_combinacao(gatilho):
 
 
 def _ativo_desligado(desligado_agora):
-    """`ativo.disabled`: desligado enquanto a mineração corre — trocar o
-    ativo no meio da varredura mudaria os campos que ela lê. `no_update`
-    quando não muda, para o dropdown não redesenhar a cada 800 ms."""
-    novo = _mineracao_rodando()
+    """`ativo.disabled`: desligado enquanto a mineração corre ou está sendo
+    salva — trocar o ativo no meio da varredura mudaria os campos que ela
+    lê, e no meio do salvar tiraria da tela a mineração sendo gravada.
+    `no_update` quando não muda, para o dropdown não redesenhar a cada
+    800 ms."""
+    e = MINERACAO.estado
+    novo = bool(e.get("rodando") or e.get("salvando"))
     return no_update if bool(desligado_agora) == novo else novo
 
 
@@ -1115,11 +1135,7 @@ def register(app):
     def aplicar_perfil_do_ativo(simbolo):
         """Único callback da camada 4 disparado pelo ativo: horários e custos
         do perfil padrão, e stop, alvo e trailing (`_camada4_do_ativo`)."""
-        p = ativo_mod.perfil_padrao(ativo_mod.ficha(_simbolo(simbolo)))
-        perfil = (no_update,) * 6 if not p else tuple(p.get(c, no_update) for c in (
-            "entrada_inicio", "entrada_fim", "fechamento", "corretagem",
-            "emolumentos", "slippage_ticks"))
-        return perfil + tuple(_camada4_do_ativo(simbolo))
+        return _perfil_do_ativo(simbolo)
 
     @app.callback(
         Output({"type": "moeda-c4", "i": ALL}, "children"),
@@ -1540,17 +1556,18 @@ def register(app):
         janelas de comparação o score de vizinhança não existe."""
         return MINERACAO.estado["rodando"] or _COMBOS.get("n", 0) < 2
 
-    # o ativo do menu fica desligado enquanto a mineração corre. O
-    # `tick.disabled` é Input para pegar o fim: o relógio para e este
-    # callback ainda roda uma vez, já com a varredura terminada. Sem
-    # prevent_initial_call: depois de um F5 a mineração continua viva.
+    # o ativo do menu fica desligado enquanto a mineração corre ou é salva.
+    # O `pulso` mantém o relógio batendo nos dois casos, e `tick.disabled` é
+    # Input para pegar o fim: o relógio para e este callback ainda roda uma
+    # vez, já com a varredura terminada ou salva. Sem prevent_initial_call:
+    # depois de um F5 a mineração continua viva.
     @app.callback(
         Output("ativo", "disabled"),
-        Input("btn-minerar", "n_clicks"), Input("tick", "n_intervals"),
-        Input("tick", "disabled"),
+        Input("btn-minerar", "n_clicks"), Input("btn-salvar", "n_clicks"),
+        Input("tick", "n_intervals"), Input("tick", "disabled"),
         State("ativo", "disabled"),
     )
-    def ativo_desligado(_n, _t, _parado, desligado):
+    def ativo_desligado(_n, _s, _t, _parado, desligado):
         return _ativo_desligado(desligado)
 
     # ----------------------------------------- carregar mineração salva

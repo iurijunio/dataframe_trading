@@ -242,12 +242,34 @@ def test_esquecer_combinacao(rodando, gatilho, esperado):
     assert CB._esquecer_combinacao(gatilho) is esperado
 
 
-@pytest.mark.parametrize("rodando, agora, esperado", [
-    (True, None, True), (True, False, True), (True, True, no_update),
-    (False, True, False), (False, None, no_update), (False, False, no_update)])
-def test_ativo_desligado_segue_a_mineracao_rodando(rodando, agora, esperado):
-    MINERACAO.estado.update(rodando=rodando, trials=[{"x": 1}])
+@pytest.mark.parametrize("rodando, salvando, agora, esperado", [
+    (True, False, None, True), (True, False, False, True),
+    (True, False, True, no_update),
+    (False, True, False, True), (False, True, True, no_update),
+    (False, False, True, False), (False, False, None, no_update),
+    (False, False, False, no_update)])
+def test_ativo_desligado_segue_rodando_e_salvando(rodando, salvando, agora,
+                                                  esperado):
+    MINERACAO.estado.update(rodando=rodando, salvando=salvando,
+                            trials=[{"x": 1}])
     assert CB._ativo_desligado(agora) is esperado
+
+
+def test_perfil_do_ativo_com_mineracao_rodando_nao_mexe():
+    MINERACAO.estado.update(rodando=True, trials=[])
+    r = CB._perfil_do_ativo("MES")
+    assert len(r) == 6 + len(CB.SAIDAS_C4)
+    assert all(x is no_update for x in r)
+
+
+def test_perfil_do_ativo_parado_aplica_horarios_custos_e_camada4():
+    MINERACAO.estado.update(rodando=False, salvando=True, trials=[{"x": 1}])
+    r = CB._perfil_do_ativo("MES")
+    p = ativo_mod.perfil_padrao(ativo_mod.ficha("MES"))
+    assert r[:6] == tuple(p.get(c, no_update) for c in (
+        "entrada_inicio", "entrada_fim", "fechamento", "corretagem",
+        "emolumentos", "slippage_ticks"))
+    assert list(r[6:]) == CB._camada4_do_ativo("MES")
 
 
 def test_sem_mineracao_nada_na_tela():
