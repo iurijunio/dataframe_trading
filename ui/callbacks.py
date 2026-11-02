@@ -533,6 +533,94 @@ def _carregar_mineracao(run_id, ids_val, ids_faixa, ids_on, r):
     return r
 
 
+# ------------------------------------- a combinação aberta na subtela Backtest
+# O resto do menu que o backtest lê (além dos `val` e de "excluir holdout"):
+# mexer em qualquer um deles e rodar de novo marca a linha como "editado".
+MENU_COMBINACAO = (
+    ("ativo", "value"), ("d-de", "date"), ("d-ate", "date"),
+    ("e-timeframe", "value"), ("e-ent-ini", "value"), ("e-ent-fim", "value"),
+    ("e-fechamento", "value"), ("e-dias", "value"), ("e-direcao", "value"),
+    ("e-filtro-adx", "value"), ("e-sem-ent1", "value"),
+    ("e-sem-ent2", "value"), ("e-sem-ent3", "value"),
+    ("e-alvo-tipo", "value"), ("e-stop-tipo", "value"),
+    ("e-max-barras", "value"), ("e-lim-ganho", "value"),
+    ("e-lim-perda", "value"), ("e-max-trades", "value"),
+    ("e-max-loss", "value"), ("e-corretagem", "value"),
+    ("e-emolumentos", "value"), ("e-slippage", "value"), ("e-modo", "value"),
+    ("e-contratos", "value"), ("e-risco", "value"), ("e-capital", "value"),
+    ("e-min-ops", "value"),
+)
+
+ORIGEM_GATILHO = {"grid-mine": "linha", "scatter": "nuvem",
+                  "grid-aprovadas": "aprovada"}
+
+
+def _menu_atual(ids_val, valores_val, holdout, menu) -> dict:
+    """O menu numa forma comparável: `val:<p>`, `excluir-holdout` e os
+    demais campos por id (`menu` já vem como {id: valor})."""
+    m = {f"val:{i['p']}": v for i, v in zip(ids_val or [], valores_val or [])}
+    m["excluir-holdout"] = holdout or []
+    m.update(menu or {})
+    return m
+
+
+def _igual(a, b) -> bool:
+    # a ordem de uma Checklist (dias) é a ordem em que se marcou
+    if isinstance(a, list) and isinstance(b, list):
+        return sorted(map(str, a)) == sorted(map(str, b))
+    return a == b
+
+
+def _carregar_combinacao(gatilho, selecionadas, clique, aprovadas, ids_val,
+                         linhas, n_run, valores_val=None, ids_on=None,
+                         ligados=None, menu=None):
+    """Corpo de `carregar_combinacao`, fora do `register` para os testes.
+
+    Devolve (vals, excluir-holdout, btn-run, mine-subtela, store-combinacao).
+    `selectedRows` vazio — o que `progresso` deixa ao carregar uma mineração
+    salva — não carrega nada e não troca de subtela.
+    """
+    linha = None
+    if gatilho == "scatter" and clique:
+        alvo = clique["points"][0].get("customdata")
+        linha = next((l for l in (linhas or []) if l["trial_id"] == alvo), None)
+    elif gatilho == "grid-aprovadas" and aprovadas:
+        linha = aprovadas[0]
+    elif gatilho == "grid-mine" and selecionadas:
+        linha = selecionadas[0]
+    p = (linha or {}).get("params")
+    if not p:
+        return ([no_update] * len(ids_val), no_update, no_update, no_update,
+                no_update)
+
+    marcados = {i["p"] for i, v in zip(ids_on or [], ligados or []) if v}
+    varridos = {k: v for k, v in p.items() if k in marcados} or dict(p)
+
+    # o snapshot é o menu DEPOIS desta escrita: os States antigos marcariam
+    # "editado" já na primeira rodada
+    atuais = valores_val if valores_val is not None else [None] * len(ids_val)
+    novos = [p.get(i["p"], atual) for i, atual in zip(ids_val, atuais)]
+    store = {"origem": ORIGEM_GATILHO[gatilho], "n": linha.get("n"),
+             "params": varridos,
+             "menu": _menu_atual(ids_val, novos, ["on"], menu)}
+    return ([p.get(i["p"], no_update) for i in ids_val], ["on"],
+            (n_run or 0) + 1, "backtest", store)
+
+
+def _linha_combinacao(store, atual) -> str:
+    """"linha #3 · stop_pontos=10", com " · editado" se o menu mudou."""
+    if not store:
+        return ""
+    origem, n = store.get("origem"), store.get("n")
+    rotulo = origem if origem == "nuvem" or n is None else f"{origem} #{n}"
+    partes = [rotulo] + [f"{k}={v}" for k, v in (store.get("params") or {}).items()]
+    snap = store.get("menu") or {}
+    if atual is not None and any(not _igual(snap.get(k), atual.get(k))
+                                 for k in set(snap) | set(atual)):
+        partes.append("editado")
+    return " · ".join(partes)
+
+
 def register(app):
     # ------------------------------------------------------ modal do grafico
     @app.callback(
@@ -575,16 +663,16 @@ def register(app):
         Output("painel-estrategias", "style"), Output("painel-portfolio", "style"),
         Output("painel-aovivo", "style"),
         Output("acao-backtest", "style"), Output("sec-mineracao", "style"),
-        Output("sidebar", "style"),
-        Input("modo", "value"),
+        Output("sidebar", "style"), Output("mine-bloco-varredura", "style"),
+        Input("modo", "value"), Input("mine-subtela", "value"),
     )
-    def modo(qual):
+    def modo(qual, subtela):
         """Três atividades diferentes, não três abas do mesmo painel.
 
-        Backtest: a estratégia faz o que você desenhou? Um conjunto de
-        parâmetros, curva de capital, trade a trade.
         Mineração: existe região boa no espaço? Milhares de conjuntos, nuvem
-        e ranking.
+        e ranking (subtela Varredura). A subtela Backtest abre UM conjunto
+        — curva de capital, trade a trade — para ver se a estratégia faz o
+        que você desenhou.
         Walk-Forward: o meu PROCESSO de escolher parâmetro funciona? Aqui a
         combinação muda a cada janela, e o que se vê é a curva que o
         otimizador nunca enxergou. Misturar as três na mesma tela era o que
@@ -601,11 +689,13 @@ def register(app):
         # vêm do walk-forward salvo escolhido no topo do próprio painel.
         # Deixar os campos da barra lateral na tela convidaria a editá-los
         # achando que mudam alguma coisa.
-        return (v(qual == "backtest"), v(qual == "mineracao"), v(qual == "wfa"),
+        mineracao = qual == "mineracao"
+        backtest = mineracao and subtela == "backtest"
+        return (v(backtest), v(mineracao), v(qual == "wfa"),
                 v(qual == "candidata"), v(qual == "estrategias"),
                 v(qual == "portfolio"), v(qual == "aovivo"),
-                VISIVEL if qual == "backtest" else OCULTO,
-                VISIVEL if qual == "mineracao" else OCULTO,
+                VISIVEL if backtest else OCULTO,
+                VISIVEL if mineracao and not backtest else OCULTO,
                 # BLOCK, e não flex: a barra lateral é um <aside> comum com
                 # largura fixa. Devolvê-la como flex a transformava em
                 # container de LINHA, e as seções (Período, Estratégia,
@@ -613,7 +703,35 @@ def register(app):
                 # primeira cabia, e o resto sumia no corte do overflow.
                 OCULTO if qual in ("wfa", "candidata", "estrategias", "portfolio",
                             "aovivo")
-                else {"display": "block"})
+                else {"display": "block"},
+                v(mineracao and not backtest))
+
+    # A curva de capital é desenhada com a subtela Backtest escondida (o
+    # primeiro `rodar` e o clique numa linha da Varredura): sem largura, ela
+    # ficava espremida. Ao aparecer, é enquadrada de novo — o nonce muda a
+    # cada vez, senão o componente ignoraria o comando repetido. Espera o
+    # painel ficar visível: quem o mostra é `modo`, no servidor.
+    app.clientside_callback(
+        """function (qual, sub) {
+            if (qual === 'mineracao' && sub === 'backtest') {
+                var tentativas = 0;
+                var enquadrar = function () {
+                    var p = document.getElementById('painel-backtest');
+                    if (p && p.offsetParent !== null) {
+                        window.dash_clientside.set_props('chart-capital',
+                            {timeScaleAction: {action: 'fitContent',
+                                               nonce: Date.now()}});
+                    } else if (tentativas++ < 40) {
+                        setTimeout(enquadrar, 50);
+                    }
+                };
+                setTimeout(enquadrar, 50);
+            }
+            return window.dash_clientside.no_update;
+        }""",
+        Output("painel-backtest", "role"),
+        Input("modo", "value"), Input("mine-subtela", "value"),
+    )
 
     # ---- ou o valor fixo, ou a faixa de/passo/até - nunca os dois na tela
     @app.callback(
@@ -621,11 +739,11 @@ def register(app):
         Output({"type": "valwrap", "p": ALL}, "style"),
         Output({"type": "opt-on", "p": ALL}, "style"),
         Input({"type": "opt-on", "p": ALL}, "value"),
-        Input("modo", "value"),
+        Input("modo", "value"), Input("mine-subtela", "value"),
     )
-    def faixas(ligados, qual):
-        minerando = qual == "mineracao"
-        # em modo backtest não existe faixa nem interruptor: só o valor
+    def faixas(ligados, qual, subtela):
+        minerando = qual == "mineracao" and subtela == "varredura"
+        # na subtela Backtest não existe faixa nem interruptor: só o valor
         marcar = [bool(v) and minerando for v in ligados]
         return ([VISIVEL if m else OCULTO for m in marcar],
                 [OCULTO if m else VISIVEL for m in marcar],
@@ -1301,6 +1419,8 @@ def register(app):
         Output({"type": "val", "p": ALL}, "value"),
         Output("excluir-holdout", "value"),
         Output("btn-run", "n_clicks"),
+        Output("mine-subtela", "value"),
+        Output("store-combinacao", "data"),
         Input("grid-mine", "selectedRows"),
         Input("scatter", "clickData"),
         Input("grid-aprovadas", "selectedRows"),
@@ -1308,12 +1428,18 @@ def register(app):
         State("grid-mine", "rowData"),
         State("btn-run", "n_clicks"),
         State("mine-carregar", "value"),
+        State({"type": "val", "p": ALL}, "value"),
+        State({"type": "opt-on", "p": ALL}, "id"),
+        State({"type": "opt-on", "p": ALL}, "value"),
+        *[State(cid, prop) for cid, prop in MENU_COMBINACAO],
         prevent_initial_call=True,
     )
     def carregar_combinacao(selecionadas, clique, aprovadas, ids_val, linhas,
-                            n_run, run_salva):
+                            n_run, run_salva, valores_val, ids_on, ligados,
+                            *menu):
         """Clique no ponto da nuvem, na linha da tabela OU na lista de
-        aprovadas carrega os mesmos campos e dispara o mesmo backtest.
+        aprovadas carrega os mesmos campos, dispara o mesmo backtest e pula
+        para a subtela Backtest.
 
         Além dos parâmetros, alinha o PERÍODO — ligando a chave "excluir
         holdout" em vez de reescrever a data final. A tabela mede só até o
@@ -1321,20 +1447,42 @@ def register(app):
         mais que a linha clicada e mostraria outro lucro para a mesma
         combinação. O recorte é derivado na hora a partir das datas, que
         permanecem intocadas.
+
+        A tabela reescrita durante a varredura (a cada 800 ms) e a mineração
+        salva carregada chegam aqui com `selectedRows` vazio: não pulam.
         """
-        p = None
-        if ctx.triggered_id == "scatter" and clique:
-            alvo = clique["points"][0].get("customdata")
-            p = next((l["params"] for l in (linhas or [])
-                      if l["trial_id"] == alvo), None)
-        elif ctx.triggered_id == "grid-aprovadas" and aprovadas:
-            p = aprovadas[0].get("params")
-        elif selecionadas:
-            p = selecionadas[0].get("params")
-        if not p:
-            return [no_update] * len(ids_val), no_update, no_update
-        return ([p.get(i["p"], no_update) for i in ids_val],
-                ["on"], (n_run or 0) + 1)
+        return _carregar_combinacao(
+            ctx.triggered_id, selecionadas, clique, aprovadas, ids_val, linhas,
+            n_run, valores_val=valores_val, ids_on=ids_on, ligados=ligados,
+            menu={cid: v for (cid, _p), v in zip(MENU_COMBINACAO, menu)})
+
+    # a linha "linha #3 · stop_pontos=10" no alto da subtela Backtest; o
+    # "editado" só se decide ao rodar, comparando o menu com o do clique
+    @app.callback(
+        Output("mine-combinacao", "children"),
+        Input("btn-run", "n_clicks"),
+        Input("store-combinacao", "data"),
+        State({"type": "val", "p": ALL}, "id"),
+        State({"type": "val", "p": ALL}, "value"),
+        State("excluir-holdout", "value"),
+        *[State(cid, prop) for cid, prop in MENU_COMBINACAO],
+    )
+    def linha_combinacao(_n, store, ids_val, valores_val, holdout, *menu):
+        return _linha_combinacao(store, _menu_atual(
+            ids_val, valores_val, holdout,
+            {cid: v for (cid, _p), v in zip(MENU_COMBINACAO, menu)}))
+
+    # trocar de estratégia ou carregar mineração salva: a combinação aberta
+    # não é mais a da tela. Callback à parte — `estrategia_ou_mineracao`
+    # indexa as saídas por posição
+    @app.callback(
+        Output("store-combinacao", "data", allow_duplicate=True),
+        Input("estrategia", "value"),
+        Input("mine-carregar", "value"),
+        prevent_initial_call=True,
+    )
+    def esquecer_combinacao(_estrategia, _run_id):
+        return None
 
     # ------------------------------- passo 5: a regiao, e nao o campeao
     @app.callback(

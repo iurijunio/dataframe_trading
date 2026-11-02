@@ -108,11 +108,8 @@ def periodo(inicio, fim):
                 options=[{"label": "excluir holdout (igual à mineração)",
                           "value": "on"}],
             ),
-            html.Div(
-                html.Button("Rodar backtest", id="btn-run", n_clicks=0,
-                            className="btn-primary"),
-                id="acao-backtest",
-            ),
+            # "Rodar backtest" (`acao-backtest`) mora na barra do alto da
+            # subtela Backtest da Mineração (ui/app.py, `barra_backtest`)
         ],
     )
 

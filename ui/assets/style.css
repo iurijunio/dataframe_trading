@@ -86,6 +86,27 @@ body{
   box-shadow:0 0 16px rgba(34,228,255,.4);
 }
 .modo-bloco{display:flex;flex-direction:column;gap:15px;min-height:0;}
+
+/* Mineração › Varredura | Backtest: abas sublinhadas, como no rascunho
+   (tela-mineracao.html) — mais discretas que os modos do topo */
+.mine-subtelas{display:flex;gap:4px;flex:0 0 auto;
+  border-bottom:1px solid var(--line);}
+.mine-subtelas label{position:relative;cursor:pointer;padding:8px 16px;
+  margin-bottom:-1px;border-bottom:2px solid transparent;
+  font-family:var(--sans);font-size:var(--fs);font-weight:600;color:var(--muted);
+  transition:color .15s,border-color .15s;}
+.mine-subtelas input{position:absolute;opacity:0;pointer-events:none;}
+.mine-subtelas label:hover{color:var(--ink-2);}
+.mine-subtelas label:has(input:checked){color:var(--accent);
+  border-bottom-color:var(--accent);}
+/* alto da subtela Backtest: a combinação carregada e os dois botões */
+.bt-topo{display:flex;flex-direction:column;gap:10px;flex:0 0 auto;}
+.mine-combinacao{font-family:var(--mono);font-size:var(--fs-sm);
+  color:var(--accent);min-height:1em;}
+.mine-combinacao:empty{display:none;}
+.bt-barra{display:flex;align-items:stretch;gap:8px;}
+.bt-barra .btn-primary{width:auto;margin-top:0;padding:8px 18px;}
+.bt-barra .btn-ghost{margin-left:0;}
 .brand{
   font-size:var(--fs-3xl);font-weight:600;letter-spacing:-.02em;
   color:var(--accent);text-shadow:var(--glow-accent);

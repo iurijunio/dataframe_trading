@@ -51,13 +51,12 @@ def topbar(simbolo):
                         options=[{"label": i["symbol"], "value": i["symbol"]}
                                  for i in D.instrumentos()],
                     ),
-                    # Duas atividades diferentes, nao duas abas do mesmo:
-                    # backtest e conferir se a estrategia faz o que voce
-                    # desenhou; mineracao e procurar regiao boa no espaco.
+                    # O backtest não é aba própria: ele só serve para abrir
+                    # uma linha da mineração, e mora dentro dela (subtela
+                    # Backtest). O app abre em Ao vivo › Estratégias.
                     dcc.RadioItems(
-                        id="modo", value="backtest", className="modo",
-                        options=[{"label": "Backtest", "value": "backtest"},
-                                 {"label": "Mineração", "value": "mineracao"},
+                        id="modo", value="aovivo", className="modo",
+                        options=[{"label": "Mineração", "value": "mineracao"},
                                  {"label": "Walk-Forward", "value": "wfa"},
                                  {"label": "Candidata", "value": "candidata"},
                                  {"label": "Estratégias", "value": "estrategias"},
@@ -134,58 +133,84 @@ def chart_toolbar():
     )
 
 
-def painel(inicio, fim):
+def barra_backtest():
+    """A combinação carregada e os dois botões do Backtest, no alto dele."""
+    return html.Div(
+        [
+            html.Div(id="mine-combinacao", className="mine-combinacao"),
+            html.Div(
+                [html.Div(html.Button("Rodar backtest", id="btn-run",
+                                      n_clicks=0, className="btn-primary"),
+                          id="acao-backtest"),
+                 html.Button("Visualizar estratégia", id="btn-chart",
+                             n_clicks=0, className="btn-ghost")],
+                className="bt-barra"),
+        ],
+        className="bt-topo",
+    )
+
+
+def painel_backtest():
     """A curva de capital manda na tela: e a leitura principal.
 
     O grafico de candles serve para conferir se a estrategia esta fazendo o
-    que deveria, entao divide a faixa de baixo com a lista de trades.
+    que deveria, e mora no modal ("Visualizar estratégia").
     """
+    return html.Div(id="painel-backtest", children=[
+        barra_backtest(),
+        html.Div(stats_cards.vazio(), id="cards"),
+        html.Section(
+            [
+                html.Div(
+                    [html.H2("Curva de capital", className="panel-title hero"),
+                     html.Span("equity acima · underwater drawdown abaixo",
+                               className="panel-note")],
+                    className="panel-head",
+                ),
+                dash_tvlwc.Tvlwc(
+                    id="chart-capital",
+                    series=[],
+                    chartOptions={**T.CHART_OPTIONS,
+                                  "timeScale": {**T.CHART_OPTIONS["timeScale"],
+                                                "timeVisible": False,
+                                                # a curva mostra o backtest
+                                                # inteiro; folga à direita
+                                                # só encolheria o desenho
+                                                "rightOffset": 0}},
+                    height="100%",
+                ),
+            ],
+            className="panel panel-equity",
+        ),
+        html.Section(
+            [
+                html.Div(html.H2("Diagnóstico", className="panel-title"),
+                         className="panel-head"),
+                analytics_charts.abas(results_grid.grid()),
+            ],
+            className="panel panel-grid",
+        )], className="modo-bloco", style={"display": "none"})
+
+
+def painel(inicio, fim):
     return html.Main(
         [
-            # cartoes sao resultado de BACKTEST: em modo mineracao nao tem
-            # o que mostrar ali, entao entram no bloco que some junto
-            html.Div(id="painel-backtest", children=[
-                html.Div(stats_cards.vazio(), id="cards"),
-                html.Section(
-                [
-                    html.Div(
-                        [html.H2("Curva de capital", className="panel-title hero"),
-                         html.Span("equity acima · underwater drawdown abaixo",
-                                   className="panel-note")],
-                        className="panel-head",
-                    ),
-                    dash_tvlwc.Tvlwc(
-                        id="chart-capital",
-                        series=[],
-                        chartOptions={**T.CHART_OPTIONS,
-                                      "timeScale": {**T.CHART_OPTIONS["timeScale"],
-                                                    "timeVisible": False,
-                                                    # a curva mostra o backtest
-                                                    # inteiro; folga à direita
-                                                    # só encolheria o desenho
-                                                    "rightOffset": 0}},
-                        height="100%",
-                    ),
-                ],
-                className="panel panel-equity",
-            ),
-
-            html.Section(
-                [
-                    html.Div(
-                        [html.H2("Diagnóstico", className="panel-title"),
-                         html.Button("Visualizar estratégia", id="btn-chart",
-                                     n_clicks=0, className="btn-ghost")],
-                        className="panel-head",
-                    ),
-                    analytics_charts.abas(results_grid.grid()),
-                ],
-                className="panel panel-grid",
-            )], className="modo-bloco"),
-
+            # Mineração com duas subtelas: Varredura (o que a mineração mostra)
+            # e Backtest (uma combinação aberta por inteiro). Clicar numa linha,
+            # num ponto da nuvem ou numa aprovada pula para o Backtest.
             html.Div(id="painel-mineracao", className="modo-bloco",
-                     children=[mining.barra_acoes(), mining.painel_analise(),
-                               mining.painel()],
+                     children=[
+                         dcc.RadioItems(
+                             id="mine-subtela", value="varredura",
+                             className="mine-subtelas",
+                             options=[{"label": "Varredura", "value": "varredura"},
+                                      {"label": "Backtest", "value": "backtest"}]),
+                         html.Div(id="mine-bloco-varredura", className="modo-bloco",
+                                  children=[mining.barra_acoes(),
+                                            mining.painel_analise(),
+                                            mining.painel()]),
+                         painel_backtest(),
+                     ],
                      style={"display": "none"}),
 
             # o terceiro modo: aqui os parametros MUDAM a cada janela, e o
@@ -272,6 +297,10 @@ def build() -> Dash:
     app.layout = html.Div(
         [
             dcc.Store(id="store-run"),
+            # a combinação aberta na subtela Backtest: de onde veio (linha,
+            # nuvem, aprovada), o que a mineração varreu e o menu como o
+            # clique o deixou — rodar com o menu diferente vira "editado"
+            dcc.Store(id="store-combinacao"),
             dcc.Store(id="store-window"),
             # avisa o relógio que uma varredura de walk-forward começou. Sem
             # ele havia corrida: `pulso` e `wfa_executar` disparam juntos no
