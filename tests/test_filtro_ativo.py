@@ -221,7 +221,8 @@ def test_lista_segue_a_estrategia_da_tela_nao_a_memoria(base, monkeypatch):
 def test_abrir_a_pagina_acerta_a_memoria_com_a_tela(base, monkeypatch):
     monkeypatch.setattr(CB.registry, "_atual", "rompimento_canal")
     monkeypatch.setattr(CB.MINERACAO, "estado",
-                        {**CB.MINERACAO.estado, "rodando": False})
+                        {**CB.MINERACAO.estado, "rodando": False,
+                         "trials": []})
     CB._lista_salvas(None, "setup_cruzamento", "MES")
     assert CB.registry.nome_atual() == "setup_cruzamento"
 
@@ -230,5 +231,16 @@ def test_abrir_a_pagina_com_mineracao_rodando_nao_troca(base, monkeypatch):
     monkeypatch.setattr(CB.registry, "_atual", "rompimento_canal")
     monkeypatch.setattr(CB.MINERACAO, "estado",
                         {**CB.MINERACAO.estado, "rodando": True})
+    CB._lista_salvas(None, "setup_cruzamento", "MES")
+    assert CB.registry.nome_atual() == "rompimento_canal"
+
+
+def test_abrir_a_pagina_com_tabela_parada_nao_troca(base, monkeypatch):
+    """F5 com uma tabela da ADX parada na memória: o `progresso` a devolve, e
+    o clique numa linha roda com a memória — ela continua sendo a da tabela."""
+    monkeypatch.setattr(CB.registry, "_atual", "rompimento_canal")
+    monkeypatch.setattr(CB.MINERACAO, "estado",
+                        {**CB.MINERACAO.estado, "rodando": False,
+                         "trials": [{"n": 1}]})
     CB._lista_salvas(None, "setup_cruzamento", "MES")
     assert CB.registry.nome_atual() == "rompimento_canal"

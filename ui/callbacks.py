@@ -551,9 +551,10 @@ def _lista_salvas(gatilho, estrategia, ativo) -> list[dict]:
     `estrategia_ou_mineracao`, que é quem troca a memória: lendo dela, a lista
     saía um passo atrás. Ao abrir a página (sem gatilho) é aqui que a memória
     se acerta com a tela — o Rodar e o Minerar leem dela —, menos com uma
-    mineração rodando, que é da estratégia que a começou."""
+    mineração na tela (rodando, ou parada depois de um F5): o clique numa
+    linha dela roda com a memória, que tem de seguir sendo a da tabela."""
     nome = estrategia or registry.nome_atual()
-    if gatilho is None and not _mineracao_rodando():
+    if gatilho is None and not _mineracao_na_tela():
         registry.definir(nome)
     return [{"label": r["rotulo"], "value": r["run_id"]}
             for r in optimizer.listar_salvas(nome, simbolo=_simbolo(ativo))]
