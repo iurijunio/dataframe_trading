@@ -124,11 +124,11 @@ def _valores(opts):
     return [o["value"] for o in opts]
 
 
-def test_mineracao_lista_so_o_ativo_do_menu(fns, monkeypatch):
-    monkeypatch.setattr(CB.registry, "nome_atual", lambda: "rompimento_canal")
-    f = fns["listar_salvas"]
-    assert _valores(f(0, 0, "mineracao", "rompimento_canal", "WIN$N")) == [1]
-    assert _valores(f(0, 0, "mineracao", "rompimento_canal", "MES")) == [2]
+def test_mineracao_lista_so_o_ativo_do_menu(fns):
+    assert "listar_salvas" in fns
+    f = CB._lista_salvas
+    assert _valores(f("ativo", "rompimento_canal", "WIN$N")) == [1]
+    assert _valores(f("ativo", "rompimento_canal", "MES")) == [2]
 
 
 def test_wfa_ativo_ao_entrar_vem_do_menu(fns, sem_varredura):
@@ -205,3 +205,30 @@ def test_cand_listas_filtram_pelo_ativo(fns):
     # e o que é de outro ativo não entra
     opts, valor = fns["cand_opcoes"]("rompimento_canal", None, "WIN$N", 11, None)
     assert (_valores(opts), valor) == ([10], None)
+
+
+# ---------------------------------------- a lista segue a estratégia da TELA
+def test_lista_segue_a_estrategia_da_tela_nao_a_memoria(base, monkeypatch):
+    """O servidor lembra a última estratégia usada (ex.: ADX), mas depois de
+    reabrir a página a tela mostra outra. A lista é da que está na tela; e,
+    na troca, a lista sai junto com a estratégia nova, não um passo atrás."""
+    monkeypatch.setattr(CB.registry, "_atual", "rompimento_canal")
+    opts = CB._lista_salvas("estrategia", "setup_cruzamento", "MES")
+    assert _valores(opts) == [3]
+    assert CB.registry.nome_atual() == "rompimento_canal"   # troca: dono é outro
+
+
+def test_abrir_a_pagina_acerta_a_memoria_com_a_tela(base, monkeypatch):
+    monkeypatch.setattr(CB.registry, "_atual", "rompimento_canal")
+    monkeypatch.setattr(CB.MINERACAO, "estado",
+                        {**CB.MINERACAO.estado, "rodando": False})
+    CB._lista_salvas(None, "setup_cruzamento", "MES")
+    assert CB.registry.nome_atual() == "setup_cruzamento"
+
+
+def test_abrir_a_pagina_com_mineracao_rodando_nao_troca(base, monkeypatch):
+    monkeypatch.setattr(CB.registry, "_atual", "rompimento_canal")
+    monkeypatch.setattr(CB.MINERACAO, "estado",
+                        {**CB.MINERACAO.estado, "rodando": True})
+    CB._lista_salvas(None, "setup_cruzamento", "MES")
+    assert CB.registry.nome_atual() == "rompimento_canal"

@@ -542,6 +542,23 @@ def _mineracao_na_tela() -> bool:
     return bool(e.get("rodando") or e.get("trials"))
 
 
+def _lista_salvas(gatilho, estrategia, ativo) -> list[dict]:
+    """Corpo de `listar_salvas`: as salvas da estratégia que está NA TELA.
+
+    Não da memória do servidor (`registry.nome_atual`): ela guarda a última
+    estratégia usada, e ao reabrir a página a tela volta no padrão — a lista
+    mostrava as salvas da outra. E na troca este callback corre junto com
+    `estrategia_ou_mineracao`, que é quem troca a memória: lendo dela, a lista
+    saía um passo atrás. Ao abrir a página (sem gatilho) é aqui que a memória
+    se acerta com a tela — o Rodar e o Minerar leem dela —, menos com uma
+    mineração rodando, que é da estratégia que a começou."""
+    nome = estrategia or registry.nome_atual()
+    if gatilho is None and not _mineracao_rodando():
+        registry.definir(nome)
+    return [{"label": r["rotulo"], "value": r["run_id"]}
+            for r in optimizer.listar_salvas(nome, simbolo=_simbolo(ativo))]
+
+
 def _mineracao_rodando() -> bool:
     """Trocar o ativo com a varredura correndo não pode refazer campos nem
     interromper nada (o seletor fica desligado; isto cobre a corrida). Parada,
@@ -1577,8 +1594,8 @@ def register(app):
         Input("modo", "value"), Input("estrategia", "value"),
         Input("ativo", "value"),
     )
-    def listar_salvas(_t, _s, _modo, _estrategia, ativo):
-        """A lista é sempre da estratégia ATIVA, no ativo do menu.
+    def listar_salvas(_t, _s, _modo, estrategia, ativo):
+        """A lista é sempre da estratégia da tela, no ativo do menu.
 
         `estrategia` precisa ser Input, não apenas leitura: o relógio fica
         parado quando não há mineração, então sem este gatilho a lista
@@ -1586,9 +1603,7 @@ def register(app):
         carregar uma delas trazia combinações com parâmetros que nem
         existem nos campos. O `ativo` é Input pelo mesmo motivo.
         """
-        return [{"label": r["rotulo"], "value": r["run_id"]}
-                for r in optimizer.listar_salvas(registry.nome_atual(),
-                                                 simbolo=_simbolo(ativo))]
+        return _lista_salvas(ctx.triggered_id, estrategia, ativo)
 
     # o relogio so bate enquanto ha o que atualizar
     @app.callback(Output("tick", "disabled"),
