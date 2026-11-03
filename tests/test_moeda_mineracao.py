@@ -93,6 +93,7 @@ def test_estado_guarda_o_simbolo_ao_carregar_salva(monkeypatch):
     callbacks._entrar_mineracao_salva(
         e, 7, {"symbol": "MES", "corte": None, "holdout_de": "2025-01-01"})
     assert e["symbol"] == "MES"
+    assert e["run_id"] == 7          # o `_arranque` recarrega por ele
     assert e["trials"] == [{"trial_id": 1}] and e["fonte"] == "banco"
 
 

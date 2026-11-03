@@ -89,6 +89,8 @@ def _entrar_mineracao_salva(e: dict, run_id: int, d: dict) -> None:
     e["resumo"], e["fonte"] = e["trials"], "banco"
     e["fim_otimizacao"] = d.get("corte") or d["holdout_de"]
     e["symbol"] = d.get("symbol")
+    # de qual salva ela é: depois de um F5, `_arranque` a recarrega inteira
+    e["run_id"] = run_id
     e["mensagem"] = f"mineração #{run_id} carregada do banco"
 
 
@@ -551,10 +553,14 @@ def _lista_salvas(gatilho, estrategia, ativo) -> list[dict]:
     `estrategia_ou_mineracao`, que é quem troca a memória: lendo dela, a lista
     saía um passo atrás. Ao abrir a página (sem gatilho) é aqui que a memória
     se acerta com a tela — o Rodar e o Minerar leem dela —, menos com uma
-    mineração na tela (rodando, ou parada depois de um F5): o clique numa
-    linha dela roda com a memória, que tem de seguir sendo a da tabela."""
+    mineração na tela (rodando, ou parada depois de um F5): aí é o menu que
+    segue a mineração (`_arranque`), e a lista é da estratégia dela."""
     nome = estrategia or registry.nome_atual()
-    if gatilho is None and not _mineracao_na_tela():
+    if gatilho is None and _mineracao_na_tela():
+        # o menu vai seguir a mineração (`_arranque`); a lista já nasce na
+        # estratégia dela, senão o seletor apagaria a marca da salva
+        nome = MINERACAO.estado.get("estrategia") or registry.nome_atual()
+    elif gatilho is None:
         registry.definir(nome)
     return [{"label": r["rotulo"], "value": r["run_id"]}
             for r in optimizer.listar_salvas(nome, simbolo=_simbolo(ativo))]
@@ -650,7 +656,41 @@ def _estrategia_ou_mineracao(gatilho, nome, run_id, simbolo, ids_val,
                                    sem_mudanca)
     if gatilho == "ativo":
         return _trocar_ativo(nome, simbolo, sem_mudanca)
+    if gatilho == "arranque":
+        return _arranque(nome, simbolo, ids_val, ids_faixa, ids_on,
+                         sem_mudanca)
     return _trocar_estrategia(nome, sem_mudanca, simbolo=_simbolo(simbolo))
+
+
+def _arranque(nome, simbolo, ids_val, ids_faixa, ids_on, r):
+    """A página acabou de abrir: o menu segue a mineração da memória.
+
+    O layout é estático — depois de um F5 o menu nasce na estratégia padrão,
+    mas a mineração que ficou na memória (e a estratégia do servidor, com que
+    o clique numa linha roda) pode ser de outra: era a tabela da ADX debaixo
+    do Cruzamento. Salva e parada, volta a tela inteira, como se escolhida no
+    seletor. Rodando ou não salva, o menu passa à estratégia dela, com a
+    seção nas faixas que ela varreu. Sem mineração, nada muda."""
+    e = MINERACAO.estado
+    if not _mineracao_na_tela():
+        return r
+    if e.get("run_id") and not e.get("rodando"):
+        r = _carregar_mineracao(e["run_id"], ids_val, ids_faixa, ids_on, r)
+        if r[0] is not no_update:        # carregou (a salva ainda existe)
+            r[1] = e["run_id"]
+        return r
+    est = e.get("estrategia")
+    if not est or est == nome:
+        return r
+    mod = registry.definir(est)
+    espaco = MINERACAO._contexto.get("espaco")
+    simbolo = (e.get("symbol") or MINERACAO._contexto.get("symbol")
+               or _simbolo(simbolo))
+    r[0] = est
+    r[2] = controls.campos_da_estrategia(
+        mod, optimizer.faixas_do_espaco(espaco) if espaco else None,
+        ativo_mod.faixas_do_ativo(simbolo, est))
+    return r
 
 
 def _trocar_ativo(nome, simbolo, r):
@@ -1114,12 +1154,14 @@ def register(app):
         Input("estrategia", "value"),
         Input("mine-carregar", "value"),
         Input("ativo", "value"),
+        Input("arranque", "n_intervals"),
         State({"type": "val", "p": ALL}, "id"),
         State({"type": "opt", "p": ALL, "k": ALL}, "id"),
         State({"type": "opt-on", "p": ALL}, "id"),
         prevent_initial_call=True,
     )
-    def estrategia_ou_mineracao(nome, run_id, simbolo, ids_val, ids_faixa, ids_on):
+    def estrategia_ou_mineracao(nome, run_id, simbolo, _arranque, ids_val,
+                                ids_faixa, ids_on):
         """Único dono de `estrategia` e `mine-carregar`: um mexe no outro.
 
         Eram dois callbacks — trocar a estratégia limpava o seletor, carregar

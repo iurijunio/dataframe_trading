@@ -287,6 +287,9 @@ def build() -> Dash:
     app.layout = html.Div(
         [
             dcc.Store(id="store-run"),
+            # bate UMA vez logo depois de a página abrir: o menu segue a
+            # mineração que ficou na memória (`_arranque`)
+            dcc.Interval(id="arranque", interval=300, max_intervals=1),
             # a combinação aberta na subtela Backtest: de onde veio (linha,
             # nuvem, aprovada), o que a mineração varreu e o menu como o
             # clique o deixou — rodar com o menu diferente vira "editado"

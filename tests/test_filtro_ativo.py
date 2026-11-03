@@ -241,6 +241,8 @@ def test_abrir_a_pagina_com_tabela_parada_nao_troca(base, monkeypatch):
     monkeypatch.setattr(CB.registry, "_atual", "rompimento_canal")
     monkeypatch.setattr(CB.MINERACAO, "estado",
                         {**CB.MINERACAO.estado, "rodando": False,
-                         "trials": [{"n": 1}]})
-    CB._lista_salvas(None, "setup_cruzamento", "MES")
+                         "trials": [{"n": 1}],
+                         "estrategia": "rompimento_canal"})
+    opts = CB._lista_salvas(None, "setup_cruzamento", "MES")
     assert CB.registry.nome_atual() == "rompimento_canal"
+    assert _valores(opts) == [2]          # a lista é da estratégia dela

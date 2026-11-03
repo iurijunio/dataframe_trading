@@ -544,3 +544,62 @@ def test_saidas_dos_callbacks_do_ativo_sem_conflito(app):
                 assert especifica[3], (a, b)
             else:
                 assert a[3] or b[3], (a, b)
+
+
+# ------------------------------------------- abrir a página com mineração na memória
+# O layout é estático: depois de um F5 o menu nasce no Cruzamento, mas a
+# mineração da memória (e a estratégia do servidor) pode ser de outra. O
+# `arranque` faz o menu seguir a mineração, em vez de mostrar uma tabela da
+# ADX debaixo do Cruzamento.
+def _arranque(nome="setup_cruzamento", simbolo="WIN$N"):
+    return CB._estrategia_ou_mineracao("arranque", nome, None, simbolo,
+                                       [], [], [])
+
+
+def test_arranque_sem_mineracao_nao_mexe():
+    MINERACAO.estado.update(rodando=False, trials=[], run_id=None,
+                            estrategia=None)
+    assert _arranque() == _r_vazio()
+
+
+def test_arranque_mineracao_salva_volta_inteira(monkeypatch):
+    chamadas = []
+    def carregar(run_id, *_a):
+        chamadas.append(run_id)
+        r = _r_vazio()
+        r[0] = "rompimento_canal"
+        return r
+    monkeypatch.setattr(CB, "_carregar_mineracao", carregar)
+    MINERACAO.estado.update(rodando=False, trials=[{"x": 1}], run_id=60,
+                            estrategia="rompimento_canal")
+    r = _arranque()
+    assert chamadas == [60]
+    assert r[0] == "rompimento_canal" and r[1] == 60   # o seletor marca a #60
+
+
+@pytest.mark.parametrize("rodando, trials", [(True, []), (False, [{"x": 1}])])
+def test_arranque_mineracao_nao_salva_menu_segue_a_estrategia(rodando, trials):
+    """Rodando, ou recém-rodada e não salva: o menu mostra a estratégia
+    dela, com a seção na escala do ativo dela."""
+    MINERACAO.estado.update(rodando=rodando, trials=trials, run_id=None,
+                            estrategia="rompimento_canal", symbol="MES")
+    registry.definir("rompimento_canal")
+    r = _arranque()
+    assert r[0] == "rompimento_canal"
+    assert _faixa(r[2], "filtro_amplitude")["ate"] == 80      # escala do MES
+    assert r[1] is no_update and all(x is no_update for x in r[3:9])
+    assert registry.nome_atual() == "rompimento_canal"
+
+
+def test_arranque_mineracao_da_mesma_estrategia_nao_salva_nao_mexe():
+    MINERACAO.estado.update(rodando=False, trials=[{"x": 1}], run_id=None,
+                            estrategia="setup_cruzamento")
+    assert _arranque() == _r_vazio()
+
+
+def test_arranque_salva_que_sumiu_nao_marca_o_seletor(monkeypatch):
+    """Apagada fora do app: o seletor não fica com um id que não existe."""
+    monkeypatch.setattr(CB.optimizer, "detalhes_salva", lambda run_id: None)
+    MINERACAO.estado.update(rodando=False, trials=[{"x": 1}], run_id=99,
+                            estrategia="rompimento_canal")
+    assert _arranque()[1] is no_update
