@@ -639,6 +639,21 @@ def _perfil_do_ativo(simbolo) -> tuple:
     return perfil + tuple(_camada4_do_ativo(simbolo))
 
 
+def _periodo_do_ativo(simbolo) -> tuple:
+    """Saída de `periodo_do_ativo`: (de, de.min, de.max, até, até.min,
+    até.max) da base do ativo — o período inteiro, como na abertura.
+
+    O calendário era montado uma vez, na subida, com a base do ativo padrão:
+    o MNQ (base desde 2019) abria em 16/03/2021, a do WIN, e nem deixava
+    escolher antes. Com a mineração rodando nada muda (o seletor do ativo
+    fica desligado; isto cobre a corrida)."""
+    if _mineracao_rodando():
+        return (no_update,) * 6
+    inicio, fim = D.span(_simbolo(simbolo))
+    de, ate = inicio.date(), fim.date()
+    return de, de, ate, ate, de, ate
+
+
 # posição, na saída de `estrategia_ou_mineracao`, do primeiro `step` da
 # camada 4 (depois dos 17 fixos e de CAMPOS_PERFIL)
 _INICIO_STEP = 17 + len(CAMPOS_PERFIL)
@@ -1196,6 +1211,20 @@ def register(app):
         """Único callback da camada 4 disparado pelo ativo: horários e custos
         do perfil padrão, e stop, alvo e trailing (`_camada4_do_ativo`)."""
         return _perfil_do_ativo(simbolo)
+
+    # ------------------------- o calendário segue a base do ativo escolhido
+    @app.callback(
+        Output("d-de", "date", allow_duplicate=True),
+        Output("d-de", "min_date_allowed", allow_duplicate=True),
+        Output("d-de", "max_date_allowed", allow_duplicate=True),
+        Output("d-ate", "date", allow_duplicate=True),
+        Output("d-ate", "min_date_allowed", allow_duplicate=True),
+        Output("d-ate", "max_date_allowed", allow_duplicate=True),
+        Input("ativo", "value"),
+        prevent_initial_call=True,
+    )
+    def periodo_do_ativo(simbolo):
+        return _periodo_do_ativo(simbolo)
 
     @app.callback(
         Output({"type": "moeda-c4", "i": ALL}, "children"),
