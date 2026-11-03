@@ -473,6 +473,16 @@ Também entraram em 21–23/10: stop e alvo em porcentagem do preço de entrada
 `di_periodo` e `adx_suavizacao`, com trava contra colisão de nome com o perfil).
 
 Pendente, não iniciado:
+- **Alvo "só encostado"** (anotado em 19/10): o preço toca o alvo e não passa;
+  o papel conta alvo, mas a TP limitada da corretora fica na fila e não
+  executa. Falta (a) medir no histórico dos planos quantas saídas por alvo
+  foram só toque e quanto pesam; (b) decidir a regra — backtest exigir passar
+  1 tick e/ou manter a TP por até N min e sair a mercado se afastar X ticks.
+- **Limpezas pequenas, sem efeito na tela:** `MOTIVO_CAPTURA` em
+  `ui/components/pregao_panel.py` não é usado; `ui/components/catalogo.py`
+  ainda lista o trailing em "Proteções" (o menu novo o pôs em Saída);
+  `State("mine-carregar")` sem uso em callback da Mineração; o teste de
+  mineração salva do redesenho é trivial.
 - **Gatilho, fatia 2**: avisar na tela de Portfólio que a correlação/risco
   estão desatualizados porque o plano ativo de uma variante membro mudou.
   Descrito como fora de escopo em `docs/superpowers/specs/2026-09-24-gatilho-reotimizacao-design.md §8`
