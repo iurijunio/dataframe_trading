@@ -7,6 +7,16 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 
 ## [Não lançado]
 
+### Corrigido
+- **Lista "carregar mineração salva" e F5** (`ui/components/mining.py`,
+  `ui/app.py`; commits `8ea95d4`, `7b30e17`, `20de045`). A lista seguia a
+  estratégia guardada na memória do servidor, não a do menu: depois de
+  reabrir a página, o Cruzamento mostrava a #60 da ADX, e na troca de
+  estratégia a lista ficava um passo atrás. Agora a lista segue a estratégia
+  da tela. Depois de um F5, o menu acompanha a mineração que ficou na
+  memória; se ela é salva, a tela volta inteira. F5 com a tabela parada não
+  troca mais a estratégia da memória.
+
 ### Adicionado
 - **Redesenho do menu e do Backtest dentro da Mineração** (`ui/app.py`,
   `ui/components/mining.py`, `ui/components/wfa_panel.py`,

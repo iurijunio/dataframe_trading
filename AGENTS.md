@@ -462,7 +462,9 @@ corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
   abas (Entrada, Saída, Filtros, Risco, Períodos), gavetas com resumo. Listas
   salvas só do ativo escolhido; Walk-Forward e Candidata ganharam seletor de
   ativo (`wfa-ativo`, `cand-ativo`). Trocar o ativo com mineração parada tira
-  a mineração da tela; o seletor trava enquanto ela roda ou é salva. Guarda:
+  a mineração da tela; o seletor trava enquanto ela roda ou é salva. A lista
+  de salvas segue a estratégia do menu (não a da memória do servidor); após
+  F5 o menu acompanha a mineração da memória (`8ea95d4`..`20de045`). Guarda:
   `scripts/campos_menu.py` + `tests/dados/campos_menu.json`. Suíte: 2.776
   testes. Spec: `docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md`.
 
