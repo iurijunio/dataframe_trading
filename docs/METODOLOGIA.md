@@ -380,7 +380,7 @@ já não funcionou.
 |---|---|
 | 1 Criar estratégia | ✅ backtest com auditoria visual, 5 abas de diagnóstico |
 | 2 Busca de clusters | ✅ dispersão com cross-filtering |
-| 3 Pegar um cluster | ✅ clique carrega a combinação |
+| 3 Pegar um cluster | ✅ clique carrega a combinação, roda o backtest e pula para a subtela Backtest da Mineração |
 | 4 Mineração de parâmetros | ✅ paralela, interrompível |
 | 5 Mineração de resultados | ✅ distribuição, curva ordenada, score robusto e porteira |
 | 6 Otimização e validação | ✅ walk-forward com holdout lacrado · WFA de Pardo com 8 inteligências, Consenso e 6 portões ([contas](CALCULOS-WFA.md)) |

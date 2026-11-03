@@ -196,7 +196,7 @@ core/importar_lse.py       importação dos candles da CME (cli.py importar-lse)
 configs/instruments/       win.yaml, mes.yaml, mnq.yaml
 scripts/foto_win.py        foto do WIN: prova resultado idêntico após mexer no motor
 scripts/reassinar_codigo.py  reassina o hash de planos quando o código muda sem mudar trades
-tests/                     2.713 testes
+tests/                     2.776 testes
 ```
 
 ## O dashboard
@@ -205,10 +205,23 @@ tests/                     2.713 testes
 .venv\Scripts\python.exe ui\app.py     # http://127.0.0.1:8050
 ```
 
-A tela reflete as quatro camadas: a barra lateral separa visualmente *Parâmetros*
-(camada 3, o que a mineração vai varrer) de *Execução* (camada 4, do operador).
-Mudar horário, custo ou dimensionamento e rodar de novo não toca em uma linha
-de estratégia.
+O app abre sempre em **Ao vivo › Estratégias**. O topo não tem seletor de
+ativo nem botão de sincronizar (a captura já busca as barras desde a última
+gravada); o ativo fica no menu da esquerda.
+
+A tela reflete as quatro camadas. O menu da esquerda (400 px) tem um topo fixo
+(ativo, estratégia, de/até, tempo, excluir holdout) e cinco abas: Entrada,
+Saída, Filtros, Risco e Períodos. Aba com mais de um grupo usa gavetas que
+abrem e fecham, com um resumo do que está dentro. Na Varredura aparecem as
+caixas de minerar, o de/passo/até, o Filtro de mineração e um pontinho na aba
+que tem campo marcado; no Backtest o menu tem 4 abas, só com valores. Mudar
+horário, custo ou dimensionamento e rodar de novo não toca em uma linha de
+estratégia.
+
+O **Backtest** é uma subtela da Mineração (Varredura | Backtest). Clicar numa
+linha da tabela, num ponto da nuvem ou numa aprovada roda o backtest e pula
+sozinho para ele; no alto ficam "Rodar backtest", "Visualizar estratégia" e a
+linha da combinação (marcada "editado" se o menu mudou depois).
 
 - **Preço** — TradingView Lightweight Charts com candles, volume em painel
   próprio, setas de compra e venda e, no trade selecionado, as linhas de
@@ -261,14 +274,13 @@ vira M5; um trade isolado vira M1.
 O logo da TradingView no canto do gráfico é **requisito da licença** Apache 2.0
 da Lightweight Charts, não enfeite. Não desligar.
 
-## Os sete modos
+## Os seis modos
 
 | Modo | Para quê |
 |---|---|
-| Backtest | uma combinação, com diagnóstico em cinco abas |
-| Mineração | varrer parâmetros e achar o platô |
-| Walk-Forward | validar fora da amostra |
-| Candidata | 12 portões, contratos e o plano de operação |
+| Mineração | subtela Varredura (varrer parâmetros e achar o platô) e subtela Backtest (uma combinação, com diagnóstico em cinco abas) |
+| Walk-Forward | validar fora da amostra (seletor de ativo próprio; lista só do ativo escolhido) |
+| Candidata | 12 portões, contratos e o plano de operação (seletor de ativo próprio) |
 | Estratégias | variantes (configurações salvas) e sua ficha de rastreio |
 | Portfólio | correlação, capital, Kelly e risco de ruína |
 | Ao vivo | Pregão, Operação e Estratégias em tempo real |

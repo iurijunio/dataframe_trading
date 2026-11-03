@@ -8,6 +8,42 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Adicionado
+- **Redesenho do menu e do Backtest dentro da Mineração** (`ui/app.py`,
+  `ui/components/mining.py`, `ui/components/wfa_panel.py`,
+  `ui/components/candidata_panel.py`, `scripts/campos_menu.py`,
+  `tests/dados/campos_menu.json`; desenho em
+  [docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md](docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md),
+  plano em [docs/superpowers/plans/2026-11-01-menu-e-mineracao.md](docs/superpowers/plans/2026-11-01-menu-e-mineracao.md)).
+  - **Topo mais enxuto.** Saem o seletor de ativo, o botão "Sincronizar com
+    MT5" (a captura já busca as barras desde a última gravada;
+    `ui/callbacks_mt5.py` foi removido, `core/mt5_source.sincronizar`
+    continua) e a aba Backtest. Abas: Mineração, Walk-Forward, Candidata,
+    Estratégias, Portfólio e Ao vivo. O app abre sempre em Ao vivo ›
+    Estratégias (`av-subtela` sem persistência).
+  - **Backtest virou subtela da Mineração** (Varredura | Backtest). Clicar
+    numa linha da tabela, num ponto da nuvem ou numa aprovada roda o backtest
+    e pula sozinho para Backtest (clicar de novo na mesma linha também). No
+    alto: "Rodar backtest", "Visualizar estratégia" e a linha da combinação
+    ("linha #3 · stop_pontos=10", "nuvem · …", "aprovada #N · …"), com
+    "· editado" se o menu mudou.
+  - **Menu da esquerda de 400 px.** Topo fixo (ativo, estratégia, de/até,
+    tempo, excluir holdout) e 5 abas: Entrada, Saída, Filtros, Risco,
+    Períodos. Aba com mais de um grupo usa gavetas com resumo. As explicações
+    foram para o (?). Na Varredura: caixas de minerar, de/passo/até, aba
+    Períodos, Filtro de mineração e pontinho nas abas com campo marcado; no
+    Backtest: 4 abas, só valores.
+  - **Listas por ativo.** "Carregar mineração salva" mostra só as do ativo do
+    menu. Walk-Forward e Candidata ganharam seletor de ativo (`wfa-ativo`,
+    `cand-ativo`) que filtra as listas; o padrão é o ativo do menu (na
+    Candidata, o ativo do WFA aberto no Walk-Forward, se houver).
+  - **Troca de ativo.** Com mineração parada na tela, trocar o ativo a tira da
+    tela (a salva não se perde; a não salva se perde). O seletor fica travado
+    enquanto a mineração roda ou está sendo salva. Isso resolve o seletor que
+    não acompanhava a mineração carregada.
+  - **Guarda dos campos.** `scripts/campos_menu.py` compara o menu com
+    `tests/dados/campos_menu.json` (gravado do menu antigo; nunca regravar) e
+    prova que nenhum campo mudou de id, valor, faixa, passo ou rótulo além das
+    trocas permitidas. Suíte: 2.776 testes (eram 2.713).
 - **Ativos da CME na pesquisa: MES e MNQ, etapas 1 a 3** (`core/ativo.py`,
   `core/importar_lse.py`, `configs/instruments/mes.yaml` e `mnq.yaml`,
   `core/engine/execution.py`, `strategies/*.py`, `scripts/foto_win.py`,

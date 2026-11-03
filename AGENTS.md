@@ -21,7 +21,7 @@ substituindo o fluxo que antes vivia no MT5. Branch de trabalho:
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.713 testes em 01/11/2026)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.776 testes em 03/11/2026)
 ```
 
 - Para ver o app: rode `ui/app.py` e abra http://127.0.0.1:8050. Quem tiver
@@ -101,12 +101,14 @@ As quatro camadas (pergunta: *de quem é essa informação?*):
 | 3 Parâmetros | `configs/strategies/*.json` / `params_schema` | default, min, max, passo |
 | 4 Execução | tabela `execution_profiles` | horário, stop/alvo, custos, tamanho — aplicada pelo motor, nunca pela estratégia |
 
-Os sete modos do topo (`ui/app.py`) e onde vivem:
+Os seis modos do topo (`ui/app.py`; o app abre em Ao vivo › Estratégias) e
+onde vivem. O Backtest não é mais aba: é a subtela Backtest da Mineração
+(Varredura | Backtest), e clicar numa linha, ponto da nuvem ou aprovada roda o
+backtest e pula para ela:
 
 | Modo | Contas (`core/`) | Tela (`ui/`) |
 |---|---|---|
-| Backtest | `engine/kernel.py`, `engine/execution.py`, `metrics.py`, `analytics.py`, `detalhes.py`, `robustez.py` | `callbacks.py`, `components/stats_cards.py`, `charts.py`, `results_grid.py` |
-| Mineração | `optimizer.py`, `walkforward.py`, `mineracao_stats.py`, `porteira.py` | `components/mining.py`, `mine_*.py`, `scatter.py` |
+| Mineração (Varredura + Backtest) | Varredura: `optimizer.py`, `walkforward.py`, `mineracao_stats.py`, `porteira.py`. Backtest: `engine/kernel.py`, `engine/execution.py`, `metrics.py`, `analytics.py`, `detalhes.py`, `robustez.py` | `components/mining.py`, `mine_*.py`, `scatter.py`; Backtest: `callbacks.py`, `components/stats_cards.py`, `charts.py`, `results_grid.py` |
 | Walk-Forward | `wfa.py`, `wfa_runner.py`, `wfa_store.py` | `components/wfa_panel.py` |
 | Candidata | `candidata.py`, `candidata_runner.py`, `aleatorio.py`, `spa.py`, `tamanho.py`, `plano.py` | `callbacks_candidata.py`, `components/candidata_panel.py` |
 | Estratégias | `variantes.py` | `callbacks_estrategias.py`, `components/estrategias_panel.py` |
@@ -114,7 +116,7 @@ Os sete modos do topo (`ui/app.py`) e onde vivem:
 | Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`), `papel.py`, `papel_leitura.py`, `papel_vivo.py`, `papel_backtest.py`, `corretora.py`, `ordens.py`, `diario_ordens.py`, `comandos.py`, `contrato_dia.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py`, `callbacks_operacao.py`, `components/operacao_panel.py`, `components/ordens_panel.py` |
 
 Outros: `core/mt5_source.py` (sincronização com o MT5, sem botão na tela — a
-captura já preenche o que falta); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
+captura já preenche o que falta; o `ui/callbacks_mt5.py` foi removido); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
 `ui/callbacks.py:register` registra todos os `callbacks_*.py`.
 
 Fluxo do dado: mineração (`mining_runs`, com `variante_id`) → walk-forward
@@ -152,7 +154,7 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   `C:\Users\mrRobot\Documents\Neturna\backups\2026-10-01-antes-correcao-hora`).
   Nunca gravar o candle em formação (o último minuto devolvido).
 - **Captura:** o `captura.bat` (serviço de captura) abre pelo `iniciar.bat`.
-  Com a captura ativa o botão Sincronizar fica desativado. As barras de HOJE
+  Não há botão Sincronizar: a captura busca as barras desde a última gravada. As barras de HOJE
   só existem no banco até a conferência do dia — o Parquet e o `data/raw` não
   as têm — então a mineração só vê o dia de hoje depois dela. Por isso
   `cli.py verify` (que reconstrói do Parquet) com a captura rodando apagaria o
@@ -292,6 +294,10 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - **Mexeu em tela da pesquisa? Rode `scripts/referencia_telas.py conferir`**
     (obrigatório; o WIN tem de dar idêntico). Só regrave a referência a partir
     do código de antes da mudança.
+  - **Mexeu em campo do menu (Mineração/Backtest)? Rode
+    `scripts/campos_menu.py`.** Ele compara com `tests/dados/campos_menu.json`
+    (gravado do menu antigo; **nunca regravar**) e prova que nenhum campo
+    mudou de id, valor, faixa, passo ou rótulo além das trocas permitidas.
   - **Portfólio recusa moedas misturadas** (`MoedaMista`), também quando o
     plano ativo de uma variante troca de ativo.
   - **Ids de rótulo de moeda: um `type` por tela** (`moeda-c4`, `moeda-cand`).
@@ -318,16 +324,17 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 
 ## Documentos: qual confiar
 
-| Documento | Estado (01/11/2026) |
+| Documento | Estado (03/11/2026) |
 |---|---|
+| `docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md` + `plans/2026-11-01-menu-e-mineracao.md` | redesenho do menu e Backtest dentro da Mineração — implementado, no `master` |
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
 | `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
 | `docs/superpowers/specs/2026-10-28-ativos-cme-design.md` + `plans/2026-10-28-ativos-cme-etapa1.md`, `2026-10-29-ativos-cme-etapa2.md`, `2026-10-30-ativos-cme-etapa4.md` | ativos da CME; as seções "Herança da etapa 1", "Estado depois da etapa 2", "Estado depois da etapa 3" e "Estado depois da etapa 4" dizem o que ficou |
-| `CHANGELOG.md` | atualizado até os ativos da CME, etapas 1 a 4 (01/11/2026); **não cobre variantes, portfólio nem gatilho** |
-| `README.md` | atualizado até os ativos da CME, etapa 4 (01/11/2026); o texto do MVP segue como história |
-| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 01/11/2026 |
+| `CHANGELOG.md` | atualizado até o redesenho do menu (03/11/2026); **não cobre variantes, portfólio nem gatilho** |
+| `README.md` | atualizado até o redesenho do menu (03/11/2026); o texto do MVP segue como história |
+| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 03/11/2026 |
 
 Na dúvida entre documento e código, o código manda. Use o agente
 `documentador` para pôr a documentação em dia depois de uma entrega.
@@ -444,8 +451,20 @@ corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
 - Pendências pequenas em "Estado depois da etapa 2" e "Estado depois da etapa 3" da spec.
 - **A investigar:** erro React #31 (2 vezes) ao abrir o app; já existe no
   `master`, causa desconhecida.
-- **Seletor de ativo não acompanha a mineração carregada** (mostra o ativo
-  antigo). Será resolvido pelo redesenho do menu, próximo trabalho.
+- ~~Seletor de ativo não acompanha a mineração carregada~~ — **resolvido** pelo
+  redesenho do menu (abaixo): as listas filtram pelo ativo e a troca de ativo
+  limpa a mineração parada da tela.
+- **Redesenho do menu e Backtest dentro da Mineração ✅ (03/11/2026, no
+  `master`, `682d12c`..`6920550`).** Sai do topo o seletor de ativo, o botão
+  Sincronizar e a aba Backtest (agora subtela da Mineração: Varredura |
+  Backtest, com salto automático ao clicar numa linha, ponto ou aprovada). O
+  app abre sempre em Ao vivo › Estratégias. Menu de 400 px com topo fixo e 5
+  abas (Entrada, Saída, Filtros, Risco, Períodos), gavetas com resumo. Listas
+  salvas só do ativo escolhido; Walk-Forward e Candidata ganharam seletor de
+  ativo (`wfa-ativo`, `cand-ativo`). Trocar o ativo com mineração parada tira
+  a mineração da tela; o seletor trava enquanto ela roda ou é salva. Guarda:
+  `scripts/campos_menu.py` + `tests/dados/campos_menu.json`. Suíte: 2.776
+  testes. Spec: `docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md`.
 
 Também entraram em 21–23/10: stop e alvo em porcentagem do preço de entrada
 (`7d1d272`) e a estratégia `adx_direcao` (`cdb74bc`, `8eaca51`: parâmetros
