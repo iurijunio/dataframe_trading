@@ -8,7 +8,7 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
 ## [Não lançado]
 
 ### Corrigido
-- **Lista "carregar mineração salva" e F5** (`ui/components/mining.py`,
+- **Lista "carregar mineração salva" e F5** (`ui/callbacks.py`,
   `ui/app.py`; commits `8ea95d4`, `7b30e17`, `20de045`). A lista seguia a
   estratégia guardada na memória do servidor, não a do menu: depois de
   reabrir a página, o Cruzamento mostrava a #60 da ADX, e na troca de
