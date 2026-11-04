@@ -5,7 +5,7 @@
    O simulador, a moldura e o menu esquerdo do protótipo não entram: no app
    são o topo, o menu e as subtelas de verdade. */
 
-  .busca{--ground:#000;--surface:#0A0A0B;--surface-2:#111113;--surface-3:#18181B;--ink:#E7E7EA;--ink-2:#C4C4CA;--muted:#8B8B93;--line:#232326;--line-soft:#19191C;--accent:#22E4FF;--accent-dim:#164A57;--pos:#00F5A0;--neg:#FF4D7D;--warn:#FFC93C;--info:#7AA7FF;--mono:"JetBrains Mono",ui-monospace,Consolas,monospace;--sans:"Poppins",system-ui,"Segoe UI",Arial,sans-serif;max-width:1280px;margin:0 auto;font:12.5px/1.4 var(--mono);color:var(--ink-2)}
+  .busca{--ground:#000;--surface:#0A0A0B;--surface-2:#111113;--surface-3:#18181B;--ink:#E7E7EA;--ink-2:#C4C4CA;--muted:#8B8B93;--line:#232326;--line-soft:#19191C;--accent:#22E4FF;--accent-dim:#164A57;--pos:#00F5A0;--neg:#FF4D7D;--warn:#FFC93C;--info:#7AA7FF;--sans:"Poppins",system-ui,"Segoe UI",Arial,sans-serif;max-width:1280px;margin:0 auto;font:12.5px/1.4 var(--sans);font-variant-numeric:tabular-nums;color:var(--ink-2)}
   .busca *,.busca *::before,.busca *::after{box-sizing:border-box}
   .busca [hidden]{display:none!important}
   .busca button,.busca input,.busca select{font:inherit}
@@ -154,7 +154,7 @@
   .busca .b-empty b{color:var(--ink);font-size:14px;font-weight:600}
 
   /* tooltip do mapa */
-  .busca .b-tip{position:fixed;z-index:1200;width:220px;padding:10px 12px 9px;background:#17171b;border:1px solid #3a3a42;border-radius:6px;box-shadow:0 10px 28px rgba(0,0,0,.65);pointer-events:none;font:12px/1.4 var(--mono);color:var(--ink-2)}
+  .busca .b-tip{position:fixed;z-index:1200;width:220px;padding:10px 12px 9px;background:#17171b;border:1px solid #3a3a42;border-radius:6px;box-shadow:0 10px 28px rgba(0,0,0,.65);pointer-events:none;font:12px/1.4 var(--sans);color:var(--ink-2)}
   .busca .b-tip .t-h{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
   .busca .b-tip .t-h b{color:#fff;font-size:14px}
   .busca .b-tip .t-h span{color:var(--ink);font-size:13px}
@@ -254,7 +254,7 @@
 
   /* ---------- GAVETA DO NICHO ---------- */
   .busca .b-scrim{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.62)}
-  .busca .b-drawer{position:fixed;top:0;right:0;bottom:0;z-index:1001;width:min(700px,100vw);background:var(--surface);border-left:1px solid rgba(34,228,255,.35);box-shadow:-18px 0 40px rgba(0,0,0,.6);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s cubic-bezier(.2,.7,.3,1);font:12.5px/1.4 var(--mono);color:var(--ink-2)}
+  .busca .b-drawer{position:fixed;top:0;right:0;bottom:0;z-index:1001;width:min(700px,100vw);background:var(--surface);border-left:1px solid rgba(34,228,255,.35);box-shadow:-18px 0 40px rgba(0,0,0,.6);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s cubic-bezier(.2,.7,.3,1);font:12.5px/1.4 var(--sans);color:var(--ink-2)}
   .busca .b-drawer.b-in{transform:none}
   .busca .b-dr-head{padding:14px 18px 12px;border-bottom:1px solid var(--line)}
   .busca .b-dr-row{display:flex;align-items:center;gap:10px}
@@ -297,7 +297,7 @@
   .busca .b-curve{width:100%;height:auto;display:block}
 
   /* ---------- CONFIRMACAO ---------- */
-  .busca .b-cf{position:fixed;z-index:1002;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,calc(100vw - 32px));background:var(--surface-2);border:1px solid rgba(255,77,125,.45);border-radius:8px;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.7);font:12.5px/1.45 var(--mono);color:var(--ink-2)}
+  .busca .b-cf{position:fixed;z-index:1002;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,calc(100vw - 32px));background:var(--surface-2);border:1px solid rgba(255,77,125,.45);border-radius:8px;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.7);font:12.5px/1.45 var(--sans);color:var(--ink-2)}
   .busca .b-cf h2{margin:0 0 8px;font-size:15px;color:#fff;border-radius:3px}
   .busca .b-cf p{margin:0 0 16px;font-family:var(--sans);font-size:13px;color:var(--ink-2)}
   .busca .b-cf .acts{display:flex;justify-content:flex-end;gap:8px}
@@ -332,3 +332,83 @@
    (pontos; 0 desliga)"): na gaveta eles quebram linha em vez de empurrar a
    coluna do campeão para fora. */
 .busca .b-dr-body .b-t .it{white-space:normal}
+
+/* ---------- ESPACO DE BUSCA: régua e gavetas ----------
+   Contrato: docs/superpowers/specs/2026-11-03-busca-automatica/espaco-busca.html
+   ("Proposta" aprovada em 04/11/2026), classes .esp-* do protótipo com o
+   prefixo b-e*. A tela inteira da busca é Poppins (pedido do usuário):
+   números alinhados com tabular-nums. */
+.busca #b-p-esp .b-inp{padding:0 6px}
+.busca #b-p-esp .b-inp.w-t{width:66px}
+.busca #b-p-esp .b-inp.w-s{width:52px}
+.busca #b-p-esp .b-inp[aria-invalid="true"]{border-color:var(--neg)}
+.busca #b-p-esp .b-chip{white-space:nowrap}
+.busca #b-p-esp .b-cfghead{margin-bottom:10px}
+/* régua de combinações */
+.busca .b-eruler{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:6px;padding:12px 14px;margin-bottom:10px}
+.busca .b-erh{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.busca .b-erh .l{color:var(--muted);font-size:11.5px;display:inline-flex;align-items:center}
+.busca .b-etotal{font-size:24px;font-weight:700;color:#fff;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.busca .b-etotal.bad{color:var(--neg);font-size:16px}
+.busca .b-erh .b-btn.sm{margin-left:auto}
+.busca .b-ebar{display:flex;gap:2px;height:30px;margin-top:10px;border-radius:4px;overflow:hidden}
+.busca .b-eseg{display:flex;align-items:center;gap:8px;min-width:46px;padding:0 9px;border:0;cursor:pointer;color:#000;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;transition:flex-grow .25s}
+.busca .b-eseg span{overflow:hidden;text-overflow:ellipsis}
+.busca .b-eseg b{margin-left:auto;font-weight:600;opacity:.8}
+.busca .b-eseg:focus-visible{outline-offset:-3px;outline-color:#fff}
+.busca .b-eseg.s0{background:#22E4FF}.busca .b-eseg.s1{background:#17A9C0}.busca .b-eseg.s2{background:#127A8C;color:#fff}.busca .b-eseg.s3{background:#0E5562;color:#fff}
+.busca .b-eseg.err{background:repeating-linear-gradient(135deg,rgba(255,77,125,.25) 0 6px,rgba(255,77,125,.1) 6px 12px);color:var(--neg)}
+.busca .b-ecols{display:grid;grid-template-columns:44px 188px 1fr 104px;gap:0 12px;padding:0 14px 6px;color:var(--muted);font-size:11px}
+.busca .b-ecols span:last-child{text-align:right}
+/* gavetas */
+.busca .b-eg{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:6px;margin-bottom:8px}
+.busca .b-eg h3{margin:0;font-size:inherit}
+.busca .b-egb{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 14px;background:transparent;border:0;border-radius:6px;color:var(--ink);cursor:pointer;text-align:left}
+.busca .b-egb:hover{background:var(--surface-3)}
+.busca .b-egb svg{width:12px;height:12px;color:var(--muted);transition:transform .15s}
+.busca .b-egb[aria-expanded="true"] svg{transform:rotate(90deg)}
+.busca .b-egt{font-size:13.5px;font-weight:700;color:#fff;min-width:170px}
+.busca .b-egs{color:var(--muted);font-size:11.5px}
+.busca .b-egx{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600}
+.busca .b-egx.bad{color:var(--neg)}
+.busca .b-egp{border-top:1px solid var(--line-soft);padding:2px 0 4px}
+/* linha de item: interruptor | rótulo | faixa | variações */
+.busca .b-erow{display:grid;grid-template-columns:44px 188px 1fr 104px;gap:0 12px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line-soft)}
+.busca .b-erow:last-child{border-bottom:0}
+.busca .b-erow.off .b-elab{color:var(--muted)}
+.busca .b-elab{display:flex;align-items:center;color:var(--ink);font-weight:500;min-width:0}
+.busca .b-ectl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.busca .b-ecnt{text-align:right}
+.busca .b-ecnt .b-pill{height:22px;padding:0 9px;font-size:11px;font-weight:600;gap:5px;font-variant-numeric:tabular-nums}
+.busca .b-efields{display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap}
+.busca .b-ef{display:inline-flex;align-items:center;gap:5px}
+.busca .b-ef>span,.busca .b-ef>label{color:var(--muted);font-size:11px}
+.busca .b-eun{color:var(--muted);font-size:11px;margin-left:2px}
+.busca .b-eprop{color:var(--accent);font-size:11.5px}
+.busca .b-efix{color:var(--muted);font-size:11.5px}
+.busca .b-eerr{flex-basis:100%;color:var(--neg);font-size:11.5px;line-height:1.3;margin-top:2px}
+.busca .b-eerr:empty{display:none}
+.busca .b-egap{width:10px}
+/* interruptor Minerar */
+.busca .b-tgl{position:relative;width:36px;height:20px;border-radius:10px;border:1px solid #5a5a62;background:#1a1a1f;cursor:pointer;padding:0;flex:none}
+.busca .b-tgl::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#8B8B93;transition:transform .15s}
+.busca .b-tgl[aria-checked="true"]{background:rgba(34,228,255,.18);border-color:rgba(34,228,255,.8)}
+.busca .b-tgl[aria-checked="true"]::after{transform:translateX(16px);background:var(--accent)}
+.busca .b-tgl:disabled{cursor:not-allowed;opacity:.5}
+.busca .b-eswwrap{display:flex;align-items:center;justify-content:flex-start;min-height:28px}
+/* stop e alvo: blocos compactos por tipo */
+.busca .b-erow.gest{grid-template-rows:auto auto;row-gap:8px}
+.busca .b-egtop{grid-column:3;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.busca .b-ecards{grid-column:2 / 5;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:start}
+.busca .b-ecard{border:1px solid #2a2a30;border-radius:6px;padding:8px 10px 10px;background:#0c0c0e;min-width:0}
+.busca .b-ecard.on{border-color:rgba(34,228,255,.35)}
+.busca .b-ecard-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.busca .b-ecard-h .b-chip{height:26px;padding:0 10px}
+.busca .b-ecard-h .n{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:11.5px}
+.busca .b-ecard:not(.on) .n{color:var(--muted)}
+.busca .b-ecard-r{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.busca .b-ecard-r+.b-ecard-r{margin-top:8px;padding-top:8px;border-top:1px dashed #26262b}
+.busca .b-ecard-r label{display:flex;flex-direction:column;gap:3px;color:var(--muted);font-size:10.5px;min-width:0}
+.busca #b-p-esp .b-ecard-r .b-inp{width:100%}
+.busca .b-ecard-k{grid-column:1/-1;color:var(--muted);font-size:10.5px;margin-bottom:-2px}
+@media (prefers-reduced-motion:reduce){.busca .b-eseg,.busca .b-egb svg,.busca .b-tgl::after{transition:none}}

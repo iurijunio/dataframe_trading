@@ -108,7 +108,7 @@
 '      <div class="b-more" id="b-l-more"><span id="b-l-rest"></span><button type="button" class="b-btn ghost sm" id="b-l-all">Mostrar todos</button></div></div>' +
 '  </section>' +
 '  <section id="b-p-esp" role="tabpanel" aria-labelledby="b-v-esp" tabindex="-1" hidden>' +
-'    <div class="b-cfghead" id="b-cfg-lock"><span class="b-pill gray sm">' + LOCK + 'só leitura</span>' + q('Ajuda sobre o espaço travado', 'O espaço de busca fica travado enquanto a busca existe. Para mudar faixas ou passos, use Nova busca.') + '</div>' +
+'    <div class="b-cfghead" id="b-cfg-lock"><span class="b-pill gray sm">' + LOCK + 'só leitura</span>' + q('Ajuda sobre o espaço travado', 'Travado enquanto a busca existe. As gavetas abrem para consulta. Para mudar faixas ou passos, use Nova busca.') + '</div>' +
 '    <fieldset class="b-cfg" id="b-cfg"><legend class="b-sr">Espaço de busca</legend><div id="b-cfg-corpo"></div></fieldset>' +
 '  </section>' +
 '</section>' +
@@ -321,6 +321,9 @@
   }
 
   /* ------------------------------------------------------------ espaço */
+  /* Contrato: espaco-busca.html, "Proposta" aprovada em 04/11/2026. Régua de
+   * combinações no topo, quatro gavetas (linha = Minerar | item | faixa |
+   * variações) e as contagens com a régua de core/busca/catalogo.valores. */
   function numBR(s) {
     // "1.234,5" (pt-BR), "80.000" (milhar) e "1.5" (ponto decimal, o hábito dos outros campos)
     s = String(s == null ? '' : s).replace(/[^\d,.\-]/g, '');
@@ -329,85 +332,302 @@
     var v = parseFloat(s); return isNaN(v) ? null : v;
   }
   function numTxt(v) { return v == null ? '' : String(v).replace('.', ','); }
+  function cap(s) { s = String(s == null ? '' : s); return s.charAt(0).toUpperCase() + s.slice(1); }
+  function low(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
+  function minutos(h) { var m = /^(\d{1,2}):(\d{2})$/.exec(String(h == null ? '' : h).trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  var ESCALA = [[1e27, 'octilhão', 'octilhões'], [1e24, 'septilhão', 'septilhões'], [1e21, 'sextilhão', 'sextilhões'], [1e18, 'quintilhão', 'quintilhões'], [1e15, 'quatrilhão', 'quatrilhões'], [1e12, 'trilhão', 'trilhões'], [1e9, 'bilhão', 'bilhões'], [1e6, 'milhão', 'milhões']];
+  function grande(n) {
+    if (n < 1e6) return fmt(n);
+    if (n >= 1e30) return '10^' + Math.floor(Math.log10(n));
+    for (var i = 0; i < ESCALA.length; i++) if (n >= ESCALA[i][0]) { var v = n / ESCALA[i][0]; return dec(v, v < 10 ? 1 : 0) + ' ' + (v < 2 ? ESCALA[i][1] : ESCALA[i][2]); }
+    return fmt(n);
+  }
+
+  /* as réguas do core (catalogo.py): grade de passo fixo e degrau proporcional */
+  function grade(de, ate, passo) {
+    if (de == null || ate == null) return {n: 0, e: 'Preencha de e até.'};
+    if (ate < de) return {n: 0, e: 'O fim vem antes do início.'};
+    if (!passo || passo <= 0) return {n: 0, e: 'O passo precisa ser maior que 0.'};
+    return {n: Math.floor(Math.round((ate - de) / passo * 1e9) / 1e9) + 1};
+  }
+  function prop(de, ate) {
+    if (de == null || ate == null) return {n: 0, e: 'Preencha de e até.'};
+    if (ate < de) return {n: 0, e: 'O fim vem antes do início.'};
+    var n = 0, v = Math.trunc(de), last = null;
+    while (v <= ate) { n++; last = v; v = Math.max(v + 1, Math.round(v * 1.08)); }
+    if (last !== null && last !== ate && ate > last) n++;
+    return {n: n};
+  }
+
+  /* gavetas: pelo nome do item; extra novo cai em "Proteções e limites" */
+  var GAV = [{id: 'tempo', t: 'Tempo e janela'}, {id: 'sa', t: 'Stop e alvo'}, {id: 'estr', t: 'Estratégia'}, {id: 'prot', t: 'Proteções e limites'}];
+  var NO_TEMPO = {timeframe: 1, direcao: 1, janela: 1, dias: 1, fechamento: 1}, NO_SA = {stop: 1, alvo: 1};
+  function gavetaDe(it) { return it.onde === 'param' ? 'estr' : NO_SA[it.nome] ? 'sa' : NO_TEMPO[it.nome] ? 'tempo' : 'prot'; }
+  var gAberta = (function () {
+    try { var g = JSON.parse(window.localStorage.getItem('busca.gavetas')); if (g && typeof g === 'object') return g; } catch (e) {}
+    return {tempo: true, sa: true, estr: false, prot: false};
+  })();
+  function guardaGav() { try { window.localStorage.setItem('busca.gavetas', JSON.stringify(gAberta)); } catch (e) {} }
+
+  /* títulos curtos; o resto do rótulo vai para o (?) */
+  var CURTO = {dias: 'Dias', max_barras: 'Tempo máximo', breakeven_pct: 'Breakeven', limite_ganho_contrato: 'Ganho máx. no dia',
+    limite_perda_contrato: 'Perda máx. no dia', max_trades_dia: 'Máx. operações', max_prejuizos_dia: 'Máx. prejuízos', saida: 'Modo de saída'};
+  function unidade(it) {
+    var u = {max_barras: 'barras', breakeven_pct: '% do alvo', max_trades_dia: 'no dia', max_prejuizos_dia: 'no dia'}[it.nome];
+    if (it.nome === 'limite_ganho_contrato' || it.nome === 'limite_perda_contrato') u = ((D.moeda || '') + ' por contrato').trim();
+    return u || '';
+  }
+  var AJUDA = {
+    dias: 'Testa qualquer combinação dos dias marcados (31 com os cinco): só terça, segunda e quarta, de terça a quinta etc.',
+    fechamento: 'Cada combinação escolhe um horário desta faixa, nunca antes do fim das entradas dela. Desligado: vale o horário do menu.',
+    stop: 'Liga os tipos que a busca pode usar. Sem stop: a operação sai pela saída da estratégia, pelo tempo máximo ou no fechamento.',
+    alvo: 'Liga os tipos que a busca pode usar. × stop: o alvo é um múltiplo do stop da mesma combinação.',
+    saida: 'O que fazer quando aparece o sinal contrário com a posição aberta.',
+    max_barras: 'Fecha a operação depois deste número de barras. Ligado: a busca testa a faixa e o 0 (sem limite) entra junto.',
+    breakeven_pct: 'Leva o stop para a entrada quando o preço anda esta parte do caminho até o alvo. 0 = sem breakeven.',
+    limite_ganho_contrato: 'Para de operar no dia ao chegar neste ganho por contrato. 0 = sem limite.',
+    limite_perda_contrato: 'Para de operar no dia ao chegar nesta perda por contrato. 0 = sem limite.',
+    max_trades_dia: 'Número máximo de operações por dia. 0 = sem limite.',
+    max_prejuizos_dia: 'Para no dia depois deste número de operações com prejuízo. 0 = sem limite.'
+  };
+  function rotulo(it) {
+    var r = String(it.rotulo || it.nome), aj = AJUDA[it.nome] || '';
+    if (it.nome === 'janela') aj = 'A busca testa janelas de entrada dentro deste horário, de ' + ((rasc[it.nome] || {}).minima || 30) + ' min para cima, começando e terminando a cada passo.';
+    if (CURTO[it.nome]) return {t: CURTO[it.nome], q: aj};
+    if (it.onde === 'param') {
+      // "Filtro de tendência (0 desliga)" -> "Filtro de tendência" + (?) "0 desliga"
+      var i = r.search(/\s+(\(|·)/);
+      if (i > 0) {
+        var resto = r.slice(i).replace(/^\s*[(·]\s*/, '').replace(/\)\s*$/, '').replace(/\s*·\s*/g, '; ');
+        return {t: r.slice(0, i), q: aj || cap(resto) + '.'};
+      }
+    }
+    return {t: r, q: aj};
+  }
+  function itemPor(nome) { return D.espaco.itens.filter(function (it) { return it.nome === nome; })[0]; }
+  function minera(it) { return it.onde !== 'extra' || rasc[it.nome].minerar !== false; }
+  var NOME_TIPO = {pontos: 'pontos', atr: 'ATR', percentual: 'porcentagem', multiplicador: 'vezes o stop'};
+
   function iniciarRasc() {
     rasc = {};
-    D.espaco.itens.forEach(function (it) { rasc[it.nome] = JSON.parse(JSON.stringify(it.faixa)); });
+    D.espaco.itens.forEach(function (it) {
+      rasc[it.nome] = JSON.parse(JSON.stringify(it.faixa));
+      if (it.onde === 'extra' && rasc[it.nome].minerar !== false) rasc[it.nome].minerar = true;
+    });
     rasc._meta = D.criterio || 'fr'; rasc._min = D.minimo || 400;
   }
-  function chips(it, ligados, todosLigados) {
-    return it.opcoes.map(function (o) {
-      return '<button type="button" class="b-chip" data-it="' + it.nome + '" data-v="' + esc(JSON.stringify(o.valor)) + '" aria-pressed="' + (ligados.indexOf(o.valor) >= 0) + '">' + esc(o.rotulo) + '</button>';
-    }).join('');
+
+  /* contagem de variações por item */
+  function contaTipo(ft) {
+    var m = grade(ft.de, ft.ate, ft.passo);
+    if (m.e || !ft.periodo) return m;
+    var pr = ft.periodo, p = pr.passo ? grade(pr.de, pr.ate, pr.passo) : prop(pr.de, pr.ate);
+    if (p.e) return {n: 0, e: 'Período: ' + low(p.e)};
+    return {n: m.n * p.n};
   }
-  function linhaItem(it) {
-    var f = rasc[it.nome], h = '<tr><td class="it">' + esc(it.rotulo) + '</td><td>';
+  function conta(it) {
+    var f = rasc[it.nome];
+    if (!minera(it)) return {n: 1, off: 1};
     if (it.tipo === 'lista' || it.tipo === 'dias') {
-      // nenhum chip marcado = item desligado na busca (vale para "sem entradas" e o ADX)
-      var ajLista = it.tipo === 'dias' ? q('Ajuda sobre dias', 'Testa qualquer combinação dos dias marcados (31 no total): só terça, segunda e quarta, de terça a quinta etc.')
-        : it.nome.indexOf('sem_entrada') === 0 ? q('Ajuda sobre ' + it.rotulo.toLowerCase(), 'Nenhum horário marcado: sem bloqueio de entradas.')
-        : it.nome === 'filtro_adx' ? q('Ajuda sobre a régua do ADX', 'Nenhuma régua marcada: ADX desligado. Período e limiar do ADX não são testados.')
-        : '';
-      h += '<div class="b-chips">' + chips(it, f.ligados || []) + ajLista + '</div></td><td class="b-dim">—</td></tr>';
-      return h;
+      var lig = f.ligados || [], on = (it.opcoes || []).filter(function (o) { return lig.indexOf(o.valor) >= 0; }).length;
+      // extra com nada marcado = recurso desligado; o resto precisa de uma opção
+      if (!on) return it.onde === 'extra' ? {n: 1, off: 1} : {n: 0, e: 'Marque ao menos uma opção.'};
+      return {n: it.tipo === 'dias' ? Math.pow(2, on) - 1 : on};
     }
     if (it.tipo === 'hora') {
-      var rot = esc(it.rotulo), ajuda = it.nome === 'janela'
-        ? q('Ajuda sobre horário de entrada', 'A busca testa janelas de entrada dentro deste horário, de ' + f.minima + ' min para cima, começando e terminando a cada passo.')
-        : q('Ajuda sobre ' + rot.toLowerCase(), 'Cada combinação escolhe um horário desta faixa, nunca antes do fim das entradas dela.');
-      h += '<span class="b-rng"><span class="b-dim">de</span><input class="b-inp w-time" data-it="' + it.nome + '" data-hora="1" data-k="de" value="' + esc(f.de) + '" aria-label="' + rot + ', de"><span class="b-dim">até</span><input class="b-inp w-time" data-it="' + it.nome + '" data-hora="1" data-k="ate" value="' + esc(f.ate) + '" aria-label="' + rot + ', até">' +
-        ajuda + '</span></td>' +
-        '<td><input class="b-inp" data-it="' + it.nome + '" data-hora="1" data-k="passo" value="' + f.passo + ' min" aria-label="Passo de ' + rot.toLowerCase() + '"></td></tr>';
-      return h;
+      var a = minutos(f.de), b = minutos(f.ate), ps = parseInt(f.passo, 10);
+      if (a == null || b == null) return {n: 0, e: 'Use o formato 09:30.'};
+      if (it.nome === 'janela') {
+        if (b <= a) return {n: 0, e: 'O fim vem antes do início.'};
+        if (!(ps > 0)) return {n: 0, e: 'O passo precisa ser maior que 0.'};
+        var mi = parseInt(f.minima, 10) || 30, p = Math.floor((b - a) / ps) + 1, k = Math.ceil(mi / ps), n = 0;
+        for (var i = 0; i < p; i++) n += Math.max(0, p - i - k);
+        return n ? {n: n} : {n: 0, e: 'A faixa é menor que a janela mínima de ' + mi + ' min.'};
+      }
+      if (b < a) return {n: 0, e: 'O fim vem antes do início.'};
+      if (!(ps > 0)) return {n: 0, e: 'O passo precisa ser maior que 0.'};
+      return {n: Math.floor((b - a) / ps) + 1 + ((b - a) % ps ? 1 : 0)};
     }
     if (it.tipo === 'gestao') {
-      // uma linha por tipo: liga/desliga o tipo e edita de, até e passo
-      var nomeTipo = {pontos: 'pontos', atr: 'ATR', percentual: 'porcentagem', multiplicador: 'vezes o stop', sem: 'sem ' + it.nome};
-      return it.opcoes.map(function (o, k) {
-        var ft = f.tipos[o.tipo] || {}, alvo = esc(it.rotulo.toLowerCase()) + ' em ' + (nomeTipo[o.tipo] || o.tipo);
-        var lin = '<tr>' + (k === 0 ? '<td class="it" rowspan="' + it.opcoes.length + '">' + esc(it.rotulo) + '</td>' : '') +
-          '<td><span class="b-rng"><button type="button" class="b-chip" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" aria-pressed="' + !!ft.on + '">' + esc(o.rotulo) + '</button>';
-        if (o.tipo === 'sem') return lin + '</span></td><td class="b-dim">—</td></tr>';
-        // ATR: o multiplicador e o período; o passo do período fica junto dele
-        // (a coluna "Passo" é do multiplicador). Passo vazio = proporcional.
-        var perRot = 'Período do ATR do ' + esc(it.rotulo.toLowerCase());
-        var per = ft.periodo ? '<span class="b-dim" style="margin-left:8px">período</span>' +
-          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_de" value="' + numTxt(ft.periodo.de) + '" aria-label="' + perRot + ', mínimo"><span class="b-dim">a</span>' +
-          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_ate" value="' + numTxt(ft.periodo.ate) + '" aria-label="' + perRot + ', máximo">' +
-          '<span class="b-dim">passo</span>' +
-          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_passo" value="' + numTxt(ft.periodo.passo) + '" placeholder="—" aria-label="Passo do ' + perRot.charAt(0).toLowerCase() + perRot.slice(1) + ' (vazio: proporcional)">' +
-          q('Ajuda sobre o passo do período do ATR', 'De quanto em quanto o período do ATR anda. Vazio: passo proporcional, que cresce com o valor. O passo da coluna ao lado é o do multiplicador.') : '';
-        return lin + '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="de" value="' + numTxt(ft.de) + '" aria-label="' + alvo + ', mínimo"><span class="b-dim">a</span>' +
-          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="ate" value="' + numTxt(ft.ate) + '" aria-label="' + alvo + ', máximo">' + per + '</span></td>' +
-          '<td><input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="passo" value="' + numTxt(ft.passo) + '" aria-label="Passo do ' + alvo + '"></td></tr>';
-      }).join('');
+      var tot = 0, err = null, tc = {};
+      (it.opcoes || []).forEach(function (o) {
+        var ft = (f.tipos || {})[o.tipo] || {};
+        if (o.tipo === 'sem') { if (ft.on) tot += 1; return; }
+        tc[o.tipo] = contaTipo(ft);
+        if (!ft.on) return;
+        if (tc[o.tipo].e) err = err || cap(o.rotulo) + ': ' + low(tc[o.tipo].e); else tot += tc[o.tipo].n;
+      });
+      if (err) return {n: 0, e: err, tipos: tc};
+      if (!tot) return {n: 0, e: 'Ligue ao menos um tipo.', tipos: tc};
+      return {n: tot, tipos: tc};
     }
-    h += '<span class="b-rng"><input class="b-inp w-s" data-it="' + it.nome + '" data-k="de" value="' + numTxt(f.de) + '" aria-label="' + esc(it.rotulo) + ', mínimo"><span class="b-dim">a</span><input class="b-inp w-s" data-it="' + it.nome + '" data-k="ate" value="' + numTxt(f.ate) + '" aria-label="' + esc(it.rotulo) + ', máximo"></span></td>';
-    h += it.degrau === 'proporcional'
-      ? '<td><span class="b-cy">proporcional</span>' + q('Ajuda sobre passo proporcional', 'Passo que cresce com o valor: perto de zero testa 2, 3, 4, 5; lá em cima pula de uns 8 em 8.', 'r') + '</td></tr>'
-      : '<td><input class="b-inp w-s" data-it="' + it.nome + '" data-k="passo" value="' + numTxt(f.passo) + '" aria-label="Passo de ' + esc(it.rotulo) + '"></td></tr>';
-    return h;
+    return it.degrau === 'proporcional' ? prop(f.de, f.ate) : grade(f.de, f.ate, f.passo);
   }
+
+  /* desenho */
+  var uid = 0, espErros = 0, liveT = null;
+  function campo(rot, aria, val, cls, data) {
+    var id = 'b-ei' + (++uid);
+    return '<span class="b-ef"><label for="' + id + '">' + rot + '</label><input id="' + id + '" class="b-inp b-lk ' + (cls || 'w-s') + '" value="' + esc(val) + '" aria-label="' + esc(aria) + '" ' + data + '></span>';
+  }
+  function ctlHTML(it, rt) {
+    var f = rasc[it.nome], d = 'data-it="' + it.nome + '"', r = rt.t, h = '';
+    if (it.tipo === 'lista' || it.tipo === 'dias') {
+      var lig = f.ligados || [];
+      h = '<div class="b-chips b-efields" role="group" aria-label="' + esc(r) + '">' + (it.opcoes || []).map(function (o) {
+        return '<button type="button" class="b-chip b-lk" ' + d + ' data-v="' + esc(JSON.stringify(o.valor)) + '" aria-pressed="' + (lig.indexOf(o.valor) >= 0) + '">' + esc(o.rotulo) + '</button>';
+      }).join('') + '</div>';
+      if (it.onde === 'extra') h += '<span class="b-efix">desligado</span>';
+    } else if (it.tipo === 'hora') {
+      h = '<span class="b-efields">' + campo('de', r + ', de', f.de, 'w-t', d + ' data-f="de"') + campo('até', r + ', até', f.ate, 'w-t', d + ' data-f="ate"') +
+        '<span class="b-egap"></span>' + campo('passo', r + ', passo em minutos', (f.passo == null ? '' : f.passo) + ' min', 'w-t', d + ' data-f="passo"') + '</span>';
+      if (it.onde === 'extra') h += '<span class="b-efix">fixo em ' + esc(D.espaco.fechamento_menu || 'menu') + ' (menu)</span>';
+    } else {
+      var un = unidade(it);
+      h = '<span class="b-efields">' + campo('de', r + ', de', numTxt(f.de), 'w-s', d + ' data-f="de"') + campo('até', r + ', até', numTxt(f.ate), 'w-s', d + ' data-f="ate"') +
+        '<span class="b-egap"></span>' +
+        (it.degrau === 'proporcional'
+          ? '<span class="b-ef"><span>passo</span><span class="b-eprop">proporcional</span>' + q('Ajuda sobre passo proporcional', 'Passo que cresce com o valor: perto de zero testa 2, 3, 4, 5; lá em cima pula uns 8%.') + '</span>'
+          : campo('passo', r + ', passo', numTxt(f.passo), 'w-s', d + ' data-f="passo"')) +
+        (un ? '<span class="b-eun">' + esc(un) + '</span>' : '') + '</span>';
+      if (it.onde === 'extra') h += '<span class="b-efix">fixo em 0</span>';
+    }
+    return h + '<div class="b-eerr" id="b-ee-' + it.nome + '"></div>';
+  }
+  function cardHTML(it, o) {
+    var ft = (rasc[it.nome].tipos || {})[o.tipo] || {}, d = 'data-it="' + it.nome + '" data-tp="' + o.tipo + '"';
+    var nome = it.rotulo + ' em ' + (NOME_TIPO[o.tipo] || o.rotulo), cid = it.nome + '-' + o.tipo;
+    function f(rot, aria, val, extra) { var id = 'b-ei' + (++uid); return '<label for="' + id + '">' + rot + '<input id="' + id + '" class="b-inp b-lk b-etpf" value="' + esc(numTxt(val)) + '" aria-label="' + esc(aria) + '" ' + d + ' ' + extra + '></label>'; }
+    var h = '<div class="b-ecard' + (ft.on ? ' on' : '') + '" id="b-cd-' + cid + '" role="group" aria-label="' + esc(nome) + '">' +
+      '<div class="b-ecard-h"><button type="button" class="b-chip b-lk" ' + d + ' data-tg="1" aria-pressed="' + !!ft.on + '">' + esc(cap(o.rotulo)) + '</button><span class="n" id="b-cn-' + cid + '"></span></div>' +
+      '<div class="b-ecard-r">' + (ft.periodo ? '<span class="b-ecard-k">múltiplo</span>' : '') +
+      f('de', nome + ', de', ft.de, 'data-f="de"') + f('até', nome + ', até', ft.ate, 'data-f="ate"') + f('passo', nome + ', passo', ft.passo, 'data-f="passo"') + '</div>';
+    if (ft.periodo) {
+      var pr = 'Período do ATR do ' + it.rotulo.toLowerCase();
+      h += '<div class="b-ecard-r"><span class="b-ecard-k">período</span>' +
+        f('de', pr + ', de', ft.periodo.de, 'data-f="per.de"') + f('até', pr + ', até', ft.periodo.ate, 'data-f="per.ate"') +
+        f('passo', pr + ', passo', ft.periodo.passo, 'data-f="per.passo"') + '</div>';
+    }
+    return h + '</div>';
+  }
+  function linhaItem(it) {
+    var rt = rotulo(it), n = it.nome;
+    var lab = '<div class="b-elab"><span id="b-el-' + n + '">' + esc(rt.t) + '</span>' + (rt.q ? q('Ajuda sobre ' + rt.t.toLowerCase(), rt.q, 'l') : '') + '</div>';
+    var cnt = '<div class="b-ecnt"><span class="b-pill" id="b-ec-' + n + '"></span></div>';
+    if (it.tipo === 'gestao') {
+      var sem = (it.opcoes || []).filter(function (o) { return o.tipo === 'sem'; })[0], ft = sem && ((rasc[n].tipos || {}).sem || {});
+      return '<div class="b-erow gest" id="b-er-' + n + '" role="group" aria-labelledby="b-el-' + n + '"><div></div>' + lab +
+        '<div class="b-egtop">' + (sem ? '<button type="button" class="b-chip b-lk" data-it="' + n + '" data-tp="sem" data-tg="1" aria-pressed="' + !!ft.on + '">' + esc(cap(sem.rotulo)) + '</button>' : '') +
+        '<div class="b-eerr" id="b-ee-' + n + '"></div></div>' + cnt +
+        '<div class="b-ecards">' + (it.opcoes || []).filter(function (o) { return o.tipo !== 'sem'; }).map(function (o) { return cardHTML(it, o); }).join('') + '</div></div>';
+    }
+    var sw = it.onde === 'extra' ? '<button type="button" role="switch" class="b-tgl b-lk" data-it="' + n + '" data-sw="1" aria-checked="' + minera(it) + '" aria-label="Minerar ' + esc(rt.t.toLowerCase()) + '"></button>' : '';
+    return '<div class="b-erow' + (minera(it) ? '' : ' off') + '" id="b-er-' + n + '" role="group" aria-labelledby="b-el-' + n + '">' +
+      '<div class="b-eswwrap">' + sw + '</div>' + lab + '<div class="b-ectl">' + ctlHTML(it, rt) + '</div>' + cnt + '</div>';
+  }
+  function gavetas() {
+    return GAV.filter(function (g) { return D.espaco.itens.some(function (it) { return gavetaDe(it) === g.id; }); });
+  }
+  var CHEV = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   function renderEsp() {
     if (!rasc) iniciarRasc();
-    var E = D.espaco, h = '<div class="b-cfgtop"><div class="b-blk"><h3>Regras</h3><div class="b-fl">' +
-      '<div><label for="b-r-crit">Meta</label><select id="b-r-crit" class="b-dd" style="width:200px">' + D.metas.map(function (m) { return '<option value="' + m.valor + '"' + (m.valor === rasc._meta ? ' selected' : '') + '>' + esc(m.rotulo) + '</option>'; }).join('') + '</select></div>' +
-      '<div><label for="b-r-min">Mín. de trades</label><span style="display:inline-flex;align-items:center"><input id="b-r-min" class="b-inp" value="' + rasc._min + '" inputmode="numeric">' + q('Ajuda sobre mínimo de trades', 'Abaixo disso o nicho fica listrado no mapa. 400 é o padrão: com menos de uns 300 trades o resultado tende a ser sorte.') + '</span></div></div></div>' +
+    uid = 0;
+    var E = D.espaco, gs = gavetas();
+    var h = '<div class="b-eruler"><div class="b-erh">' +
+      '<span class="l" id="b-etot-l">Combinações' + q('Ajuda sobre combinações', 'Quantas combinações cabem no espaço: as variações de cada item multiplicadas. A busca não testa todas; escolhe onde testar. A barra mostra quanto cada grupo pesa no total.') + '</span>' +
+      '<span class="b-etotal" id="b-etot" aria-describedby="b-etot-l"></span>' +
+      '<button type="button" class="b-btn ghost sm" id="b-eall" aria-controls="b-egs">Abrir tudo</button></div>' +
+      '<div class="b-ebar" id="b-ebar" role="group" aria-label="Peso de cada grupo no total">' +
+      gs.map(function (g, i) { return '<button type="button" class="b-eseg s' + i + '" id="b-esg-' + g.id + '" data-g="' + g.id + '"><span>' + esc(g.t) + '</span><b id="b-esgx-' + g.id + '"></b></button>'; }).join('') + '</div>' +
+      '<div class="b-sr" role="status" aria-live="polite" id="b-elive"></div></div>';
+    h += '<div class="b-cfgtop"><div class="b-blk"><h3>Regras</h3><div class="b-fl">' +
+      '<div><label for="b-r-crit">Meta</label><select id="b-r-crit" class="b-dd b-lk" style="width:210px">' + D.metas.map(function (m) { return '<option value="' + m.valor + '"' + (m.valor === rasc._meta ? ' selected' : '') + '>' + esc(m.rotulo) + '</option>'; }).join('') + '</select></div>' +
+      '<div><label for="b-r-min">Mín. de trades</label><span style="display:inline-flex;align-items:center"><input id="b-r-min" class="b-inp b-lk" value="' + rasc._min + '" inputmode="numeric">' + q('Ajuda sobre mínimo de trades', 'Abaixo disso o nicho fica listrado no mapa. 400 é o padrão: com menos de uns 300 trades o resultado tende a ser sorte.') + '</span></div></div></div>' +
       '<div class="b-blk"><h3>Fixos' + q('Ajuda sobre fixos', 'Valem iguais para todas as combinações. Para mudar, ajuste no menu antes de iniciar.') + '</h3><div class="b-kv">' +
-      E.fixos.map(function (f) { return '<div><span>' + esc(f[0]) + '</span><b>' + esc(f[1]) + '</b></div>'; }).join('') + '</div></div></div>' +
-      '<div class="b-blk" style="padding:2px 4px"><table class="b-t"><thead><tr><th scope="col" style="width:200px">Item</th><th scope="col">Faixa</th><th scope="col" style="width:200px">Passo' + q('Ajuda sobre passo', 'De quanto em quanto o valor anda dentro da faixa. Exemplo: horário de 09:30 a 16:00 com passo de 30 min testa 09:30, 10:00, 10:30 e assim por diante.', 'r') + '</th></tr></thead><tbody>' +
-      E.itens.filter(function (it) { return it.onde === 'perfil'; }).map(linhaItem).join('') + '</tbody><tbody>' +
-      E.itens.filter(function (it) { return it.onde === 'param'; }).map(linhaItem).join('') + '</tbody><tbody>' +
-      E.itens.filter(function (it) { return it.onde === 'extra'; }).map(linhaItem).join('') + '</tbody></table></div>';
+      E.fixos.map(function (f) { return '<div><span>' + esc(f[0]) + '</span><b>' + esc(f[1]) + '</b></div>'; }).join('') + '</div></div></div>';
+    h += '<div class="b-ecols" aria-hidden="true"><span>Minerar</span><span>Item</span><span>Faixa</span><span>Variações</span></div><div id="b-egs">' +
+      gs.map(function (g) {
+        var ab = !!gAberta[g.id];
+        return '<div class="b-eg" id="b-eg-' + g.id + '"><h3><button type="button" class="b-egb" id="b-egb-' + g.id + '" data-g="' + g.id + '" aria-expanded="' + ab + '" aria-controls="b-egp-' + g.id + '">' + CHEV +
+          '<span class="b-egt">' + esc(g.t) + '</span><span class="b-egs" id="b-egs-' + g.id + '"></span><span class="b-egx" id="b-egx-' + g.id + '"></span></button></h3>' +
+          '<div class="b-egp" id="b-egp-' + g.id + '" role="region" aria-labelledby="b-egb-' + g.id + '"' + (ab ? '' : ' hidden') + '>' +
+          E.itens.filter(function (it) { return gavetaDe(it) === g.id; }).map(linhaItem).join('') + '</div></div>';
+      }).join('') + '</div>';
     $('b-cfg-corpo').innerHTML = h;
     initTips($('b-cfg-corpo'));
-    // o fieldset fica ativo: desligá-lo desligaria também os (?) de dentro
-    $$('#b-cfg input,#b-cfg select,#b-cfg .b-chip').forEach(function (el) { el.disabled = !!E.travado; });
-    $('b-cfg-lock').hidden = !E.travado; $('b-esp-lock').style.display = E.travado ? '' : 'none';
+    syncGav();
+    renderEspTrava();
   }
+  // trava (busca existente) e o que depende do rascunho, sem redesenhar: o foco fica onde está
   function renderEspTrava() {
     var t = !!D.espaco.travado;
-    $$('#b-cfg input,#b-cfg select,#b-cfg .b-chip').forEach(function (el) { el.disabled = t; });
+    // o fieldset fica ativo: desligá-lo desligaria também os (?) e as gavetas
+    $$('#b-cfg .b-lk').forEach(function (el) { el.disabled = t; });
+    D.espaco.itens.forEach(function (it) {
+      var row = $('b-er-' + it.nome); if (!row) return;
+      if (it.onde === 'extra') {
+        var on = minera(it);
+        row.classList.toggle('off', !on);
+        $$('.b-efields', row).forEach(function (f) { f.hidden = !on; });
+        $$('.b-efix', row).forEach(function (f) { f.hidden = on; });
+      }
+      if (it.tipo === 'gestao') (it.opcoes || []).forEach(function (o) {
+        if (o.tipo === 'sem') return;
+        var ft = (rasc[it.nome].tipos || {})[o.tipo] || {}, cd = $('b-cd-' + it.nome + '-' + o.tipo);
+        if (cd) cd.classList.toggle('on', !!ft.on);
+        $$('.b-etpf[data-it="' + it.nome + '"][data-tp="' + o.tipo + '"]').forEach(function (inp) { inp.disabled = t || !ft.on; });
+      });
+    });
     $('b-cfg-lock').hidden = !t; $('b-esp-lock').style.display = t ? '' : 'none';
+    atualiza(true);
+  }
+  function atualiza(silencio) {
+    var total = 1, erros = 0, gs = gavetas();
+    gs.forEach(function (g) {
+      var fat = 1, ge = 0, vary = 0, n = 0;
+      D.espaco.itens.filter(function (it) { return gavetaDe(it) === g.id; }).forEach(function (it) {
+        var c = conta(it), p = $('b-ec-' + it.nome), e = $('b-ee-' + it.nome);
+        if (!p) return;
+        n++;
+        if (c.e) { ge++; p.className = 'b-pill rose'; p.textContent = 'corrigir'; }
+        else if (c.off) { p.className = 'b-pill gray'; p.textContent = 'desligado'; }
+        else if (c.n === 1) { p.className = 'b-pill gray'; p.textContent = 'fixo'; }
+        else { vary++; p.className = 'b-pill green'; p.textContent = fmt(c.n); }
+        p.setAttribute('aria-label', c.e ? 'Corrigir' : c.off ? 'Desligado' : c.n === 1 ? 'Fixo, 1 variação' : fmt(c.n) + ' variações');
+        e.textContent = c.e || '';
+        $$('input[data-it="' + it.nome + '"]').forEach(function (inp) { inp.setAttribute('aria-describedby', 'b-ee-' + it.nome); });
+        if (it.tipo === 'gestao') (it.opcoes || []).forEach(function (o) {
+          if (o.tipo === 'sem') return;
+          var ft = (rasc[it.nome].tipos || {})[o.tipo] || {}, tc = (c.tipos || {})[o.tipo] || {n: 0}, cn = $('b-cn-' + it.nome + '-' + o.tipo);
+          if (cn) cn.textContent = !ft.on ? 'desligado' : tc.e ? '—' : fmt(tc.n);
+          $$('.b-etpf[data-it="' + it.nome + '"][data-tp="' + o.tipo + '"]').forEach(function (inp) { inp.setAttribute('aria-invalid', ft.on && tc.e ? 'true' : 'false'); });
+        });
+        if (!c.e) fat *= c.n;
+      });
+      erros += ge;
+      $('b-egs-' + g.id).textContent = vary + ' de ' + n + ' variando';
+      var gx = $('b-egx-' + g.id), sx = $('b-esgx-' + g.id), sg = $('b-esg-' + g.id);
+      if (ge) { gx.className = 'b-egx bad'; gx.textContent = 'corrigir ' + ge; sx.textContent = '!'; sg.classList.add('err'); g._w = 1; }
+      else { gx.className = 'b-egx'; gx.textContent = '× ' + grande(fat); sx.textContent = '× ' + grande(fat); sg.classList.remove('err'); g._w = Math.max(0.6, Math.log10(fat)); }
+      sg.setAttribute('aria-label', g.t + ': ' + (ge ? 'corrigir ' + ge + (ge > 1 ? ' itens' : ' item') : 'multiplica por ' + grande(fat)) + '. Abrir gaveta');
+      total *= fat;
+    });
+    gs.forEach(function (g) { $('b-esg-' + g.id).style.flex = g._w + ' 1 0'; });
+    var t = $('b-etot'), msg;
+    if (erros) { t.className = 'b-etotal bad'; msg = 'Corrija ' + erros + (erros > 1 ? ' itens' : ' item') + ' para ver o total'; t.textContent = msg; }
+    else { t.className = 'b-etotal'; msg = (total >= 1e6 ? '≈ ' : '') + grande(total); t.textContent = msg; msg = 'Total: ' + msg + ' combinações'; }
+    espErros = D.espaco.travado ? 0 : erros;
+    $('b-ini').disabled = !st().b.ini || espErros > 0;
+    if (!silencio) { clearTimeout(liveT); liveT = setTimeout(function () { var l = $('b-elive'); if (l) l.textContent = msg; }, 700); }
+  }
+  function abreGav(id, sim) {
+    gAberta[id] = sim; guardaGav();
+    var b = $('b-egb-' + id), p = $('b-egp-' + id);
+    if (b) b.setAttribute('aria-expanded', String(sim)); if (p) p.hidden = !sim;
+  }
+  function syncGav() {
+    var b = $('b-eall'); if (!b) return;
+    b.textContent = gavetas().every(function (g) { return !!gAberta[g.id]; }) ? 'Fechar tudo' : 'Abrir tudo';
   }
   function lerEsp() {
     var faixas = {};
@@ -765,7 +985,7 @@
     $('b-cf-yes').addEventListener('click', function () { closeCf(true); });
     $('b-cf').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); closeCf(false); return; } trap(e, $('b-cf')); });
 
-    function iniciar() { acao('iniciar', Object.assign({faixas: lerEsp(), criterio: rasc._meta, minimo: rasc._min}, ctlAtual())); }
+    function iniciar() { if (espErros) { setView('esp'); return; } acao('iniciar', Object.assign({faixas: lerEsp(), criterio: rasc._meta, minimo: rasc._min}, ctlAtual())); }
     $$('[data-go="ini"]').forEach(function (b) { b.addEventListener('click', function () { if (status() === 'parada') iniciar(); else setView('esp'); }); });
     $('b-ini').addEventListener('click', iniciar);
     $('b-pau').addEventListener('click', function () { acao('pausar'); });
@@ -783,25 +1003,40 @@
     $('b-cpu-def').addEventListener('click', function () { cpuTouched = false; setCpu(cpuDefault(), true); $('b-n-cpu').focus(); });
 
     // espaço de busca: chips e campos editam o rascunho
+    // gavetas e régua abrem mesmo com o espaço travado; o resto edita o rascunho
     $('b-cfg').addEventListener('click', function (e) {
-      var c = e.target.closest('.b-chip'); if (!c || c.disabled || D.espaco.travado) return;
-      var it = c.dataset.it, on = c.getAttribute('aria-pressed') !== 'true';
-      c.setAttribute('aria-pressed', String(on));
-      if (c.dataset.tipo) { rasc[it].tipos[c.dataset.tipo].on = on; return; }
-      var v = JSON.parse(c.dataset.v), lig = rasc[it].ligados || (rasc[it].ligados = []);
-      if (on && lig.indexOf(v) < 0) lig.push(v); if (!on) rasc[it].ligados = lig.filter(function (z) { return z !== v; });
+      var b = e.target.closest('button'); if (!b || b.disabled || !$('b-cfg').contains(b)) return;
+      if (b.classList.contains('b-egb')) { abreGav(b.dataset.g, b.getAttribute('aria-expanded') !== 'true'); syncGav(); return; }
+      if (b.classList.contains('b-eseg')) {
+        abreGav(b.dataset.g, true); syncGav();
+        var gb = $('b-egb-' + b.dataset.g); gb.scrollIntoView({block: 'nearest', behavior: reduce ? 'auto' : 'smooth'}); gb.focus({preventScroll: true}); return;
+      }
+      if (b.id === 'b-eall') { var abrir = b.textContent === 'Abrir tudo'; gavetas().forEach(function (g) { abreGav(g.id, abrir); }); syncGav(); return; }
+      if (D.espaco.travado) return;
+      var nome = b.dataset.it, f = nome && rasc[nome]; if (!f) return;
+      if (b.dataset.sw) { f.minerar = f.minerar === false; b.setAttribute('aria-checked', String(f.minerar)); }
+      else if (b.dataset.tg) {
+        var tipos = f.tipos || (f.tipos = {}), ft = tipos[b.dataset.tp] || (tipos[b.dataset.tp] = {});
+        ft.on = !ft.on; b.setAttribute('aria-pressed', String(ft.on));
+      } else if (b.dataset.v != null) {
+        var on = b.getAttribute('aria-pressed') !== 'true', v = JSON.parse(b.dataset.v), lig = f.ligados || (f.ligados = []);
+        b.setAttribute('aria-pressed', String(on));
+        if (on && lig.indexOf(v) < 0) lig.push(v); if (!on) f.ligados = lig.filter(function (z) { return z !== v; });
+      } else return;
+      renderEspTrava(); atualiza();
+    });
+    $('b-cfg').addEventListener('input', function (e) {
+      var t = e.target, nome = t.dataset.it, k = t.dataset.f; if (!nome || !k || !rasc[nome] || D.espaco.travado) return;
+      var it = itemPor(nome), alvo = rasc[nome];
+      if (t.dataset.tp) alvo = (alvo.tipos || {})[t.dataset.tp] || {};
+      if (k.indexOf('per.') === 0) { alvo = alvo.periodo || (alvo.periodo = {}); k = k.slice(4); }
+      alvo[k] = it && it.tipo === 'hora' ? (k === 'passo' ? (parseInt(t.value, 10) || 0) : t.value.trim()) : numBR(t.value);
+      atualiza();
     });
     $('b-cfg').addEventListener('change', function (e) {
       var t = e.target;
       if (t.id === 'b-r-crit') { rasc._meta = t.value; return; }
-      if (t.id === 'b-r-min') { rasc._min = numBR(t.value) || 400; return; }
-      var it = t.dataset.it, k = t.dataset.k; if (!it || !k) return;
-      if (t.dataset.hora) { rasc[it][k] = (k === 'de' || k === 'ate') ? t.value : (parseInt(t.value, 10) || rasc[it][k]); return; }
-      if (t.dataset.tipo && k.indexOf('periodo_') === 0) {
-        rasc[it].tipos[t.dataset.tipo].periodo[k.slice(8)] = numBR(t.value); return;
-      }
-      if (t.dataset.tipo) { rasc[it].tipos[t.dataset.tipo][k] = numBR(t.value); return; }
-      rasc[it][k] = numBR(t.value);
+      if (t.id === 'b-r-min') { rasc._min = numBR(t.value) || 400; }
     });
   }
 

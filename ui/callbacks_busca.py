@@ -273,7 +273,8 @@ def dados_da_tela(sel, estrategia, simbolo, perfil, menu_ok=True) -> dict:
                 "dica": DICA_ESTADO["parada"], "quando": "",
                 "criterio": "fr", "sigla": "FR", "minimo": 400,
                 "espaco": {"itens": _itens_espaco(estrategia, simbolo, {}),
-                           "fixos": _fixos(perfil, moeda, True), "travado": False},
+                           "fixos": _fixos(perfil, moeda, True), "travado": False,
+                           "fechamento_menu": perfil.fechamento},
                 "controle": {"nucleos": 20, "parar_as": "08:30",
                              "parar_as_ligado": True, "limite": None},
                 "mapas": None}
@@ -326,7 +327,10 @@ def dados_da_tela(sel, estrategia, simbolo, perfil, menu_ok=True) -> dict:
                        "fixos": _fixos(perfil.__class__(**cfg["perfil_base"]), moeda,
                                        (cfg.get("espaco") or {}).get("com_extras"))
                        if cfg.get("perfil_base") else _fixos(perfil, moeda, True),
-                       "travado": True},
+                       "travado": True,
+                       # "Fechar posições às" com Minerar desligado: o do menu da busca
+                       "fechamento_menu": (cfg.get("perfil_base") or {}).get("fechamento")
+                       or perfil.fechamento},
             "controle": {k: (e.get("controle") or {}).get(k)
                          for k in ("nucleos", "parar_as", "parar_as_ligado", "limite")},
             "mapas": mapas, "legendas": projecao.CORES}
