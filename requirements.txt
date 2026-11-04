@@ -15,7 +15,7 @@ numpy==2.5.2
 # plotly
 
 # --- F3: mineracao -------------------------------------------------------
-# optuna
+ribs==0.12.0            # busca automatica (MAP-Elites); traz scipy, sklearn e pandas
 
 # --- pos-MVP: sincronizacao automatica -----------------------------------
 MetaTrader5              # so Windows, com terminal aberto
