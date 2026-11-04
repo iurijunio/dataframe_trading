@@ -1,0 +1,1170 @@
+<div class="lay-b">
+<style>
+  .lay-b{--ground:#000;--surface:#0A0A0B;--surface-2:#111113;--surface-3:#18181B;--ink:#E7E7EA;--ink-2:#C4C4CA;--muted:#8B8B93;--line:#232326;--line-soft:#19191C;--accent:#22E4FF;--accent-dim:#164A57;--pos:#00F5A0;--neg:#FF4D7D;--warn:#FFC93C;--info:#7AA7FF;--mono:"JetBrains Mono",ui-monospace,Consolas,monospace;--sans:"Poppins",system-ui,"Segoe UI",Arial,sans-serif;max-width:1280px;margin:0 auto;font:12.5px/1.4 var(--mono);color:var(--ink-2)}
+  .lay-b *,.lay-b *::before,.lay-b *::after{box-sizing:border-box}
+  .lay-b [hidden]{display:none!important}
+  .lay-b button,.lay-b input,.lay-b select{font:inherit}
+  .lay-b :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .lay-b .b-sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:-1px;padding:0;border:0}
+  .lay-b svg{flex:none}
+  .lay-b .b-dim{color:var(--muted)}.lay-b .b-pos{color:var(--pos)}.lay-b .b-neg{color:var(--neg)}.lay-b .b-warn{color:var(--warn)}.lay-b .b-cy{color:var(--accent)}
+
+  /* ---------- fora da moldura: simulador e notas ---------- */
+  .lay-b .b-sim{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center;margin:0 0 12px;padding:8px 12px;border:1px dashed #3a3a42;border-radius:6px;color:#9a9aa2;font:12px/1.3 var(--sans)}
+  .lay-b .b-sim .g{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+  .lay-b .b-sim .g>span{margin-right:6px}
+  .lay-b .b-sim button{background:#141418;color:#bdbdc4;border:1px solid #2c2c33;border-radius:4px;padding:4px 10px;cursor:pointer;min-height:28px;font:12px var(--sans)}
+  .lay-b .b-sim button:hover{color:#fff}
+  .lay-b .b-sim button[aria-pressed="true"]{border-color:#9a9aa2;color:#fff;background:#24242a}
+  .lay-b .b-notes{color:#8f8f97;font:12.5px/1.55 var(--sans);margin:14px 0 0;padding-left:18px;max-width:900px}
+  .lay-b .b-notes li{margin-bottom:4px}
+  .lay-b .b-notes b{color:#c9c9cf;font-weight:600}
+
+  /* ---------- moldura do app ---------- */
+  .lay-b .b-frame{background:var(--ground);border:1px solid var(--line);border-radius:8px}
+  .lay-b .b-top{display:flex;align-items:center;gap:16px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface);border-radius:8px 8px 0 0}
+  .lay-b .b-brand{font-weight:800;color:#fff;font-size:14px}
+  .lay-b .b-nav{display:flex;gap:2px}
+  .lay-b .b-nav span{padding:6px 10px;border-radius:5px;color:#a3a3ab}
+  .lay-b .b-nav span[aria-current]{background:var(--accent);color:#000;font-weight:700}
+  .lay-b .b-top .b-right{margin-left:auto}
+  .lay-b .b-body{display:flex;min-height:660px}
+
+  /* menu esquerdo do app (contexto) */
+  .lay-b .b-side{width:168px;flex:none;border-right:1px solid var(--line);background:var(--surface);padding:12px;font-size:11.5px;border-radius:0 0 0 8px}
+  .lay-b .b-side label{display:block;color:var(--muted);font-size:11px;margin:10px 0 3px}
+  .lay-b .b-side .b-lockrow{display:flex;align-items:center;gap:4px;margin-top:12px}
+  .lay-b .b-side .b-fade{color:#55555d;margin-top:16px;border-top:1px solid var(--line-soft);padding-top:10px;line-height:1.9}
+
+  .lay-b .b-main{flex:1;min-width:0;padding:12px 16px 20px}
+  .lay-b .b-subnav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .lay-b .b-subnav span{padding:8px 14px;color:var(--muted)}
+  .lay-b .b-subnav span[aria-current]{color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent);font-weight:600}
+
+  /* campos */
+  .lay-b .b-inp,.lay-b .b-dd{background:#000;border:1px solid #303037;border-radius:4px;color:var(--ink);padding:0 8px;height:30px;min-width:0;color-scheme:dark}
+  .lay-b .b-inp{width:64px;text-align:center;font-variant-numeric:tabular-nums}
+  .lay-b .b-inp.w-time{width:74px}.lay-b .b-inp.w-s{width:54px}.lay-b .b-inp.full{width:100%;text-align:left}
+  .lay-b .b-dd{width:100%;appearance:none;-webkit-appearance:none;padding-right:24px;background-image:linear-gradient(45deg,transparent 50%,#8B8B93 50%),linear-gradient(135deg,#8B8B93 50%,transparent 50%);background-position:calc(100% - 12px) 13px,calc(100% - 8px) 13px;background-size:4px 4px;background-repeat:no-repeat}
+  .lay-b .b-inp:disabled,.lay-b .b-dd:disabled{color:#7a7a82;border-color:#1f1f24;cursor:not-allowed}
+  .lay-b .b-chk{display:inline-flex;align-items:center;gap:7px;color:var(--ink-2);cursor:pointer;min-height:30px}
+  .lay-b .b-chk input{width:16px;height:16px;accent-color:var(--accent);margin:0}
+
+  /* (?) ajuda */
+  .lay-b .b-q{position:relative;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;border:1px solid #4a4a52;background:transparent;color:var(--muted);font-size:10px;line-height:1;cursor:help;padding:0;margin-left:5px;vertical-align:middle;flex:none}
+  .lay-b .b-q:hover,.lay-b .b-q:focus-visible{color:var(--ink);border-color:var(--muted)}
+  .lay-b .b-q::after,.lay-b .b-ico[data-tip]::after{content:attr(data-tip);position:absolute;left:50%;top:calc(100% + 7px);transform:translateX(-50%);width:250px;padding:8px 10px;background:#1c1c21;border:1px solid #34343c;border-radius:5px;color:var(--ink);font:12px/1.45 var(--sans);text-align:left;white-space:normal;z-index:60;opacity:0;pointer-events:none;transition:opacity .12s;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+  .lay-b .b-q.r::after,.lay-b .b-ico[data-tip]::after{left:auto;right:-4px;transform:none}
+  .lay-b .b-q.l::after{left:-4px;transform:none}
+  .lay-b .b-q.up::after{top:auto;bottom:calc(100% + 7px)}
+  .lay-b .b-ico[data-tip]::after{width:max-content;max-width:230px}
+  .lay-b .b-q:hover::after,.lay-b .b-q:focus-visible::after,.lay-b .b-ico[data-tip]:hover::after,.lay-b .b-ico[data-tip]:focus-visible::after{opacity:1}
+
+  /* botoes */
+  .lay-b .b-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 14px;border-radius:5px;border:1px solid transparent;cursor:pointer;font-weight:700;white-space:nowrap;color:var(--ink)}
+  .lay-b .b-btn svg{width:12px;height:12px}
+  .lay-b .b-btn.main{background:var(--accent);color:#000}
+  .lay-b .b-btn.main:hover:not(:disabled){box-shadow:0 0 14px rgba(34,228,255,.45)}
+  .lay-b .b-btn.ghost{background:transparent;border-color:#34343b;color:var(--ink-2);font-weight:500}
+  .lay-b .b-btn.ghost:hover:not(:disabled){border-color:var(--muted);color:#fff}
+  .lay-b .b-btn.warn{background:transparent;border-color:rgba(255,201,60,.6);color:var(--warn)}
+  .lay-b .b-btn.warn:hover:not(:disabled){background:rgba(255,201,60,.08)}
+  .lay-b .b-btn.neg{background:transparent;border-color:rgba(255,77,125,.6);color:var(--neg)}
+  .lay-b .b-btn.neg:hover:not(:disabled){background:rgba(255,77,125,.08)}
+  .lay-b .b-btn.negfill{background:var(--neg);color:#000}
+  .lay-b .b-btn:disabled{background:transparent;border-color:#26262b;color:#55555c;cursor:not-allowed;box-shadow:none}
+  .lay-b .b-btn.sm{height:28px;padding:0 10px;font-size:11.5px}
+  .lay-b .b-ico{position:relative;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;padding:0;flex:none}
+  .lay-b .b-ico:hover{color:var(--ink);border-color:#34343b}
+  .lay-b .b-ico.del:hover{color:var(--neg);border-color:rgba(255,77,125,.5)}
+  .lay-b .b-ico[aria-disabled="true"],.lay-b .b-ico:disabled{color:#45454c;cursor:not-allowed;border-color:transparent}
+  .lay-b .b-ico svg{width:15px;height:15px}
+
+  /* etiquetas */
+  .lay-b .b-pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:12px;font-size:11.5px;font-weight:700;border:1px solid;white-space:nowrap}
+  .lay-b .b-pill.gray{color:#a9a9b1;border-color:#3a3a42;background:#141417}
+  .lay-b .b-pill.green{color:var(--pos);border-color:rgba(0,245,160,.45);background:rgba(0,245,160,.08)}
+  .lay-b .b-pill.amber{color:var(--warn);border-color:rgba(255,201,60,.45);background:rgba(255,201,60,.08)}
+  .lay-b .b-pill.rose{color:var(--neg);border-color:rgba(255,77,125,.5);background:rgba(255,77,125,.08)}
+  .lay-b .b-pill.blue{color:var(--info);border-color:rgba(122,167,255,.45);background:rgba(122,167,255,.08)}
+  .lay-b .b-pill.cy{color:var(--accent);border-color:rgba(34,228,255,.5);background:rgba(34,228,255,.08)}
+  .lay-b .b-pill.sm{height:20px;font-size:10.5px;padding:0 8px;font-weight:600;gap:4px}
+  .lay-b .b-pill.lg{height:30px;padding:0 14px;font-size:13px;border-radius:15px}
+  .lay-b .b-spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(0,245,160,.25);border-top-color:var(--pos);animation:layb-rot .8s linear infinite}
+  .lay-b .b-dot{width:7px;height:7px;border-radius:50%;background:var(--pos);animation:layb-blink 1.4s ease-in-out infinite}
+  @keyframes layb-rot{to{transform:rotate(360deg)}}
+  @keyframes layb-blink{50%{opacity:.25}}
+
+  /* faixa de numeros */
+  .lay-b .b-strip{display:grid;grid-template-columns:1.6fr 1fr .8fr 1fr 1.4fr;border:1px solid var(--line);border-radius:6px;background:var(--surface);margin-bottom:14px}
+  .lay-b .b-strip>div{padding:9px 14px 10px;border-right:1px solid var(--line-soft);min-width:0}
+  .lay-b .b-strip>div:last-child{border-right:0}
+  .lay-b .b-strip .l{display:flex;align-items:center;color:var(--muted);font-size:11px;height:18px}
+  .lay-b .b-strip .v{font-size:19px;color:#fff;font-weight:600;margin-top:2px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .lay-b .b-strip .v small{font-size:11px;color:var(--muted);font-weight:400;margin-left:6px}
+  .lay-b .b-strip .v.pos{color:var(--pos)}
+  .lay-b .b-bar{height:5px;background:#1a1a1f;border-radius:3px;overflow:hidden;margin-top:7px}
+  .lay-b .b-bar>i{display:block;height:100%;background:var(--accent);transition:width .4s}
+  .lay-b .b-bar.amber>i{background:var(--warn)}.lay-b .b-bar.rose>i{background:var(--neg)}.lay-b .b-bar.blue>i{background:var(--info)}
+  .lay-b .b-kbest{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:0;margin-top:2px;color:var(--accent);font-size:19px;font-weight:600;cursor:pointer;border-radius:4px}
+  .lay-b .b-kbest .st{font-size:12px}
+  .lay-b .b-kbest:hover .st{text-shadow:0 0 8px var(--accent)}
+  .lay-b .b-kbest:disabled{color:var(--ink);cursor:default}.lay-b .b-kbest:disabled .st{display:none}
+  .lay-b .b-spark{width:100%;height:22px;display:block;margin-top:3px}
+
+  /* barra da visao */
+  .lay-b .b-vh{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;min-height:34px}
+  .lay-b .b-tabs{display:inline-flex;border:1px solid #2c2c33;border-radius:6px;overflow:hidden}
+  .lay-b .b-tabs button{display:inline-flex;align-items:center;gap:6px;background:transparent;border:0;border-right:1px solid #2c2c33;color:var(--muted);padding:0 16px;height:32px;cursor:pointer}
+  .lay-b .b-tabs button:last-child{border-right:0}
+  .lay-b .b-tabs button:hover{color:var(--ink)}
+  .lay-b .b-tabs button[aria-selected="true"]{background:rgba(34,228,255,.12);color:var(--accent);font-weight:700}
+  .lay-b .b-tabs button:focus-visible{outline-offset:-2px}
+  .lay-b .b-push{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .lay-b .b-push .lbl{color:var(--muted);font-size:11px}
+  .lay-b .b-seg{display:inline-flex;border:1px solid #2c2c33;border-radius:5px;overflow:hidden;margin:0;padding:0;min-width:0}
+  .lay-b .b-maphead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 12px}
+  .lay-b .b-maphead .lbl{color:var(--muted);font-size:11px}
+  .lay-b .b-seg .seglbl{display:inline-flex;align-items:center;height:30px;padding:0 10px;color:var(--muted);font-size:11px;border-right:1px solid #2c2c33;background:var(--surface-2)}
+  .lay-b .b-seg legend{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .lay-b .b-seg label{position:relative;display:inline-flex;align-items:center;height:30px;padding:0 12px;color:var(--muted);cursor:pointer;border-right:1px solid #2c2c33}
+  .lay-b .b-seg label:last-of-type{border-right:0}
+  .lay-b .b-seg input{position:absolute;opacity:0;width:1px;height:1px}
+  .lay-b .b-seg label:has(input:checked){background:rgba(34,228,255,.12);color:var(--accent);font-weight:700}
+  .lay-b .b-seg label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
+
+  /* ---------- MAPA DE NICHOS ---------- */
+  .lay-b .b-mapcard{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px 12px 10px}
+  .lay-b .b-mapwrap{overflow:auto;max-width:100%;padding:2px 2px 6px}
+  .lay-b table.b-map{border-collapse:separate;border-spacing:3px;table-layout:fixed}
+  .lay-b .b-map th{font-weight:500;color:var(--muted);font-size:10.5px;padding:0;background:var(--surface);position:sticky;z-index:2}
+  .lay-b .b-map thead th{top:0;height:22px;text-align:center;white-space:nowrap}
+  .lay-b .b-map thead tr.cols th{top:25px;width:52px}
+  .lay-b .b-map thead th.b-axcap{color:var(--ink-2);font-size:11px;text-align:left;padding-left:2px;font-weight:600}
+  .lay-b .b-map th.b-corner{left:0;z-index:4;width:44px;text-align:left;vertical-align:bottom;padding:0 0 5px 2px;color:var(--ink-2);font-weight:600;font-size:11px}
+  .lay-b .b-map tbody th{left:0;z-index:3;text-align:left;padding-left:2px;color:var(--ink);font-size:12px;font-weight:600;width:44px}
+  .lay-b .b-map td{padding:0}
+  .lay-b .b-cell{position:relative;display:flex;align-items:center;justify-content:center;width:52px;height:40px;border-radius:4px;border:0;background:transparent;color:#fff;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer;padding:0;transition:background-color .6s,color .6s}
+  .lay-b .b-cell:not(.un):not(.low):hover{filter:brightness(1.18);box-shadow:inset 0 0 0 1px rgba(255,255,255,.55)}
+  .lay-b .b-cell.un{cursor:default;box-shadow:inset 0 0 0 1px #26262c}
+  .lay-b .b-cell.un::before{content:"";width:3px;height:3px;border-radius:50%;background:#3a3a42}
+  .lay-b .b-cell.low{cursor:default;background:repeating-linear-gradient(135deg,#1b1b20 0 3px,#0b0b0d 3px 7px);box-shadow:inset 0 0 0 1px #24242a;color:#8B8B93;font-weight:400;font-size:10.5px}
+  .lay-b .b-cell.un:hover,.lay-b .b-cell.low:hover{box-shadow:inset 0 0 0 1px #4a4a52}
+  .lay-b .b-cell.best{box-shadow:inset 0 0 0 2px #fff,0 0 12px rgba(34,228,255,.5)}
+  .lay-b .b-cell.best::after{content:"★";position:absolute;top:2px;right:3px;font-size:9px;line-height:1}
+  .lay-b .b-cell:focus-visible{outline:2px solid var(--accent);outline-offset:2px;z-index:1}
+  .lay-b .b-cell.new{z-index:1;animation:layb-pop 1.3s cubic-bezier(.2,.7,.3,1) 1}
+  @keyframes layb-pop{0%{transform:scale(1.16);box-shadow:0 0 0 2px var(--accent),0 0 22px 6px rgba(34,228,255,.8)}60%{transform:scale(1)}100%{transform:scale(1);box-shadow:0 0 0 0 rgba(34,228,255,0)}}
+
+  .lay-b .b-mapfoot{display:flex;align-items:flex-start;gap:22px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+  .lay-b .b-leg{display:flex;align-items:flex-start;gap:10px}
+  .lay-b .b-leg .nm{color:var(--ink-2);font-size:11px;padding-top:0;white-space:nowrap}
+  .lay-b .b-legbar{position:relative;width:230px}
+  .lay-b .b-legbar>i{display:block;height:10px;border-radius:2px}
+  .lay-b .b-ticks{position:relative;height:16px}
+  .lay-b .b-ticks span{position:absolute;top:3px;transform:translateX(-50%);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .lay-b .b-ticks span::before{content:"";position:absolute;left:50%;top:-4px;width:1px;height:3px;background:#55555d}
+  .lay-b .b-ticks span:first-child{transform:none}.lay-b .b-ticks span:first-child::before{left:0}
+  .lay-b .b-ticks span:last-child{transform:translateX(-100%)}.lay-b .b-ticks span:last-child::before{left:auto;right:0}
+  .lay-b .b-sws{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding-top:0}
+  .lay-b .b-sw{display:inline-block;width:18px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:6px;position:relative}
+  .lay-b .b-sw.low{background:repeating-linear-gradient(135deg,#2a2a30 0 2px,#0b0b0d 2px 5px);box-shadow:inset 0 0 0 1px #2a2a30}
+  .lay-b .b-sw.un{box-shadow:inset 0 0 0 1px #3a3a42}
+  .lay-b .b-sw.best{background:#1AA3BA;box-shadow:inset 0 0 0 2px #fff}
+  .lay-b .b-mapcount{margin-left:auto;color:var(--ink-2);font-size:11px;white-space:nowrap}
+  .lay-b .b-empty{padding:56px 12px;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:14px}
+  .lay-b .b-empty b{color:var(--ink);font-size:14px;font-weight:600}
+
+  /* tooltip do mapa */
+  .lay-b .b-tip{position:fixed;z-index:1200;width:220px;padding:10px 12px 9px;background:#17171b;border:1px solid #3a3a42;border-radius:6px;box-shadow:0 10px 28px rgba(0,0,0,.65);pointer-events:none;font:12px/1.4 var(--mono);color:var(--ink-2)}
+  .lay-b .b-tip .t-h{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+  .lay-b .b-tip .t-h b{color:#fff;font-size:14px}
+  .lay-b .b-tip .t-h span{color:var(--ink);font-size:13px}
+  .lay-b .b-tip dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:0}
+  .lay-b .b-tip dt{color:var(--muted)}
+  .lay-b .b-tip dd{margin:0;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+  .lay-b .b-tip dd.big{color:#fff;font-weight:700}
+  .lay-b .b-tip hr{grid-column:1/-1;border:0;border-top:1px solid #2a2a30;margin:4px 0;width:100%}
+  .lay-b .b-tip p{margin:6px 0 0}
+  .lay-b .b-tip .t-f{color:var(--muted);font-size:11px;font-family:var(--sans)}
+
+  /* ---------- LISTA ---------- */
+  .lay-b .b-lbar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .lay-b .b-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:14px;border:1px solid #2f2f36;background:#0d0d10;color:#a3a3ab;cursor:pointer;font-size:11.5px}
+  .lay-b .b-chip:hover:not(:disabled){color:var(--ink);border-color:#4a4a52}
+  .lay-b .b-chip[aria-pressed="true"]{background:rgba(34,228,255,.1);border-color:rgba(34,228,255,.7);color:var(--accent)}
+  .lay-b .b-chip:disabled{cursor:not-allowed;opacity:.55}
+  .lay-b table.b-list{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+  .lay-b .b-list th{color:var(--muted);font-weight:500;text-align:left;padding:0 8px;height:32px;border-bottom:1px solid var(--line);font-size:11px;white-space:nowrap}
+  .lay-b .b-list td{padding:7px 8px;border-bottom:1px solid var(--line-soft);color:var(--ink-2);vertical-align:middle}
+  .lay-b .b-list .num{text-align:right;font-variant-numeric:tabular-nums}
+  .lay-b .b-list tbody tr{cursor:pointer}
+  .lay-b .b-list tbody tr:hover td{background:var(--surface-3)}
+  .lay-b .b-list .rk{color:#66666e;font-size:11px}
+  .lay-b .b-sort{display:inline-flex;align-items:center;gap:4px;background:none;border:0;color:inherit;cursor:pointer;padding:4px 2px;border-radius:3px;font-size:11px}
+  .lay-b .b-sort:hover{color:var(--ink)}
+  .lay-b .b-sort svg{width:9px;height:9px;opacity:.25;transition:transform .15s}
+  .lay-b .b-list th[aria-sort="descending"] .b-sort,.lay-b .b-list th[aria-sort="ascending"] .b-sort{color:var(--accent)}
+  .lay-b .b-list th[aria-sort="descending"] .b-sort svg{opacity:1}
+  .lay-b .b-list th[aria-sort="ascending"] .b-sort svg{opacity:1;transform:rotate(180deg)}
+  .lay-b .b-list th.num .b-sort{flex-direction:row-reverse}
+  .lay-b .b-nbtn{display:inline-flex;align-items:baseline;gap:8px;background:none;border:0;padding:2px 0;color:#fff;cursor:pointer;font-weight:700;font-size:13px;border-radius:3px}
+  .lay-b .b-nbtn span{color:var(--ink);font-weight:500}
+  .lay-b .b-sub{color:var(--muted);font-size:10.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lay-b .b-seals{display:flex;flex-wrap:wrap;gap:4px}
+  .lay-b .b-frc{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+  .lay-b .b-frc b{color:#fff;font-weight:700;font-size:13px;min-width:30px;text-align:right}
+  .lay-b .b-frc b.neg{color:var(--neg)}
+  .lay-b .b-ibar{display:block;width:56px;height:6px;background:#1a1a1f;border-radius:3px;overflow:hidden}
+  .lay-b .b-ibar i{display:block;height:100%;border-radius:3px}
+  .lay-b .b-ibar.tr i{background:#4a4a55}
+  .lay-b .b-lspark{width:84px;height:22px;display:block}
+  .lay-b .b-more{display:flex;align-items:center;gap:12px;padding:10px 8px;color:var(--muted);font-size:11.5px}
+
+  /* ---------- ESPACO DE BUSCA ---------- */
+  .lay-b fieldset.b-cfg{border:0;margin:0;padding:0;min-width:0}
+  .lay-b .b-cfghead{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-height:24px}
+  .lay-b .b-blk{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:6px;padding:11px 13px;min-width:0}
+  .lay-b .b-blk h3{margin:0 0 9px;font-size:12px;color:var(--ink-2);font-weight:600;display:flex;align-items:center}
+  .lay-b .b-cfgtop{display:grid;grid-template-columns:1fr 1.5fr;gap:10px;margin-bottom:10px}
+  .lay-b .b-fl{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
+  .lay-b .b-fl label{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}
+  .lay-b .b-kv{display:grid;grid-template-columns:repeat(3,auto);gap:6px 18px;font-size:11.5px}
+  .lay-b .b-kv span{display:block;color:var(--muted);font-size:10.5px}
+  .lay-b .b-kv b{color:var(--ink);font-weight:500}
+  .lay-b table.b-t{width:100%;border-collapse:collapse;font-size:12px}
+  .lay-b .b-t th{color:var(--muted);font-weight:500;text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);font-size:11px;white-space:nowrap}
+  .lay-b .b-t td{padding:7px 9px;border-bottom:1px solid var(--line-soft);color:var(--ink-2);vertical-align:middle}
+  .lay-b .b-t tbody:last-child tr:last-child td{border-bottom:0}
+  .lay-b .b-t .it{color:var(--ink);white-space:nowrap}
+  .lay-b .b-t .num{text-align:right;font-variant-numeric:tabular-nums}
+  .lay-b .b-chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+  .lay-b .b-rng{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .lay-b .b-rng .b-dim{font-size:11px}
+
+  /* ---------- BARRA DIREITA ---------- */
+  .lay-b .b-rail{width:280px;flex:none;border-left:1px solid var(--line);background:var(--surface);padding:14px;border-radius:0 0 8px 0;display:flex;flex-direction:column;gap:14px}
+  .lay-b .b-rsec{border-bottom:1px solid var(--line-soft);padding-bottom:14px}
+  .lay-b .b-rsec:last-child{border-bottom:0;padding-bottom:0}
+  .lay-b .b-rsec h3{margin:0 0 9px;font-size:12px;color:var(--ink-2);font-weight:600;display:flex;align-items:center}
+  .lay-b .b-state{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .lay-b .b-state .when{color:var(--muted);font-size:11.5px;width:100%;margin-top:6px}
+  .lay-b .b-acts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .lay-b .b-acts .b-btn{width:100%;padding:0 8px}
+  .lay-b .b-acts .full{grid-column:1/-1}
+  .lay-b .b-rrow{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .lay-b .b-rrow .b-chk{flex:1;white-space:nowrap}
+  .lay-b .b-rrow .b-inp{width:84px}
+  .lay-b .b-stepper{display:inline-flex;align-items:center;border:1px solid #303037;border-radius:5px;overflow:hidden}
+  .lay-b .b-stepper button{background:#0d0d10;border:0;color:var(--ink);width:32px;height:32px;cursor:pointer;font-size:15px}
+  .lay-b .b-stepper button:hover:not(:disabled){background:#1a1a1f}
+  .lay-b .b-stepper button:disabled{color:#44444b;cursor:not-allowed}
+  .lay-b .b-stepper input{width:48px;height:32px;border:0;border-left:1px solid #303037;border-right:1px solid #303037;background:#000;color:#fff;text-align:center;font-weight:700;-moz-appearance:textfield;appearance:textfield}
+  .lay-b .b-stepper input::-webkit-inner-spin-button,.lay-b .b-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  .lay-b .b-cpubar{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;margin-top:9px}
+  .lay-b .b-cpubar i{height:8px;border-radius:1px;background:#1d1d22}
+  .lay-b .b-cpubar i.on{background:var(--accent)}
+  .lay-b .is-running .b-cpubar i.on{animation:layb-blink 2.2s ease-in-out infinite}
+  .lay-b .b-saved{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+  .lay-b .b-saved li{display:flex;align-items:center;gap:2px;border-radius:5px}
+  .lay-b .b-saved li:hover{background:var(--surface-3)}
+  .lay-b .b-sv{flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:34px;padding:0 8px;background:none;border:0;border-radius:5px;color:var(--ink-2);cursor:pointer;text-align:left}
+  .lay-b .b-sv .n{color:#fff;font-weight:700;min-width:30px}
+  .lay-b .b-sv .d{color:var(--muted);font-size:11px;flex:1}
+  .lay-b .b-sv[aria-current="true"]{background:rgba(34,228,255,.07);box-shadow:inset 3px 0 0 var(--accent)}
+  .lay-b .b-svmsg{color:var(--muted);font-size:11.5px;margin-top:6px;min-height:16px}
+
+  /* ---------- GAVETA DO NICHO ---------- */
+  .lay-b .b-scrim{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.62)}
+  .lay-b .b-drawer{position:fixed;top:0;right:0;bottom:0;z-index:1001;width:min(700px,100vw);background:var(--surface);border-left:1px solid rgba(34,228,255,.35);box-shadow:-18px 0 40px rgba(0,0,0,.6);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s cubic-bezier(.2,.7,.3,1);font:12.5px/1.4 var(--mono);color:var(--ink-2)}
+  .lay-b .b-drawer.b-in{transform:none}
+  .lay-b .b-dr-head{padding:14px 18px 12px;border-bottom:1px solid var(--line)}
+  .lay-b .b-dr-row{display:flex;align-items:center;gap:10px}
+  .lay-b .b-dr-ttl{margin:0;display:flex;align-items:baseline;gap:12px;font-size:20px;color:#fff;font-weight:700;border-radius:3px}
+  .lay-b .b-dr-ttl:focus{outline:none}
+  .lay-b .b-dr-ttl span+span{color:var(--ink);font-weight:500}
+  .lay-b .b-dr-nav{margin-left:auto;display:flex;align-items:center;gap:4px}
+  .lay-b .b-dr-nav .pos{color:var(--muted);font-size:11.5px;min-width:56px;text-align:center;font-variant-numeric:tabular-nums}
+  .lay-b .b-dr-nav .sep{width:1px;height:20px;background:var(--line);margin:0 6px}
+  .lay-b .b-dr-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+  .lay-b .b-dr-body{flex:1;overflow:auto;padding:16px 18px 20px}
+  .lay-b .b-dr-body:focus-visible{outline-offset:-2px}
+  .lay-b .b-dr-foot{display:flex;align-items:center;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);background:var(--surface-2)}
+  .lay-b .b-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:0;border:1px solid var(--line-soft);border-radius:6px;background:var(--surface-2);margin-bottom:12px}
+  .lay-b .b-kpi{padding:9px 12px;border-right:1px solid var(--line-soft);min-width:0}
+  .lay-b .b-kpi:last-child{border-right:0}
+  .lay-b .b-kpi .l{display:flex;align-items:center;color:var(--muted);font-size:10.5px;height:18px;white-space:nowrap}
+  .lay-b .b-kpi b{display:block;color:#fff;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lay-b .b-kpi b.cy{color:var(--accent)}.lay-b .b-kpi b.warn{color:var(--warn)}
+  .lay-b .b-dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .lay-b .b-dgrid .wide{grid-column:1/-1}
+  .lay-b table.b-heat{border-collapse:separate;border-spacing:3px;width:100%;table-layout:fixed;font-size:11px}
+  .lay-b .b-heat th{color:var(--muted);font-weight:500;height:22px;padding:0}
+  .lay-b .b-heat th[scope="row"]{text-align:left;width:44px}
+  .lay-b .b-heat td{height:26px;text-align:center;border-radius:3px;font-variant-numeric:tabular-nums;padding:0}
+  .lay-b .b-heat td.in{box-shadow:inset 0 0 0 1.5px var(--accent)}
+  .lay-b .b-heat td.na{color:#6a6a72;background:#151518}
+  .lay-b .b-hleg{display:flex;gap:14px;align-items:center;margin-top:8px;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+  .lay-b .b-hleg i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .lay-b .b-yrs{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;align-items:end;height:200px;padding-top:4px}
+  .lay-b .b-yr{display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end}
+  .lay-b .b-yr .v{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+  .lay-b .b-yr .bt{width:100%;max-width:30px;flex:1;display:flex;align-items:flex-end;background:#151518;border-radius:3px;overflow:hidden}
+  .lay-b .b-yr .bt i{display:block;width:100%;border-radius:3px 3px 0 0}
+  .lay-b .b-yr .y{font-size:10.5px;color:var(--muted)}
+  .lay-b .b-yr.ho .bt{background:repeating-linear-gradient(135deg,#1d1d22 0 3px,#0e0e10 3px 7px)}
+  .lay-b .b-rg{position:relative;display:block;height:8px;background:#1d1d22;border-radius:4px}
+  .lay-b .b-rg .m{position:absolute;top:0;bottom:0;background:rgba(34,228,255,.55);border-radius:4px;min-width:4px}
+  .lay-b .b-rg .c{position:absolute;top:-3px;width:2px;height:14px;background:#fff;border-radius:1px;transform:translateX(-1px)}
+  .lay-b .b-curve{width:100%;height:auto;display:block}
+
+  /* ---------- CONFIRMACAO ---------- */
+  .lay-b .b-cf{position:fixed;z-index:1002;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,calc(100vw - 32px));background:var(--surface-2);border:1px solid rgba(255,77,125,.45);border-radius:8px;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.7);font:12.5px/1.45 var(--mono);color:var(--ink-2)}
+  .lay-b .b-cf h2{margin:0 0 8px;font-size:15px;color:#fff;border-radius:3px}
+  .lay-b .b-cf p{margin:0 0 16px;font-family:var(--sans);font-size:13px;color:var(--ink-2)}
+  .lay-b .b-cf .acts{display:flex;justify-content:flex-end;gap:8px}
+
+  @media (max-width:1180px){
+    .lay-b .b-body{flex-wrap:wrap}
+    .lay-b .b-side{display:none}
+    .lay-b .b-rail{width:100%;border-left:0;border-top:1px solid var(--line);border-radius:0 0 8px 8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+    .lay-b .b-rsec{border-bottom:0}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .lay-b *,.lay-b *::before,.lay-b *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  }
+</style>
+
+<!-- ===================== simulador (fora do app) ===================== -->
+<div class="b-sim" role="group" aria-label="Simulador do rascunho">
+  <div class="g" role="group" aria-label="Simular estado"><span>Estado</span>
+    <button type="button" data-st="parada" aria-pressed="false">Parada</button>
+    <button type="button" data-st="rodando" aria-pressed="true">Rodando</button>
+    <button type="button" data-st="pausada" aria-pressed="false">Pausada</button>
+    <button type="button" data-st="concluida" aria-pressed="false">Concluída</button>
+    <button type="button" data-st="erro" aria-pressed="false">Erro</button>
+  </div>
+  <div class="g" role="group" aria-label="Simular estratégia"><span>Estratégia</span>
+    <button type="button" data-es="adx" aria-pressed="true">ADX direção</button>
+    <button type="button" data-es="abert" aria-pressed="false">Rompimento da abertura</button>
+  </div>
+</div>
+
+<!-- ===================== moldura do app ===================== -->
+<div class="b-frame" id="b-frame">
+  <div class="b-top">
+    <span class="b-brand">Dataframe</span>
+    <span class="b-nav"><span aria-current="page">Mineração</span><span>Walk-Forward</span><span>Candidata</span><span>Estratégias</span><span>Portfólio</span><span>Ao vivo</span></span>
+    <span class="b-right b-pill gray sm">Ordens paradas</span>
+  </div>
+  <div class="b-body" id="b-body">
+
+    <aside class="b-side" aria-label="Menu da mineração">
+      <label for="b-m-ativo">Ativo</label><select id="b-m-ativo" class="b-dd b-sidelock"><option>MNQ</option></select>
+      <label for="b-m-estr">Estratégia</label><select id="b-m-estr" class="b-dd b-sidelock"><option id="b-m-estr-op">ADX direção</option></select>
+      <label for="b-m-de">De</label><input id="b-m-de" class="b-inp full b-sidelock" value="06/05/2019">
+      <label for="b-m-ate">Até</label><input id="b-m-ate" class="b-inp full b-sidelock" value="28/10/2026">
+      <label class="b-chk" style="margin-top:8px;font-size:11.5px;color:var(--ink-2)"><input type="checkbox" class="b-sidelock" checked> Excluir holdout</label>
+      <div class="b-lockrow" id="b-side-lock"><span class="b-pill gray sm"><svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>em uso</span><button type="button" class="b-q l" data-h="Ajuda sobre o menu travado" data-tip="Ativo, estratégia e período ficam travados enquanto a busca existe. Para trocar, use Nova busca.">?</button></div>
+      <div class="b-fade" aria-hidden="true">Entrada<br>Saída<br>Filtros<br>Risco<br>Períodos</div>
+    </aside>
+
+    <section class="b-main" aria-label="Busca automática">
+      <div class="b-subnav"><span>Varredura</span><span aria-current="page">Busca automática</span><span>Backtest</span></div>
+
+      <!-- andamento -->
+      <section class="b-strip" aria-label="Andamento da busca">
+        <div><div class="l">Testes</div>
+          <div class="v"><span id="b-k-t">18.430</span><small id="b-k-tde">de ~60.000</small></div>
+          <div class="b-bar" id="b-k-bar" role="progressbar" aria-label="Progresso da busca" aria-valuemin="0" aria-valuemax="100" aria-valuenow="31"><i id="b-k-barf" style="width:31%"></i></div>
+        </div>
+        <div><div class="l">Nichos<button type="button" class="b-q" data-h="Ajuda sobre nichos" data-tip="Nichos com 400 trades ou mais já achados, do total de casas desta visão do mapa. A busca é premiada por acender nichos novos, não só por melhorar o melhor.">?</button></div>
+          <div class="v"><span id="b-k-n">—</span><small id="b-k-nde"></small></div></div>
+        <div><div class="l">Bons<button type="button" class="b-q" data-h="Ajuda sobre nichos bons" data-tip="Nichos com fator de recuperação 3 ou mais. Acima de 3: bom. Abaixo de 1,5: fraco.">?</button></div>
+          <div class="v pos" id="b-k-b">—</div></div>
+        <div><div class="l">Melhor FR<button type="button" class="b-q" data-h="Ajuda sobre o melhor FR" data-tip="Maior fator de recuperação até agora (lucro dividido pela maior queda). Clique no número para ir até ele no mapa.">?</button></div>
+          <button type="button" class="b-kbest" id="b-k-best"><span id="b-k-fr">—</span><span class="st" aria-hidden="true">★</span></button></div>
+        <div><div class="l"><span id="b-k-tl">Decorrido</span><button type="button" class="b-q r" data-h="Ajuda sobre o tempo" data-tip="A linha mostra quantos nichos estavam acesos ao longo da busca. Se achatou, a busca parou de achar regiões novas.">?</button></div>
+          <div class="v" style="font-size:16px"><span id="b-k-dec">3h12</span><small id="b-k-fal">faltam ~7h14</small></div>
+          <svg class="b-spark" id="b-k-spark" viewBox="0 0 200 22" preserveAspectRatio="none" role="img" aria-label="Nichos acesos ao longo do tempo, subindo e depois achatando"><polyline fill="none" stroke="#22E4FF" stroke-width="1.6" vector-effect="non-scaling-stroke" points="0,21 15,18 30,15 45,12 60,10 80,8.5 100,7 120,6 140,5.5 160,5 180,4.6 200,4.4"/></svg>
+        </div>
+      </section>
+
+      <!-- barra da visao -->
+      <div class="b-vh">
+        <div class="b-tabs" role="tablist" aria-label="Visão">
+          <button type="button" role="tab" id="b-v-mapa" aria-selected="true" aria-controls="b-p-mapa" tabindex="0">Mapa</button>
+          <button type="button" role="tab" id="b-v-lista" aria-selected="false" aria-controls="b-p-lista" tabindex="-1">Lista</button>
+          <button type="button" role="tab" id="b-v-esp" aria-selected="false" aria-controls="b-p-esp" tabindex="-1">Espaço de busca<svg id="b-esp-lock" viewBox="0 0 16 16" width="11" height="11" role="img" aria-label="travado"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        </div>
+        <span class="b-pill green sm" id="b-live"><span class="b-dot" aria-hidden="true"></span>ao vivo</span>
+      </div>
+
+      <!-- MAPA -->
+      <section id="b-p-mapa" role="tabpanel" aria-labelledby="b-v-mapa" tabindex="-1">
+        <div class="b-mapcard">
+          <div class="b-maphead" id="b-mapctl">
+            <fieldset class="b-seg" id="b-axis">
+              <legend>Colunas do mapa</legend>
+              <span class="seglbl" aria-hidden="true">Colunas</span>
+              <label><input type="radio" name="b-axis" value="horario" checked>Horário</label>
+              <label><input type="radio" name="b-axis" value="dias">Dias</label>
+              <label><input type="radio" name="b-axis" value="direcao">Direção</label>
+            </fieldset>
+            <span id="b-mtwrap" style="display:inline-flex;align-items:center;gap:8px"><label class="lbl" for="b-mt">Cor</label>
+            <select id="b-mt" class="b-dd" style="width:200px"><option value="fr">Fator de recuperação</option><option value="pf">Profit factor</option><option value="tr">Trades</option></select></span>
+            <span class="b-mapcount" id="b-mapcount"></span>
+            <button type="button" class="b-q r" data-h="Ajuda sobre o mapa" data-tip="Linhas: tempo gráfico. Colunas: o que você escolher. Cada casa mostra o melhor resultado guardado naquele nicho. Trocar colunas ou cor não mexe na busca. Setas do teclado andam pelo mapa; Enter abre.">?</button>
+          </div>
+          <div class="b-empty" id="b-map-empty" hidden><b>Nenhum nicho ainda</b><button type="button" class="b-btn main" data-go="ini"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>Iniciar busca</button></div>
+          <div id="b-map-has">
+            <div class="b-mapwrap"><table class="b-map" id="b-map" role="grid" aria-label="Mapa de nichos"></table></div>
+            <div class="b-mapfoot">
+              <div class="b-leg"><span class="nm" id="b-leg-nm">Fator de recuperação</span><div class="b-legbar"><i id="b-leg-grad" aria-hidden="true"></i><div class="b-ticks" id="b-leg-ticks"></div></div></div>
+              <div class="b-sws">
+                <span><span class="b-sw low" aria-hidden="true"></span>menos de 400 trades</span>
+                <span><span class="b-sw un" aria-hidden="true"></span>não testado</span>
+                <span><span class="b-sw best" aria-hidden="true"></span>melhor</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LISTA -->
+      <section id="b-p-lista" role="tabpanel" aria-labelledby="b-v-lista" tabindex="-1" hidden>
+        <div class="b-empty" id="b-l-empty" hidden><b>Nenhum nicho ainda</b><button type="button" class="b-btn main" data-go="ini"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>Iniciar busca</button></div>
+        <div id="b-l-has">
+          <div class="b-lbar">
+            <button type="button" class="b-chip" id="b-l-good" aria-pressed="false">Só bons</button>
+            <span class="b-dim" id="b-l-count" style="font-size:11.5px"></span>
+          </div>
+          <table class="b-list" id="b-list">
+            <caption class="b-sr">Nichos com resultado</caption>
+            <colgroup><col style="width:30px"><col style="width:150px"><col><col style="width:132px"><col style="width:62px"><col style="width:112px"><col style="width:86px"><col style="width:100px"></colgroup>
+            <thead><tr>
+              <th scope="col" class="rk"><span aria-hidden="true">#</span><span class="b-sr">Posição</span></th>
+              <th scope="col" data-k="nicho" aria-sort="none"><button type="button" class="b-sort" data-k="nicho">Nicho<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 9 1 4h8z" fill="currentColor"/></svg></button></th>
+              <th scope="col">Selos</th>
+              <th scope="col" class="num" data-k="fr" aria-sort="descending"><button type="button" class="b-sort" data-k="fr">FR<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 9 1 4h8z" fill="currentColor"/></svg></button><button type="button" class="b-q r" data-h="Ajuda sobre FR" data-tip="Fator de recuperação do melhor do nicho. Embaixo, a mediana dos membros: perto do melhor indica região sólida. Bom acima de 3; fraco abaixo de 1,5.">?</button></th>
+              <th scope="col" class="num" data-k="pf" aria-sort="none"><button type="button" class="b-sort" data-k="pf">PF<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 9 1 4h8z" fill="currentColor"/></svg></button></th>
+              <th scope="col" class="num" data-k="tr" aria-sort="none"><button type="button" class="b-sort" data-k="tr">Trades<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 9 1 4h8z" fill="currentColor"/></svg></button></th>
+              <th scope="col" class="num" data-k="m" aria-sort="none"><button type="button" class="b-sort" data-k="m">Membros<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 9 1 4h8z" fill="currentColor"/></svg></button><button type="button" class="b-q r" data-h="Ajuda sobre membros" data-tip="Combinações parecidas que também passaram. Menos de 15 pode ser pico isolado.">?</button></th>
+              <th scope="col">Evolução<button type="button" class="b-q r" data-h="Ajuda sobre evolução" data-tip="Como o melhor FR do nicho subiu ao longo da busca. Linha que ainda sobe no fim: o nicho pode melhorar mais.">?</button></th>
+            </tr></thead>
+            <tbody id="b-lbody"></tbody>
+          </table>
+          <div class="b-more" id="b-l-more"><span id="b-l-rest"></span><button type="button" class="b-btn ghost sm" id="b-l-all">Mostrar todos</button></div>
+        </div>
+      </section>
+
+      <!-- ESPACO DE BUSCA -->
+      <section id="b-p-esp" role="tabpanel" aria-labelledby="b-v-esp" tabindex="-1" hidden>
+        <div class="b-cfghead" id="b-cfg-lock"><span class="b-pill gray sm"><svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>só leitura</span><button type="button" class="b-q" data-h="Ajuda sobre o espaço travado" data-tip="O espaço de busca fica travado enquanto a busca existe. Para mudar faixas ou passos, use Nova busca.">?</button></div>
+        <fieldset class="b-cfg" id="b-cfg">
+          <legend class="b-sr">Espaço de busca</legend>
+          <div class="b-cfgtop">
+            <div class="b-blk"><h3>Regras</h3>
+              <div class="b-fl">
+                <div><label for="b-r-crit">Meta</label><select id="b-r-crit" class="b-dd" style="width:200px"><option>Fator de recuperação</option><option>Profit factor</option><option>Lucro líquido</option><option>Menor drawdown</option></select></div>
+                <div><label for="b-r-min">Mín. de trades</label><span style="display:inline-flex;align-items:center"><input id="b-r-min" class="b-inp" value="400" inputmode="numeric"><button type="button" class="b-q" data-h="Ajuda sobre mínimo de trades" data-tip="Abaixo disso o nicho fica listrado no mapa. 400 é o padrão: com menos de uns 300 trades o resultado tende a ser sorte.">?</button></span></div>
+              </div>
+            </div>
+            <div class="b-blk"><h3>Fixos<button type="button" class="b-q" data-h="Ajuda sobre fixos" data-tip="Valem iguais para todas as combinações. Para mudar, ajuste no menu antes de iniciar.">?</button></h3>
+              <div class="b-kv">
+                <div><span>Filtro de mercado</span><b>—</b></div>
+                <div><span>Sem entradas</span><b>—</b></div>
+                <div><span>Limites diários</span><b>—</b></div>
+                <div><span>Breakeven</span><b>desligado</b></div>
+                <div><span>Stop móvel</span><b>desligado</b></div>
+                <div><span>Custos</span><b>US$ 0,60 + 1 tick</b></div>
+              </div>
+            </div>
+          </div>
+          <div class="b-blk" style="padding:2px 4px">
+            <table class="b-t">
+              <thead><tr><th scope="col" style="width:200px">Item</th><th scope="col">Faixa</th><th scope="col" style="width:200px">Passo<button type="button" class="b-q r" data-h="Ajuda sobre passo" data-tip="De quanto em quanto o valor anda dentro da faixa. Exemplo: horário de 09:30 a 16:00 com passo de 30 min testa 09:30, 10:00, 10:30 e assim por diante.">?</button></th></tr></thead>
+              <tbody>
+                <tr><td class="it">Tempo gráfico</td><td><div class="b-chips"><button type="button" class="b-chip" aria-pressed="false">M1</button><button type="button" class="b-chip" aria-pressed="true">M2</button><button type="button" class="b-chip" aria-pressed="true">M3</button><button type="button" class="b-chip" aria-pressed="true">M5</button><button type="button" class="b-chip" aria-pressed="true">M10</button><button type="button" class="b-chip" aria-pressed="true">M15</button><button type="button" class="b-chip" aria-pressed="true">M30</button><button type="button" class="b-chip" aria-pressed="false">M60</button></div></td><td class="b-dim">—</td></tr>
+                <tr><td class="it">Direção</td><td><div class="b-chips"><button type="button" class="b-chip" aria-pressed="true">compra</button><button type="button" class="b-chip" aria-pressed="true">venda</button><button type="button" class="b-chip" aria-pressed="true">as duas</button></div></td><td class="b-dim">—</td></tr>
+                <tr class="b-abert-only" hidden><td class="it">Horário da abertura<button type="button" class="b-q" data-h="Ajuda sobre horário da abertura" data-tip="Horário de referência da abertura: de onde a estratégia conta as barras da abertura. A busca testa cada horário desta faixa.">?</button></td><td><span class="b-rng"><span class="b-dim">de</span><input class="b-inp w-time" value="09:30" aria-label="Horário da abertura, de"><span class="b-dim">até</span><input class="b-inp w-time" value="10:30" aria-label="Horário da abertura, até"></span></td><td><input class="b-inp" value="15 min" aria-label="Passo do horário da abertura"></td></tr>
+                <tr><td class="it">Horário de entrada</td><td><span class="b-rng"><span class="b-dim">de</span><input class="b-inp w-time" value="09:30" aria-label="Horário de entrada, de"><span class="b-dim">até</span><input class="b-inp w-time" value="16:00" aria-label="Horário de entrada, até"><span class="b-dim" style="margin-left:8px">janela mín.</span><input class="b-inp" value="30 min" aria-label="Janela mínima"></span></td><td><input class="b-inp" value="30 min" aria-label="Passo do horário de entrada"></td></tr>
+                <tr><td class="it">Dias da semana</td><td><div class="b-chips"><button type="button" class="b-chip" aria-pressed="true">seg</button><button type="button" class="b-chip" aria-pressed="true">ter</button><button type="button" class="b-chip" aria-pressed="true">qua</button><button type="button" class="b-chip" aria-pressed="true">qui</button><button type="button" class="b-chip" aria-pressed="true">sex</button><button type="button" class="b-q" data-h="Ajuda sobre dias" data-tip="Testa qualquer combinação dos dias marcados (31 no total): só terça, segunda e quarta, de terça a quinta etc.">?</button></div></td><td class="b-dim">—</td></tr>
+                <tr><td class="it">Stop</td><td><div class="b-chips"><button type="button" class="b-chip" aria-pressed="true">pontos 15 a 90</button><button type="button" class="b-chip" aria-pressed="true">ATR 0,5 a 3,0</button><button type="button" class="b-chip" aria-pressed="true">% 0,10 a 0,50</button></div></td><td><span class="b-rng"><input class="b-inp w-s" value="5" aria-label="Passo do stop em pontos"><input class="b-inp w-s" value="0,25" aria-label="Passo do stop em ATR"><input class="b-inp w-s" value="0,05" aria-label="Passo do stop em porcentagem"></span></td></tr>
+                <tr><td class="it">Alvo</td><td><div class="b-chips"><button type="button" class="b-chip" aria-pressed="true">pontos 30 a 180</button><button type="button" class="b-chip" aria-pressed="true">× stop 1,0 a 4,0</button><button type="button" class="b-chip" aria-pressed="true">ATR 0,5 a 5,0</button><button type="button" class="b-chip" aria-pressed="false">sem alvo</button></div></td><td><span class="b-rng"><input class="b-inp w-s" value="10" aria-label="Passo do alvo em pontos"><input class="b-inp w-s" value="0,5" aria-label="Passo do alvo em vezes o stop"><input class="b-inp w-s" value="0,25" aria-label="Passo do alvo em ATR"></span></td></tr>
+              </tbody>
+              <tbody id="b-par-adx">
+                <tr><td class="it">Período do DI+ e DI−</td><td><span class="b-rng"><input class="b-inp w-s" value="2" aria-label="Período do DI, mínimo"><span class="b-dim">a</span><input class="b-inp w-s" value="100" aria-label="Período do DI, máximo"></span></td><td><span class="b-cy">proporcional</span><button type="button" class="b-q r" data-h="Ajuda sobre passo proporcional" data-tip="Passo que cresce com o valor: perto de zero testa 2, 3, 4, 5; lá em cima pula de uns 8 em 8.">?</button></td></tr>
+                <tr><td class="it">Suavização do ADX</td><td><span class="b-rng"><input class="b-inp w-s" value="1" aria-label="Suavização, mínimo"><span class="b-dim">a</span><input class="b-inp w-s" value="100" aria-label="Suavização, máximo"></span></td><td><span class="b-cy">proporcional</span></td></tr>
+                <tr><td class="it">Amplitude máx. do candle</td><td><span class="b-rng"><input class="b-inp w-s" value="0" aria-label="Amplitude máxima, mínimo"><span class="b-dim">a</span><input class="b-inp w-s" value="450" aria-label="Amplitude máxima, máximo"><span class="b-dim">pontos</span></span></td><td><input class="b-inp w-s" value="25" aria-label="Passo da amplitude máxima"></td></tr>
+                <tr><td class="it">Saída</td><td><div class="b-chips"><button type="button" class="b-chip" aria-pressed="true">não sai no sinal</button><button type="button" class="b-chip" aria-pressed="true">sai e fica zerado</button><button type="button" class="b-chip" aria-pressed="true">vira a mão</button></div></td><td class="b-dim">—</td></tr>
+              </tbody>
+              <tbody id="b-par-abert" hidden>
+                <tr><td class="it">Barras da abertura</td><td><span class="b-rng"><input class="b-inp w-s" value="1" aria-label="Barras da abertura, mínimo"><span class="b-dim">a</span><input class="b-inp w-s" value="60" aria-label="Barras da abertura, máximo"></span></td><td><span class="b-cy">proporcional</span></td></tr>
+                <tr><td class="it">Folga do rompimento</td><td><span class="b-rng"><input class="b-inp w-s" value="0" aria-label="Folga, mínimo"><span class="b-dim">a</span><input class="b-inp w-s" value="40" aria-label="Folga, máximo"><span class="b-dim">ticks</span></span></td><td><input class="b-inp w-s" value="2" aria-label="Passo da folga"></td></tr>
+                <tr><td class="it">Amplitude mín. da abertura</td><td><span class="b-rng"><input class="b-inp w-s" value="0" aria-label="Amplitude mínima, mínimo"><span class="b-dim">a</span><input class="b-inp w-s" value="400" aria-label="Amplitude mínima, máximo"><span class="b-dim">pontos</span></span></td><td><input class="b-inp w-s" value="50" aria-label="Passo da amplitude mínima"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </fieldset>
+      </section>
+    </section>
+
+    <!-- barra direita -->
+    <aside class="b-rail" aria-label="Controle da busca">
+      <div class="b-rsec">
+        <div class="b-state">
+          <span id="b-st-pill" class="b-pill lg green"><span class="b-spin" id="b-st-spin" aria-hidden="true"></span><span id="b-st-txt">Rodando</span></span>
+          <button type="button" class="b-q r" id="b-st-q" data-h="Ajuda sobre o estado da busca" data-tip="">?</button>
+          <span class="when" id="b-st-when">desde 22:04</span>
+        </div>
+        <div class="b-sr" role="status" aria-live="polite" id="b-st-live"></div>
+      </div>
+
+      <div class="b-rsec b-acts">
+        <button type="button" class="b-btn main full" id="b-ini"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>Iniciar busca</button>
+        <button type="button" class="b-btn warn" id="b-pau"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10" fill="currentColor"/><rect x="9.5" y="3" width="3" height="10" fill="currentColor"/></svg>Pausar</button>
+        <button type="button" class="b-btn main" id="b-con"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>Continuar</button>
+        <button type="button" class="b-btn neg full" id="b-par"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor"/></svg>Parar e guardar</button>
+        <button type="button" class="b-btn ghost sm full" id="b-nova"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>Nova busca</button>
+      </div>
+
+      <div class="b-rsec">
+        <h3>Parada</h3>
+        <div class="b-rrow"><span class="b-chk"><input type="checkbox" id="b-c-hora" checked><label for="b-c-hora">Parar às</label></span>
+          <input type="time" class="b-inp" id="b-i-hora" value="08:30" aria-label="Horário para parar" ><button type="button" class="b-q r" data-h="Ajuda sobre parar às" data-tip="Para sozinha neste horário e guarda tudo. Desligado: roda até você parar ou até o limite. Dá para mudar com a busca rodando.">?</button></div>
+        <div class="b-rrow"><span class="b-chk"><input type="checkbox" id="b-c-lim"><label for="b-c-lim">Limite de testes</label></span>
+          <input class="b-inp" id="b-i-lim" value="—" disabled inputmode="numeric" aria-label="Número máximo de testes" ><button type="button" class="b-q r" data-h="Ajuda sobre limite de testes" data-tip="Para depois deste número de testes. Vale o que vier primeiro: horário ou limite.">?</button></div>
+      </div>
+
+      <div class="b-rsec">
+        <h3><label for="b-n-cpu">Núcleos</label><button type="button" class="b-q r" data-h="Ajuda sobre núcleos" data-tip="Quantos dos 24 núcleos a busca usa. Mais é mais rápido, mas o PC fica pesado. Padrão: 20 com Parar às ligado (noite), 4 com ele desligado (você usando o PC). Vale em poucos segundos, mesmo rodando.">?</button>
+          <span class="b-pill blue sm" id="b-cpu-ap" style="margin-left:auto" hidden>aplicando</span></h3>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="b-stepper"><button type="button" id="b-cpu-m" aria-label="Menos um núcleo">−</button><input id="b-n-cpu" type="number" min="1" max="24" value="20" inputmode="numeric"><button type="button" id="b-cpu-p" aria-label="Mais um núcleo">+</button></span>
+          <span class="b-dim">de 24</span>
+          <button type="button" class="b-btn ghost sm" id="b-cpu-def" style="margin-left:auto" hidden>Padrão</button>
+        </div>
+        <div class="b-cpubar" id="b-cpubar" aria-hidden="true"></div>
+      </div>
+
+      <div class="b-rsec">
+        <h3 id="b-sv-h">Buscas salvas</h3>
+        <ul class="b-saved" id="b-saved" aria-labelledby="b-sv-h"></ul>
+        <div class="b-svmsg" id="b-svmsg" role="status" aria-live="polite"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ===================== gaveta do nicho (sobreposta) ===================== -->
+<div class="b-scrim" id="b-scrim" hidden></div>
+<div class="b-drawer" id="b-drawer" role="dialog" aria-modal="true" aria-labelledby="b-dr-ttl" hidden>
+  <div class="b-dr-head">
+    <div class="b-dr-row">
+      <h2 class="b-dr-ttl" id="b-dr-ttl" tabindex="-1"><span id="b-dr-tf"></span><span id="b-dr-cv"></span></h2>
+      <div class="b-dr-nav">
+        <button type="button" class="b-ico" id="b-dr-prev" data-tip=""><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button>
+        <span class="pos" id="b-dr-pos"></span>
+        <button type="button" class="b-ico" id="b-dr-next" data-tip=""><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+        <span class="sep" aria-hidden="true"></span>
+        <button type="button" class="b-ico" id="b-dr-close" aria-label="Fechar o nicho" data-tip="Fechar (Esc)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </div>
+    </div>
+    <div class="b-dr-pills" id="b-dr-pills"></div>
+  </div>
+  <div class="b-dr-body" id="b-dr-body" tabindex="0" aria-label="Detalhe do nicho"></div>
+  <div class="b-dr-foot">
+    <button type="button" class="b-q r up" data-h="Ajuda sobre as ações do nicho" data-tip="Minerar a região leva para a Varredura com tempo gráfico, horário, dias, stop, alvo e as faixas dos membros já preenchidos. Abrir o campeão leva a melhor combinação do nicho para o Backtest." style="margin-right:auto">?</button>
+    <button type="button" class="b-btn ghost" id="b-dr-bt">Abrir o campeão no Backtest</button>
+    <button type="button" class="b-btn main" id="b-dr-min">Minerar a região</button>
+  </div>
+  <div class="b-sr" role="status" aria-live="polite" id="b-dr-live"></div>
+</div>
+
+<!-- ===================== confirmacao de exclusao ===================== -->
+<div class="b-cf" id="b-cf" role="alertdialog" aria-modal="true" aria-labelledby="b-cf-t" aria-describedby="b-cf-d" hidden>
+  <h2 id="b-cf-t" tabindex="-1">Excluir a busca?</h2>
+  <p id="b-cf-d"></p>
+  <div class="acts"><button type="button" class="b-btn ghost" id="b-cf-no">Manter busca</button><button type="button" class="b-btn negfill" id="b-cf-yes">Excluir busca</button></div>
+</div>
+
+<div class="b-tip" id="b-tip" aria-hidden="true" hidden></div>
+
+<ul class="b-notes">
+  <li><b>Mapa:</b> casas de tamanho fixo (52×40). Cor contínua: rosa abaixo de 1,5, cinza neutro, ciano até o claro em 6+. Listrada com número = menos de 400 trades; contorno vazio com ponto = não testada; borda branca e ★ = melhor. Rodando, a casa que acende pulsa uma vez.</li>
+  <li><b>Teclado:</b> Tab entra no mapa; setas andam; Home e End vão às pontas da linha; Enter abre. O tooltip aparece no foco também.</li>
+  <li><b>Nicho abre numa gaveta por cima</b>, nunca no fim da página: foco preso, Esc fecha e devolve o foco à casa, ← → vão ao vizinho na ordem da visão atual (mapa por linha, lista na ordem escolhida).</li>
+  <li><b>Buscas salvas</b> viraram lista com lixeira por linha e confirmação. A busca rodando não exclui; a lixeira diz por quê.</li>
+  <li>Botões com 32 a 34 px de altura, na densidade do app. Cores do <code>style.css</code>; "aplicando" e "novo" usam o azul de informação.</li>
+</ul>
+
+<script>
+(function(){
+  'use strict';
+  var root=document.querySelector('.lay-b'); if(!root)return;
+  function $(id){return root.querySelector('#'+id);}
+  function $$(sel,el){return Array.prototype.slice.call((el||root).querySelectorAll(sel));}
+  function fmt(n){return Math.round(n).toLocaleString('pt-BR');}
+  function dec(n,d){return n.toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});}
+  function rnd(n){var x=Math.sin(n*12.9898+78.233)*43758.5453;return x-Math.floor(x);}
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  var reduce=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var frame=$('b-frame'), mapEl=$('b-map'), tipEl=$('b-tip'), drawer=$('b-drawer'), scrim=$('b-scrim'), cf=$('b-cf');
+
+  /* ---------- ajuda (?) : texto do tooltip vira nome acessivel ---------- */
+  function setTip(el,tip){el.setAttribute('data-tip',tip);el.setAttribute('aria-label',(el.getAttribute('data-h')||'Ajuda')+': '+tip);}
+  function initTips(scope){$$('.b-q',scope).forEach(function(q){setTip(q,q.getAttribute('data-tip')||'');});}
+
+  /* ---------- dados ---------- */
+  var TF=['M2','M3','M5','M10','M15','M30'];
+  var COLS={
+    adx:{horario:['09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30'],dias:['seg','ter','qua','qui','sex','ter–qui','seg–sex'],direcao:['compra','venda','as duas']},
+    abert:{horario:['09:30','09:45','10:00','10:15','10:30','10:45','11:00','11:30','12:00'],dias:['seg','ter','qua','qui','sex','ter–qui','seg–sex'],direcao:['compra','venda','as duas']}
+  };
+  var AXNAME={horario:'Horário de entrada',dias:'Dias da semana',direcao:'Direção'};
+  var DIRS=['compra','venda','as duas'];
+  var DIAS=['seg a sex','ter a qui','seg, qua e sex','ter e qui','seg a qui'];
+  var MASK={'seg':[1,0,0,0,0],'ter':[0,1,0,0,0],'qua':[0,0,1,0,0],'qui':[0,0,0,1,0],'sex':[0,0,0,0,1],'ter–qui':[0,1,1,1,0],'seg–sex':[1,1,1,1,1],'seg a sex':[1,1,1,1,1],'ter a qui':[0,1,1,1,0],'seg, qua e sex':[1,0,1,0,1],'ter e qui':[0,1,0,1,0],'seg a qui':[1,1,1,1,0]};
+  var ABERT=['09:30','09:45','10:00'];
+
+  var SC={
+    fr:{name:'Fator de recuperação',d:1,stops:[[0,'#B8345F'],[1.5,'#262A30'],[3,'#0C5F6E'],[4.5,'#1AA3BA'],[6,'#8AF3FF']],ticks:[0,1.5,3,4.5,6]},
+    pf:{name:'Profit factor',d:2,stops:[[0.8,'#B8345F'],[1.1,'#262A30'],[1.25,'#0C5F6E'],[1.4,'#1AA3BA'],[1.55,'#8AF3FF']],ticks:[0.8,1.1,1.25,1.4,1.55]},
+    tr:{name:'Trades',d:0,stops:[[400,'#262A30'],[1000,'#0C5F6E'],[1600,'#1AA3BA'],[2200,'#8AF3FF']],ticks:[400,1000,1600,2200]}
+  };
+  function hx(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+  function ramp(stops,v){
+    if(v<=stops[0][0])return hx(stops[0][1]);
+    for(var i=1;i<stops.length;i++){
+      if(v<=stops[i][0]){var a=hx(stops[i-1][1]),b=hx(stops[i][1]),t=(v-stops[i-1][0])/(stops[i][0]-stops[i-1][0]);
+        return [0,1,2].map(function(k){return Math.round(a[k]+(b[k]-a[k])*t);});}
+    }
+    return hx(stops[stops.length-1][1]);
+  }
+  function mix(c1,c2,a){return [0,1,2].map(function(k){return Math.round(c2[k]+(c1[k]-c2[k])*a);});}
+  function lum(c){var a=c.map(function(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];}
+  function ink(c){var L=lum(c);return (1.05/(L+0.05))>=((L+0.05)/0.05)?'#fff':'#000';}
+  function css(c){return 'rgb('+c.join(',')+')';}
+
+  var estr='adx', axis='horario', metric='fr', view='mapa', cur='rodando', prog=0, tick=null, tickN=0;
+  var cells=[], prevOn={}, litTick={}, cpuTouched=false;
+  var sortK='fr', sortDir=-1, onlyGood=false, showAll=false, lastListN=-1;
+
+  function addMin(h,m){var p=h.split(':'),t=(+p[0])*60+(+p[1])+m;return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');}
+
+  function build(){
+    var cols=COLS[estr][axis], nc=cols.length, base=(estr==='adx'?1:2)*1000+({horario:0,dias:1,direcao:2})[axis]*100;
+    var r0=estr==='adx'?2:1, c0=nc*(estr==='adx'?0.18:0.22), r1=4, c1=nc*0.7;
+    cells=[];
+    for(var r=0;r<TF.length;r++){for(var c=0;c<nc;c++){
+      var k=base+r*20+c;
+      var d=Math.pow((r-r0)/1.5,2)+Math.pow((c-c0)/Math.max(1.2,nc/5),2);
+      var d2=Math.pow((r-r1)/1.2,2)+Math.pow((c-c1)/Math.max(1,nc/6),2);
+      var fr=0.45+5.7*Math.exp(-d)+2.8*Math.exp(-d2)+rnd(k)*0.9;
+      var tr=Math.round((1900-r*240+rnd(k+7)*520)*(axis==='dias'&&c<5?0.42:1)*(axis==='horario'&&c>nc-3?0.5:1));
+      var hist=[],v=fr*(0.3+rnd(k+19)*0.25);
+      for(var i=0;i<10;i++){v=Math.min(fr,v+(fr-v)*(0.15+rnd(k+i*3)*0.45));hist.push(v);} hist[9]=fr;
+      var start=axis==='horario'?cols[c]:(estr==='adx'?'10:00':'09:45');
+      cells.push({r:r,c:c,k:k,fr:fr,pf:1+fr*0.085,tr:tr,m:Math.round(4+fr*10+rnd(k+3)*18),med:fr*(0.55+rnd(k+5)*0.3),low:tr<400,t:rnd(k+11),
+        dir:axis==='direcao'?cols[c]:DIRS[Math.floor(rnd(k+13)*3)],
+        dias:axis==='dias'?cols[c]:DIAS[Math.floor(rnd(k+17)*5)],
+        start:start,hora:start+' a '+addMin(start,90),ab:ABERT[Math.floor(rnd(k+23)*3)],hist:hist});
+    }}
+  }
+  function isOn(x){return x.t<prog;}
+  function openable(x){return !!x&&isOn(x)&&!x.low;}
+  function bestCell(){var b=null;cells.forEach(function(x){if(openable(x)&&(!b||x.fr>b.fr))b=x;});return b;}
+  function val(x){return metric==='fr'?x.fr:(metric==='pf'?x.pf:x.tr);}
+  function txt(x){return metric==='tr'?fmt(x.tr):dec(val(x),SC[metric].d);}
+  function colLabel(x){return COLS[estr][axis][x.c];}
+  function cellName(x){return TF[x.r]+', '+colLabel(x);}
+  function dims(x){
+    var o=[];
+    if(axis!=='direcao')o.push(['Direção',x.dir]);
+    if(axis!=='dias')o.push(['Dias',x.dias]);
+    if(axis!=='horario')o.push(['Horário',x.hora]);
+    if(estr==='abert')o.push(['Abertura',x.ab]);
+    return o;
+  }
+
+  /* ---------- estados ---------- */
+  var S={
+    parada:{pill:'gray',txt:'Parada',spin:0,when:'',tip:'Nada rodando. Confira o Espaço de busca e clique em Iniciar busca.',
+      b:{ini:1,pau:0,con:0,par:0,nova:0},lock:0,live:0,p:0,bar:0,barc:'',t:'—',tde:'',dec:'—',fal:'',tl:'Decorrido',spark:0},
+    rodando:{pill:'green',txt:'Rodando',spin:1,when:'desde 22:04',tip:'Testando num processo à parte. Pode fechar o app: ela continua. O mapa atualiza sozinho.',
+      b:{ini:0,pau:1,con:0,par:1,nova:0},lock:1,live:1,p:0.42,bar:31,barc:'',t:18430,tde:'de ~60.000',dec:'3h12',fal:'faltam ~7h14',tl:'Decorrido',spark:1},
+    pausada:{pill:'amber',txt:'Pausada',spin:0,when:'às 01:16, há 12 min',tip:'Parada no meio, sem perder nada. Continuar retoma do mesmo ponto. O horário de parar continua valendo.',
+      b:{ini:0,pau:0,con:1,par:1,nova:0},lock:1,live:0,p:0.42,bar:31,barc:'amber',t:18430,tde:'de ~60.000',dec:'3h12',fal:'pausada',tl:'Decorrido',spark:1},
+    concluida:{pill:'blue',txt:'Concluída',spin:0,when:'de 03/11 22:04 até 04/11 08:30',tip:'Parou no horário marcado e guardou tudo. Continuar roda mais uma rodada na mesma busca. Nova busca começa do zero; esta fica em Buscas salvas.',
+      b:{ini:0,pau:0,con:1,par:0,nova:1},lock:1,live:0,p:0.93,bar:100,barc:'blue',t:61204,tde:'feitos',dec:'10h26',fal:'parou às 08:30',tl:'Duração',spark:2},
+    erro:{pill:'rose',txt:'Interrompida',spin:0,when:'caiu às 03:17, testes salvos',tip:'A busca caiu às 03:17 (o PC desligou ou o processo fechou). O que foi testado até ali está salvo. Continuar retoma de onde parou.',
+      b:{ini:0,pau:0,con:1,par:0,nova:1},lock:1,live:0,p:0.6,bar:48,barc:'rose',t:28902,tde:'de ~60.000',dec:'5h13',fal:'caiu às 03:17',tl:'Decorrido',spark:1}
+  };
+
+  /* ---------- mapa ---------- */
+  function renderMap(){
+    var cols=COLS[estr][axis];
+    var h='<thead><tr><th scope="col" class="b-corner" rowspan="2">Tempo</th><th scope="colgroup" class="b-axcap" colspan="'+cols.length+'">'+AXNAME[axis]+'</th></tr><tr class="cols">';
+    cols.forEach(function(c){h+='<th scope="col">'+esc(c)+'</th>';});
+    h+='</tr></thead><tbody>';
+    TF.forEach(function(tf,r){
+      h+='<tr><th scope="row">'+tf+'</th>';
+      cols.forEach(function(c,ci){h+='<td role="gridcell"><button type="button" class="b-cell" data-i="'+(r*cols.length+ci)+'" tabindex="-1"></button></td>';});
+      h+='</tr>';
+    });
+    mapEl.innerHTML=h+'</tbody>';
+    $$('.b-cell',mapEl).forEach(function(b){b.addEventListener('animationend',function(){b._pop=0;b.classList.remove('new');});});
+    prevOn={};
+    renderLegend();
+    paint(false);
+  }
+  function renderLegend(){
+    var sc=SC[metric], a=sc.stops[0][0], z=sc.stops[sc.stops.length-1][0];
+    $('b-leg-nm').textContent=sc.name;
+    $('b-leg-grad').style.background='linear-gradient(90deg,'+sc.stops.map(function(s){return s[1]+' '+((s[0]-a)/(z-a)*100).toFixed(1)+'%';}).join(',')+')';
+    $('b-leg-ticks').innerHTML=sc.ticks.map(function(t,i){
+      var lab=metric==='tr'?fmt(t):dec(t,metric==='fr'?(t%1?1:0):2);
+      if(i===sc.ticks.length-1)lab+='+';
+      return '<span style="left:'+((t-a)/(z-a)*100).toFixed(1)+'%">'+lab+'</span>';}).join('');
+  }
+  function paint(flash){
+    var best=bestCell(), on=0, good=0, any=false, sc=SC[metric];
+    $$('.b-cell',mapEl).forEach(function(b){
+      var x=cells[+b.dataset.i], o=isOn(x), cls='b-cell';
+      b.style.background='';b.style.color='';
+      if(!o){cls+=' un';b.textContent='';b.setAttribute('aria-label',cellName(x)+': ainda não testado');b.setAttribute('aria-disabled','true');}
+      else if(x.low){cls+=' low';b.textContent=fmt(x.tr);b.setAttribute('aria-label',cellName(x)+': só '+fmt(x.tr)+' trades, menos de 400');b.setAttribute('aria-disabled','true');}
+      else{
+        on++; if(x.fr>=3)good++;
+        var c=ramp(sc.stops,val(x)); b.style.background=css(c); b.style.color=ink(c);
+        b.textContent=txt(x); b.removeAttribute('aria-disabled');
+        b.setAttribute('aria-label',cellName(x)+': FR '+dec(x.fr,1)+', PF '+dec(x.pf,2)+', '+fmt(x.tr)+' trades, '+x.m+' membros'+(x===best?', melhor do mapa':''));
+        if(x===best)cls+=' best';
+        if(flash&&!prevOn[x.k]){litTick[x.k]=tickN;if(!reduce)b._pop=1;}
+      }
+      if(o)prevOn[x.k]=1;
+      if(b._pop)cls+=' new';
+      if(b.tabIndex===0)any=true;
+      b.className=cls;
+    });
+    if(!any){var f=best?mapEl.querySelector('[data-i="'+cells.indexOf(best)+'"]'):mapEl.querySelector('.b-cell');if(f)f.tabIndex=0;}
+    var has=prog>0;
+    $('b-map-empty').hidden=has; $('b-map-has').hidden=!has; $('b-mapctl').hidden=!has;
+    $('b-k-n').textContent=has?on:'—'; $('b-k-nde').textContent=has?'de '+cells.length:'';
+    $('b-k-b').textContent=has?good:'—';
+    $('b-k-fr').textContent=best?dec(best.fr,1):'—'; $('b-k-best').disabled=!best;
+    $('b-k-best').setAttribute('aria-label',best?'Melhor FR '+dec(best.fr,1)+', ir até ele no mapa':'Sem melhor ainda');
+    $('b-mapcount').textContent=on+' de '+cells.length+' com resultado';
+    if(view==='lista'){var n=listRows().length;if(!flash||n!==lastListN)renderList();}
+    if(tipEl._cell&&!tipEl.hidden)showTip(tipEl._cell);
+  }
+  function focusCell(j){
+    var t=mapEl.querySelector('[data-i="'+j+'"]'); if(!t)return;
+    $$('.b-cell',mapEl).forEach(function(z){z.tabIndex=-1;}); t.tabIndex=0; t.focus();
+  }
+
+  /* tooltip do mapa */
+  function tipHTML(x){
+    var best=bestCell();
+    var h='<div class="t-h"><b>'+TF[x.r]+'</b><span>'+esc(colLabel(x))+'</span></div>';
+    if(!isOn(x))return h+'<p class="b-dim">Ainda não testado</p>';
+    if(x.low)return h+'<p class="b-warn">Só '+fmt(x.tr)+' trades, menos de 400</p>';
+    h+='<dl>';
+    dims(x).forEach(function(d){h+='<dt>'+d[0]+'</dt><dd>'+esc(d[1])+'</dd>';});
+    h+='<hr><dt>FR</dt><dd class="big">'+dec(x.fr,1)+'</dd><dt>PF</dt><dd>'+dec(x.pf,2)+'</dd><dt>Trades</dt><dd>'+fmt(x.tr)+'</dd><dt>Membros</dt><dd'+(x.m<15?' class="b-warn"':'')+'>'+x.m+'</dd></dl>';
+    if(x===best)h+='<p class="b-cy">★ Melhor do mapa</p>';
+    return h+'<p class="t-f">Clique ou Enter para abrir</p>';
+  }
+  function showTip(b){
+    var x=cells[+b.dataset.i]; if(!x)return;
+    tipEl._cell=b; tipEl.innerHTML=tipHTML(x); tipEl.hidden=false;
+    var r=b.getBoundingClientRect(), w=tipEl.offsetWidth, h=tipEl.offsetHeight;
+    var left=Math.max(8,Math.min(window.innerWidth-w-8,r.left+r.width/2-w/2));
+    var top=r.bottom+8; if(top+h>window.innerHeight-8)top=r.top-h-8;
+    tipEl.style.left=left+'px'; tipEl.style.top=top+'px';
+  }
+  function hideTip(){tipEl.hidden=true;tipEl._cell=null;}
+
+  mapEl.addEventListener('click',function(e){var b=e.target.closest('.b-cell');if(b&&openable(cells[+b.dataset.i])){hideTip();openDr(+b.dataset.i);}});
+  mapEl.addEventListener('mouseover',function(e){var b=e.target.closest('.b-cell');if(b)showTip(b);});
+  mapEl.addEventListener('mouseleave',function(){if(!mapEl.contains(document.activeElement))hideTip();});
+  mapEl.addEventListener('focusin',function(e){var b=e.target.closest('.b-cell');if(b)showTip(b);});
+  mapEl.addEventListener('focusout',function(){setTimeout(function(){if(!mapEl.contains(document.activeElement))hideTip();},0);});
+  mapEl.addEventListener('keydown',function(e){
+    var b=e.target.closest('.b-cell'); if(!b)return;
+    var i=+b.dataset.i, nc=COLS[estr][axis].length, r=Math.floor(i/nc), c=i%nc, j=null;
+    switch(e.key){
+      case 'ArrowRight':if(c<nc-1)j=i+1;break;
+      case 'ArrowLeft':if(c>0)j=i-1;break;
+      case 'ArrowDown':if(r<TF.length-1)j=i+nc;break;
+      case 'ArrowUp':if(r>0)j=i-nc;break;
+      case 'Home':j=e.ctrlKey?0:r*nc;break;
+      case 'End':j=e.ctrlKey?cells.length-1:r*nc+nc-1;break;
+      case 'Escape':hideTip();return;
+      default:return;
+    }
+    e.preventDefault(); if(j!==null)focusCell(j);
+  });
+  window.addEventListener('scroll',function(){if(!tipEl.hidden&&tipEl._cell)showTip(tipEl._cell);},true);
+
+  /* ---------- lista ---------- */
+  function listRows(){
+    var rows=[];
+    cells.forEach(function(x,i){if(openable(x)&&(!onlyGood||x.fr>=3))rows.push(i);});
+    rows.sort(function(a,b){
+      var A=cells[a],B=cells[b],d;
+      if(sortK==='nicho')d=(A.r-B.r)||(A.c-B.c); else d=A[sortK]-B[sortK];
+      return d*sortDir;
+    });
+    return rows;
+  }
+  function sparkSVG(x){
+    var mx=Math.max(6,x.fr), pts=x.hist.map(function(v,i){return (2+i*8.888).toFixed(1)+','+(20-v/mx*18).toFixed(1);});
+    var last=pts[pts.length-1].split(',');
+    return '<svg class="b-lspark" viewBox="0 0 84 22" role="img" aria-label="Melhor FR subiu de '+dec(x.hist[0],1)+' para '+dec(x.fr,1)+'"><polyline fill="none" stroke="#22E4FF" stroke-width="1.4" stroke-linejoin="round" points="'+pts.join(' ')+'"/><circle cx="'+last[0]+'" cy="'+last[1]+'" r="2.2" fill="#22E4FF"/></svg>';
+  }
+  function seals(x,best){
+    var s='';
+    if(x===best)s+='<span class="b-pill cy sm">★ melhor</span>';
+    if(x.fr>=3)s+='<span class="b-pill green sm">bom</span>'; else if(x.fr<1.5)s+='<span class="b-pill rose sm">fraco</span>';
+    if(x.m<15)s+='<span class="b-pill amber sm">poucos membros</span>';
+    if(cur==='rodando'&&litTick[x.k]!==undefined&&tickN-litTick[x.k]<=5)s+='<span class="b-pill blue sm">novo</span>';
+    return s||'<span class="b-dim">—</span>';
+  }
+  function renderList(){
+    var all=listRows(), rows=showAll?all:all.slice(0,12), best=bestCell(), maxTr=2400;
+    lastListN=all.length;
+    var act=document.activeElement, foc=(act&&act.classList&&act.classList.contains('b-nbtn'))?act.dataset.i:null;
+    var has=prog>0;
+    $('b-l-empty').hidden=has; $('b-l-has').hidden=!has;
+    $('b-l-count').textContent=all.length+(all.length===1?' nicho':' nichos');
+    $('b-l-more').hidden=all.length<=12;
+    $('b-l-rest').textContent=showAll?'':'mais '+(all.length-12)+' nichos';
+    $('b-l-all').textContent=showAll?'Mostrar só os 12 primeiros':'Mostrar todos ('+all.length+')';
+    $$('.b-list th[data-k]').forEach(function(th){th.setAttribute('aria-sort',th.dataset.k===sortK?(sortDir<0?'descending':'ascending'):'none');});
+    var body=$('b-lbody'), h='';
+    if(!rows.length)h='<tr><td colspan="8" class="b-dim" style="text-align:center;padding:24px">Nenhum nicho bom ainda</td></tr>';
+    rows.forEach(function(i,n){
+      var x=cells[i], c=ramp(SC.fr.stops,x.fr), sub=dims(x).map(function(d){return d[1];}).join(', ');
+      h+='<tr data-i="'+i+'"><td class="rk">'+(n+1)+'</td>'+
+        '<td><button type="button" class="b-nbtn" data-i="'+i+'" aria-label="Abrir nicho '+esc(cellName(x))+'">'+TF[x.r]+'<span>'+esc(colLabel(x))+'</span></button><div class="b-sub" title="'+esc(sub)+'">'+esc(sub)+'</div></td>'+
+        '<td><div class="b-seals">'+seals(x,best)+'</div></td>'+
+        '<td class="num"><div class="b-frc"><span class="b-ibar" aria-hidden="true"><i style="width:'+Math.min(100,x.fr/6*100).toFixed(0)+'%;background:'+css(c)+'"></i></span><b'+(x.fr<1.5?' class="neg"':'')+'>'+dec(x.fr,1)+'</b></div><div class="b-sub">mediana '+dec(x.med,1)+'</div></td>'+
+        '<td class="num">'+dec(x.pf,2)+'</td>'+
+        '<td class="num"><div class="b-frc"><span class="b-ibar tr" aria-hidden="true"><i style="width:'+Math.min(100,x.tr/maxTr*100).toFixed(0)+'%"></i></span>'+fmt(x.tr)+'</div></td>'+
+        '<td class="num'+(x.m<15?' b-warn':'')+'">'+x.m+'</td>'+
+        '<td>'+sparkSVG(x)+'</td></tr>';
+    });
+    body.innerHTML=h;
+    if(foc!==null){var t=body.querySelector('.b-nbtn[data-i="'+foc+'"]');if(t)t.focus();}
+  }
+  $('b-lbody').addEventListener('click',function(e){var tr=e.target.closest('tr[data-i]');if(tr)openDr(+tr.dataset.i);});
+  $('b-lbody').addEventListener('keydown',function(e){
+    var b=e.target.closest('.b-nbtn'); if(!b||(e.key!=='ArrowDown'&&e.key!=='ArrowUp'))return;
+    var all=$$('.b-nbtn',$('b-lbody')), k=all.indexOf(b)+(e.key==='ArrowDown'?1:-1);
+    if(all[k]){e.preventDefault();all[k].focus();}
+  });
+  $$('.b-sort').forEach(function(b){b.addEventListener('click',function(){
+    var k=b.dataset.k; if(sortK===k)sortDir=-sortDir; else{sortK=k;sortDir=k==='nicho'?1:-1;}
+    renderList(); b.focus();
+  });});
+  $('b-l-good').addEventListener('click',function(){onlyGood=!onlyGood;this.setAttribute('aria-pressed',String(onlyGood));renderList();});
+  $('b-l-all').addEventListener('click',function(){showAll=!showAll;renderList();this.focus();});
+
+  /* ---------- gaveta do nicho ---------- */
+  var di=null, drOpen=false, lastFocus=null;
+  var SP={
+    adx:[['Período do DI',2,100,18,26,22,20,''],['Suavização do ADX',1,100,3,5,4,4,''],['Amplitude máx.',0,450,150,250,200,175,' pts'],['Stop',15,90,45,60,50,50,' pts'],['Alvo (× stop)',1,4,2,2.5,2,2.5,'']],
+    abert:[['Horário da abertura',0,60,0,15,0,0,'h'],['Barras da abertura',1,60,4,6,5,5,''],['Folga',0,40,1,3,2,1,' ticks'],['Stop (ATR)',0.5,3,0.75,1,0.75,1,''],['Alvo (× stop)',1,4,2,3,2.5,3,'']]
+  };
+  function spv(v,u){if(u==='h')return addMin('09:30',v);var s=v%1?dec(v,v*100%10?2:1):String(v);return s+u;}
+  function order(){
+    if(view==='lista')return listRows();
+    var o=[];cells.forEach(function(x,i){if(openable(x))o.push(i);});return o;
+  }
+  function heatHTML(x){
+    var days=['seg','ter','qua','qui','sex'], m=MASK[x.dias]||[1,1,1,1,1], base=hx('#111113');
+    var hrs=[-30,0,30,60,90].map(function(d){return addMin(x.start,d);});
+    var h='<table class="b-heat"><caption class="b-sr">Resultado médio por trade em dólares, por hora de entrada e dia</caption><thead><tr><td></td>'+days.map(function(d){return '<th scope="col">'+d+'</th>';}).join('')+'</tr></thead><tbody>';
+    hrs.forEach(function(hr,ri){
+      h+='<tr><th scope="row">'+hr+'</th>';
+      days.forEach(function(d,dj){
+        var inR=ri>=1&&ri<=3&&m[dj], q=rnd(x.k*3+ri*7+dj*13);
+        if(q<0.07){h+='<td class="na'+(inR?' in':'')+'" title="menos de 40 trades">—</td>';return;}
+        var v=Math.round(q*26-11+(inR?10:0)+(ri===0||ri===4?-4:0));
+        var a=Math.min(Math.abs(v)/20,1)*0.75+0.12, c=v===0?hx('#1c1c20'):mix(hx(v>0?'#00F5A0':'#FF4D7D'),base,a);
+        h+='<td class="'+(inR?'in':'')+'" style="background:'+css(c)+';color:'+ink(c)+'">'+(v>0?'+':v<0?'−':'')+Math.abs(v)+'</td>';
+      });
+      h+='</tr>';
+    });
+    return h+'</tbody></table><div class="b-hleg"><span><i style="background:#00b679"></i>ganha</span><span><i style="background:#c23a64"></i>perde</span><span><i style="box-shadow:inset 0 0 0 1.5px #22E4FF"></i>região do nicho</span><span>US$ por trade</span></div>';
+  }
+  function yearsHTML(x){
+    var h='<div class="b-yrs">';
+    [2019,2020,2021,2022,2023,2024,2025].forEach(function(y){
+      var p=Math.round(Math.max(22,Math.min(96,58+(x.fr-3)*6+rnd(x.k+y)*26-(y===2022?30:0))));
+      var cl=p>=70?'pos':(p>=50?'warn':'neg'), col=p>=70?'#00F5A0':(p>=50?'#FFC93C':'#FF4D7D');
+      h+='<div class="b-yr"><span class="v b-'+cl+'">'+p+'%</span><span class="bt" aria-hidden="true"><i style="height:'+p+'%;background:'+col+';opacity:.75"></i></span><span class="y">'+y+'</span></div>';
+    });
+    return h+'<div class="b-yr ho"><span class="v b-dim">—</span><span class="bt" aria-hidden="true"></span><span class="y">2026</span></div></div>';
+  }
+  function spreadHTML(){
+    var h='<table class="b-t"><caption class="b-sr">Espalhamento dos parâmetros entre os membros</caption><thead><tr><th scope="col">Item</th><th scope="col" style="width:150px">Faixa dos membros</th><th scope="col"></th><th scope="col" class="num">Mediana</th><th scope="col" class="num">Campeão</th></tr></thead><tbody>';
+    SP[estr].forEach(function(p){
+      var a=p[1],z=p[2],L=(p[3]-a)/(z-a)*100,W=(p[4]-p[3])/(z-a)*100,C=(p[6]-a)/(z-a)*100;
+      h+='<tr><td class="it">'+p[0]+'</td><td><span class="b-rg" aria-hidden="true"><i class="m" style="left:'+L.toFixed(1)+'%;width:'+W.toFixed(1)+'%"></i><i class="c" style="left:'+C.toFixed(1)+'%"></i></span></td>'+
+        '<td style="white-space:nowrap">'+spv(p[3],p[7]==='h'?'h':'')+' a '+spv(p[4],p[7])+'</td><td class="num">'+spv(p[5],p[7])+'</td><td class="num b-cy">'+spv(p[6],p[7])+'</td></tr>';
+    });
+    return h+'</tbody></table><div class="b-hleg"><span><i style="background:#1d1d22"></i>faixa testada</span><span><i style="background:rgba(34,228,255,.55)"></i>membros</span><span><i style="background:#fff;width:2px"></i>campeão</span></div>';
+  }
+  function curveHTML(x){
+    var n=56,v=0,pts=[],mn=0,mx=0;
+    for(var i=0;i<n;i++){v+=x.fr*0.55+(rnd(x.k+i*5)-0.42)*7-(i>=26&&i<=33?4.2:0);pts.push(v);mn=Math.min(mn,v);mx=Math.max(mx,v);}
+    var W=640,H=150,pad=18,sx=function(i){return 46+i*(W-56)/(n-1);},sy=function(y){return pad+(H-pad*2)*(1-(y-mn)/(mx-mn||1));};
+    var line=pts.map(function(y,i){return sx(i).toFixed(1)+','+sy(y).toFixed(1);}).join(' ');
+    var fin=fmt(x.tr*x.fr*2.4);
+    var g='';[0,0.5,1].forEach(function(f){var y=pad+(H-pad*2)*f;g+='<line x1="46" x2="'+W+'" y1="'+y+'" y2="'+y+'" stroke="#1d1d22"/>';});
+    var yl='<text x="46" y="'+(pad-6)+'" text-anchor="start" fill="#8B8B93" font-size="10">US$ '+fmt(x.tr*x.fr*2.4/1000)+' mil</text><text x="40" y="'+(H-pad+4)+'" text-anchor="end" fill="#8B8B93" font-size="10">0</text>';
+    var xl='';for(var y=0;y<7;y++){xl+='<text x="'+sx(y*(n-1)/6).toFixed(0)+'" y="'+(H-2)+'" text-anchor="middle" fill="#8B8B93" font-size="10">'+(2019+y)+'</text>';}
+    return '<svg class="b-curve" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Curva de capital do campeão: sobe até US$ '+fin+', com uma queda em 2022">'+g+
+      '<polygon points="'+sx(0)+','+sy(mn)+' '+line+' '+sx(n-1)+','+sy(mn)+'" fill="rgba(0,245,160,.07)"/><polyline fill="none" stroke="#00F5A0" stroke-width="1.8" stroke-linejoin="round" points="'+line+'"/>'+yl+xl+'</svg>';
+  }
+  function fillDrawer(){
+    var x=cells[di], st=S[cur], best=bestCell(), ord=order(), p=ord.indexOf(di);
+    $('b-dr-tf').textContent=TF[x.r]; $('b-dr-cv').textContent=colLabel(x);
+    var pills=dims(x).map(function(d){return '<span class="b-pill gray sm"><span class="b-dim" style="font-weight:400">'+d[0].toLowerCase()+'</span>'+esc(d[1])+'</span>';}).join('');
+    if(x===best)pills+='<span class="b-pill cy sm">★ melhor do mapa</span>';
+    if(x.fr>=3)pills+='<span class="b-pill green sm">bom</span>'; else if(x.fr<1.5)pills+='<span class="b-pill rose sm">fraco</span>';
+    if(st.live)pills+='<span class="b-pill amber sm">parcial</span><button type="button" class="b-q" data-h="Ajuda sobre parcial" data-tip="A busca ainda está rodando: o nicho pode achar resultado melhor e os números podem mudar.">?</button>';
+    $('b-dr-pills').innerHTML=pills;
+    var pv=ord[p-1], nx=ord[p+1];
+    navBtn($('b-dr-prev'),pv,'anterior'); navBtn($('b-dr-next'),nx,'seguinte');
+    $('b-dr-pos').textContent=(p+1)+' de '+ord.length;
+    var kfr=ramp(SC.fr.stops,x.fr);
+    $('b-dr-body').innerHTML=
+      '<div class="b-kpis">'+
+        '<div class="b-kpi"><span class="l"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:'+css(kfr)+'"></i>FR</span><b class="cy">'+dec(x.fr,1)+'</b></div>'+
+        '<div class="b-kpi"><span class="l">FR mediano<button type="button" class="b-q" data-h="Ajuda sobre FR mediano" data-tip="Mediana do FR dos membros. Perto do FR do campeão indica região sólida, não um ponto de sorte.">?</button></span><b>'+dec(x.med,1)+'</b></div>'+
+        '<div class="b-kpi"><span class="l">PF</span><b>'+dec(x.pf,2)+'</b></div>'+
+        '<div class="b-kpi"><span class="l">Trades</span><b>'+fmt(x.tr)+'</b></div>'+
+        '<div class="b-kpi"><span class="l">Maior queda</span><b>US$ '+fmt(900+x.tr*0.8)+'</b></div>'+
+        '<div class="b-kpi"><span class="l">Membros<button type="button" class="b-q r" data-h="Ajuda sobre membros" data-tip="Combinações parecidas que também passaram. Menos de 15 pode ser pico isolado.">?</button></span><b'+(x.m<15?' class="warn"':'')+'>'+x.m+'</b></div>'+
+      '</div>'+
+      '<div class="b-dgrid">'+
+        '<div class="b-blk"><h3>Hora × dia<button type="button" class="b-q" data-h="Ajuda sobre hora por dia" data-tip="Resultado médio por trade (US$) dos membros, por hora de entrada e dia. Contorno ciano: região do nicho. Traço: menos de 40 trades.">?</button></h3>'+heatHTML(x)+'</div>'+
+        '<div class="b-blk"><h3>Por ano<button type="button" class="b-q r" data-h="Ajuda sobre por ano" data-tip="Quantos % dos membros fecharam o ano no lucro. Acima de 70% bom; abaixo de 50% ano fraco. 2026 fica de fora (holdout).">?</button></h3>'+yearsHTML(x)+'</div>'+
+        '<div class="b-blk wide"><h3>Espalhamento<button type="button" class="b-q" data-h="Ajuda sobre espalhamento" data-tip="Até onde vão os parâmetros entre os membros, dentro da faixa testada. Faixa larga com mediana boa: região robusta.">?</button></h3>'+spreadHTML()+'</div>'+
+        '<div class="b-blk wide"><h3>Curva do campeão</h3>'+curveHTML(x)+'</div>'+
+      '</div>';
+    initTips(drawer);
+  }
+  function navBtn(b,i,word){
+    if(i===undefined){b.disabled=true;b.setAttribute('aria-label','Sem nicho '+word);b.setAttribute('data-tip','Sem nicho '+word);return;}
+    b.disabled=false; var t='Nicho '+word+': '+cellName(cells[i])+' (seta '+(word==='anterior'?'←':'→')+')';
+    b.setAttribute('aria-label',t); b.setAttribute('data-tip',t); b._to=i;
+  }
+  function setInert(on){
+    Array.prototype.forEach.call(root.children,function(ch){
+      if(ch===drawer||ch===cf||ch===scrim||ch===tipEl||ch.tagName==='STYLE'||ch.tagName==='SCRIPT')return;
+      ch.inert=on; if(on)ch.setAttribute('aria-hidden','true'); else ch.removeAttribute('aria-hidden');
+    });
+  }
+  function openDr(i){
+    if(!openable(cells[i]))return;
+    di=i;
+    if(!drOpen){
+      lastFocus=document.activeElement; drOpen=true; hideTip();
+      setInert(true); scrim.hidden=false; drawer.hidden=false; fillDrawer();
+      void drawer.offsetWidth; drawer.classList.add('b-in');
+      $('b-dr-ttl').focus();
+    } else fillDrawer();
+  }
+  function goNb(dir){
+    var b=dir<0?$('b-dr-prev'):$('b-dr-next'); if(b.disabled)return;
+    di=b._to; fillDrawer(); $('b-dr-live').textContent='Nicho '+cellName(cells[di]);
+    if(b.disabled)$('b-dr-ttl').focus();
+  }
+  function closeDr(){
+    if(!drOpen)return; drOpen=false;
+    drawer.classList.remove('b-in'); setInert(false); scrim.hidden=true;
+    setTimeout(function(){if(!drOpen)drawer.hidden=true;},reduce?0:230);
+    var t=null;
+    if(view==='mapa'){focusCell(di);t=document.activeElement;}
+    else if(view==='lista'){t=$('b-lbody').querySelector('.b-nbtn[data-i="'+di+'"]');if(t)t.focus();}
+    if(!t&&lastFocus&&lastFocus.focus)lastFocus.focus();
+  }
+  function focusables(el){
+    return $$('button,[href],input,select,textarea,[tabindex]',el).filter(function(n){return !n.disabled&&n.tabIndex>=0&&n.offsetParent!==null;});
+  }
+  function trap(e,el){
+    if(e.key!=='Tab')return;
+    var f=focusables(el); if(!f.length)return;
+    var a=f[0], z=f[f.length-1], act=document.activeElement;
+    if(e.shiftKey&&(act===a||f.indexOf(act)<0)){e.preventDefault();z.focus();}
+    else if(!e.shiftKey&&(act===z||f.indexOf(act)<0)){e.preventDefault();a.focus();}
+  }
+  drawer.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){e.preventDefault();closeDr();return;}
+    var tag=(e.target.tagName||'').toUpperCase();
+    if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&tag!=='INPUT'&&tag!=='SELECT'&&tag!=='TEXTAREA'){e.preventDefault();goNb(e.key==='ArrowLeft'?-1:1);return;}
+    trap(e,drawer);
+  });
+  $('b-dr-close').addEventListener('click',closeDr);
+  $('b-dr-prev').addEventListener('click',function(){goNb(-1);});
+  $('b-dr-next').addEventListener('click',function(){goNb(1);});
+  scrim.addEventListener('click',function(){if(drOpen)closeDr();else if(!cf.hidden)closeCf(false);});
+
+  /* ---------- visao ---------- */
+  var TABS=[['mapa','b-v-mapa','b-p-mapa'],['lista','b-v-lista','b-p-lista'],['esp','b-v-esp','b-p-esp']];
+  function setView(v,focusTab){
+    view=v; hideTip();
+    TABS.forEach(function(a){var t=$(a[1]),on=a[0]===v;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1;$(a[2]).hidden=!on;if(on&&focusTab)t.focus();});
+    if(v==='lista')renderList();
+  }
+  TABS.forEach(function(a,k){
+    $(a[1]).addEventListener('click',function(){setView(a[0]);});
+    $(a[1]).addEventListener('keydown',function(e){
+      var n=null; if(e.key==='ArrowRight')n=(k+1)%3; else if(e.key==='ArrowLeft')n=(k+2)%3; else if(e.key==='Home')n=0; else if(e.key==='End')n=2;
+      if(n!==null){e.preventDefault();setView(TABS[n][0],true);}
+    });
+  });
+
+  /* ---------- nucleos ---------- */
+  function cpuDefault(){return $('b-c-hora').checked?20:4;}
+  var apT=null;
+  function setCpu(n,manual){
+    n=Math.max(1,Math.min(24,Math.round(n)||1));
+    $('b-n-cpu').value=n; $('b-cpu-m').disabled=n<=1; $('b-cpu-p').disabled=n>=24;
+    if(manual)cpuTouched=n!==cpuDefault();
+    $('b-cpu-def').hidden=!cpuTouched;
+    var h='';for(var i=0;i<24;i++)h+='<i class="'+(i<n?'on':'')+'"></i>';$('b-cpubar').innerHTML=h;
+    if(S[cur].tde.indexOf('de ~')===0)$('b-k-tde').textContent='de ~'+fmt(n*3000);
+    if(manual&&cur==='rodando'){var p=$('b-cpu-ap');p.hidden=false;clearTimeout(apT);apT=setTimeout(function(){p.hidden=true;},2500);}
+  }
+
+  /* ---------- buscas salvas ---------- */
+  var SAVED=[{id:'12',d:'03/11',st:'atual',tests:'18.430'},{id:'11',d:'31/10',st:'concluida',tests:'61.204'},{id:'10',d:'29/10',st:'erro',tests:'28.902'},{id:'9',d:'27/10',st:'concluida',tests:'58.770'}];
+  var viewing='12', delId=null;
+  var STPILL={parada:['gray','parada'],rodando:['green','rodando'],pausada:['amber','pausada'],concluida:['blue','concluída'],erro:['rose','interrompida']};
+  var TRASH='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6 4V2.6h4V4M4 4l.7 9.4h6.6L12 4M6.6 6.6v4.6M9.4 6.6v4.6"/></svg>';
+  function svState(s){return s.st==='atual'?cur:s.st;}
+  function renderSaved(){
+    var ul=$('b-saved');
+    if(!SAVED.length){ul.innerHTML='<li class="b-dim" style="padding:6px 8px">Nenhuma busca salva</li>';return;}
+    ul.innerHTML=SAVED.filter(function(s){return !(s.st==='atual'&&cur==='parada');}).map(function(s){
+      var st=svState(s), pl=STPILL[st], locked=s.st==='atual'&&cur==='rodando';
+      var tip=locked?'Pause ou pare a busca para excluir':'Excluir a busca #'+s.id;
+      return '<li><button type="button" class="b-sv" data-id="'+s.id+'"'+(viewing===s.id?' aria-current="true"':'')+' aria-label="Busca #'+s.id+', de '+s.d+', '+pl[1]+'"><span class="n">#'+s.id+'</span><span class="d">'+s.d+'</span><span class="b-pill '+pl[0]+' sm">'+pl[1]+'</span></button>'+
+        '<button type="button" class="b-ico del" data-del="'+s.id+'" aria-label="'+tip+'" data-tip="'+tip+'"'+(locked?' aria-disabled="true"':'')+'>'+TRASH+'</button></li>';
+    }).join('');
+  }
+  $('b-saved').addEventListener('click',function(e){
+    var d=e.target.closest('[data-del]');
+    if(d){if(d.getAttribute('aria-disabled')==='true')return;openCf(d.dataset.del,d);return;}
+    var b=e.target.closest('.b-sv'); if(!b)return;
+    viewing=b.dataset.id; var s=SAVED.filter(function(z){return z.id===viewing;})[0];
+    apply(s.st==='atual'?(cur==='parada'?'rodando':cur):s.st);
+    var nb=$('b-saved').querySelector('.b-sv[data-id="'+viewing+'"]'); if(nb)nb.focus();
+  });
+  var cfOpener=null;
+  function openCf(id,opener){
+    var s=SAVED.filter(function(z){return z.id===id;})[0]; if(!s)return;
+    delId=id; cfOpener=opener;
+    $('b-cf-t').textContent='Excluir a busca #'+id+'?';
+    $('b-cf-d').textContent='Os '+s.tests+' testes e o mapa dela somem. Não dá para desfazer.';
+    setInert(true); scrim.hidden=false; cf.hidden=false; $('b-cf-no').focus();
+  }
+  function closeCf(done){
+    cf.hidden=true; scrim.hidden=true; setInert(false);
+    if(done){
+      var wasCur=SAVED.filter(function(z){return z.id===delId;})[0].st==='atual', wasView=viewing===delId;
+      SAVED=SAVED.filter(function(z){return z.id!==delId;});
+      $('b-svmsg').textContent='Busca #'+delId+' excluída';
+      setTimeout(function(){$('b-svmsg').textContent='';},4000);
+      if(wasView)viewing=SAVED.length?SAVED[0].id:null;
+      if(wasCur||wasView){apply(wasCur?'parada':svState(SAVED[0]));} else renderSaved();
+      var f=$('b-saved').querySelector('.b-sv'); if(f)f.focus(); else $('b-sv-h').focus&&$('b-ini').focus();
+    } else if(cfOpener&&root.contains(cfOpener))cfOpener.focus();
+    delId=null;
+  }
+  $('b-cf-no').addEventListener('click',function(){closeCf(false);});
+  $('b-cf-yes').addEventListener('click',function(){closeCf(true);});
+  cf.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();closeCf(false);return;}trap(e,cf);});
+
+  /* ---------- aplicar estado ---------- */
+  function setBtn(id,on){$(id).disabled=!on;}
+  function apply(name){
+    var was=cur; cur=name; var st=S[name];
+    $$('[data-st]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.st===name));});
+    $('b-st-pill').className='b-pill lg '+st.pill; $('b-st-spin').hidden=!st.spin; $('b-st-txt').textContent=st.txt;
+    $('b-st-when').textContent=st.when; $('b-st-when').hidden=!st.when; setTip($('b-st-q'),st.tip);
+    if(was!==name)$('b-st-live').textContent='Busca '+st.txt.toLowerCase();
+    setBtn('b-ini',st.b.ini);setBtn('b-pau',st.b.pau);setBtn('b-con',st.b.con);setBtn('b-par',st.b.par);setBtn('b-nova',st.b.nova);
+    $('b-cfg').disabled=!!st.lock; $('b-cfg-lock').hidden=!st.lock; $('b-esp-lock').style.display=st.lock?'':'none';
+    $$('.b-sidelock').forEach(function(e){e.disabled=!!st.lock;}); $('b-side-lock').hidden=!st.lock;
+    frame.classList.toggle('is-running',!!st.live);
+    $('b-live').hidden=!st.live;
+    $('b-k-t').textContent=typeof st.t==='number'?fmt(st.t):st.t; $('b-k-tde').textContent=st.tde;
+    $('b-k-barf').style.width=st.bar+'%'; $('b-k-bar').className='b-bar '+st.barc; $('b-k-bar').setAttribute('aria-valuenow',st.bar);
+    $('b-k-dec').textContent=st.dec; $('b-k-fal').textContent=st.fal; $('b-k-tl').textContent=st.tl;
+    $('b-k-spark').style.visibility=st.spark?'visible':'hidden';
+    prog=st.p; prevOn={}; cells.forEach(function(x){if(isOn(x))prevOn[x.k]=1;});
+    if(name==='parada'){if(drOpen)closeDr();setView('esp');}
+    else if(was==='parada'&&view==='esp')setView('mapa');
+    setCpu(+$('b-n-cpu').value,false);
+    if(drOpen){if(openable(cells[di]))fillDrawer();else closeDr();}
+    paint(false);
+    if(view==='lista')renderList();
+    renderSaved();
+    if(tick){clearInterval(tick);tick=null;}
+    if(st.live)startTick();
+  }
+  function startTick(){
+    var min=192+Math.round((S.rodando.t-18430)/40);
+    tick=setInterval(function(){
+      tickN++;
+      S.rodando.t+=Math.round((+$('b-n-cpu').value)*(1.4+Math.random()*0.7)); min++;
+      prog=Math.min(0.97,prog+0.006); S.rodando.p=prog; S.pausada.p=prog; S.pausada.t=S.rodando.t;
+      var pct=Math.min(99,Math.round(S.rodando.t/600));
+      S.rodando.bar=pct; S.pausada.bar=pct;
+      $('b-k-t').textContent=fmt(S.rodando.t); $('b-k-barf').style.width=pct+'%'; $('b-k-bar').setAttribute('aria-valuenow',pct);
+      var dtxt=Math.floor(min/60)+'h'+String(min%60).padStart(2,'0'); S.rodando.dec=dtxt; S.pausada.dec=dtxt;
+      $('b-k-dec').textContent=dtxt;
+      var f=Math.max(0,626-min); S.rodando.fal='faltam ~'+Math.floor(f/60)+'h'+String(f%60).padStart(2,'0'); $('b-k-fal').textContent=S.rodando.fal;
+      paint(true);
+    },1200);
+  }
+
+  /* ---------- eventos ---------- */
+  $$('[data-st]').forEach(function(b){b.addEventListener('click',function(){viewing=SAVED.length&&SAVED[0].st==='atual'?'12':viewing;apply(b.dataset.st);});});
+  $$('[data-es]').forEach(function(b){b.addEventListener('click',function(){
+    estr=b.dataset.es;
+    $$('[data-es]').forEach(function(z){z.setAttribute('aria-pressed',String(z===b));});
+    $('b-par-adx').hidden=estr!=='adx'; $('b-par-abert').hidden=estr==='adx';
+    $$('.b-abert-only').forEach(function(r){r.hidden=estr==='adx';});
+    $('b-m-estr-op').textContent=estr==='adx'?'ADX direção':'Rompimento da abertura';
+    if(drOpen)closeDr(); build(); renderMap(); apply(cur);
+  });});
+  $$('input[name="b-axis"]').forEach(function(r){r.addEventListener('change',function(){axis=this.value;build();renderMap();});});
+  $('b-mt').addEventListener('change',function(){metric=this.value;renderLegend();paint(false);});
+  $('b-k-best').addEventListener('click',function(){var b=bestCell();if(!b)return;if(view!=='mapa')setView('mapa');focusCell(cells.indexOf(b));});
+  $$('[data-go="ini"]').forEach(function(b){b.addEventListener('click',function(){apply('rodando');});});
+  $('b-ini').addEventListener('click',function(){apply('rodando');});
+  $('b-pau').addEventListener('click',function(){apply('pausada');$('b-con').focus();});
+  $('b-con').addEventListener('click',function(){apply('rodando');$('b-pau').focus();});
+  $('b-par').addEventListener('click',function(){apply('concluida');$('b-nova').focus();});
+  $('b-nova').addEventListener('click',function(){apply('parada');$('b-ini').focus();});
+  $('b-c-hora').addEventListener('change',function(){$('b-i-hora').disabled=!this.checked;setCpu(cpuTouched?+$('b-n-cpu').value:cpuDefault(),false);});
+  $('b-c-lim').addEventListener('change',function(){var i=$('b-i-lim');i.disabled=!this.checked;i.value=this.checked?'80.000':'—';if(this.checked)i.focus();});
+  $('b-cpu-m').addEventListener('click',function(){setCpu(+$('b-n-cpu').value-1,true);});
+  $('b-cpu-p').addEventListener('click',function(){setCpu(+$('b-n-cpu').value+1,true);});
+  $('b-n-cpu').addEventListener('change',function(){setCpu(+this.value,true);});
+  $('b-cpu-def').addEventListener('click',function(){cpuTouched=false;setCpu(cpuDefault(),false);$('b-n-cpu').focus();});
+  $$('.b-cfg .b-chip').forEach(function(c){c.addEventListener('click',function(){c.setAttribute('aria-pressed',String(c.getAttribute('aria-pressed')!=='true'));});});
+
+  initTips(root);
+  build(); renderMap(); apply('rodando');
+})();
+</script>
+</div>
