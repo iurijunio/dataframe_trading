@@ -112,7 +112,9 @@ def menu_abas(aba, qual, subtela):
     abas = controls.ABAS_MENU
     if qual != "mineracao":
         return (no_update, no_update, *[no_update] * len(abas), no_update)
-    varredura = subtela == "varredura"
+    # na Busca automática valem as abas da Varredura: Períodos traz treino,
+    # teste, passo e holdout, e o "mínimo de operações" entra no filtro
+    varredura = subtela in ("varredura", "busca")
     visiveis = [a for a in abas if varredura or a != "periodos"]
     efetiva = aba if aba in visiveis else "entrada"
     opcoes = [{"label": controls.ROTULOS_ABA[a], "value": a} for a in visiveis]
@@ -880,6 +882,59 @@ MENU_COMBINACAO = (
 ORIGEM_GATILHO = {"grid-mine": "linha", "scatter": "nuvem",
                   "grid-aprovadas": "aprovada"}
 
+# Os campos do menu que montam o perfil de execução. A Varredura e a Busca
+# automática leem OS MESMOS por `perfil_do_menu`: a busca tem de usar os
+# fixos (custos, ADX, limites, proteções) que a Varredura usaria.
+MENU_PERFIL = (
+    ("e-timeframe", "value"), ("e-ent-ini", "value"), ("e-ent-fim", "value"),
+    ("e-fechamento", "value"), ("e-dias", "value"), ("e-direcao", "value"),
+    ("e-filtro-adx", "value"), ("e-sem-ent1", "value"), ("e-sem-ent2", "value"),
+    ("e-sem-ent3", "value"), ("e-alvo-tipo", "value"), ("e-stop-tipo", "value"),
+    ("e-max-barras", "value"), ("e-lim-ganho", "value"), ("e-lim-perda", "value"),
+    ("e-max-trades", "value"), ("e-max-loss", "value"), ("e-corretagem", "value"),
+    ("e-emolumentos", "value"), ("e-slippage", "value"), ("e-modo", "value"),
+    ("e-contratos", "value"), ("e-risco", "value"), ("e-capital", "value"),
+    ("e-min-ops", "value"),
+)
+
+
+def perfil_do_menu(v: dict, m: dict) -> ExecutionProfile:
+    """O perfil que o menu descreve. `v` = valores dos campos `val` por
+    parâmetro; `m` = os campos de `MENU_PERFIL` por id."""
+    return ExecutionProfile(
+        timeframe=m.get("e-timeframe") or "M1",
+        entrada_inicio=m.get("e-ent-ini") or "09:00",
+        entrada_fim=m.get("e-ent-fim") or "17:00",
+        fechamento=m.get("e-fechamento") or "17:30",
+        dias_semana=tuple(m.get("e-dias") or (1, 2, 3, 4, 5)),
+        direcao=m.get("e-direcao"),
+        sem_entrada1=m.get("e-sem-ent1") or "", sem_entrada2=m.get("e-sem-ent2") or "",
+        sem_entrada3=m.get("e-sem-ent3") or "",
+        filtro_adx=m.get("e-filtro-adx") or "tendencia",
+        adx_periodo=v.get("adx_periodo") or 0,
+        adx_limiar=v.get("adx_limiar") or 0,
+        adx_filtro_di=v.get("adx_filtro_di") or 0,
+        adx_subindo=v.get("adx_subindo") or 0,
+        alvo_tipo=m.get("e-alvo-tipo"),
+        alvo_atr_periodo=v.get("alvo_atr_periodo") or 20,
+        alvo_atr_mult=v.get("alvo_atr_mult") or 0, stop_tipo=m.get("e-stop-tipo"),
+        alvo_pct=v.get("alvo_pct") or 0,
+        stop_atr_periodo=v.get("stop_atr_periodo") or 20,
+        stop_atr_mult=v.get("stop_atr_mult") or 0,
+        stop_pct=v.get("stop_pct") or 0,
+        max_barras=m.get("e-max-barras") or 0,
+        limite_ganho_contrato=m.get("e-lim-ganho") or 0,
+        limite_perda_contrato=m.get("e-lim-perda") or 0,
+        max_trades_dia=m.get("e-max-trades") or 0,
+        max_prejuizos_dia=m.get("e-max-loss") or 0,
+        corretagem_por_contrato=m.get("e-corretagem") or 0.0,
+        emolumentos_por_contrato=m.get("e-emolumentos") or 0.0,
+        slippage_ticks=m.get("e-slippage") or 0, modo_posicao=m.get("e-modo"),
+        contratos=m.get("e-contratos") or 1, risco_por_trade=m.get("e-risco"),
+        capital_inicial=m.get("e-capital") or 10_000.0,
+        min_operacoes=m.get("e-min-ops") or 0,
+    )
+
 
 def _menu_atual(ids_val, valores_val, holdout, menu) -> dict:
     """O menu numa forma comparável: `val:<p>`, `excluir-holdout` e os
@@ -1014,6 +1069,7 @@ def register(app):
         Output("painel-aovivo", "style"),
         Output("acao-backtest", "style"), Output("sec-mineracao", "style"),
         Output("sidebar", "style"), Output("mine-bloco-varredura", "style"),
+        Output("mine-bloco-busca", "style"),
         Input("modo", "value"), Input("mine-subtela", "value"),
     )
     def modo(qual, subtela):
@@ -1054,7 +1110,8 @@ def register(app):
                 OCULTO if qual in ("wfa", "candidata", "estrategias", "portfolio",
                             "aovivo")
                 else {"display": "block"},
-                v(mineracao and not backtest))
+                v(mineracao and subtela not in ("backtest", "busca")),
+                v(mineracao and subtela == "busca"))
 
     # ---------------------------- menu: aba visível, pontinho e resumos
     # Único dono de `menu-aba`: trocar de estratégia ou de ativo (quem
@@ -1266,13 +1323,14 @@ def register(app):
         State("excluir-holdout", "value"), State("wf-holdout", "value"),
         State("wf-treino", "value"), State("wf-teste", "value"),
         State("wf-passo", "value"),
+        State("store-combinacao", "data"),
         prevent_initial_call=False,
     )
     def rodar(n, ativo, de, ate, tf, valores, ids_val, ent_ini, ent_fim, fechamento,
               dias, direcao, filtro, sem1, sem2, sem3, alvo_tipo, stop_tipo, max_barras,
               lim_ganho, lim_perda, max_trades, max_loss, corretagem,
               emolumentos, slippage, modo, contratos, risco, capital, min_ops,
-              sem_holdout, holdout_m, treino_m, teste_m, passo_m):
+              sem_holdout, holdout_m, treino_m, teste_m, passo_m, combinacao=None):
         v = {i["p"]: val for i, val in zip(ids_val, valores)}
         mod = registry.atual()
         # 0 e um valor legitimo (sem alvo); so o vazio cai no padrao
@@ -1343,6 +1401,10 @@ def register(app):
             # velho continuaria mandando num backtest avulso
             corte = (MINERACAO.estado.get("fim_otimizacao")
                      if MINERACAO.estado.get("trials") else None)
+            # o campeão de uma Busca automática traz o corte DELA (com a
+            # hora): a Varredura na memória é outra conta, com outro holdout
+            if (combinacao or {}).get("origem") == "busca":
+                corte = combinacao.get("corte")
             novo = None
             if corte:
                 try:
@@ -1454,29 +1516,14 @@ def register(app):
         State("d-de", "date"), State("d-ate", "date"),
         State({"type": "val", "p": ALL}, "value"),
         State({"type": "val", "p": ALL}, "id"),
-        State("e-timeframe", "value"), State("e-ent-ini", "value"),
-        State("e-ent-fim", "value"), State("e-fechamento", "value"),
-        State("e-dias", "value"), State("e-direcao", "value"),
-        State("e-filtro-adx", "value"),
-        State("e-sem-ent1", "value"), State("e-sem-ent2", "value"),
-        State("e-sem-ent3", "value"),
-        State("e-alvo-tipo", "value"), State("e-stop-tipo", "value"),
-        State("e-max-barras", "value"), State("e-lim-ganho", "value"),
-        State("e-lim-perda", "value"), State("e-max-trades", "value"),
-        State("e-max-loss", "value"), State("e-corretagem", "value"),
-        State("e-emolumentos", "value"), State("e-slippage", "value"),
-        State("e-modo", "value"), State("e-contratos", "value"),
-        State("e-risco", "value"), State("e-capital", "value"),
-        State("e-min-ops", "value"), State("wf-workers", "value"),
+        *[State(cid, prop) for cid, prop in MENU_PERFIL],
+        State("wf-workers", "value"),
         State("ativo", "value"),
         prevent_initial_call=True,
     )
     def minerar(n, _tick, treino, teste, passo, holdout, ligados, faixas,
-                ids_on, ids_faixa, de, ate, valores, ids_val, tf, ent_ini,
-                ent_fim, fechamento, dias, direcao, filtro, sem1, sem2, sem3,
-                alvo_tipo, stop_tipo, max_barras, lim_ganho, lim_perda,
-                max_trades, max_loss, corretagem, emolumentos, slippage,
-                modo, contratos, risco, capital, min_ops, workers, ativo):
+                ids_on, ids_faixa, de, ate, valores, ids_val, *resto):
+        *menu, workers, ativo = resto
         e = MINERACAO.estado
         if ctx.triggered_id != "btn-minerar":
             return e.get("mensagem") or no_update
@@ -1490,34 +1537,8 @@ def register(app):
         for p, r in campos.items():
             r["valor"] = v.get(p)
 
-        perfil = ExecutionProfile(
-            timeframe=tf or "M1",
-            entrada_inicio=ent_ini or "09:00", entrada_fim=ent_fim or "17:00",
-            fechamento=fechamento or "17:30",
-            dias_semana=tuple(dias or (1, 2, 3, 4, 5)), direcao=direcao,
-            sem_entrada1=sem1 or "", sem_entrada2=sem2 or "",
-            sem_entrada3=sem3 or "",
-            filtro_adx=filtro or "tendencia",
-            adx_periodo=v.get("adx_periodo") or 0,
-            adx_limiar=v.get("adx_limiar") or 0,
-            adx_filtro_di=v.get("adx_filtro_di") or 0,
-            adx_subindo=v.get("adx_subindo") or 0,
-            alvo_tipo=alvo_tipo,
-            alvo_atr_periodo=v.get("alvo_atr_periodo") or 20,
-            alvo_atr_mult=v.get("alvo_atr_mult") or 0, stop_tipo=stop_tipo,
-            alvo_pct=v.get("alvo_pct") or 0,
-            stop_atr_periodo=v.get("stop_atr_periodo") or 20,
-            stop_atr_mult=v.get("stop_atr_mult") or 0,
-            stop_pct=v.get("stop_pct") or 0,
-            max_barras=max_barras or 0,
-            limite_ganho_contrato=lim_ganho or 0, limite_perda_contrato=lim_perda or 0,
-            max_trades_dia=max_trades or 0, max_prejuizos_dia=max_loss or 0,
-            corretagem_por_contrato=corretagem or 0.0,
-            emolumentos_por_contrato=emolumentos or 0.0,
-            slippage_ticks=slippage or 0, modo_posicao=modo,
-            contratos=contratos or 1, risco_por_trade=risco,
-            capital_inicial=capital or 10_000.0, min_operacoes=min_ops or 0,
-        )
+        perfil = perfil_do_menu(v, {cid: val for (cid, _p), val
+                                    in zip(MENU_PERFIL, menu)})
 
         erro_janela = ativo_mod.janela_valida(perfil.entrada_inicio, perfil.entrada_fim,
                                               ativo_mod.ficha(_simbolo(ativo)),
@@ -2836,6 +2857,9 @@ def register(app):
 
     from ui import callbacks_candidata
     callbacks_candidata.register(app)
+
+    from ui import callbacks_busca
+    callbacks_busca.register(app)
 
     from ui import callbacks_estrategias
     callbacks_estrategias.register(app)

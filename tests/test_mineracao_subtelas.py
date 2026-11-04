@@ -269,7 +269,7 @@ def test_backtest_dentro_da_mineracao(app):
         assert _achar(_achar(mineracao, "painel-backtest"), id_) is not None, id_
     sub = _achar(mineracao, "mine-subtela")
     assert sub.value == "varredura"
-    assert [o["value"] for o in sub.options] == ["varredura", "backtest"]
+    assert [o["value"] for o in sub.options] == ["varredura", "busca", "backtest"]
     modo = _achar(app.layout, "modo")
     assert modo.value == "aovivo"
     assert "backtest" not in [o["value"] for o in modo.options]
@@ -282,4 +282,5 @@ def test_esquecer_combinacao_e_callback_proprio(app):
              for chave, cb in app.callback_map.items()
              if "store-combinacao.data" in chave]
     assert "estrategia_ou_mineracao" not in donos
-    assert len(donos) == 2
+    # o clique na Varredura, o esquecimento e o "Abrir o campeão" da busca
+    assert sorted(donos) == ["carregar_combinacao", "esquecer_combinacao", "ir"]

@@ -20,8 +20,8 @@ from dash import Dash, dcc, html
 
 from ui import data as D
 from ui import theme as T
-from ui.components import (analytics_charts, ao_vivo_panel, candidata_panel,
-                           controls,
+from ui.components import (analytics_charts, ao_vivo_panel, busca_panel,
+                           candidata_panel, controls,
                            estrategias_panel, mining, portfolio_panel,
                            results_grid, stats_cards, wfa_panel)
 
@@ -195,11 +195,15 @@ def painel(inicio, fim):
                              id="mine-subtela", value="varredura",
                              className="mine-subtelas",
                              options=[{"label": "Varredura", "value": "varredura"},
+                                      {"label": "Busca automática", "value": "busca"},
                                       {"label": "Backtest", "value": "backtest"}]),
                          html.Div(id="mine-bloco-varredura", className="modo-bloco",
                                   children=[mining.barra_acoes(),
                                             mining.painel_analise(),
                                             mining.painel()]),
+                         html.Div(id="mine-bloco-busca", className="modo-bloco",
+                                  children=[busca_panel.painel()],
+                                  style={"display": "none"}),
                          painel_backtest(),
                      ],
                      style={"display": "none"}),
