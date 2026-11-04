@@ -1,0 +1,191 @@
+"""O espaço da busca: vetor da pyribs <-> combinação <-> perfil do motor.
+
+A pyribs trabalha com vetores contínuos; aqui tudo é escolha em lista. Cada
+gene é um número em [0, 1] e escolhe `min(int(x * n), n - 1)` de uma lista —
+o corte em n-1 existe porque o emissor cola a solução nos limites e x = 1,0
+acontece.
+
+A JANELA é o único par amarrado: o gene do fim escolhe só entre os fins
+válidos para o início escolhido (duração mínima, `janela_valida`, fechamento
+do menu). Assim nenhum vetor vira janela impossível, e a busca não gasta
+avaliação com combinação que nem roda.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+
+import numpy as np
+
+from core import ativo
+from core.engine.execution import ExecutionProfile
+
+from . import catalogo as C
+
+DIMS_PADRAO = ("timeframe", "ini", "fim", "dias", "direcao")
+
+# tipo de stop/alvo -> campo do perfil que recebe o valor
+CAMPO_STOP = {"pontos": "stop_pontos", "atr": "stop_atr_mult", "percentual": "stop_pct"}
+CAMPO_ALVO = {"pontos": "alvo_pontos", "atr": "alvo_atr_mult",
+              "multiplicador": "alvo_razao", "percentual": "alvo_pct"}
+
+
+@dataclass(frozen=True)
+class Combinacao:
+    timeframe: str
+    ini: str
+    fim: str
+    dias: tuple
+    direcao: str
+    stop_tipo: str
+    stop_valor: float
+    alvo_tipo: str
+    alvo_valor: float
+    params: tuple   # ((nome, valor), ...) em ordem de nome
+
+    def chave(self) -> str:
+        """Identidade da combinação: JSON canônico, ordenado."""
+        d = asdict(self)
+        d["dias"] = list(self.dias)
+        d["params"] = [list(p) for p in self.params]
+        return json.dumps(d, sort_keys=True, separators=(",", ":"))
+
+    def chave_essencial(self) -> tuple:
+        """O que obriga a recalcular o sinal (camada "essencial")."""
+        return (self.timeframe, self.params)
+
+    @classmethod
+    def de_chave(cls, chave: str) -> "Combinacao":
+        d = json.loads(chave)
+        d["dias"] = tuple(d["dias"])
+        d["params"] = tuple(tuple(p) for p in d["params"])
+        return cls(**d)
+
+
+def _escolher(x: float, n: int) -> int:
+    return min(int(x * n), n - 1)
+
+
+class Espaco:
+    def __init__(self, estrategia: str, simbolo: str, fechamento: str,
+                 faixas: dict | None = None,
+                 dims_nicho: tuple[str, ...] = DIMS_PADRAO):
+        self.estrategia = estrategia
+        self.simbolo = simbolo
+        self.fechamento = fechamento
+        self.faixas = dict(faixas or {})
+        self.dims_nicho = tuple(dims_nicho)
+        self.catalogo = {i.nome: i for i in C.montar_catalogo(estrategia, simbolo)}
+
+        def lista(nome):
+            item = self.catalogo[nome]
+            return C.valores(item, self.faixas.get(nome) or item.padrao)
+
+        self.timeframes = lista("timeframe")
+        self.direcoes = lista("direcao")
+        self.dias = lista("dias")
+        self.horarios = lista("janela")
+        self.stops = lista("stop")
+        self.alvos = lista("alvo")
+        self.nomes_params = sorted(n for n, i in self.catalogo.items() if i.onde == "param")
+        self.params_vals = {n: lista(n) for n in self.nomes_params}
+        for nome, vals in [("timeframe", self.timeframes), ("direcao", self.direcoes),
+                           ("dias", self.dias), ("stop", self.stops), ("alvo", self.alvos),
+                           *self.params_vals.items()]:
+            if not vals:
+                raise ValueError(f"nada para varrer em {nome}")
+        self._montar_janelas()
+        # genes: tempo, direção, início, fim, dias, tipo e valor de stop e de
+        # alvo, e um por parâmetro da estratégia
+        self._genes = (["timeframe", "direcao", "ini", "fim", "dias", "stop_tipo",
+                        "stop_valor", "alvo_tipo", "alvo_valor"] + self.nomes_params)
+        self.n_genes = len(self._genes)
+
+    # ------------------------------------------------------------ janela
+    def _montar_janelas(self):
+        f = ativo.ficha(self.simbolo) if self.simbolo != "WIN$N" else None
+        f = f if (f and f.sessao_abertura) else None
+        minima = int((self.faixas.get("janela") or self.catalogo["janela"].padrao)
+                     .get("minima", C.JANELA_MINIMA))
+
+        def motor(h):   # minutos no relógio de pregão: a ordem certa no MES
+            return ativo.hora_para_minuto(ativo.hora_para_motor(h, f) if f else h)
+
+        self.fins_de: dict[str, list[str]] = {}
+        for ini in self.horarios:
+            fins = [fim for fim in self.horarios
+                    if motor(fim) - motor(ini) >= minima
+                    and ativo.janela_valida(ini, fim, f, self.fechamento) is None]
+            if fins:
+                self.fins_de[ini] = fins
+        self.inicios = [h for h in self.horarios if h in self.fins_de]
+        if not self.inicios:
+            raise ValueError("nenhuma janela válida no horário de entrada escolhido")
+
+    # ------------------------------------------------------------ genoma
+    def decodificar(self, x: np.ndarray) -> Combinacao:
+        g = dict(zip(self._genes, np.asarray(x, dtype=float)))
+        ini = self.inicios[_escolher(g["ini"], len(self.inicios))]
+        fins = self.fins_de[ini]
+        tipos_s, tipos_a = list(self.stops), list(self.alvos)
+        st = tipos_s[_escolher(g["stop_tipo"], len(tipos_s))]
+        at = tipos_a[_escolher(g["alvo_tipo"], len(tipos_a))]
+        return Combinacao(
+            timeframe=self.timeframes[_escolher(g["timeframe"], len(self.timeframes))],
+            ini=ini,
+            fim=fins[_escolher(g["fim"], len(fins))],
+            dias=tuple(self.dias[_escolher(g["dias"], len(self.dias))]),
+            direcao=self.direcoes[_escolher(g["direcao"], len(self.direcoes))],
+            stop_tipo=st,
+            stop_valor=self.stops[st][_escolher(g["stop_valor"], len(self.stops[st]))],
+            alvo_tipo=at,
+            alvo_valor=self.alvos[at][_escolher(g["alvo_valor"], len(self.alvos[at]))],
+            params=tuple((n, self.params_vals[n][_escolher(g[n], len(self.params_vals[n]))])
+                         for n in self.nomes_params),
+        )
+
+    def genes_essenciais(self) -> np.ndarray:
+        return np.array([g == "timeframe" or g in self.params_vals for g in self._genes])
+
+    # ------------------------------------------------------------ nicho
+    def _eixo(self, nome: str) -> list:
+        return {"timeframe": self.timeframes, "ini": self.horarios, "fim": self.horarios,
+                "dias": self.dias, "direcao": self.direcoes}.get(nome) \
+            or self.params_vals[nome]
+
+    def dims_arquivo(self) -> list[int]:
+        return [len(self._eixo(d)) for d in self.dims_nicho]
+
+    def casa(self, c: Combinacao) -> tuple[int, ...]:
+        valor = {"timeframe": c.timeframe, "ini": c.ini, "fim": c.fim,
+                 "dias": c.dias, "direcao": c.direcao, **dict(c.params)}
+        return tuple(self._eixo(d).index(valor[d]) for d in self.dims_nicho)
+
+    # ------------------------------------------------------------ motor
+    def params(self, c: Combinacao) -> dict:
+        return dict(c.params)
+
+    def perfil(self, c: Combinacao, perfil_base: dict) -> ExecutionProfile:
+        """O perfil que o menu montaria com esta combinação: tudo o que não é
+        da busca (custos, ADX, limites, proteções, período do ATR) vem do
+        `perfil_base`, que é o menu no momento de iniciar."""
+        p = {**perfil_base, "timeframe": c.timeframe, "entrada_inicio": c.ini,
+             "entrada_fim": c.fim, "dias_semana": tuple(c.dias), "direcao": c.direcao,
+             "stop_tipo": c.stop_tipo, CAMPO_STOP[c.stop_tipo]: c.stop_valor}
+        if c.alvo_tipo == "sem":
+            p.update(alvo_tipo="pontos", alvo_pontos=0)
+        else:
+            p.update(alvo_tipo=c.alvo_tipo, **{CAMPO_ALVO[c.alvo_tipo]: c.alvo_valor})
+        return ExecutionProfile(**p)
+
+    # ------------------------------------------------------------ guardar
+    def para_json(self) -> dict:
+        return {"estrategia": self.estrategia, "simbolo": self.simbolo,
+                "fechamento": self.fechamento, "faixas": self.faixas,
+                "dims_nicho": list(self.dims_nicho)}
+
+    @classmethod
+    def de_json(cls, d: dict) -> "Espaco":
+        return cls(d["estrategia"], d["simbolo"], d["fechamento"], d.get("faixas"),
+                   tuple(d.get("dims_nicho") or DIMS_PADRAO))
