@@ -75,6 +75,19 @@ ALVO_TIPOS = {
 }
 
 
+# Todo campo do perfil de execução do motor tem lugar aqui. Campo novo no
+# motor quebra `test_todo_campo_do_motor_esta_classificado` até ser posto
+# numa das três listas — ninguém precisa conferir um por um (04/11/2026).
+JA_NA_BUSCA = {"timeframe", "entrada_inicio", "entrada_fim", "dias_semana", "direcao",
+               "alvo_tipo", "alvo_pontos", "alvo_atr_periodo", "alvo_atr_mult",
+               "alvo_razao", "alvo_pct", "stop_tipo", "stop_pontos", "stop_atr_periodo",
+               "stop_atr_mult", "stop_pct"}
+# custo e tamanho não são vantagem a achar: são fatos da conta
+NAO_MINERAVEIS = {"corretagem_por_contrato", "emolumentos_por_contrato", "slippage_ticks",
+                  "modo_posicao", "contratos", "risco_por_trade", "capital_inicial",
+                  "min_operacoes"}
+
+
 @dataclass(frozen=True)
 class Item:
     nome: str
@@ -83,7 +96,7 @@ class Item:
     camada: str    # "essencial" | "filtro"
     degrau: str    # "fixo" | "proporcional" | "minutos" | "-"
     padrao: dict = field(hash=False, compare=False)
-    onde: str = "perfil"   # "param" (params da estratégia) | "perfil" (camada 4)
+    onde: str = "perfil"   # "param" (estratégia) | "perfil" (camada 4) | "extra"
     limites: tuple | None = None   # min/max duros do schema
 
 
@@ -141,7 +154,10 @@ def valores(item: Item, faixa: dict):
     if item.tipo == "hora":
         de, ate = _min(faixa["de"]), _min(faixa["ate"])
         passo = int(faixa.get("passo") or PASSO_JANELA)
-        return [_hhmm(m) for m in range(de, ate + 1, passo)]
+        out = [_hhmm(m) for m in range(de, ate + 1, passo)]
+        if item.nome != "janela" and de <= ate and out[-1] != _hhmm(ate):
+            out.append(_hhmm(ate))
+        return out
     if item.tipo == "gestao":
         out = {}
         for tipo, f in (faixa.get("tipos") or {}).items():
@@ -205,6 +221,113 @@ def periodos_atr(faixa_tipo: dict) -> list[int] | None:
     return degraus_proporcionais(int(p["de"]), int(p["ate"]))
 
 
+def _extras(simbolo: str, janela_de: str, estrategia: str | None = None) -> list[Item]:
+    """Os demais campos mineráveis da camada 4. Em toda faixa entra o
+    "desligado" (0 ou vazio): a busca compara com e sem o recurso, como a
+    Varredura já faz com o ADX. Pontos e dinheiro saem do padrão da ficha."""
+    try:
+        f = ativo.ficha(simbolo)
+        pp, pv = f.perfil_padrao or {}, float(f.point_value or 1)
+    except FileNotFoundError:
+        pp, pv = {}, 1.0
+    stop = int(pp.get("stop_pontos") or 300)
+    passo_pts = max(1, round(stop / 6))
+    passo_rs = round(stop * pv / 2, 2) or 1.0
+    fech = pp.get("fechamento") or "17:30"
+    horas = sorted({f"{h:02d}:00" for h in range(int(janela_de[:2]), int(fech[:2]) + 1)})
+
+    da_ficha = ativo.faixas_do_ativo(simbolo, estrategia)
+
+    def it(nome, rotulo, tipo, padrao, degrau="fixo"):
+        if nome in da_ficha and tipo in ("inteiro", "real"):
+            # a ficha manda (espelhar, não copiar); o desligado continua
+            ff = da_ficha[nome]
+            padrao = {"de": 0 if tipo == "inteiro" else 0.0,
+                      "ate": ff.get("ate", padrao["ate"]),
+                      "passo": ff.get("passo", padrao["passo"])}
+            degrau = "fixo"
+        return Item(nome, rotulo, tipo, "filtro", degrau, padrao, onde="extra")
+
+    sem = {"valores": [""] + horas, "ligados": [""] + horas}
+    return [
+        it("fechamento", "Fechar posições às", "hora",
+           {"de": janela_de, "ate": fech, "passo": PASSO_JANELA}, "minutos"),
+        it("max_barras", "Tempo máximo na operação (barras)", "inteiro",
+           {"de": 0, "ate": 300, "passo": 1}, "proporcional"),
+        it("sem_entrada1", "Sem entradas · 1", "lista", dict(sem)),
+        it("sem_entrada2", "Sem entradas · 2", "lista", dict(sem)),
+        it("sem_entrada3", "Sem entradas · 3", "lista", dict(sem)),
+        it("filtro_adx", "ADX · régua", "lista",
+           {"valores": ["tendencia", "rango"], "ligados": ["tendencia", "rango"]}),
+        it("adx_periodo", "ADX · período", "inteiro", {"de": 0, "ate": 50, "passo": 1},
+           "proporcional"),
+        it("adx_limiar", "ADX · limiar", "inteiro", {"de": 0, "ate": 50, "passo": 5}),
+        it("adx_filtro_di", "DI confirma o lado", "lista", {"valores": [0, 1], "ligados": [0, 1]}),
+        it("adx_subindo", "ADX subindo", "lista", {"valores": [0, 1], "ligados": [0, 1]}),
+        it("breakeven_pct", "Breakeven · gatilho (% do alvo)", "real",
+           {"de": 0.0, "ate": 100.0, "passo": 10.0}),
+        it("step_gatilho_pct", "Stop móvel · gatilho (% do alvo)", "real",
+           {"de": 0.0, "ate": 100.0, "passo": 10.0}),
+        it("step_distancia_pct", "Stop móvel · trava (% do alvo)", "real",
+           {"de": 0.0, "ate": 100.0, "passo": 10.0}),
+        it("trailing_pontos", "Trailing (pontos)", "inteiro",
+           {"de": 0, "ate": stop * 3, "passo": passo_pts}),
+        it("limite_ganho_contrato", "Ganho máx. por contrato no dia", "real",
+           {"de": 0.0, "ate": round(passo_rs * 12, 2), "passo": passo_rs}),
+        it("limite_perda_contrato", "Perda máx. por contrato no dia", "real",
+           {"de": 0.0, "ate": round(passo_rs * 12, 2), "passo": passo_rs}),
+        it("max_trades_dia", "Máx. operações no dia", "inteiro", {"de": 0, "ate": 10, "passo": 1}),
+        it("max_prejuizos_dia", "Máx. prejuízos no dia", "inteiro", {"de": 0, "ate": 5, "passo": 1}),
+    ]
+
+
+def canonico(extras: dict, listas: dict | None = None, sem_alvo: bool = False,
+             fora_da_janela=None) -> dict:
+    """Combinações que dão os MESMOS trades viram uma só (cópia cria platô
+    falso e gasta teste): ADX desligado ignora o resto do ADX; DI e "subindo"
+    só valem na tendência; stop móvel sem gatilho ignora a trava; sem alvo
+    não há breakeven nem stop móvel (são % do alvo); hora sem entrada fora da
+    janela não bloqueia nada; as três horas não dependem da ordem nem se
+    repetem; prejuízos >= operações nunca dispara.
+
+    `listas` (os valores da faixa) garante que o canônico é um valor que a
+    busca testa: quando o "desligado" não está na faixa, vale o primeiro."""
+    e = dict(extras)
+
+    def off(n, real):
+        vals = (listas or {}).get(n)
+        return real if not vals or real in vals else vals[0]
+
+    def pode(n, real):
+        vals = (listas or {}).get(n)
+        return not vals or real in vals
+
+    if "adx_periodo" in e and not (int(e.get("adx_periodo") or 0) and int(e.get("adx_limiar") or 0)):
+        e.update(adx_periodo=off("adx_periodo", 0), adx_limiar=off("adx_limiar", 0),
+                 filtro_adx=off("filtro_adx", "tendencia"),
+                 adx_filtro_di=off("adx_filtro_di", 0), adx_subindo=off("adx_subindo", 0))
+        if e["adx_periodo"] and e["adx_limiar"]:        # faixa sem desligado
+            e = dict(extras)
+    if e.get("filtro_adx") == "rango":
+        e.update(adx_filtro_di=off("adx_filtro_di", 0), adx_subindo=off("adx_subindo", 0))
+    if sem_alvo:
+        for n in ("breakeven_pct", "step_gatilho_pct", "step_distancia_pct"):
+            if n in e:
+                e[n] = off(n, 0.0)
+    if "step_gatilho_pct" in e and not e.get("step_gatilho_pct"):
+        e["step_distancia_pct"] = off("step_distancia_pct", 0.0)
+    sem = [k for k in ("sem_entrada1", "sem_entrada2", "sem_entrada3") if k in e]
+    if sem and all(pode(k, "") for k in sem):
+        horas = sorted({e[k] for k in sem
+                        if e[k] and not (fora_da_janela and fora_da_janela(e[k]))})
+        horas += [""] * (len(sem) - len(horas))
+        e.update(dict(zip(sem, horas)))
+    mt, mp = int(e.get("max_trades_dia") or 0), int(e.get("max_prejuizos_dia") or 0)
+    if "max_prejuizos_dia" in e and mt and mp >= mt and pode("max_prejuizos_dia", 0):
+        e["max_prejuizos_dia"] = 0
+    return {k: e[k] for k in extras}
+
+
 def montar_catalogo(estrategia: str, simbolo: str) -> list[Item]:
     """Itens na ordem da aba "Espaço de busca": tempo, direção, janela, dias,
     stop, alvo e os parâmetros da estratégia."""
@@ -230,6 +353,7 @@ def montar_catalogo(estrategia: str, simbolo: str) -> list[Item]:
         Item("alvo", "Alvo", "gestao", "filtro", "fixo",
              {"tipos": {"pontos": _pontos(simbolo, "alvo_pontos"),
                         **{k: dict(v) for k, v in ALVO_TIPOS.items()}}}),
+        *_extras(simbolo, ini, estrategia),
     ]
     for nome, meta in mod.params_schema.items():
         lo, hi = meta.get("min"), meta.get("max")

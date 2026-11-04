@@ -47,6 +47,9 @@ class Combinacao:
     # que não variavam o período)
     stop_atr_periodo: int | None = None
     alvo_atr_periodo: int | None = None
+    # demais campos mineráveis da camada 4 ((campo, valor), ...) em ordem de
+    # nome; vazio nas buscas antigas
+    extras: tuple = ()
 
     def chave(self) -> str:
         """Identidade da combinação: JSON canônico, ordenado. Campo novo
@@ -55,6 +58,10 @@ class Combinacao:
         for k in ("stop_atr_periodo", "alvo_atr_periodo"):
             if d[k] is None:
                 del d[k]
+        if not d["extras"]:
+            del d["extras"]
+        else:
+            d["extras"] = [list(p) for p in self.extras]
         d["dias"] = list(self.dias)
         d["params"] = [list(p) for p in self.params]
         return json.dumps(d, sort_keys=True, separators=(",", ":"))
@@ -68,6 +75,7 @@ class Combinacao:
         d = json.loads(chave)
         d.setdefault("stop_atr_periodo", None)
         d.setdefault("alvo_atr_periodo", None)
+        d["extras"] = tuple(tuple(p) for p in d.get("extras") or ())
         d["dias"] = tuple(d["dias"])
         d["params"] = tuple(tuple(p) for p in d["params"])
         return cls(**d)
@@ -81,7 +89,7 @@ class Espaco:
     def __init__(self, estrategia: str, simbolo: str, fechamento: str,
                  faixas: dict | None = None,
                  dims_nicho: tuple[str, ...] = DIMS_PADRAO,
-                 com_periodo_atr: bool = True):
+                 com_periodo_atr: bool = True, com_extras: bool = True):
         self.estrategia = estrategia
         self.simbolo = simbolo
         self.fechamento = fechamento
@@ -110,6 +118,16 @@ class Espaco:
 
         self.stop_periodos = per("stop")
         self.alvo_periodos = per("alvo")
+        # demais campos da camada 4 (fechamento, ADX, proteções, limites…):
+        # só nas buscas novas, como o período do ATR
+        self.com_extras = com_extras
+        self.nomes_extras = (sorted(n for n, i in self.catalogo.items() if i.onde == "extra")
+                             if com_extras else [])
+        self.extras_vals = {n: lista(n) for n in self.nomes_extras}
+        for n, vals in self.extras_vals.items():
+            if not vals:
+                raise ValueError(f"nada para varrer em {n}")
+        self._montar_janelas()
         self.nomes_params = sorted(n for n, i in self.catalogo.items() if i.onde == "param")
         self.params_vals = {n: lista(n) for n in self.nomes_params}
         for nome, vals in [("timeframe", self.timeframes), ("direcao", self.direcoes),
@@ -117,12 +135,12 @@ class Espaco:
                            *self.params_vals.items()]:
             if not vals:
                 raise ValueError(f"nada para varrer em {nome}")
-        self._montar_janelas()
         # genes: tempo, direção, início, fim, dias, tipo e valor de stop e de
         # alvo, e um por parâmetro da estratégia
         self._genes = (["timeframe", "direcao", "ini", "fim", "dias", "stop_tipo",
                         "stop_valor", "alvo_tipo", "alvo_valor"] + self.nomes_params
-                       + (["stop_atr_per", "alvo_atr_per"] if com_periodo_atr else []))
+                       + (["stop_atr_per", "alvo_atr_per"] if com_periodo_atr else [])
+                       + ["x:" + n for n in self.nomes_extras])
         self.n_genes = len(self._genes)
 
     # ------------------------------------------------------------ janela
@@ -135,11 +153,23 @@ class Espaco:
         def motor(h):   # minutos no relógio de pregão: a ordem certa no MES
             return ativo.hora_para_minuto(ativo.hora_para_motor(h, f) if f else h)
 
+        self._motor = motor
+        self._ficha_pregao = f
+        # com o fechamento minerado, a janela só não pode passar do MAIOR
+        # fechamento possível; cada combinação escolhe um fechamento >= fim
+        fech = self.fechamento
+        if "fechamento" in getattr(self, "extras_vals", {}):
+            validos = [h for h in self.extras_vals["fechamento"]
+                       if ativo.janela_valida(h, h, f, h) is None]
+            if not validos:
+                raise ValueError("nenhum fechamento válido na faixa")
+            self.extras_vals["fechamento"] = validos
+            fech = max(validos, key=motor)
         self.fins_de: dict[str, list[str]] = {}
         for ini in self.horarios:
             fins = [fim for fim in self.horarios
                     if motor(fim) - motor(ini) >= minima
-                    and ativo.janela_valida(ini, fim, f, self.fechamento) is None]
+                    and ativo.janela_valida(ini, fim, f, fech) is None]
             if fins:
                 self.fins_de[ini] = fins
         self.inicios = [h for h in self.horarios if h in self.fins_de]
@@ -154,10 +184,11 @@ class Espaco:
         tipos_s, tipos_a = list(self.stops), list(self.alvos)
         st = tipos_s[_escolher(g["stop_tipo"], len(tipos_s))]
         at = tipos_a[_escolher(g["alvo_tipo"], len(tipos_a))]
+        fim = fins[_escolher(g["fim"], len(fins))]
         return Combinacao(
             timeframe=self.timeframes[_escolher(g["timeframe"], len(self.timeframes))],
             ini=ini,
-            fim=fins[_escolher(g["fim"], len(fins))],
+            fim=fim,
             dias=tuple(self.dias[_escolher(g["dias"], len(self.dias))]),
             direcao=self.direcoes[_escolher(g["direcao"], len(self.direcoes))],
             stop_tipo=st,
@@ -170,7 +201,27 @@ class Espaco:
                               if st == "atr" and self.stop_periodos else None),
             alvo_atr_periodo=(self.alvo_periodos[_escolher(g["alvo_atr_per"], len(self.alvo_periodos))]
                               if at == "atr" and self.alvo_periodos else None),
+            extras=self._decodificar_extras(g, ini, fim, at),
         )
+
+    def _decodificar_extras(self, g: dict, ini: str, fim: str, at: str) -> tuple:
+        e = {}
+        for n in self.nomes_extras:
+            vals = self.extras_vals[n]
+            if n == "fechamento":
+                # fechar antes do fim das entradas não faz sentido (e o menu recusa)
+                vals = [v for v in vals if self._motor(v) >= self._motor(fim)
+                        and ativo.janela_valida(fim, fim, self._ficha_pregao, v) is None] \
+                    or [max(self.extras_vals[n], key=self._motor)]
+            e[n] = vals[_escolher(g["x:" + n], len(vals))]
+        ini_m, fim_m = self._motor(ini), self._motor(fim)
+
+        def fora(h):            # a hora bloqueada [h, h+60) não toca a janela
+            m = self._motor(h)
+            return m + 60 <= ini_m or m > fim_m
+
+        return tuple(sorted(C.canonico(e, self.extras_vals, sem_alvo=(at == "sem"),
+                                       fora_da_janela=fora).items()))
 
     def genes_essenciais(self) -> np.ndarray:
         return np.array([g == "timeframe" or g in self.params_vals for g in self._genes])
@@ -208,6 +259,7 @@ class Espaco:
             p["stop_atr_periodo"] = int(c.stop_atr_periodo)
         if c.alvo_atr_periodo is not None:
             p["alvo_atr_periodo"] = int(c.alvo_atr_periodo)
+        p.update(dict(c.extras))
         return ExecutionProfile(**p)
 
     # ------------------------------------------------------------ guardar
@@ -215,11 +267,12 @@ class Espaco:
         return {"estrategia": self.estrategia, "simbolo": self.simbolo,
                 "fechamento": self.fechamento, "faixas": self.faixas,
                 "dims_nicho": list(self.dims_nicho),
-                "com_periodo_atr": self.com_periodo_atr}
+                "com_periodo_atr": self.com_periodo_atr, "com_extras": self.com_extras}
 
     @classmethod
     def de_json(cls, d: dict) -> "Espaco":
         # busca gravada antes do período do ATR: sem a chave, sem os genes
         return cls(d["estrategia"], d["simbolo"], d["fechamento"], d.get("faixas"),
                    tuple(d.get("dims_nicho") or DIMS_PADRAO),
-                   com_periodo_atr=bool(d.get("com_periodo_atr", False)))
+                   com_periodo_atr=bool(d.get("com_periodo_atr", False)),
+                   com_extras=bool(d.get("com_extras", False)))

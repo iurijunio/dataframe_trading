@@ -43,9 +43,16 @@ def test_janela_sempre_valida(simbolo, fech):
 
 
 def test_janela_respeita_o_fechamento():
-    esp = Espaco("adx_direcao", "WIN$N", fechamento="12:00")
+    # busca antiga: o fechamento do menu manda
+    esp = Espaco("adx_direcao", "WIN$N", fechamento="12:00", com_extras=False)
     for x in np.random.default_rng(2).random((500, esp.n_genes)):
         assert esp.decodificar(x).fim <= "12:00"
+    # fechamento minerado: cada combinação fecha no seu, nunca antes do fim
+    esp = Espaco("adx_direcao", "WIN$N", fechamento="12:00",
+                 faixas={"fechamento": {"de": "09:00", "ate": "12:00"}})
+    for x in np.random.default_rng(2).random((500, esp.n_genes)):
+        c = esp.decodificar(x)
+        assert c.fim <= dict(c.extras)["fechamento"] <= "12:00"
 
 
 def test_cobre_todos_os_valores(espaco):
@@ -154,3 +161,35 @@ def test_busca_antiga_reabre_sem_o_periodo(espaco):
     assert velho.n_genes == espaco.n_genes - 2 and velho.stop_periodos is None
     c = velho.decodificar(np.full(velho.n_genes, 0.3))
     assert "stop_atr_periodo" not in c.chave() and Combinacao.de_chave(c.chave()) == c
+
+
+
+def test_extras_viram_perfil_e_fechamento_depois_das_entradas(espaco):
+    for x in np.random.default_rng(12).random((2000, espaco.n_genes)):
+        c = espaco.decodificar(x)
+        p = espaco.perfil(c, PERFIL_BASE)
+        e = dict(c.extras)
+        assert set(e) == set(espaco.nomes_extras)
+        assert p.fechamento >= p.entrada_fim                    # WIN: mesma ordem
+        assert (p.max_barras, p.breakeven_pct, p.adx_periodo) == \
+            (e["max_barras"], e["breakeven_pct"], e["adx_periodo"])
+        if not (p.adx_periodo and p.adx_limiar):
+            assert (p.adx_periodo, p.adx_limiar) == (0, 0)
+
+
+def test_busca_antiga_reabre_sem_extras(espaco):
+    antigo = {k: v for k, v in espaco.para_json().items() if k != "com_extras"}
+    velho = Espaco.de_json(antigo)
+    assert velho.nomes_extras == [] and velho.n_genes == espaco.n_genes - len(espaco.nomes_extras)
+    c = velho.decodificar(np.full(velho.n_genes, 0.4))
+    assert "extras" not in c.chave() and Combinacao.de_chave(c.chave()) == c
+
+
+def test_fechamento_invalido_sai_da_faixa():
+    try:
+        esp = Espaco("adx_direcao", "MES", fechamento="16:50",
+                     faixas={"fechamento": {"de": "09:30", "ate": "17:30", "passo": 30}})
+    except FileNotFoundError:
+        pytest.skip("sem ficha do MES")
+    vals = esp.extras_vals["fechamento"]
+    assert "17:30" not in vals and "17:00" in vals      # 17:30 cai na pausa da CME

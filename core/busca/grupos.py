@@ -57,6 +57,8 @@ class _Indices:
         self.nomes = esp.nomes_params
         self.per_stop = {v: i for i, v in enumerate(esp.stop_periodos or [])}
         self.per_alvo = {v: i for i, v in enumerate(esp.alvo_periodos or [])}
+        self.extras = {n: {v: i for i, v in enumerate(esp.extras_vals[n])}
+                       for n in esp.nomes_extras}
 
 
 def _traco(c: Combinacao, ix: _Indices) -> tuple[tuple, np.ndarray, int]:
@@ -68,23 +70,26 @@ def _traco(c: Combinacao, ix: _Indices) -> tuple[tuple, np.ndarray, int]:
     vet += [ix.stops.get(c.stop_tipo, {}).get(c.stop_valor, FORA),
             ix.alvos.get(c.alvo_tipo, {}).get(c.alvo_valor, FORA),
             # período do ATR (-1 sem ATR: igual entre combinações sem ele)
-            ix.per_stop.get(c.stop_atr_periodo, -1), ix.per_alvo.get(c.alvo_atr_periodo, -1),
-            ix.horas.get(c.ini, FORA), ix.horas.get(c.fim, FORA)]
+            ix.per_stop.get(c.stop_atr_periodo, -1), ix.per_alvo.get(c.alvo_atr_periodo, -1)]
+    ex = dict(c.extras)
+    vet += [ix.extras[n].get(ex.get(n), FORA) for n in ix.extras]
+    vet += [ix.horas.get(c.ini, FORA), ix.horas.get(c.fim, FORA)]
     dias = sum(1 << (d - 1) for d in c.dias)
     return balde, np.array(vet, dtype=np.int64), dias
 
 
-def _limites(n_params: int) -> np.ndarray:
+def _limites(n_params: int, n_extras: int = 0) -> np.ndarray:
     return np.array([DEGRAUS_PARAM] * n_params
-                    + [DEGRAUS_GESTAO, DEGRAUS_GESTAO, DEGRAUS_PARAM, DEGRAUS_PARAM,
-                       DEGRAUS_JANELA, DEGRAUS_JANELA])
+                    + [DEGRAUS_GESTAO, DEGRAUS_GESTAO, DEGRAUS_PARAM, DEGRAUS_PARAM]
+                    + [DEGRAUS_PARAM] * n_extras
+                    + [DEGRAUS_JANELA, DEGRAUS_JANELA])
 
 
 def parecidas(a: Combinacao, b: Combinacao, esp: Espaco) -> bool:
     ix = _Indices(esp)
     ba, va, da = _traco(a, ix)
     bb, vb, db = _traco(b, ix)
-    return (ba == bb and bool(np.all(np.abs(va - vb) <= _limites(len(ix.nomes))))
+    return (ba == bb and bool(np.all(np.abs(va - vb) <= _limites(len(ix.nomes), len(ix.extras))))
             and _BITS[da ^ db] <= DIAS_DIFERENTES)
 
 
@@ -148,6 +153,9 @@ def _resumo_membros(membros: list[dict], esp: Espaco, lider: Combinacao) -> dict
             vals["_stop_per"].append(c.stop_atr_periodo)
         if c.alvo_atr_periodo is not None:
             vals["_alvo_per"].append(c.alvo_atr_periodo)
+        for n, v in c.extras:
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                vals[n].append(v)
     faixas = {n: [min(v), max(v), float(np.median(v))] for n, v in vals.items() if v}
     return {"mediana_fr": float(np.median(frs)) if frs else None, "faixas": faixas}
 
@@ -160,8 +168,8 @@ def agrupar(elites: list[dict], combos: list[dict], esp: Espaco) -> list[dict]:
      n_membros, mediana_obj, mediana_fr, faixas}.
     """
     ix = _Indices(esp)
-    d = len(ix.nomes) + 6
-    lim = _limites(len(ix.nomes))
+    d = len(ix.nomes) + 6 + len(ix.extras)
+    lim = _limites(len(ix.nomes), len(ix.extras))
 
     tab = _Tabela()
     for c in combos:

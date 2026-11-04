@@ -111,14 +111,18 @@ def _hora_dia(esp, campeao: Combinacao, membros, perfil_base, ficha, fim_otim, p
     for m in membros:
         c = Combinacao.de_chave(m["combo"])
         k = (c.timeframe, c.params, c.direcao, c.stop_tipo, c.stop_valor,
-             c.alvo_tipo, c.alvo_valor, c.stop_atr_periodo, c.alvo_atr_periodo)
+             c.alvo_tipo, c.alvo_valor, c.stop_atr_periodo, c.alvo_atr_periodo,
+             tuple(p for p in c.extras if p[0] != "fechamento"))
         if k not in vistos:
             vistos.add(k)
             unicos.append(c)
     n_trades = 0
+    # horário inteiro: o fechamento minerado de cada um cortaria a tarde
+    troca_fech = ({"fechamento": max(esp.extras_vals["fechamento"], key=esp._motor)}
+                  if "fechamento" in esp.extras_vals else {})
     for c in unicos:
         res, liq = _rodar(esp, c, perfil_base, entrada_inicio=ini0, entrada_fim=fim0,
-                          dias_semana=(1, 2, 3, 4, 5))
+                          dias_semana=(1, 2, 3, 4, 5), **troca_fech)
         if not len(liq):
             continue
         ts = res.trades["entry_ts"]
@@ -216,7 +220,16 @@ def _espalhamento(esp, campeao: Combinacao, membros, faixas: dict | None):
     if campeao.alvo_atr_periodo is not None and esp.alvo_periodos:
         linha("Alvo (ATR período)", "_alvo_per", esp.alvo_periodos,
               [c.alvo_atr_periodo for c in combos], campeao.alvo_atr_periodo)
+    camp_ex = dict(campeao.extras)
+    for n in esp.nomes_extras:
+        if _numero(camp_ex.get(n)):
+            linha(esp.catalogo[n].rotulo, n, [v for v in esp.extras_vals[n] if _numero(v)],
+                  [dict(c.extras).get(n) for c in combos], camp_ex[n])
     return itens
+
+
+def _numero(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
 def _curva(esp, campeao, perfil_base, fim_otim):
@@ -329,9 +342,26 @@ def regiao_para_varredura(busca_id: int, casa_fina: str) -> dict:
         if v is not None and lista:
             campos[campo] = faixa([getattr(x, attr) for x in combos if getattr(x, attr) is not None]
                                   + vizinhos(lista, v, DEGRAUS_PARAM), 1, v)
-    return {"timeframe": camp.timeframe,
-            "entrada_inicio": min(x.ini for x in mesmos),
-            "entrada_fim": max(x.fim for x in mesmos),
+    # demais campos da camada 4: os que a Varredura varre viram faixa; os
+    # outros (fechamento, limites, horas sem entrada…) vão ao menu com o
+    # valor do campeão (`perfil_extras`)
+    from core import wfa_runner
+
+    camp_ex = dict(camp.extras)
+    for n in esp.nomes_extras:
+        if n in wfa_runner.CAMPOS_EXECUCAO_NOMES and _numero(camp_ex[n]):
+            passo = (esp.faixas.get(n) or esp.catalogo[n].padrao).get("passo") or 1
+            campos[n] = faixa([dict(x.extras)[n] for x in combos if n in dict(x.extras)]
+                              + vizinhos(esp.extras_vals[n], camp_ex[n], DEGRAUS_PARAM),
+                              passo, camp_ex[n])
+    entrada_fim = max((x.fim for x in mesmos), key=esp._motor)
+    if "fechamento" in camp_ex:
+        camp_ex["fechamento"] = max(
+            [camp_ex["fechamento"]] + [dict(x.extras).get("fechamento") or camp_ex["fechamento"]
+                                       for x in mesmos], key=esp._motor)
+    return {"timeframe": camp.timeframe, "perfil_extras": camp_ex,
+            "entrada_inicio": min((x.ini for x in mesmos), key=esp._motor),
+            "entrada_fim": entrada_fim,
             "dias_semana": list(camp.dias), "direcao": camp.direcao,
             "stop_tipo": camp.stop_tipo,
             "alvo_tipo": "pontos" if camp.alvo_tipo == "sem" else camp.alvo_tipo,

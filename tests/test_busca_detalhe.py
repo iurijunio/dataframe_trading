@@ -183,3 +183,40 @@ def test_fr_mediano_vem_de_todos_os_membros(no_banco, monkeypatch):
         pytest.skip("sem grupo")
     monkeypatch.setattr(D, "_grupo_da", lambda _b, _c: {**g, "mediana_fr": -123.0})
     assert D.detalhe(bid, e["casa"])["kpis"]["fr_mediano"] == -123.0
+
+
+def test_regiao_leva_os_extras_do_campeao(no_banco):
+    from core import wfa_runner
+
+    bid, e = no_banco
+    r = D.regiao_para_varredura(bid, e["casa"])
+    camp = dict(Combinacao.de_chave(e["combo"]).extras)
+    assert camp and r["perfil_extras"] == camp
+    for n, v in camp.items():
+        if n in wfa_runner.CAMPOS_EXECUCAO_NOMES:
+            assert r["campos"][n]["valor"] == v
+
+
+
+def test_regiao_nao_fecha_antes_do_fim_das_entradas(no_banco):
+    from core import ativo
+
+    bid, e = no_banco
+    r = D.regiao_para_varredura(bid, e["casa"])
+    f = ativo.ficha("WIN$N")
+    assert ativo.janela_valida(r["entrada_inicio"], r["entrada_fim"], f,
+                               r["perfil_extras"]["fechamento"]) is None
+
+
+def test_regiao_fecha_no_maior_fechamento_dos_membros(no_banco, monkeypatch):
+    bid, e = no_banco
+    camp = Combinacao.de_chave(e["combo"])
+    ex = dict(camp.extras)
+    outro = Combinacao(**{**camp.__dict__, "extras": tuple(sorted({**ex, "fechamento": "17:30"}.items()))})
+    camp1 = Combinacao(**{**camp.__dict__, "extras": tuple(sorted({**ex, "fechamento": "17:00"}.items()))})
+    el = {**e, "combo": camp1.chave()}
+    monkeypatch.setattr(D, "_elite", lambda _b, _c: el)
+    monkeypatch.setattr(D, "_membros", lambda _b, _el: ([el, {**e, "combo": outro.chave()}], None))
+    assert D.regiao_para_varredura(bid, e["casa"])["perfil_extras"]["fechamento"] == "17:30"
+    monkeypatch.setattr(D, "_membros", lambda _b, _el: ([el], None))
+    assert D.regiao_para_varredura(bid, e["casa"])["perfil_extras"]["fechamento"] == "17:00"

@@ -346,9 +346,12 @@
       return h;
     }
     if (it.tipo === 'hora') {
-      h += '<span class="b-rng"><span class="b-dim">de</span><input class="b-inp w-time" data-it="janela" data-k="de" value="' + esc(f.de) + '" aria-label="Horário de entrada, de"><span class="b-dim">até</span><input class="b-inp w-time" data-it="janela" data-k="ate" value="' + esc(f.ate) + '" aria-label="Horário de entrada, até">' +
-        q('Ajuda sobre horário de entrada', 'A busca testa janelas de entrada dentro deste horário, de ' + f.minima + ' min para cima, começando e terminando a cada passo.') + '</span></td>' +
-        '<td><input class="b-inp" data-it="janela" data-k="passo" value="' + f.passo + ' min" aria-label="Passo do horário de entrada"></td></tr>';
+      var rot = esc(it.rotulo), ajuda = it.nome === 'janela'
+        ? q('Ajuda sobre horário de entrada', 'A busca testa janelas de entrada dentro deste horário, de ' + f.minima + ' min para cima, começando e terminando a cada passo.')
+        : q('Ajuda sobre ' + rot.toLowerCase(), 'Cada combinação escolhe um horário desta faixa, nunca antes do fim das entradas dela.');
+      h += '<span class="b-rng"><span class="b-dim">de</span><input class="b-inp w-time" data-it="' + it.nome + '" data-hora="1" data-k="de" value="' + esc(f.de) + '" aria-label="' + rot + ', de"><span class="b-dim">até</span><input class="b-inp w-time" data-it="' + it.nome + '" data-hora="1" data-k="ate" value="' + esc(f.ate) + '" aria-label="' + rot + ', até">' +
+        ajuda + '</span></td>' +
+        '<td><input class="b-inp" data-it="' + it.nome + '" data-hora="1" data-k="passo" value="' + f.passo + ' min" aria-label="Passo de ' + rot.toLowerCase() + '"></td></tr>';
       return h;
     }
     if (it.tipo === 'gestao') {
@@ -382,8 +385,9 @@
       '<div class="b-blk"><h3>Fixos' + q('Ajuda sobre fixos', 'Valem iguais para todas as combinações. Para mudar, ajuste no menu antes de iniciar.') + '</h3><div class="b-kv">' +
       E.fixos.map(function (f) { return '<div><span>' + esc(f[0]) + '</span><b>' + esc(f[1]) + '</b></div>'; }).join('') + '</div></div></div>' +
       '<div class="b-blk" style="padding:2px 4px"><table class="b-t"><thead><tr><th scope="col" style="width:200px">Item</th><th scope="col">Faixa</th><th scope="col" style="width:200px">Passo' + q('Ajuda sobre passo', 'De quanto em quanto o valor anda dentro da faixa. Exemplo: horário de 09:30 a 16:00 com passo de 30 min testa 09:30, 10:00, 10:30 e assim por diante.', 'r') + '</th></tr></thead><tbody>' +
-      E.itens.filter(function (it) { return it.onde !== 'param'; }).map(linhaItem).join('') + '</tbody><tbody>' +
-      E.itens.filter(function (it) { return it.onde === 'param'; }).map(linhaItem).join('') + '</tbody></table></div>';
+      E.itens.filter(function (it) { return it.onde === 'perfil'; }).map(linhaItem).join('') + '</tbody><tbody>' +
+      E.itens.filter(function (it) { return it.onde === 'param'; }).map(linhaItem).join('') + '</tbody><tbody>' +
+      E.itens.filter(function (it) { return it.onde === 'extra'; }).map(linhaItem).join('') + '</tbody></table></div>';
     $('b-cfg-corpo').innerHTML = h;
     initTips($('b-cfg-corpo'));
     // o fieldset fica ativo: desligá-lo desligaria também os (?) de dentro
@@ -399,7 +403,10 @@
     var faixas = {};
     D.espaco.itens.forEach(function (it) {
       var f = JSON.parse(JSON.stringify(rasc[it.nome]));
-      if (it.tipo === 'hora') { f.passo = parseInt(f.passo, 10); f.minima = parseInt(f.minima, 10); }
+      if (it.tipo === 'hora') {
+        f.passo = parseInt(f.passo, 10);
+        if (f.minima != null) f.minima = parseInt(f.minima, 10);
+      }
       faixas[it.nome] = f;
     });
     return faixas;
@@ -779,7 +786,7 @@
       if (t.id === 'b-r-crit') { rasc._meta = t.value; return; }
       if (t.id === 'b-r-min') { rasc._min = numBR(t.value) || 400; return; }
       var it = t.dataset.it, k = t.dataset.k; if (!it || !k) return;
-      if (it === 'janela') { rasc.janela[k] = (k === 'de' || k === 'ate') ? t.value : (parseInt(t.value, 10) || rasc.janela[k]); return; }
+      if (t.dataset.hora) { rasc[it][k] = (k === 'de' || k === 'ate') ? t.value : (parseInt(t.value, 10) || rasc[it][k]); return; }
       if (t.dataset.tipo && k.indexOf('periodo_') === 0) {
         rasc[it].tipos[t.dataset.tipo].periodo[k.slice(8)] = numBR(t.value); return;
       }

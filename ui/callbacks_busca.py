@@ -144,18 +144,33 @@ def _faixa_txt(f, casas=None) -> str:
     return f"{n(f['de'])} a {n(f['ate'])}"
 
 
-def _itens_espaco(estrategia: str, simbolo: str, faixas: dict) -> list[dict]:
+def _itens_espaco(estrategia: str, simbolo: str, faixas: dict,
+                  com_extras: bool = True) -> list[dict]:
     """O catálogo na forma que a aba Espaço de busca desenha (desenho §6:
     item novo no catálogo aparece aqui sem mudar a tela)."""
+    from ui.components import catalogo as fichas
+
     out = []
     for it in cat.montar_catalogo(estrategia, simbolo):
+        if it.onde == "extra" and not com_extras:
+            continue
         f = {**it.padrao, **(faixas.get(it.nome) or {})}
-        d = {"nome": it.nome, "rotulo": it.rotulo, "tipo": it.tipo,
+        rotulo, formato = it.rotulo, None
+        if it.onde == "extra" and it.nome in fichas.CAMPOS:
+            # rótulo e opções da ficha da camada 4: o mesmo texto do menu
+            _g, r, formato = fichas.CAMPOS[it.nome][:3]
+            rotulo = r[:1].upper() + r[1:]
+        d = {"nome": it.nome, "rotulo": rotulo, "tipo": it.tipo,
              "degrau": it.degrau, "onde": it.onde, "faixa": f}
         if it.tipo == "lista":
+            opc = dict((v, r) for r, v in fichas.OPCOES.get(
+                "hora" if formato == "hora" else it.nome, []))
             rot = {"timeframe": lambda v: ROTULO_TF.get(v, v),
                    "direcao": lambda v: DIRECAO.get(v, v),
-                   "saida": lambda v: SAIDA.get(v, str(v))}.get(it.nome, str)
+                   "saida": lambda v: SAIDA.get(v, str(v))}.get(it.nome)
+            if rot is None:
+                rot = ((lambda v: "sim" if v else "não") if formato == "sim_nao"
+                       else (lambda v: opc.get(v, str(v))))
             d["opcoes"] = [{"valor": v, "rotulo": rot(v)} for v in it.padrao["valores"]]
         elif it.tipo == "dias":
             d["opcoes"] = [{"valor": v, "rotulo": projecao.DIAS[v]} for v in it.padrao["valores"]]
@@ -173,8 +188,13 @@ def _num_br(v) -> str:
     return f"{v:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
 
-def _fixos(p, moeda: str = "") -> list[list[str]]:
-    """O que vale igual para todas as combinações (bloco "Fixos")."""
+def _fixos(p, moeda: str = "", minerados=()) -> list[list[str]]:
+    """O que vale igual para todas as combinações (bloco "Fixos"). Busca nova
+    varre a camada 4 inteira: aí só os custos são fixos."""
+    custos = ["Custos", f"{moeda} {_num_br(p.corretagem_por_contrato + p.emolumentos_por_contrato)}"
+              f" + {p.slippage_ticks} tick{'s' if p.slippage_ticks != 1 else ''}".strip()]
+    if minerados:
+        return [custos]
     adx = ("—" if not (int(p.adx_periodo or 0) and int(p.adx_limiar or 0))
            else f"{'tendência' if p.filtro_adx == 'tendencia' else 'rango'} "
                 f"{p.adx_periodo}/{p.adx_limiar}")
@@ -188,8 +208,7 @@ def _fixos(p, moeda: str = "") -> list[list[str]]:
             ["Breakeven", f"{p.breakeven_pct:g}% do alvo" if p.breakeven_pct else "desligado"],
             ["Stop móvel", f"{p.step_gatilho_pct:g}% / {p.step_distancia_pct:g}%"
              if p.step_gatilho_pct else "desligado"],
-            ["Custos", f"{moeda} {_num_br(p.corretagem_por_contrato + p.emolumentos_por_contrato)}"
-             f" + {p.slippage_ticks} tick{'s' if p.slippage_ticks != 1 else ''}".strip()]]
+            custos]
 
 
 # ------------------------------------------------------------ dados
@@ -251,7 +270,7 @@ def dados_da_tela(sel, estrategia, simbolo, perfil, menu_ok=True) -> dict:
                 "dica": DICA_ESTADO["parada"], "quando": "",
                 "criterio": "fr", "sigla": "FR", "minimo": 400,
                 "espaco": {"itens": _itens_espaco(estrategia, simbolo, {}),
-                           "fixos": _fixos(perfil, moeda), "travado": False},
+                           "fixos": _fixos(perfil, moeda, True), "travado": False},
                 "controle": {"nucleos": 20, "parar_as": "08:30",
                              "parar_as_ligado": True, "limite": None},
                 "mapas": None}
@@ -299,9 +318,11 @@ def dados_da_tela(sel, estrategia, simbolo, perfil, menu_ok=True) -> dict:
             "faltam": faltam, "historico": e.get("historico_nichos") or b.get("historico") or [],
             "espaco": {"itens": _itens_espaco(cfg.get("estrategia", estrategia),
                                               cfg.get("simbolo", simbolo),
-                                              (cfg.get("espaco") or {}).get("faixas") or {}),
-                       "fixos": _fixos(perfil.__class__(**cfg["perfil_base"]), moeda)
-                       if cfg.get("perfil_base") else _fixos(perfil, moeda),
+                                              (cfg.get("espaco") or {}).get("faixas") or {},
+                                              bool((cfg.get("espaco") or {}).get("com_extras"))),
+                       "fixos": _fixos(perfil.__class__(**cfg["perfil_base"]), moeda,
+                                       (cfg.get("espaco") or {}).get("com_extras"))
+                       if cfg.get("perfil_base") else _fixos(perfil, moeda, True),
                        "travado": True},
             "controle": {k: (e.get("controle") or {}).get(k)
                          for k in ("nucleos", "parar_as", "parar_as_ligado", "limite")},
@@ -529,7 +550,7 @@ def _ir_regiao(r, cfg, ids_val, vals, ids_on, ons, ids_opt, opts):
     nunca variou). A combinação aberta no Backtest é esquecida: o corte
     dela não vale para a mineração nova."""
     campos = r["campos"]
-    m, val_perfil = menu_do_perfil(cfg.get("perfil_base") or {}) \
+    m, val_perfil = menu_do_perfil({**cfg["perfil_base"], **(r.get("perfil_extras") or {})}) \
         if cfg.get("perfil_base") else ({}, {})
     m.update({"e-timeframe": r["timeframe"], "e-ent-ini": r["entrada_inicio"],
               "e-ent-fim": r["entrada_fim"], "e-dias": r["dias_semana"],

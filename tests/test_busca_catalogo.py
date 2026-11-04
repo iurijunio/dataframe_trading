@@ -26,7 +26,8 @@ def test_degraus_proporcionais_a_partir_de_zero():
 def test_catalogo_adx_tem_os_itens_do_prototipo():
     cat = _por_nome("adx_direcao", "WIN$N")
     assert {"timeframe", "direcao", "janela", "dias", "stop", "alvo",
-            "di_periodo", "adx_suavizacao", "amplitude_max", "saida"} == set(cat)
+            "di_periodo", "adx_suavizacao", "amplitude_max", "saida"} == \
+        {n for n, i in cat.items() if i.onde != "extra"}
     assert cat["di_periodo"].degrau == cat["adx_suavizacao"].degrau == "proporcional"
     assert cat["amplitude_max"].degrau == "fixo"
 
@@ -167,3 +168,82 @@ def test_atr_tem_periodo_proporcional():
         per = C.periodos_atr(cat[item].padrao["tipos"]["atr"])
         assert per[0] == 5 and per[-1] == 60 and per == sorted(set(per))
     assert C.periodos_atr(cat["stop"].padrao["tipos"]["pontos"]) is None
+
+
+
+def test_todo_campo_do_motor_esta_classificado():
+    """Campo novo no motor quebra aqui até alguém dizer se a busca o varre."""
+    from core.engine.execution import ExecutionProfile
+
+    extras = {i.nome for i in C.montar_catalogo("adx_direcao", "WIN$N") if i.onde == "extra"}
+    todos = set(ExecutionProfile.__dataclass_fields__)
+    assert C.JA_NA_BUSCA | C.NAO_MINERAVEIS | extras == todos
+    assert not (C.JA_NA_BUSCA & extras) and not (C.NAO_MINERAVEIS & extras)
+
+
+def test_extras_incluem_o_desligado():
+    cat = _por_nome("adx_direcao", "WIN$N")
+    for nome in ("max_barras", "adx_periodo", "adx_limiar", "breakeven_pct",
+                 "step_gatilho_pct", "trailing_pontos", "limite_perda_contrato",
+                 "max_trades_dia"):
+        assert C.valores(cat[nome], cat[nome].padrao)[0] == 0, nome
+    assert "" in C.valores(cat["sem_entrada1"], cat["sem_entrada1"].padrao)
+    fech = C.valores(cat["fechamento"], cat["fechamento"].padrao)
+    assert fech[0] == "09:00" and fech[-1] == "17:30"
+
+
+def test_canonico_junta_copias():
+    assert C.canonico({"adx_periodo": 0, "adx_limiar": 20, "filtro_adx": "rango",
+                       "adx_filtro_di": 1, "adx_subindo": 1}) == \
+        {"adx_periodo": 0, "adx_limiar": 0, "filtro_adx": "tendencia",
+         "adx_filtro_di": 0, "adx_subindo": 0}
+    assert C.canonico({"filtro_adx": "rango", "adx_periodo": 14, "adx_limiar": 20,
+                       "adx_filtro_di": 1, "adx_subindo": 1})["adx_filtro_di"] == 0
+    assert C.canonico({"step_gatilho_pct": 0.0, "step_distancia_pct": 30.0})["step_distancia_pct"] == 0
+    assert C.canonico({"sem_entrada1": "", "sem_entrada2": "13:00", "sem_entrada3": "13:00"}) == \
+        {"sem_entrada1": "13:00", "sem_entrada2": "", "sem_entrada3": ""}
+
+
+
+def test_canonico_com_contexto_e_faixa():
+    # sem alvo: breakeven e stop móvel (% do alvo) não fazem nada
+    e = C.canonico({"breakeven_pct": 30.0, "step_gatilho_pct": 50.0, "step_distancia_pct": 20.0},
+                   sem_alvo=True)
+    assert set(e.values()) == {0.0}
+    # hora fora da janela não bloqueia nada
+    assert C.canonico({"sem_entrada1": "15:00", "sem_entrada2": "", "sem_entrada3": ""},
+                      fora_da_janela=lambda h: h == "15:00")["sem_entrada1"] == ""
+    # prejuízos >= operações nunca dispara
+    assert C.canonico({"max_trades_dia": 2, "max_prejuizos_dia": 3})["max_prejuizos_dia"] == 0
+    # o canônico é sempre um valor da faixa (só "rango" ligado)
+    e = C.canonico({"adx_periodo": 0, "adx_limiar": 20, "filtro_adx": "rango",
+                    "adx_filtro_di": 0, "adx_subindo": 0},
+                   listas={"filtro_adx": ["rango"], "adx_limiar": [5, 10, 20]})
+    assert e["filtro_adx"] == "rango" and e["adx_limiar"] == 5 and e["adx_periodo"] == 0
+
+
+def test_fechamento_chega_ao_ate_fora_do_passo():
+    it = _por_nome("adx_direcao", "WIN$N")["fechamento"]
+    assert C.valores(it, {"de": "09:00", "ate": "16:50", "passo": 30})[-1] == "16:50"
+
+
+def test_trailing_segue_a_faixa_da_ficha():
+    from core import ativo
+
+    ff = ativo.faixas_do_ativo("MES", "adx_direcao").get("trailing_pontos")
+    if not ff:
+        pytest.skip("ficha do MES sem faixa de trailing")
+    it = _por_nome("adx_direcao", "MES")["trailing_pontos"]
+    assert it.padrao["de"] == 0 and it.padrao["ate"] == ff["ate"] and it.padrao["passo"] == ff["passo"]
+
+
+def test_canonico_prejuizos_e_ordem_das_horas():
+    assert C.canonico({"max_trades_dia": 3, "max_prejuizos_dia": 3})["max_prejuizos_dia"] == 0
+    assert C.canonico({"max_trades_dia": 3, "max_prejuizos_dia": 2})["max_prejuizos_dia"] == 2
+    assert C.canonico({"sem_entrada1": "11:00", "sem_entrada2": "10:00", "sem_entrada3": ""}) == \
+        {"sem_entrada1": "10:00", "sem_entrada2": "11:00", "sem_entrada3": ""}
+
+
+def test_sem_entrada_vai_ate_a_hora_do_fechamento():
+    cat = _por_nome("adx_direcao", "WIN$N")
+    assert cat["sem_entrada1"].padrao["valores"][-1] == "17:00"
