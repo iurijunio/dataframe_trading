@@ -45,8 +45,7 @@ def dono(chave: tuple, n: int) -> int:
 
 
 class Nucleos:
-    def __init__(self, n: int, simbolo: str, de, ate, estrategia: str,
-                 espera_s: float = 600.0):
+    def __init__(self, n: int, simbolo: str, de, ate, estrategia: str):
         self.n = max(1, int(n))
         self._ctx = mp.get_context("spawn")
         self._saida = self._ctx.Queue()
@@ -56,7 +55,6 @@ class Nucleos:
             daemon=True) for q in self._entradas]
         for p in self._procs:
             p.start()
-        self._espera_s = espera_s
         self._pedido = 0
         prontos = 0
         while prontos < self.n:
@@ -98,3 +96,9 @@ class Nucleos:
             p.join(timeout=5)
             if p.is_alive():
                 p.terminate()
+        # Núcleo morto deixa a thread que alimenta a fila dele presa no pipe;
+        # na saída do Python o multiprocessing faria join dela e o processo
+        # da busca nunca terminaria — segurando a trava para sempre.
+        for q in (*self._entradas, self._saida):
+            q.cancel_join_thread()
+            q.close()

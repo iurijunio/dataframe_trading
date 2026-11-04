@@ -25,6 +25,7 @@ import os
 import pickle
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -46,6 +47,7 @@ BATIMENTO_S = 5.0
 # segundos numa noite inteira. Cair entre dois salvamentos só faz rodar de
 # novo os lotes desde o último (o banco os descarta na retomada).
 SALVAR_A_CADA_S = 30.0
+SINAIS_POR_NUCLEO = 1     # sinais novos por lote = núcleos × isto
 MAX_HISTORICO = 200
 
 
@@ -54,7 +56,9 @@ def escrever_json(caminho: Path, dados: dict, tentativas: int = 40) -> None:
     """Escrita atômica com paciência: no Windows o `os.replace` falha com
     PermissionError enquanto o outro processo está lendo o arquivo."""
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    tmp = caminho.with_suffix(caminho.suffix + f".{os.getpid()}.tmp")
+    # nome único por escrita: duas threads do app escrevendo o mesmo arquivo
+    # não podem disputar o mesmo temporário
+    tmp = caminho.with_suffix(caminho.suffix + f".{os.getpid()}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(json.dumps(dados, default=str, ensure_ascii=False), encoding="utf-8")
     for i in range(tentativas):
         try:
@@ -66,7 +70,13 @@ def escrever_json(caminho: Path, dados: dict, tentativas: int = 40) -> None:
     raise PermissionError(f"não consegui escrever {caminho}")
 
 
-def ler_json(caminho: Path, padrao: dict | None = None, tentativas: int = 20) -> dict:
+_ILEGIVEL = object()
+
+
+def ler_json(caminho: Path, padrao: dict | None = None, tentativas: int = 20,
+             falha=None) -> dict:
+    """Arquivo ausente = `padrao`; ilegível depois das tentativas (o outro
+    lado escrevendo) = `falha`, que por omissão é o `padrao`."""
     for _ in range(tentativas):
         try:
             return json.loads(caminho.read_text(encoding="utf-8"))
@@ -74,11 +84,16 @@ def ler_json(caminho: Path, padrao: dict | None = None, tentativas: int = 20) ->
             return dict(padrao or {})
         except (PermissionError, json.JSONDecodeError):
             time.sleep(0.05)
-    return dict(padrao or {})
+    return dict(padrao or {}) if falha is None else falha
 
 
-def ler_controle(pasta: Path) -> dict:
-    return {**CONTROLE_PADRAO, **ler_json(pasta / "controle.json")}
+def ler_controle(pasta: Path, ultimo: dict | None = None) -> dict:
+    """Ilegível vale o `ultimo` lido: cair no padrão soltaria uma pausa e
+    trocaria núcleos e horário sem ninguém pedir."""
+    lido = ler_json(pasta / "controle.json", falha=_ILEGIVEL)
+    if lido is _ILEGIVEL:
+        return dict(ultimo) if ultimo else dict(CONTROLE_PADRAO)
+    return {**CONTROLE_PADRAO, **lido}
 
 
 def escrever_estado(pasta: Path, estado: dict) -> None:
@@ -128,6 +143,12 @@ class Busca:
             raise ValueError(f"busca {busca_id} não existe")
         self.config = b["config"]
         self.esp = Espaco.de_json(self.config["espaco"])
+        if not self.config.get("de") or not self.config.get("ate"):
+            # sem datas fixas, continuar outro dia mudaria folds e holdout no
+            # meio da busca e notas de períodos diferentes disputariam a casa
+            raise ValueError("busca sem período fixo (de/até)")
+        if self.esp.fechamento != self.config["perfil_base"].get("fechamento"):
+            raise ValueError("fechamento do espaço difere do perfil da busca")
         self._avaliar_fora = avaliar
         self.agora = agora
         self._nucleos = None
@@ -181,12 +202,11 @@ class Busca:
     # -------------------------------------------------------- avaliação
     def _ctx(self) -> dict:
         if not hasattr(self, "_ctx_cache"):
-            from core import db_manager as db, walkforward as wf
+            from core import walkforward as wf
 
             c = self.config
-            amostra = db.read_bars_parquet(c["simbolo"], c.get("de"), c.get("ate"))["ts"]
-            ini = np.datetime64(c.get("de") or amostra[0], "s")
-            fim = np.datetime64(c.get("ate") or amostra[-1], "s")
+            ini = np.datetime64(c["de"], "s")
+            fim = np.datetime64(c["ate"], "s")
             self._ctx_cache = {"espaco": c["espaco"], "perfil_base": c["perfil_base"],
                                "janelas": wf.montar_janelas(ini, fim, **c["wf_config"]),
                                "minimo": int(c["minimo"]), "criterio": c["criterio"]}
@@ -210,9 +230,38 @@ class Busca:
             self._nucleos = None
 
     # -------------------------------------------------------- um lote
+    def _ancorar(self, sols: np.ndarray, n_sinais: int) -> None:
+        """Calcular uma vez, testar muitas (desenho §4.2), NO LUGAR.
+
+        A mutação gaussiana mexe em todos os genes, e quase toda combinação
+        nascia com um sinal próprio: o núcleo refazia o indicador a cada
+        teste e 20 núcleos rendiam como 7. Aqui só os `n_sinais` primeiros
+        sinais distintos do lote ficam como vieram; as demais combinações
+        adotam o sinal mais próximo e variam só horário, dias, direção, stop
+        e alvo.
+
+        No lugar porque o `ask()` da pyribs devolve o mesmo array que ela usa
+        no `tell`: assim o arquivo guarda exatamente a combinação avaliada.
+        """
+        ess = self.esp.genes_essenciais()
+        ancoras, chaves = [], set()
+        for x in sols:
+            k = self.esp.decodificar(x).chave_essencial()
+            if k not in chaves and len(ancoras) < n_sinais:
+                chaves.add(k)
+                ancoras.append(x[ess].copy())
+        if not ancoras:
+            return
+        a = np.array(ancoras)
+        for x in sols:
+            if self.esp.decodificar(x).chave_essencial() in chaves:
+                continue
+            x[ess] = a[int(np.argmin(((a - x[ess]) ** 2).sum(axis=1)))]
+
     def _lote(self, s: dict, n_nucleos: int) -> None:
         t0 = time.monotonic()
         sols = s["scheduler"].ask()
+        self._ancorar(sols, max(1, n_nucleos) * SINAIS_POR_NUCLEO)
         combos = [self.esp.decodificar(x) for x in sols]
         chaves = [c.chave() for c in combos]
         novas, grupos, vistas = [], {}, set()
@@ -334,14 +383,48 @@ class Busca:
                         pass
 
     # -------------------------------------------------------- o laço
+    def _controle(self) -> dict:
+        """Lê o controle e recalcula "Parar às" quando o horário OU o liga/
+        desliga muda — inclusive na pausa: religar à tarde não pode parar na
+        hora por causa da manhã que já passou."""
+        ctl = ler_controle(self.pasta, getattr(self, "_ctl", None))
+        par = (ctl["parar_as"], bool(ctl.get("parar_as_ligado")))
+        if par != getattr(self, "_parada_vista", None):
+            self._parar_em = proximo_horario(ctl["parar_as"], self.agora())
+            self._parada_vista = par
+        self._ctl = ctl
+        return ctl
+
+    def _marcar(self, status: str | None = None, **campos) -> None:
+        """Status no banco sem derrubar a busca: ocupado fica para depois."""
+        pend = dict(getattr(self, "_status_pendente", {}) or {})
+        pend.update(campos)
+        if status is not None:
+            pend["status"] = status
+        try:
+            banco.marcar_status(self.busca_id, **pend)
+            self._status_pendente = {}
+        except banco.BancoOcupado:
+            self._status_pendente = pend
+
+    @staticmethod
+    def _insistir(fn, *a, prazo_s: float = 120.0, **k):
+        """Início e fim da busca: o banco pode estar com o app; espera."""
+        fim = time.monotonic() + prazo_s
+        while True:
+            try:
+                return fn(*a, **k)
+            except banco.BancoOcupado:
+                if time.monotonic() > fim:
+                    raise
+                time.sleep(1.0)
+
     def rodar(self, max_lotes: int | None = None) -> str:
-        s = self._carregar()
+        s = self._insistir(self._carregar)
         self._inicio = self.agora().isoformat(timespec="seconds")
-        ctl = ler_controle(self.pasta)
-        self._parar_em = proximo_horario(ctl["parar_as"], self.agora())
-        parar_as_visto = ctl["parar_as"]
-        banco.marcar_status(self.busca_id, "rodando", erro=None,
-                            inicio=self.agora(), fim=None)
+        ctl = self._controle()
+        self._insistir(banco.marcar_status, self.busca_id, "rodando", erro=None,
+                       inicio=self.agora(), fim=None)
         self._publicar(s, "rodando", ctl)
         batimento = threading.Thread(target=self._batimento, daemon=True)
         batimento.start()
@@ -349,26 +432,27 @@ class Busca:
         status = "concluida"
         try:
             while True:
-                ctl = ler_controle(self.pasta)
-                if ctl["parar_as"] != parar_as_visto:
-                    self._parar_em = proximo_horario(ctl["parar_as"], self.agora())
-                    parar_as_visto = ctl["parar_as"]
+                ctl = self._controle()
                 if self._deve_parar(s, ctl):
                     break
                 if ctl.get("pedido") == "pausar":
                     self._fechar_nucleos()
                     self._salvar(s, ja=True)
-                    banco.marcar_status(self.busca_id, "pausada")
+                    self._marcar("pausada")
                     self._publicar(s, "pausada", ctl, pausada_em=self.agora().isoformat(
                         timespec="seconds"))
                     while ctl.get("pedido") == "pausar" and not self._deve_parar(s, ctl):
                         time.sleep(1.0)
-                        ctl = ler_controle(self.pasta)
+                        ctl = self._controle()
+                        if getattr(self, "_status_pendente", None):
+                            self._marcar()
                     if self._deve_parar(s, ctl):
                         break
-                    banco.marcar_status(self.busca_id, "rodando")
+                    self._marcar("rodando")
                 self._lote(s, int(ctl.get("nucleos") or 1))
                 self._gravar_pendentes(s)
+                if getattr(self, "_status_pendente", None):
+                    self._marcar()
                 self._salvar(s)
                 self._publicar(s, "rodando", ctl)
                 feitos += 1
@@ -386,14 +470,22 @@ class Busca:
             raise
         self._parar_batimento.set()
         self._fechar_nucleos()
-        self._gravar_pendentes(s)
+        self._insistir(self._gravar_tudo, s)
         self._salvar(s, ja=True)
         if status == "concluida":
-            banco.marcar_status(self.busca_id, "concluida", fim=self.agora(),
-                                **self._contagens(s))
+            self._insistir(banco.marcar_status, self.busca_id, "concluida",
+                           fim=self.agora(), **self._contagens(s))
             self._publicar(s, "concluida", ctl, fim=self.agora().isoformat(timespec="seconds"),
                            motivo=getattr(self, "_motivo", None))
         return status
+
+    def _gravar_tudo(self, s: dict) -> None:
+        self._gravar_pendentes(s)
+        if s["pendentes"]:
+            raise banco.BancoOcupado("lotes pendentes")
+        if getattr(self, "_status_pendente", None):
+            banco.marcar_status(self.busca_id, **self._status_pendente)
+            self._status_pendente = {}
 
     def _deve_parar(self, s: dict, ctl: dict) -> bool:
         if ctl.get("pedido") == "parar":

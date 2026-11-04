@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -83,10 +84,31 @@ def _caminho_controle(busca_id: int) -> Path:
     return banco.pasta_da(busca_id) / "controle.json"
 
 
+_TRAVA_AJUSTE = threading.Lock()
+
+
 def ajustar(busca_id: int, **campos) -> None:
-    """Muda núcleos, "Parar às", limite ou pedido — vale no próximo lote."""
-    atual = ler_controle(banco.pasta_da(busca_id))
-    escrever_json(_caminho_controle(busca_id), {**atual, **campos})
+    """Muda núcleos, "Parar às", limite ou pedido — vale no próximo lote.
+    Ler-mudar-gravar sob trava: dois callbacks ao mesmo tempo não podem
+    apagar o ajuste um do outro."""
+    with _TRAVA_AJUSTE:
+        atual = ler_controle(banco.pasta_da(busca_id))
+        escrever_json(_caminho_controle(busca_id), {**atual, **campos})
+
+
+def resolver_periodo(config: dict) -> dict:
+    """Datas FIXAS na criação: sem "até", continuar outro dia leria barras
+    novas, e folds, holdout e notas mudariam no meio da busca."""
+    if config.get("de") and config.get("ate"):
+        return config
+    ts = db.read_bars_parquet(config["simbolo"], config.get("de"), config.get("ate"))["ts"]
+    import numpy as np
+
+    def iso(v):
+        return str(np.datetime64(v, "s"))
+
+    return {**config, "de": config.get("de") or iso(ts[0]),
+            "ate": config.get("ate") or iso(ts[-1])}
 
 
 FOLGA_ABRIR_S = 60   # o processo leva uns segundos até pegar a trava
@@ -110,7 +132,7 @@ def _abrir(busca_id: int) -> None:
 def iniciar(config: dict, **controle) -> int:
     if ativa() is not None:
         raise BuscaJaRodando("já existe uma busca rodando")
-    bid = banco.criar(config)
+    bid = banco.criar(resolver_periodo(config))
     escrever_json(_caminho_controle(bid), {**CONTROLE_PADRAO, **controle})
     _abrir(bid)
     return bid
@@ -134,11 +156,17 @@ def pausar(busca_id: int) -> None:
 def parar(busca_id: int) -> None:
     """"Parar e guardar". Sem processo (interrompida ou pausada que caiu),
     só marca como concluída: o que foi testado já está no banco."""
-    if ativa() == busca_id:
+    if ativa() == busca_id or _abrindo(busca_id):
+        # subindo: o pedido fica no controle e o processo o lê no 1º lote
         ajustar(busca_id, pedido="parar")
     else:
         ajustar(busca_id, pedido=None)
         banco.marcar_status(busca_id, "concluida")
+
+
+def _abrindo(busca_id: int) -> bool:
+    c = ler_controle(banco.pasta_da(busca_id))
+    return time.time() - float(c.get("aberto_em") or 0) < FOLGA_ABRIR_S
 
 
 def ler(busca_id: int) -> dict:

@@ -153,3 +153,34 @@ def test_logo_depois_de_abrir_nao_e_interrompida(monkeypatch):
     assert e["status"] == "rodando" and e["abrindo"]
     monkeypatch.setattr(K.time, "time", lambda: 10**12)
     assert K.ler(bid)["status"] == "interrompida"
+
+
+def test_parar_logo_depois_de_abrir_vira_pedido(monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: None)
+    bid = K.iniciar(_config())
+    K.parar(bid)
+    assert M.ler_controle(B.pasta_da(bid))["pedido"] == "parar"
+    assert B.ler_busca(bid)["status"] == "rodando"     # o processo é quem conclui
+
+
+@pytest.mark.skipif(not _tem_parquet(), reason="sem Parquet do WIN")
+def test_iniciar_fixa_o_periodo(monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: None)
+    cfg = {**_config(), "de": "2024-01-01", "ate": None}
+    bid = K.iniciar(cfg)
+    c = B.ler_busca(bid)["config"]
+    assert c["de"] == "2024-01-01" and c["ate"] and c["ate"] > "2024-06"
+
+
+def test_ajustes_simultaneos_nao_se_apagam(monkeypatch):
+    import threading
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: None)
+    bid = K.iniciar(_config())
+    ts = [threading.Thread(target=K.ajustar, args=(bid,), kwargs={f"k{i}": i})
+          for i in range(12)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    c = M.ler_controle(B.pasta_da(bid))
+    assert all(c[f"k{i}"] == i for i in range(12))

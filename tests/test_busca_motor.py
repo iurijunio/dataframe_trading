@@ -54,6 +54,7 @@ def busca():
                  faixas={"di_periodo": {"de": 5, "ate": 30}})
     bid = B.criar({"simbolo": "WIN$N", "estrategia": "adx_direcao",
                    "espaco": esp.para_json(), "perfil_base": ExecutionProfile().to_config(),
+                   "de": "2024-01-01", "ate": "2024-06-30T17:59:00",
                    "wf_config": {}, "minimo": 400, "criterio": "fr", "semente": 7})
     M.escrever_json(B.pasta_da(bid) / "controle.json",
                     {"parar_as_ligado": False, "nucleos": 3})
@@ -83,7 +84,7 @@ def test_tell_na_ordem_do_ask(busca):
     M.Busca(busca, avaliar=Falso()).rodar(max_lotes=3)
     direto = _elites(busca)
     outra = B.criar(B.ler_busca(busca)["config"])
-    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False})
+    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False, "nucleos": 3})
     M.Busca(outra, avaliar=Falso(embaralhar=True)).rodar(max_lotes=3)
     assert _elites(outra) == direto
 
@@ -181,7 +182,7 @@ def test_retomar_apos_queda(busca):
     direto, ns_direto = _elites(busca), sorted(_teste_ns(busca))
 
     outra = B.criar(B.ler_busca(busca)["config"])
-    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False})
+    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False, "nucleos": 3})
     M.Busca(outra, avaliar=Falso()).rodar(max_lotes=2)
     M.Busca(outra, avaliar=Falso()).rodar(max_lotes=1)      # "outro dia"
     assert _elites(outra) == direto and sorted(_teste_ns(outra)) == ns_direto
@@ -192,7 +193,7 @@ def test_queda_entre_banco_e_pickle_nao_duplica(busca, monkeypatch):
     direto, ns_direto = _elites(busca), sorted(_teste_ns(busca))
 
     outra = B.criar(B.ler_busca(busca)["config"])
-    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False})
+    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False, "nucleos": 3})
     original = M.Busca._salvar
     chamadas = {"n": 0}
 
@@ -246,7 +247,7 @@ def test_queda_entre_salvamentos_refaz_so_o_que_faltou(busca, monkeypatch):
     direto, ns_direto = _elites(busca), sorted(_teste_ns(busca))
 
     outra = B.criar(B.ler_busca(busca)["config"])
-    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False})
+    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False, "nucleos": 3})
     monkeypatch.setattr(M, "SALVAR_A_CADA_S", 1e9)     # só o 1º lote é salvo
     original = M.Busca._gravar_pendentes
     chamadas = {"n": 0}
@@ -270,3 +271,132 @@ def test_queda_entre_salvamentos_refaz_so_o_que_faltou(busca, monkeypatch):
 def test_digital_estavel():
     assert M.digital("abc") == M.digital("abc") != M.digital("abd")
     assert 0 <= M.digital("abc") < 2**64
+
+
+def test_poucos_sinais_por_lote_e_arquivo_coerente(busca):
+    """Cada lote só traz núcleos × SINAIS_POR_NUCLEO sinais novos, e o que a
+    pyribs guarda no arquivo é a combinação que foi de fato avaliada."""
+    grupos_por_lote = []
+
+    def conta(grupos, config, n):
+        grupos_por_lote.append(len(grupos))
+        return Falso()(grupos, config, n)
+
+    busca_obj = M.Busca(busca, avaliar=conta)
+    busca_obj.rodar(max_lotes=3)
+    assert all(g <= 3 * M.SINAIS_POR_NUCLEO for g in grupos_por_lote)
+
+    import pickle
+    with open(B.pasta_da(busca) / "arquivo.pkl", "rb") as f:
+        s = pickle.load(f)
+    dados = s["scheduler"].archive.data()
+    elites = {e["casa"]: e["combo"] for e in B.ler_elites(busca)}
+    for x in dados["solution"]:
+        c = busca_obj.esp.decodificar(x)
+        casa = json.dumps(list(busca_obj.esp.casa(c)))
+        assert elites[casa] == c.chave()
+
+
+def test_parar_as_religado_conta_a_partir_de_agora(busca):
+    """Desligado de manhã e religado à tarde: não para na hora por causa da
+    manhã que já passou."""
+    pasta = B.pasta_da(busca)
+    relogio = {"t": datetime(2026, 11, 3, 22, 0)}
+
+    def agora():
+        return relogio["t"]
+
+    b = M.Busca(busca, avaliar=Falso(), agora=agora)
+    M.escrever_json(pasta / "controle.json", {"parar_as_ligado": True, "parar_as": "08:30"})
+    b._controle()
+    assert b._parar_em == datetime(2026, 11, 4, 8, 30)
+    relogio["t"] = datetime(2026, 11, 4, 7, 0)
+    M.escrever_json(pasta / "controle.json", {"parar_as_ligado": False, "parar_as": "08:30"})
+    b._controle()
+    relogio["t"] = datetime(2026, 11, 5, 15, 0)
+    M.escrever_json(pasta / "controle.json", {"parar_as_ligado": True, "parar_as": "08:30"})
+    ctl = b._controle()
+    assert b._parar_em == datetime(2026, 11, 6, 8, 30)
+    assert not b._deve_parar({"distintos": 0}, ctl)
+
+
+def test_parar_as_mudado_durante_a_pausa(busca):
+    pasta = B.pasta_da(busca)
+    relogio = {"t": datetime(2026, 11, 4, 8, 0)}
+
+    def agora():
+        relogio["t"] += timedelta(seconds=30)
+        return relogio["t"]
+
+    M.escrever_json(pasta / "controle.json", {"parar_as_ligado": True, "parar_as": "08:30",
+                                              "pedido": "pausar"})
+    dormidas = {"n": 0}
+
+    def dormir(_s):
+        dormidas["n"] += 1
+        if dormidas["n"] == 2:     # pausada às ~08:01: muda para 12:00
+            M.escrever_json(pasta / "controle.json", {"parar_as_ligado": True,
+                                                      "parar_as": "12:00", "pedido": "pausar"})
+        if relogio["t"] >= datetime(2026, 11, 4, 9, 0):
+            M.escrever_json(pasta / "controle.json", {"parar_as_ligado": True,
+                                                      "parar_as": "12:00", "pedido": "parar"})
+
+    import core.busca.motor as mod
+    original = mod.time.sleep
+    mod.time.sleep = dormir
+    try:
+        M.Busca(busca, avaliar=Falso(), agora=agora).rodar()
+    finally:
+        mod.time.sleep = original
+    est = M.ler_json(pasta / "estado.json")
+    assert est["motivo"] == "parar"            # não parou às 08:30
+
+
+def test_controle_ilegivel_mantem_o_ultimo(busca, monkeypatch):
+    pasta = B.pasta_da(busca)
+    M.escrever_json(pasta / "controle.json", {"pedido": "pausar", "nucleos": 9})
+    ultimo = M.ler_controle(pasta)
+    (pasta / "controle.json").write_text("{meio arquiv", encoding="utf-8")
+    monkeypatch.setattr(M.time, "sleep", lambda s: None)
+    assert M.ler_controle(pasta, ultimo) == ultimo
+    assert M.ler_controle(pasta, ultimo)["pedido"] == "pausar"
+
+
+def test_banco_ocupado_ao_pausar_nao_derruba(busca, monkeypatch):
+    pasta = B.pasta_da(busca)
+    original = B.marcar_status
+    falhas = {"n": 0}
+
+    def ocupado(bid, status=None, **campos):
+        if status == "pausada" and falhas["n"] < 3:
+            falhas["n"] += 1
+            raise B.BancoOcupado("app lendo")
+        return original(bid, status, **campos)
+
+    monkeypatch.setattr(B, "marcar_status", ocupado)
+    chamadas = {"n": 0}
+
+    def no_lote(n):
+        if n == 1:
+            M.escrever_json(pasta / "controle.json", {"parar_as_ligado": False, "pedido": "pausar"})
+
+    monkeypatch.setattr(M.time, "sleep", lambda s: (
+        chamadas.__setitem__("n", chamadas["n"] + 1),
+        chamadas["n"] > 5 and M.escrever_json(
+            pasta / "controle.json", {"parar_as_ligado": False, "pedido": "parar"})))
+    assert M.Busca(busca, avaliar=Falso(ao_chamar=no_lote)).rodar() == "concluida"
+    assert falhas["n"] == 3 and B.ler_busca(busca)["status"] == "concluida"
+
+
+def test_busca_sem_periodo_fixo_recusa(busca):
+    cfg = {**B.ler_busca(busca)["config"], "ate": None}
+    outra = B.criar(cfg)
+    with pytest.raises(ValueError, match="período fixo"):
+        M.Busca(outra)
+
+
+def test_fechamento_de_uma_fonte_so(busca):
+    cfg = B.ler_busca(busca)["config"]
+    cfg = {**cfg, "perfil_base": {**cfg["perfil_base"], "fechamento": "16:00"}}
+    with pytest.raises(ValueError, match="fechamento"):
+        M.Busca(B.criar(cfg))

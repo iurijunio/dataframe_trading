@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -37,7 +38,14 @@ def main(argv: list[str] | None = None) -> int:
         db.DB_PATH = Path(a.db_principal)
     prioridade.baixar()
 
-    trava = controle.travar(banco.PASTA / "rodando.lock")
+    # o app testa a trava a cada leitura (trava e solta): tentar algumas
+    # vezes antes de concluir que outra busca está rodando
+    trava = None
+    for _ in range(25):
+        trava = controle.travar(banco.PASTA / "rodando.lock")
+        if trava is not None:
+            break
+        time.sleep(0.2)
     if trava is None:
         print("outra busca já está rodando", flush=True)
         return 4
