@@ -27,7 +27,10 @@ from .callbacks import (MENU_COMBINACAO, MENU_PERFIL, _menu_atual, _simbolo,
                         menu_do_perfil, perfil_da_busca)
 
 EIXOS = projecao.EIXOS
-ROTULO_TF = {"H1": "M60"}             # o protótipo escreve M60
+# o protótipo escreve em minutos (M60): o rótulo sai da duração no motor
+from core.engine.execution import TIMEFRAMES as _TF_MOTOR  # noqa: E402
+
+ROTULO_TF = {t: f"M{m}" for t, m in _TF_MOTOR.items()}
 SAIDA = {0: "sai e fica zerado", 1: "não sai no sinal", 2: "vira a mão",
          3: "saída própria"}
 DIRECAO = {"compra": "compra", "venda": "venda", "ambas": "as duas"}
@@ -154,8 +157,7 @@ def _itens_espaco(estrategia: str, simbolo: str, faixas: dict) -> list[dict]:
             nomes = {"pontos": "pontos", "atr": "ATR", "percentual": "%",
                      "multiplicador": "× stop", "sem": "sem alvo"}
             casas = {"pontos": None, "atr": 2, "percentual": 2, "multiplicador": 1}
-            d["opcoes"] = [{"tipo": t, "rotulo": nomes[t] if t == "sem" else
-                            f"{nomes[t]} {_faixa_txt(ff, casas[t])}", **ff}
+            d["opcoes"] = [{"tipo": t, "rotulo": nomes[t], **ff}
                            for t, ff in f["tipos"].items()]
         out.append(d)
     return out

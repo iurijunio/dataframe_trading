@@ -347,17 +347,22 @@
     }
     if (it.tipo === 'hora') {
       h += '<span class="b-rng"><span class="b-dim">de</span><input class="b-inp w-time" data-it="janela" data-k="de" value="' + esc(f.de) + '" aria-label="Horário de entrada, de"><span class="b-dim">até</span><input class="b-inp w-time" data-it="janela" data-k="ate" value="' + esc(f.ate) + '" aria-label="Horário de entrada, até">' +
-        '<span class="b-dim" style="margin-left:8px">janela mín.</span><input class="b-inp" data-it="janela" data-k="minima" value="' + f.minima + ' min" aria-label="Janela mínima"></span></td>' +
+        q('Ajuda sobre horário de entrada', 'A busca testa janelas de entrada dentro deste horário, de ' + f.minima + ' min para cima, começando e terminando a cada passo.') + '</span></td>' +
         '<td><input class="b-inp" data-it="janela" data-k="passo" value="' + f.passo + ' min" aria-label="Passo do horário de entrada"></td></tr>';
       return h;
     }
     if (it.tipo === 'gestao') {
-      h += '<div class="b-chips">' + it.opcoes.map(function (o) {
-        return '<button type="button" class="b-chip" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" aria-pressed="' + !!(f.tipos[o.tipo] && f.tipos[o.tipo].on) + '">' + esc(o.rotulo) + '</button>';
-      }).join('') + '</div></td><td><span class="b-rng">' + it.opcoes.filter(function (o) { return o.tipo !== 'sem'; }).map(function (o) {
-        return '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="passo" value="' + numTxt(f.tipos[o.tipo].passo) + '" aria-label="Passo do ' + esc(it.rotulo.toLowerCase()) + ' em ' + ({pontos: 'pontos', atr: 'ATR', percentual: 'porcentagem', multiplicador: 'vezes o stop'}[o.tipo] || o.tipo) + '">';
-      }).join('') + '</span></td></tr>';
-      return h;
+      // uma linha por tipo: liga/desliga o tipo e edita de, até e passo
+      var nomeTipo = {pontos: 'pontos', atr: 'ATR', percentual: 'porcentagem', multiplicador: 'vezes o stop', sem: 'sem alvo'};
+      return it.opcoes.map(function (o, k) {
+        var ft = f.tipos[o.tipo] || {}, alvo = esc(it.rotulo.toLowerCase()) + ' em ' + (nomeTipo[o.tipo] || o.tipo);
+        var lin = '<tr>' + (k === 0 ? '<td class="it" rowspan="' + it.opcoes.length + '">' + esc(it.rotulo) + '</td>' : '') +
+          '<td><span class="b-rng"><button type="button" class="b-chip" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" aria-pressed="' + !!ft.on + '">' + esc(o.rotulo) + '</button>';
+        if (o.tipo === 'sem') return lin + '</span></td><td class="b-dim">—</td></tr>';
+        return lin + '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="de" value="' + numTxt(ft.de) + '" aria-label="' + alvo + ', mínimo"><span class="b-dim">a</span>' +
+          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="ate" value="' + numTxt(ft.ate) + '" aria-label="' + alvo + ', máximo"></span></td>' +
+          '<td><input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="passo" value="' + numTxt(ft.passo) + '" aria-label="Passo do ' + alvo + '"></td></tr>';
+      }).join('');
     }
     h += '<span class="b-rng"><input class="b-inp w-s" data-it="' + it.nome + '" data-k="de" value="' + numTxt(f.de) + '" aria-label="' + esc(it.rotulo) + ', mínimo"><span class="b-dim">a</span><input class="b-inp w-s" data-it="' + it.nome + '" data-k="ate" value="' + numTxt(f.ate) + '" aria-label="' + esc(it.rotulo) + ', máximo"></span></td>';
     h += it.degrau === 'proporcional'

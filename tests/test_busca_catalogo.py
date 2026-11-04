@@ -60,10 +60,34 @@ def test_mes_stop_e_alvo_do_ativo_e_janela_ny():
     assert _por_nome("adx_direcao", "WIN$N")["janela"].padrao["de"] == "09:00"
 
 
-def test_timeframes_do_prototipo():
+def test_timeframes_espelham_o_motor():
+    """Todo tempo gráfico do motor entra na busca sozinho (escala): nenhuma
+    lista copiada à mão."""
+    from core.engine.execution import TIMEFRAMES as MOTOR
+
     tf = _por_nome("adx_direcao", "WIN$N")["timeframe"].padrao
-    assert tf["valores"] == ["M1", "M2", "M3", "M5", "M10", "M15", "M30", "H1"]
-    assert tf["ligados"] == ["M2", "M3", "M5", "M10", "M15", "M30"]
+    assert set(tf["valores"]) == set(MOTOR)
+    assert [MOTOR[t] for t in tf["valores"]] == sorted(MOTOR.values())
+    assert tf["ligados"] == [t for t in tf["valores"] if 2 <= MOTOR[t] <= 30]
+    assert {"M7", "M9", "M11", "M13", "M17", "M20", "H2", "H4"} <= set(tf["valores"])
+
+
+def test_tipos_de_stop_e_alvo_espelham_o_menu():
+    """Tipo novo de stop ou alvo no menu tem de entrar na busca também."""
+    from ui.components.catalogo import OPCOES
+
+    cat = _por_nome("adx_direcao", "WIN$N")
+    assert set(cat["stop"].padrao["tipos"]) == {v for _r, v in OPCOES["stop_tipo"]}
+    assert set(cat["alvo"].padrao["tipos"]) - {"sem"} == {v for _r, v in OPCOES["alvo_tipo"]}
+
+
+def test_faixas_largas_no_win():
+    cat = _por_nome("adx_direcao", "WIN$N")
+    st, al = cat["stop"].padrao["tipos"], cat["alvo"].padrao["tipos"]
+    assert (st["pontos"]["de"], st["pontos"]["ate"]) == (50, 2000)
+    assert (al["pontos"]["de"], al["pontos"]["ate"]) == (100, 4000)
+    assert (st["percentual"]["de"], st["percentual"]["ate"]) == (0.05, 1.5)
+    assert (al["percentual"]["de"], al["percentual"]["ate"]) == (0.1, 3.0)
 
 
 def test_valores_de_cada_tipo():
@@ -77,7 +101,7 @@ def test_valores_de_cada_tipo():
     dias = C.valores(cat["dias"], cat["dias"].padrao)
     assert len(dias) == 31 and (2, 3, 4) in dias and dias[0] == (1,)
     stop = C.valores(cat["stop"], cat["stop"].padrao)
-    assert stop["atr"][:3] == [0.5, 0.75, 1.0] and stop["atr"][-1] == 3.0
+    assert stop["atr"][:3] == [0.25, 0.5, 0.75] and stop["atr"][-1] == 6.0
 
 
 def test_faixa_decimal_nao_perde_o_ultimo_valor():

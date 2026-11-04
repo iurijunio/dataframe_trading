@@ -67,7 +67,8 @@ def test_sem_busca_a_tela_fica_parada_e_editavel():
     assert nomes[:6] == ["timeframe", "direcao", "janela", "dias", "stop", "alvo"]
     assert "di_periodo" in nomes
     tf = next(i for i in d["espaco"]["itens"] if i["nome"] == "timeframe")
-    assert [o["rotulo"] for o in tf["opcoes"]][-1] == "M60"     # o protótipo escreve M60
+    rotulos = [o["rotulo"] for o in tf["opcoes"]]          # em minutos, como o protótipo
+    assert {"M60", "M120", "M240"} <= set(rotulos) and rotulos[-1] == "M240"
     assert d["controle"] == {"nucleos": 20, "parar_as": "08:30",
                              "parar_as_ligado": True, "limite": None}
     assert d["salvas"] == []

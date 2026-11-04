@@ -21,6 +21,7 @@ import itertools
 from dataclasses import dataclass, field
 
 from core import ativo
+from core.engine.execution import TIMEFRAMES as _TF_MOTOR
 
 # Parâmetros de período: 250 e 251 dão quase o mesmo, então o degrau cresce
 # com o valor (desenho §4.4).
@@ -34,8 +35,10 @@ POR_ESTRATEGIA: dict[str, dict] = {
     "rompimento_canal": {"proporcional": ["periodo_canal"]},
 }
 
-TIMEFRAMES = ["M1", "M2", "M3", "M5", "M10", "M15", "M30", "H1"]
-TIMEFRAMES_LIGADOS = ["M2", "M3", "M5", "M10", "M15", "M30"]
+# Espelho do motor: todo tempo gráfico que o motor conhece entra aqui sozinho,
+# em ordem de duração. Marcados de saída: de 2 a 30 minutos.
+TIMEFRAMES = sorted(_TF_MOTOR, key=_TF_MOTOR.get)
+TIMEFRAMES_LIGADOS = [t for t in TIMEFRAMES if 2 <= _TF_MOTOR[t] <= 30]
 DIRECOES = ["compra", "venda", "ambas"]
 
 # A sessão de ENTRADAS que a busca percorre. Nos micros é o pregão diurno de
@@ -47,19 +50,21 @@ PASSO_JANELA = 30
 JANELA_MINIMA = 30
 
 # Stop e alvo em pontos do ativo sem `faixas` na ficha (o WIN), na escala dele.
+# Largos de propósito (decisão do usuário, 04/11/2026): a busca não testa
+# tudo, escolhe onde testar — faixa estreita só esconde trade bom de 1.200 pts.
 PONTOS_SEM_FAIXA = {
-    "stop_pontos": {"de": 100, "ate": 600, "passo": 50},
-    "alvo_pontos": {"de": 100, "ate": 1500, "passo": 100},
+    "stop_pontos": {"de": 50, "ate": 2000, "passo": 50},
+    "alvo_pontos": {"de": 100, "ate": 4000, "passo": 100},
 }
-# Múltiplos e porcentagens valem para qualquer ativo (protótipo B).
+# Múltiplos e porcentagens valem para qualquer ativo.
 STOP_TIPOS = {
-    "atr": {"on": True, "de": 0.5, "ate": 3.0, "passo": 0.25},
-    "percentual": {"on": True, "de": 0.10, "ate": 0.50, "passo": 0.05},
+    "atr": {"on": True, "de": 0.25, "ate": 6.0, "passo": 0.25},
+    "percentual": {"on": True, "de": 0.05, "ate": 1.50, "passo": 0.05},
 }
 ALVO_TIPOS = {
-    "multiplicador": {"on": True, "de": 1.0, "ate": 4.0, "passo": 0.5},
-    "atr": {"on": True, "de": 0.5, "ate": 5.0, "passo": 0.25},
-    "percentual": {"on": False, "de": 0.2, "ate": 1.0, "passo": 0.1},
+    "multiplicador": {"on": True, "de": 0.5, "ate": 6.0, "passo": 0.5},
+    "atr": {"on": True, "de": 0.5, "ate": 10.0, "passo": 0.25},
+    "percentual": {"on": False, "de": 0.10, "ate": 3.0, "passo": 0.10},
     # alvo em pontos = 0: o kernel trata como "sem alvo"
     "sem": {"on": False},
 }

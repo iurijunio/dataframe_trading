@@ -109,7 +109,7 @@ def test_casa_e_dimensoes(espaco):
 def test_dimensoes_configuraveis():
     esp = Espaco("adx_direcao", "WIN$N", fechamento="17:30",
                  dims_nicho=("timeframe", "di_periodo"))
-    assert esp.dims_arquivo()[0] == 6 and len(esp.dims_arquivo()) == 2
+    assert esp.dims_arquivo()[0] == len(C.TIMEFRAMES_LIGADOS) and len(esp.dims_arquivo()) == 2
 
 
 def test_genes_essenciais(espaco):
