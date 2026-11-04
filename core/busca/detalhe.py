@@ -206,7 +206,7 @@ def _espalhamento(esp, campeao: Combinacao, membros, faixas: dict | None):
             continue
         linha(esp.catalogo[n].rotulo, n, esp.params_vals[n],
               [dict(c.params)[n] for c in combos], dict(campeao.params)[n])
-    if campeao.stop_tipo in esp.stops:
+    if campeao.stop_tipo in esp.stops and campeao.stop_tipo != "sem":
         linha(f"Stop ({campeao.stop_tipo})", "_stop", esp.stops[campeao.stop_tipo],
               [c.stop_valor for c in combos if c.stop_tipo == campeao.stop_tipo],
               campeao.stop_valor)
@@ -323,11 +323,14 @@ def regiao_para_varredura(busca_id: int, casa_fina: str) -> dict:
         extra = [] if n == "saida" else vizinhos(esp.params_vals[n], v, DEGRAUS_PARAM)
         campos[n] = faixa([dict(x.params)[n] for x in combos] + extra,
                           schema[n].get("step") or 1, v)
-    pst = (esp.faixas.get("stop") or esp.catalogo["stop"].padrao)["tipos"]
-    campos[CAMPO_STOP[camp.stop_tipo]] = faixa(
-        [x.stop_valor for x in combos if x.stop_tipo == camp.stop_tipo]
-        + vizinhos(esp.stops[camp.stop_tipo], camp.stop_valor, DEGRAUS_GESTAO),
-        pst[camp.stop_tipo]["passo"], camp.stop_valor)
+    if camp.stop_tipo == "sem":
+        campos["stop_pontos"] = {"on": False, "valor": 0}
+    else:
+        pst = (esp.faixas.get("stop") or esp.catalogo["stop"].padrao)["tipos"]
+        campos[CAMPO_STOP[camp.stop_tipo]] = faixa(
+            [x.stop_valor for x in combos if x.stop_tipo == camp.stop_tipo]
+            + vizinhos(esp.stops[camp.stop_tipo], camp.stop_valor, DEGRAUS_GESTAO),
+            pst[camp.stop_tipo]["passo"], camp.stop_valor)
     if camp.alvo_tipo == "sem":
         campos["alvo_pontos"] = {"on": False, "valor": 0}
     else:
@@ -363,7 +366,7 @@ def regiao_para_varredura(busca_id: int, casa_fina: str) -> dict:
             "entrada_inicio": min((x.ini for x in mesmos), key=esp._motor),
             "entrada_fim": entrada_fim,
             "dias_semana": list(camp.dias), "direcao": camp.direcao,
-            "stop_tipo": camp.stop_tipo,
+            "stop_tipo": "pontos" if camp.stop_tipo == "sem" else camp.stop_tipo,
             "alvo_tipo": "pontos" if camp.alvo_tipo == "sem" else camp.alvo_tipo,
             "campos": campos, "simbolo": c["simbolo"], "estrategia": c["estrategia"]}
 

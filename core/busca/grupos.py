@@ -145,7 +145,7 @@ def _resumo_membros(membros: list[dict], esp: Espaco, lider: Combinacao) -> dict
         for n, v in c.params:
             if n != "saida":
                 vals[n].append(v)
-        if c.stop_tipo == lider.stop_tipo:
+        if c.stop_tipo == lider.stop_tipo and c.stop_tipo != "sem":
             vals["_stop"].append(c.stop_valor)
         if c.alvo_tipo == lider.alvo_tipo and c.alvo_tipo != "sem":
             vals["_alvo"].append(c.alvo_valor)

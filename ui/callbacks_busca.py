@@ -176,7 +176,7 @@ def _itens_espaco(estrategia: str, simbolo: str, faixas: dict,
             d["opcoes"] = [{"valor": v, "rotulo": projecao.DIAS[v]} for v in it.padrao["valores"]]
         elif it.tipo == "gestao":
             nomes = {"pontos": "pontos", "atr": "ATR", "percentual": "%",
-                     "multiplicador": "× stop", "sem": "sem alvo"}
+                     "multiplicador": "× stop", "sem": f"sem {it.nome}"}
             casas = {"pontos": None, "atr": 2, "percentual": 2, "multiplicador": 1}
             d["opcoes"] = [{"tipo": t, "rotulo": nomes[t], **ff}
                            for t, ff in f["tipos"].items()]
@@ -191,18 +191,19 @@ def _num_br(v) -> str:
 def _fixos(p, moeda: str = "", minerados=()) -> list[list[str]]:
     """O que vale igual para todas as combinações (bloco "Fixos"). Busca nova
     varre a camada 4 quase inteira: fixos só os custos e o que fica fora da
-    busca (stop móvel e trailing, `catalogo.FORA_DA_BUSCA`)."""
+    busca (`catalogo.FORA_DA_BUSCA`: ADX, sem entradas, stop móvel, trailing)."""
     custos = ["Custos", f"{moeda} {_num_br(p.corretagem_por_contrato + p.emolumentos_por_contrato)}"
               f" + {p.slippage_ticks} tick{'s' if p.slippage_ticks != 1 else ''}".strip()]
     movel = ["Stop móvel", f"{p.step_gatilho_pct:g}% / {p.step_distancia_pct:g}%"
              if p.step_gatilho_pct else "desligado"]
-    if minerados:
-        return [movel, ["Trailing", f"{p.trailing_pontos} pts" if p.trailing_pontos
-                        else "desligado"], custos]
     adx = ("—" if not (int(p.adx_periodo or 0) and int(p.adx_limiar or 0))
            else f"{'tendência' if p.filtro_adx == 'tendencia' else 'rango'} "
                 f"{p.adx_periodo}/{p.adx_limiar}")
     sem = ", ".join(h[:2] + "h" for h in (p.sem_entrada1, p.sem_entrada2, p.sem_entrada3) if h) or "—"
+    if minerados:
+        return [["Filtro de mercado", adx], ["Sem entradas", sem], movel,
+                ["Trailing", f"{p.trailing_pontos} pts" if p.trailing_pontos
+                 else "desligado"], custos]
     lim = [f"ganho {p.limite_ganho_contrato:g}" if p.limite_ganho_contrato else "",
            f"perda {p.limite_perda_contrato:g}" if p.limite_perda_contrato else "",
            f"{p.max_trades_dia} op." if p.max_trades_dia else "",

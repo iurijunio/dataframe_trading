@@ -5,8 +5,14 @@ import pytest
 from core.busca import catalogo as C
 
 
-def _por_nome(estrategia, simbolo):
-    return {i.nome: i for i in C.montar_catalogo(estrategia, simbolo)}
+def _por_nome(estrategia, simbolo, com_fora_da_busca=False):
+    return {i.nome: i for i in C.montar_catalogo(estrategia, simbolo,
+                                                 com_fora_da_busca=com_fora_da_busca)}
+
+
+def _antigo(estrategia, simbolo):
+    """O catálogo com o que saiu da busca: as buscas antigas reabrem com ele."""
+    return _por_nome(estrategia, simbolo, com_fora_da_busca=True)
 
 
 def test_degraus_proporcionais():
@@ -94,7 +100,7 @@ def test_tipos_de_stop_e_alvo_espelham_o_menu():
     from ui.components.catalogo import OPCOES
 
     cat = _por_nome("adx_direcao", "WIN$N")
-    assert set(cat["stop"].padrao["tipos"]) == {v for _r, v in OPCOES["stop_tipo"]}
+    assert set(cat["stop"].padrao["tipos"]) - {"sem"} == {v for _r, v in OPCOES["stop_tipo"]}
     assert set(cat["alvo"].padrao["tipos"]) - {"sem"} == {v for _r, v in OPCOES["alvo_tipo"]}
 
 
@@ -182,7 +188,7 @@ def test_todo_campo_do_motor_esta_classificado():
 
 
 def test_extras_incluem_o_desligado():
-    cat = _por_nome("adx_direcao", "WIN$N")
+    cat = _antigo("adx_direcao", "WIN$N")
     for nome in ("max_barras", "adx_periodo", "adx_limiar", "breakeven_pct",
                  "limite_perda_contrato",
                  "max_trades_dia"):
@@ -235,21 +241,34 @@ def test_canonico_prejuizos_e_ordem_das_horas():
 
 
 def test_sem_entrada_vai_ate_a_hora_do_fechamento():
-    cat = _por_nome("adx_direcao", "WIN$N")
+    cat = _antigo("adx_direcao", "WIN$N")
     assert cat["sem_entrada1"].padrao["valores"][-1] == "17:00"
 
 
 def test_sem_entradas_e_regua_do_adx_comecam_desmarcados():
     """Nenhum chip marcado de saída: o recurso fica desligado (04/11/2026)."""
-    cat = _por_nome("adx_direcao", "WIN$N")
+    cat = _antigo("adx_direcao", "WIN$N")
     for nome in ("sem_entrada1", "sem_entrada2", "sem_entrada3", "filtro_adx"):
         assert cat[nome].padrao["ligados"] == [], nome
         assert C.valores(cat[nome], cat[nome].padrao) == [], nome
 
 
-def test_stop_movel_e_trailing_ficam_fora_da_busca():
-    assert C.FORA_DA_BUSCA == {"step_gatilho_pct", "step_distancia_pct", "trailing_pontos"}
+def test_adx_sem_entradas_stop_movel_e_trailing_ficam_fora_da_busca():
+    """A pedido do usuário (04/11/2026): valem o do menu, no bloco Fixos."""
+    assert C.FORA_DA_BUSCA == {"step_gatilho_pct", "step_distancia_pct", "trailing_pontos",
+                               "sem_entrada1", "sem_entrada2", "sem_entrada3",
+                               "filtro_adx", "adx_periodo", "adx_limiar",
+                               "adx_filtro_di", "adx_subindo"}
     assert not (C.FORA_DA_BUSCA & set(_por_nome("adx_direcao", "WIN$N")))
+    assert C.FORA_DA_BUSCA <= set(_antigo("adx_direcao", "WIN$N"))
+
+
+def test_sem_stop_entra_como_tipo_desligado():
+    """Sem stop = stop em pontos 0 no motor, igual ao "sem alvo"."""
+    cat = _por_nome("reversao_rsi", "WIN$N")
+    assert cat["stop"].padrao["tipos"]["sem"] == {"on": False}
+    faixa = {"tipos": {"sem": {"on": True}}}
+    assert C.valores(cat["stop"], faixa) == {"sem": [0]}
 
 
 def test_periodo_do_atr_anda_pelo_passo():
@@ -264,3 +283,13 @@ def test_periodo_do_atr_sem_passo_continua_proporcional():
     prop = C.degraus_proporcionais(5, 60)
     assert C.periodos_atr({"periodo": {"de": 5, "ate": 60}}) == prop
     assert C.periodos_atr({"periodo": {"de": 5, "ate": 60, "passo": None}}) == prop
+
+
+def test_zero_a_zero_deixa_o_recurso_desligado_na_busca():
+    """De "Breakeven" a "Máx. prejuízos": faixa 0 a 0 = só o desligado, e o
+    motor lê 0 como desligado em todos (kernel: `> 0` antes de agir)."""
+    cat = _por_nome("reversao_rsi", "WIN$N")
+    for nome in ("breakeven_pct", "limite_ganho_contrato", "limite_perda_contrato",
+                 "max_trades_dia", "max_prejuizos_dia"):
+        it = cat[nome]
+        assert C.valores(it, {**it.padrao, "de": 0, "ate": 0}) in ([0], [0.0]), nome

@@ -66,6 +66,9 @@ ATR_PERIODO = {"de": 5, "ate": 60, "passo": 5}
 STOP_TIPOS = {
     "atr": {"on": True, "de": 0.25, "ate": 6.0, "passo": 0.25, "periodo": dict(ATR_PERIODO)},
     "percentual": {"on": True, "de": 0.05, "ate": 1.50, "passo": 0.05},
+    # stop em pontos = 0: o kernel trata como "sem stop" (sai pela saída da
+    # estratégia, tempo máximo ou fechamento)
+    "sem": {"on": False},
 }
 ALVO_TIPOS = {
     "multiplicador": {"on": True, "de": 0.5, "ate": 6.0, "passo": 0.5},
@@ -91,7 +94,10 @@ NAO_MINERAVEIS = {"corretagem_por_contrato", "emolumentos_por_contrato", "slippa
 # (`perfil_base`) e aparecem no bloco "Fixos". Buscas criadas antes disso os
 # varriam e reabrem com eles (`Espaco.de_json`), por isso `_extras` ainda os
 # declara.
-FORA_DA_BUSCA = {"step_gatilho_pct", "step_distancia_pct", "trailing_pontos"}
+# "Sem entradas" e o filtro ADX saíram em 04/11/2026, também a pedido.
+FORA_DA_BUSCA = {"step_gatilho_pct", "step_distancia_pct", "trailing_pontos",
+                 "sem_entrada1", "sem_entrada2", "sem_entrada3", "filtro_adx",
+                 "adx_periodo", "adx_limiar", "adx_filtro_di", "adx_subindo"}
 
 
 @dataclass(frozen=True)

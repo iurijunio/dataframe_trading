@@ -171,10 +171,7 @@ def test_extras_viram_perfil_e_fechamento_depois_das_entradas(espaco):
         e = dict(c.extras)
         assert set(e) == set(espaco.nomes_extras)
         assert p.fechamento >= p.entrada_fim                    # WIN: mesma ordem
-        assert (p.max_barras, p.breakeven_pct, p.adx_periodo) == \
-            (e["max_barras"], e["breakeven_pct"], e["adx_periodo"])
-        if not (p.adx_periodo and p.adx_limiar):
-            assert (p.adx_periodo, p.adx_limiar) == (0, 0)
+        assert (p.max_barras, p.breakeven_pct) == (e["max_barras"], e["breakeven_pct"])
 
 
 def test_busca_antiga_reabre_sem_extras(espaco):
@@ -199,7 +196,36 @@ def test_fechamento_invalido_sai_da_faixa():
 ADX = ("adx_periodo", "adx_limiar", "adx_filtro_di", "adx_subindo")
 
 
-def test_padrao_sem_entradas_e_adx_desligados(espaco):
+def test_busca_nova_sem_adx_nem_sem_entradas(espaco):
+    """Saíram da busca (04/11/2026): valem o do menu."""
+    fora = {"sem_entrada1", "sem_entrada2", "sem_entrada3", "filtro_adx", *ADX}
+    assert not (fora & set(espaco.nomes_extras))
+    base = {**PERFIL_BASE, "adx_periodo": 14, "adx_limiar": 20, "sem_entrada1": "10:00"}
+    for x in np.random.default_rng(23).random((100, espaco.n_genes)):
+        p = espaco.perfil(espaco.decodificar(x), base)
+        assert (p.adx_periodo, p.adx_limiar, p.sem_entrada1) == (14, 20, "10:00")
+
+
+def test_sem_stop_vira_stop_zero():
+    esp = Espaco("reversao_rsi", "WIN$N", fechamento="17:30",
+                 faixas={"stop": {"tipos": {"sem": {"on": True}}}})
+    assert esp.stops == {"sem": [0]}
+    for x in np.random.default_rng(24).random((50, esp.n_genes)):
+        c = esp.decodificar(x)
+        p = esp.perfil(c, PERFIL_BASE)
+        assert c.stop_tipo == "sem" and (p.stop_tipo, p.stop_pontos) == ("pontos", 0)
+        assert Combinacao.de_chave(c.chave()) == c
+
+
+def _antigo(**kw):
+    """Busca gravada quando o ADX e "sem entradas" ainda eram varridos."""
+    from core.busca.espaco import EXTRAS_04_11
+    return Espaco("adx_direcao", "WIN$N", fechamento="17:30",
+                  nomes_extras=list(EXTRAS_04_11), **kw)
+
+
+def test_padrao_sem_entradas_e_adx_desligados():
+    espaco = _antigo()
     v = espaco.extras_vals
     for n in ("sem_entrada1", "sem_entrada2", "sem_entrada3"):
         assert v[n] == [""], n
@@ -213,8 +239,7 @@ def test_padrao_sem_entradas_e_adx_desligados(espaco):
 
 
 def test_regua_desmarcada_ignora_as_faixas_do_adx():
-    esp = Espaco("adx_direcao", "WIN$N", fechamento="17:30",
-                 faixas={"filtro_adx": {"ligados": []},
+    esp = _antigo(faixas={"filtro_adx": {"ligados": []},
                          "adx_periodo": {"de": 5, "ate": 30, "passo": 1},
                          "adx_limiar": {"de": 10, "ate": 40, "passo": 5},
                          "adx_filtro_di": {"ligados": [0, 1]}})
@@ -223,15 +248,13 @@ def test_regua_desmarcada_ignora_as_faixas_do_adx():
 
 
 def test_regua_marcada_varre_o_adx():
-    esp = Espaco("adx_direcao", "WIN$N", fechamento="17:30",
-                 faixas={"filtro_adx": {"ligados": ["rango"]}})
+    esp = _antigo(faixas={"filtro_adx": {"ligados": ["rango"]}})
     assert esp.extras_vals["filtro_adx"] == ["rango"]
     assert 0 in esp.extras_vals["adx_periodo"] and len(esp.extras_vals["adx_periodo"]) > 1
 
 
 def test_sem_entrada_marcada_varre_as_horas():
-    esp = Espaco("adx_direcao", "WIN$N", fechamento="17:30",
-                 faixas={"sem_entrada1": {"ligados": ["", "10:00"]}})
+    esp = _antigo(faixas={"sem_entrada1": {"ligados": ["", "10:00"]}})
     assert esp.extras_vals["sem_entrada1"] == ["", "10:00"]
 
 
@@ -257,6 +280,6 @@ def test_busca_de_hoje_cedo_reabre_com_stop_movel_e_trailing(espaco):
     antigo = {k: v for k, v in espaco.para_json().items() if k != "nomes_extras"}
     velho = Espaco.de_json(antigo)
     assert C.FORA_DA_BUSCA <= set(velho.nomes_extras)
-    assert velho.n_genes == espaco.n_genes + 3
+    assert velho.n_genes == espaco.n_genes + len(C.FORA_DA_BUSCA)
     c = velho.decodificar(np.full(velho.n_genes, 0.6))
     assert "trailing_pontos" in dict(c.extras) and Combinacao.de_chave(c.chave()) == c

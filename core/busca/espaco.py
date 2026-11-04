@@ -276,7 +276,8 @@ class Espaco:
         `perfil_base`, que é o menu no momento de iniciar."""
         p = {**perfil_base, "timeframe": c.timeframe, "entrada_inicio": c.ini,
              "entrada_fim": c.fim, "dias_semana": tuple(c.dias), "direcao": c.direcao,
-             "stop_tipo": c.stop_tipo, CAMPO_STOP[c.stop_tipo]: c.stop_valor}
+             **({"stop_tipo": "pontos", "stop_pontos": 0} if c.stop_tipo == "sem"
+                else {"stop_tipo": c.stop_tipo, CAMPO_STOP[c.stop_tipo]: c.stop_valor})}
         if c.alvo_tipo == "sem":
             p.update(alvo_tipo="pontos", alvo_pontos=0)
         else:

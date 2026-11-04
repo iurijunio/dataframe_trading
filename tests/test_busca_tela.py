@@ -258,7 +258,7 @@ def test_com_uma_busca_real_os_mapas_vao_inteiros():
 def test_fixos_da_busca_nova_mostram_stop_movel_e_trailing():
     p = ExecutionProfile(step_gatilho_pct=40, step_distancia_pct=10, trailing_pontos=150)
     f = dict(CB._fixos(p, "R$", True))
-    assert set(f) == {"Custos", "Stop móvel", "Trailing"}
+    assert set(f) == {"Filtro de mercado", "Sem entradas", "Custos", "Stop móvel", "Trailing"}
     assert f["Stop móvel"] == "40% / 10%" and f["Trailing"] == "150 pts"
     f = dict(CB._fixos(ExecutionProfile(), "R$", True))
     assert f["Stop móvel"] == "desligado" and f["Trailing"] == "desligado"

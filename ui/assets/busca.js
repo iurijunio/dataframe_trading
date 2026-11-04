@@ -361,7 +361,7 @@
     }
     if (it.tipo === 'gestao') {
       // uma linha por tipo: liga/desliga o tipo e edita de, até e passo
-      var nomeTipo = {pontos: 'pontos', atr: 'ATR', percentual: 'porcentagem', multiplicador: 'vezes o stop', sem: 'sem alvo'};
+      var nomeTipo = {pontos: 'pontos', atr: 'ATR', percentual: 'porcentagem', multiplicador: 'vezes o stop', sem: 'sem ' + it.nome};
       return it.opcoes.map(function (o, k) {
         var ft = f.tipos[o.tipo] || {}, alvo = esc(it.rotulo.toLowerCase()) + ' em ' + (nomeTipo[o.tipo] || o.tipo);
         var lin = '<tr>' + (k === 0 ? '<td class="it" rowspan="' + it.opcoes.length + '">' + esc(it.rotulo) + '</td>' : '') +
