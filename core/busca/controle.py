@@ -1,0 +1,157 @@
+"""O que o app chama para mandar na busca. Nada aqui roda a busca: abre o
+processo `busca.py`, escreve `controle.json` e lê `estado.json` + banco.
+
+Vivo = a trava `rodando.lock` está presa. É trava do Windows (como a da
+captura): se o processo morre, o sistema solta sozinho. Nunca pid: no
+Windows `os.kill(pid, 0)` MATA o processo, e o pid do `Popen` é o do
+lançador do venv, não o da busca.
+
+Uma busca viva por vez (desenho §5): duas buscas dividiriam os núcleos que o
+usuário escolheu e o banco da busca teria dois escritores.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+from core import db_manager as db
+
+from . import banco
+from .motor import CONTROLE_PADRAO, escrever_json, ler_controle, ler_json
+
+RAIZ = Path(__file__).resolve().parents[2]
+ROTEIRO = RAIZ / "busca.py"
+
+CREATE_NO_WINDOW = 0x08000000
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+FLAGS = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | BELOW_NORMAL_PRIORITY_CLASS
+
+
+class BuscaJaRodando(RuntimeError):
+    pass
+
+
+class BuscaViva(RuntimeError):
+    pass
+
+
+def travar(caminho: Path):
+    """Mesma trava da captura (`captura.travar`): devolve o arquivo travado
+    (guarde-o pela vida do processo) ou None se outro já tem."""
+    import msvcrt
+
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    f = open(caminho, "a+")
+    try:
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        return f
+    except OSError:
+        f.close()
+        return None
+
+
+def soltar(f) -> None:
+    import msvcrt
+
+    try:
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+    finally:
+        f.close()
+
+
+def _trava() -> Path:
+    return banco.PASTA / "rodando.lock"
+
+
+def ativa() -> int | None:
+    """O id da busca com processo vivo, ou None."""
+    f = travar(_trava())
+    if f is not None:
+        soltar(f)
+        return None
+    info = ler_json(banco.PASTA / "rodando.json")
+    return info.get("busca_id")
+
+
+def _caminho_controle(busca_id: int) -> Path:
+    return banco.pasta_da(busca_id) / "controle.json"
+
+
+def ajustar(busca_id: int, **campos) -> None:
+    """Muda núcleos, "Parar às", limite ou pedido — vale no próximo lote."""
+    atual = ler_controle(banco.pasta_da(busca_id))
+    escrever_json(_caminho_controle(busca_id), {**atual, **campos})
+
+
+def _abrir(busca_id: int) -> None:
+    pasta = banco.pasta_da(busca_id)
+    pasta.mkdir(parents=True, exist_ok=True)
+    log = open(pasta / "processo.log", "a", encoding="utf-8")
+    subprocess.Popen(
+        [sys.executable, str(ROTEIRO), str(busca_id), "--pasta", str(banco.PASTA),
+         "--banco", str(banco.CAMINHO), "--db-principal", str(db.DB_PATH)],
+        cwd=str(RAIZ), stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        creationflags=FLAGS if sys.platform == "win32" else 0, close_fds=True)
+    log.close()
+
+
+def iniciar(config: dict, **controle) -> int:
+    if ativa() is not None:
+        raise BuscaJaRodando("já existe uma busca rodando")
+    bid = banco.criar(config)
+    escrever_json(_caminho_controle(bid), {**CONTROLE_PADRAO, **controle})
+    _abrir(bid)
+    return bid
+
+
+def continuar(busca_id: int) -> None:
+    viva = ativa()
+    if viva == busca_id:            # pausada com o processo vivo
+        ajustar(busca_id, pedido=None)
+        return
+    if viva is not None:
+        raise BuscaJaRodando("outra busca está rodando")
+    ajustar(busca_id, pedido=None)  # parada, concluída ou interrompida
+    _abrir(busca_id)
+
+
+def pausar(busca_id: int) -> None:
+    ajustar(busca_id, pedido="pausar")
+
+
+def parar(busca_id: int) -> None:
+    """"Parar e guardar". Sem processo (interrompida ou pausada que caiu),
+    só marca como concluída: o que foi testado já está no banco."""
+    if ativa() == busca_id:
+        ajustar(busca_id, pedido="parar")
+    else:
+        ajustar(busca_id, pedido=None)
+        banco.marcar_status(busca_id, "concluida")
+
+
+def ler(busca_id: int) -> dict:
+    """Estado para a tela. "interrompida" = o banco diz rodando/pausada e a
+    trava está solta (o processo morreu: PC desligou, janela fechada)."""
+    pasta = banco.pasta_da(busca_id)
+    estado = ler_json(pasta / "estado.json")
+    try:
+        b = banco.ler_busca(busca_id)
+    except banco.BancoOcupado:
+        b = None
+    status = (b or {}).get("status") or estado.get("status") or "parada"
+    vivo = ativa() == busca_id
+    if status in ("rodando", "pausada") and not vivo:
+        status = "interrompida"
+    return {**estado, "status": status, "vivo": vivo,
+            "controle": ler_controle(pasta), "busca": b}
+
+
+def excluir(busca_id: int) -> None:
+    if ativa() == busca_id:
+        raise BuscaViva("a busca está rodando; pare antes de excluir")
+    banco.excluir(busca_id)
