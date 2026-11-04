@@ -157,7 +157,11 @@ def valores(item: Item, faixa: dict):
     """A lista que a busca percorre para `item` com a `faixa` da tela.
 
     Gestão (stop/alvo) devolve {tipo: [valores]} só dos tipos ligados.
+    Interruptor "Minerar" desligado (`minerar: False`): lista vazia, que o
+    `Espaco` lê como "recurso desligado" (ou o fechamento do menu).
     """
+    if faixa.get("minerar") is False:
+        return []
     if item.tipo == "lista":
         ligados = faixa.get("ligados", item.padrao.get("ligados", item.padrao["valores"]))
         return [v for v in item.padrao["valores"] if v in ligados]

@@ -283,3 +283,18 @@ def test_busca_de_hoje_cedo_reabre_com_stop_movel_e_trailing(espaco):
     assert velho.n_genes == espaco.n_genes + len(C.FORA_DA_BUSCA)
     c = velho.decodificar(np.full(velho.n_genes, 0.6))
     assert "trailing_pontos" in dict(c.extras) and Combinacao.de_chave(c.chave()) == c
+
+
+def test_minerar_desligado_fixa_no_desligado_e_fechamento_no_menu():
+    """Interruptor "Minerar" da aba Espaço de busca: desligado, o extra fica
+    em 0 (desligado no motor) e o fechamento fica o do menu."""
+    esp = Espaco("reversao_rsi", "WIN$N", fechamento="17:30",
+                 faixas={"breakeven_pct": {"minerar": False, "de": 0.0, "ate": 100.0, "passo": 10.0},
+                         "max_trades_dia": {"minerar": False, "de": 0, "ate": 10, "passo": 1},
+                         "fechamento": {"minerar": False, "de": "09:00", "ate": "17:30", "passo": 30}})
+    assert esp.extras_vals["breakeven_pct"] == [0.0]
+    assert esp.extras_vals["max_trades_dia"] == [0]
+    assert esp.extras_vals["fechamento"] == ["17:30"]
+    ligado = Espaco("reversao_rsi", "WIN$N", fechamento="17:30",
+                    faixas={"max_trades_dia": {"minerar": True, "de": 0, "ate": 3, "passo": 1}})
+    assert ligado.extras_vals["max_trades_dia"] == [0, 1, 2, 3]

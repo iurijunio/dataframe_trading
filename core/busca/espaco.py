@@ -144,6 +144,8 @@ class Espaco:
             vals = lista(n)
             if not vals:        # nada marcado = recurso desligado
                 off = C.desligado(self.catalogo[n])
+                if off is None and n == "fechamento" and fechamento:
+                    off = fechamento        # "Minerar" desligado: o do menu
                 if off is None:
                     raise ValueError(f"nada para varrer em {n}")
                 vals = [off]

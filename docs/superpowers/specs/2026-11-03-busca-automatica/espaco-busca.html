@@ -1,0 +1,665 @@
+<div class="esp-root" id="esp-root">
+<style>
+  .esp-root{--ground:#000;--surface:#0A0A0B;--surface-2:#111113;--surface-3:#18181B;--ink:#E7E7EA;--ink-2:#C4C4CA;--muted:#8B8B93;--line:#232326;--line-soft:#1C1C20;--accent:#22E4FF;--pos:#00F5A0;--neg:#FF4D7D;--warn:#FFC93C;--info:#7AA7FF;--mono:"JetBrains Mono",ui-monospace,Consolas,monospace;--sans:"Poppins",system-ui,"Segoe UI",Arial,sans-serif;max-width:1280px;margin:0 auto;font:12.5px/1.4 var(--mono);color:var(--ink-2);background:#050506;padding:14px;border-radius:10px}
+  .esp-root *,.esp-root *::before,.esp-root *::after{box-sizing:border-box}
+  .esp-root [hidden]{display:none!important}
+  .esp-root button,.esp-root input,.esp-root select{font:inherit}
+  .esp-root :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .esp-sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:-1px;padding:0;border:0}
+  .esp-dim{color:var(--muted)}
+  @media (prefers-reduced-motion:reduce){.esp-root *{transition:none!important;animation:none!important}}
+
+  /* ---------- fora da moldura ---------- */
+  .esp-sim{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center;margin:0 0 12px;padding:8px 12px;border:1px dashed #3a3a42;border-radius:6px;color:#9a9aa2;font:12px/1.3 var(--sans)}
+  .esp-sim .g{display:flex;gap:4px;align-items:center}
+  .esp-sim .g>span{margin-right:6px}
+  .esp-sim button{background:#141418;color:#bdbdc4;border:1px solid #2c2c33;border-radius:4px;padding:4px 12px;cursor:pointer;min-height:30px;font:12px var(--sans)}
+  .esp-sim button:hover{color:#fff}
+  .esp-sim button[aria-pressed="true"]{border-color:#9a9aa2;color:#fff;background:#24242a}
+  .esp-notes{color:#8f8f97;font:12.5px/1.55 var(--sans);margin:14px 0 0;padding-left:18px;max-width:900px}
+  .esp-notes li{margin-bottom:4px}
+  .esp-notes b{color:#c9c9cf;font-weight:600}
+
+  /* ---------- moldura do app ---------- */
+  .esp-frame{background:var(--ground);border:1px solid var(--line);border-radius:8px}
+  .esp-top{display:flex;align-items:center;gap:16px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface);border-radius:8px 8px 0 0}
+  .esp-brand{font-weight:800;color:#fff;font-size:14px}
+  .esp-nav{display:flex;gap:2px}
+  .esp-nav span{padding:6px 10px;border-radius:5px;color:#a3a3ab}
+  .esp-nav span[aria-current]{background:var(--accent);color:#000;font-weight:700}
+  .esp-body{display:flex;min-height:640px}
+  .esp-side{width:168px;flex:none;border-right:1px solid var(--line);background:var(--surface);padding:12px;font-size:11.5px;border-radius:0 0 0 8px}
+  .esp-side .l{display:block;color:var(--muted);font-size:11px;margin:10px 0 3px}
+  .esp-side .v{display:block;border:1px solid #2a2a30;border-radius:4px;padding:6px 8px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .esp-main{flex:1;min-width:0;padding:12px 16px 20px}
+  .esp-subnav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .esp-subnav span{padding:8px 14px;color:var(--muted)}
+  .esp-subnav span[aria-current]{color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent);font-weight:600}
+  .esp-tabs{display:inline-flex;border:1px solid #2c2c33;border-radius:6px;overflow:hidden;margin-bottom:14px}
+  .esp-tabs span{display:inline-flex;align-items:center;gap:6px;border-right:1px solid #2c2c33;color:var(--muted);padding:0 16px;height:32px}
+  .esp-tabs span:last-child{border-right:0}
+  .esp-tabs span[aria-current]{background:rgba(34,228,255,.12);color:var(--accent);font-weight:700}
+
+  /* comuns */
+  .esp-inp,.esp-dd{background:#000;border:1px solid #5a5a62;border-radius:4px;color:var(--ink);padding:0 6px;height:30px;min-width:0;color-scheme:dark}
+  .esp-inp{width:64px;text-align:center;font-variant-numeric:tabular-nums}
+  .esp-inp.w-t{width:66px}.esp-inp.w-s{width:52px}
+  .esp-dd{appearance:none;-webkit-appearance:none;padding-right:24px;background-image:linear-gradient(45deg,transparent 50%,#8B8B93 50%),linear-gradient(135deg,#8B8B93 50%,transparent 50%);background-position:calc(100% - 12px) 13px,calc(100% - 8px) 13px;background-size:4px 4px;background-repeat:no-repeat}
+  .esp-inp:disabled,.esp-dd:disabled{color:#7a7a82;border-color:#26262b;cursor:not-allowed}
+  .esp-inp[aria-invalid="true"]{border-color:var(--neg)}
+  .esp-q{position:relative;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;border:1px solid #4a4a52;background:transparent;color:var(--muted);font-size:10px;line-height:1;cursor:help;padding:0;margin-left:6px;vertical-align:middle;flex:none}
+  .esp-q:hover,.esp-q:focus-visible{color:var(--ink);border-color:var(--muted)}
+  .esp-q::after{content:attr(data-tip);position:absolute;left:50%;top:calc(100% + 7px);transform:translateX(-50%);width:260px;padding:8px 10px;background:#1c1c21;border:1px solid #34343c;border-radius:5px;color:var(--ink);font:12px/1.45 var(--sans);text-align:left;white-space:normal;z-index:60;opacity:0;pointer-events:none;transition:opacity .12s;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+  .esp-q.r::after{left:auto;right:-4px;transform:none}
+  .esp-q.l::after{left:-4px;transform:none}
+  .esp-q:hover::after,.esp-q:focus-visible::after{opacity:1}
+  .esp-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:14px;border:1px solid #5a5a62;background:#0d0d10;color:#a3a3ab;cursor:pointer;font-size:11.5px;white-space:nowrap}
+  .esp-chip:hover:not(:disabled){color:var(--ink);border-color:#7a7a82}
+  .esp-chip[aria-pressed="true"]{background:rgba(34,228,255,.1);border-color:rgba(34,228,255,.7);color:var(--accent)}
+  .esp-chip:disabled{cursor:not-allowed;opacity:.55}
+  .esp-chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+  .esp-pill{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:11px;font-size:11px;font-weight:600;border:1px solid;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .esp-pill.gray{color:#a9a9b1;border-color:#3a3a42;background:#141417}
+  .esp-pill.green{color:var(--pos);border-color:rgba(0,245,160,.45);background:rgba(0,245,160,.08)}
+  .esp-pill.amber{color:var(--warn);border-color:rgba(255,201,60,.45);background:rgba(255,201,60,.08)}
+  .esp-pill.rose{color:var(--neg);border-color:rgba(255,77,125,.5);background:rgba(255,77,125,.08)}
+  .esp-pill.lg{height:30px;padding:0 14px;font-size:13px;border-radius:15px;font-weight:700}
+  .esp-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 14px;border-radius:5px;border:1px solid transparent;cursor:pointer;font-weight:700;white-space:nowrap;color:var(--ink);width:100%}
+  .esp-btn svg{width:12px;height:12px}
+  .esp-btn.main{background:var(--accent);color:#000}
+  .esp-btn.ghost{background:transparent;border-color:#34343b;color:var(--ink-2);font-weight:500}
+  .esp-btn.ghost:hover:not(:disabled){border-color:var(--muted);color:#fff}
+  .esp-btn.warn{background:transparent;border-color:rgba(255,201,60,.6);color:var(--warn)}
+  .esp-btn.neg{background:transparent;border-color:rgba(255,77,125,.6);color:var(--neg)}
+  .esp-btn:disabled{background:transparent;border-color:#26262b;color:#55555c;cursor:not-allowed}
+  .esp-btn.sm{height:28px;padding:0 10px;font-size:11.5px;width:auto}
+  .esp-blk{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:6px;padding:11px 13px;min-width:0}
+  .esp-blk h3{margin:0 0 9px;font-size:12px;color:var(--ink-2);font-weight:600;display:flex;align-items:center}
+  .esp-fl{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
+  .esp-fl label{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}
+  .esp-kv{display:grid;grid-template-columns:repeat(3,auto);gap:6px 18px;font-size:11.5px}
+  .esp-kv span{display:block;color:var(--muted);font-size:10.5px}
+  .esp-kv b{color:var(--ink);font-weight:500}
+
+  /* ---------- barra direita ---------- */
+  .esp-rail{width:280px;flex:none;border-left:1px solid var(--line);background:var(--surface);padding:14px;border-radius:0 0 8px 0;display:flex;flex-direction:column;gap:14px}
+  .esp-rsec{border-bottom:1px solid var(--line-soft);padding-bottom:14px}
+  .esp-rsec:last-child{border-bottom:0}
+  .esp-rsec h3{margin:0 0 9px;font-size:12px;color:var(--ink-2);font-weight:600}
+  .esp-acts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .esp-acts .full{grid-column:1/-1}
+  .esp-rrow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .esp-rrow label{flex:1}
+  .esp-saved{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:11.5px}
+  .esp-saved li{display:flex;justify-content:space-between;gap:8px}
+  .esp-saved li span:last-child{color:var(--muted)}
+  .esp-when{color:var(--muted);font-size:11.5px;margin-top:6px}
+
+  /* ---------- HOJE ---------- */
+  .esp-top2{display:grid;grid-template-columns:1fr 1.5fr;gap:10px;margin-bottom:10px}
+  table.esp-t{width:100%;border-collapse:collapse;font-size:12px}
+  .esp-t th{color:var(--muted);font-weight:500;text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);font-size:11px;white-space:nowrap}
+  .esp-t td{padding:6px 9px;border-bottom:1px solid var(--line-soft);color:var(--ink-2);vertical-align:middle}
+  .esp-t .it{color:var(--ink)}
+  .esp-rng{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .esp-rng .esp-dim{font-size:11px}
+  .esp-cy{color:var(--accent)}
+
+  /* ---------- PROPOSTA ---------- */
+  .esp-lockbar{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+  /* régua de combinações: o elemento que se lembra */
+  .esp-ruler{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:6px;padding:12px 14px 12px;margin-bottom:10px}
+  .esp-rh{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .esp-rh .l{color:var(--muted);font-size:11.5px;display:inline-flex;align-items:center}
+  .esp-total{font-size:24px;font-weight:700;color:#fff;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .esp-total.bad{color:var(--neg);font-size:16px}
+  .esp-rh .esp-btn.sm{margin-left:auto}
+  .esp-bar{display:flex;gap:2px;height:30px;margin-top:10px;border-radius:4px;overflow:hidden}
+  .esp-seg{display:flex;align-items:center;gap:8px;min-width:46px;padding:0 9px;border:0;cursor:pointer;color:#000;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;transition:flex-grow .25s}
+  .esp-seg span{overflow:hidden;text-overflow:ellipsis}
+  .esp-seg b{margin-left:auto;font-weight:600;opacity:.8}
+  .esp-seg:focus-visible{outline-offset:-3px;outline-color:#fff}
+  .esp-seg.s0{background:#22E4FF}.esp-seg.s1{background:#17A9C0}.esp-seg.s2{background:#127A8C;color:#fff}.esp-seg.s3{background:#0E5562;color:#fff}
+  .esp-seg.err{background:repeating-linear-gradient(135deg,rgba(255,77,125,.25) 0 6px,rgba(255,77,125,.1) 6px 12px);color:var(--neg)}
+
+  .esp-cols{display:grid;grid-template-columns:44px 188px 1fr 104px;gap:0 12px;padding:0 14px 6px;color:var(--muted);font-size:11px}
+  .esp-cols span:last-child{text-align:right}
+
+  /* gavetas */
+  .esp-g{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:6px;margin-bottom:8px}
+  .esp-g h3{margin:0;font-size:inherit}
+  .esp-gb{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 14px;background:transparent;border:0;border-radius:6px;color:var(--ink);cursor:pointer;text-align:left}
+  .esp-gb:hover{background:var(--surface-3)}
+  .esp-gb svg{width:12px;height:12px;color:var(--muted);transition:transform .15s}
+  .esp-gb[aria-expanded="true"] svg{transform:rotate(90deg)}
+  .esp-gt{font-size:13.5px;font-weight:700;color:#fff;min-width:170px}
+  .esp-gs{color:var(--muted);font-size:11.5px}
+  .esp-gx{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600}
+  .esp-gx.bad{color:var(--neg)}
+  .esp-gp{border-top:1px solid var(--line-soft);padding:2px 0 4px}
+
+  /* linha de item: interruptor | rótulo | faixa | variações */
+  .esp-row{display:grid;grid-template-columns:44px 188px 1fr 104px;gap:0 12px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line-soft)}
+  .esp-row:last-child{border-bottom:0}
+  .esp-row.off .esp-lab{color:var(--muted)}
+  .esp-lab{display:flex;align-items:center;color:var(--ink);font-weight:500}
+  .esp-ctl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+  .esp-cnt{text-align:right}
+  .esp-fields{display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .esp-f{display:inline-flex;align-items:center;gap:5px}
+  .esp-f>span{color:var(--muted);font-size:11px}
+  .esp-un{color:var(--muted);font-size:11px;margin-left:2px}
+  .esp-prop{color:var(--accent);font-size:11.5px}
+  .esp-fix{color:var(--muted);font-size:11.5px}
+  .esp-err{flex-basis:100%;color:var(--neg);font:11.5px/1.3 var(--sans);margin-top:2px}
+  .esp-err:empty{display:none}
+  .esp-gap{width:10px}
+
+  /* interruptor minerar */
+  .esp-sw{position:relative;width:36px;height:20px;border-radius:10px;border:1px solid #5a5a62;background:#1a1a1f;cursor:pointer;padding:0;flex:none}
+  .esp-sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#8B8B93;transition:transform .15s}
+  .esp-sw[aria-checked="true"]{background:rgba(34,228,255,.18);border-color:rgba(34,228,255,.8)}
+  .esp-sw[aria-checked="true"]::after{transform:translateX(16px);background:var(--accent)}
+  .esp-sw:disabled{cursor:not-allowed;opacity:.5}
+  .esp-swwrap{display:flex;align-items:center;justify-content:flex-start;min-height:28px}
+
+  /* stop e alvo: blocos compactos por tipo */
+  .esp-row.gest{grid-template-rows:auto auto;row-gap:8px}
+  .esp-gtop{grid-column:3;display:flex;align-items:center;gap:6px}
+  .esp-cards{grid-column:2 / 5;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:start}
+  .esp-card{border:1px solid #2a2a30;border-radius:6px;padding:8px 10px 10px;background:#0c0c0e;min-width:0}
+  .esp-card.on{border-color:rgba(34,228,255,.35)}
+  .esp-card-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .esp-card-h .esp-chip{height:26px;padding:0 10px}
+  .esp-card-h .n{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:11.5px}
+  .esp-card:not(.on) .n{color:var(--muted)}
+  .esp-card-r{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .esp-card-r+.esp-card-r{margin-top:8px;padding-top:8px;border-top:1px dashed #26262b}
+  .esp-card-r label{display:flex;flex-direction:column;gap:3px;color:var(--muted);font-size:10.5px;min-width:0}
+  .esp-card-r .esp-inp{width:100%}
+  .esp-card-k{grid-column:1/-1;color:var(--muted);font-size:10.5px;margin-bottom:-2px}
+  .esp-card .esp-err{margin-top:6px}
+</style>
+
+<!-- ===================== fora da moldura ===================== -->
+<div class="esp-sim">
+  <div class="g" role="group" aria-label="Versão do rascunho"><span>Ver</span>
+    <button type="button" data-v="hoje" aria-pressed="false">Hoje</button>
+    <button type="button" data-v="prop" aria-pressed="true">Proposta</button>
+  </div>
+  <div class="g" role="group" aria-label="Simular estado da busca"><span>Busca</span>
+    <button type="button" data-st="parada" aria-pressed="true">Parada</button>
+    <button type="button" data-st="rodando" aria-pressed="false">Rodando</button>
+  </div>
+</div>
+
+<!-- ===================== moldura do app ===================== -->
+<div class="esp-frame">
+  <div class="esp-top">
+    <span class="esp-brand">Dataframe</span>
+    <span class="esp-nav"><span aria-current="page">Mineração</span><span>Walk-Forward</span><span>Candidata</span><span>Estratégias</span><span>Portfólio</span><span>Ao vivo</span></span>
+  </div>
+  <div class="esp-body">
+    <aside class="esp-side" aria-label="Menu da mineração">
+      <span class="l">Ativo</span><span class="v">WIN$N</span>
+      <span class="l">Estratégia</span><span class="v" title="Reversão à média (RSI curto)">Reversão à média (RSI curto)</span>
+      <span class="l">De</span><span class="v">02/01/2019</span>
+      <span class="l">Até</span><span class="v">31/10/2026</span>
+    </aside>
+
+    <section class="esp-main" aria-label="Busca automática">
+      <div class="esp-subnav"><span>Varredura</span><span aria-current="page">Busca automática</span><span>Backtest</span></div>
+      <div class="esp-tabs" aria-hidden="true"><span>Mapa</span><span>Lista</span><span aria-current="page">Espaço de busca</span></div>
+
+      <!-- ============ HOJE ============ -->
+      <section id="esp-hoje" aria-label="Espaço de busca, versão de hoje" hidden>
+        <div class="esp-lockbar esp-lockpill" hidden><span class="esp-pill gray">só leitura</span></div>
+        <div class="esp-top2">
+          <div class="esp-blk"><h3>Regras</h3>
+            <div class="esp-fl">
+              <div><label for="esp-h-meta">Meta</label><select id="esp-h-meta" class="esp-dd" style="width:200px"><option>Fator de recuperação</option><option>Profit factor</option></select></div>
+              <div><label for="esp-h-min">Mín. de trades</label><input id="esp-h-min" class="esp-inp" value="400"></div>
+            </div>
+          </div>
+          <div class="esp-blk"><h3>Fixos</h3>
+            <div class="esp-kv">
+              <div><span>Filtro de mercado</span><b>—</b></div><div><span>Sem entradas</span><b>—</b></div><div><span>Stop móvel</span><b>desligado</b></div>
+              <div><span>Trailing</span><b>desligado</b></div><div><span>Custos</span><b>R$ 0,25 + 1 tick</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="esp-blk" style="padding:2px 4px">
+          <table class="esp-t">
+            <thead><tr><th scope="col" style="width:190px">Item</th><th scope="col">Faixa</th><th scope="col" style="width:130px">Passo</th></tr></thead>
+            <tbody>
+              <tr><td class="it">Tempo gráfico</td><td><div class="esp-chips"><button type="button" class="esp-chip" aria-pressed="false">M1</button><button type="button" class="esp-chip" aria-pressed="true">M2</button><button type="button" class="esp-chip" aria-pressed="true">M3</button><button type="button" class="esp-chip" aria-pressed="true">M5</button><button type="button" class="esp-chip" aria-pressed="true">M10</button><button type="button" class="esp-chip" aria-pressed="true">M15</button><button type="button" class="esp-chip" aria-pressed="true">M30</button><button type="button" class="esp-chip" aria-pressed="false">M60</button></div></td><td class="esp-dim">—</td></tr>
+              <tr><td class="it">Direção</td><td><div class="esp-chips"><button type="button" class="esp-chip" aria-pressed="true">compra</button><button type="button" class="esp-chip" aria-pressed="true">venda</button><button type="button" class="esp-chip" aria-pressed="true">as duas</button></div></td><td class="esp-dim">—</td></tr>
+              <tr><td class="it">Horário de entrada</td><td><span class="esp-rng"><span class="esp-dim">de</span><input class="esp-inp w-t" value="09:00" aria-label="Horário de entrada, de"><span class="esp-dim">até</span><input class="esp-inp w-t" value="17:00" aria-label="Horário de entrada, até"></span></td><td><input class="esp-inp" value="30 min" aria-label="Passo do horário de entrada"></td></tr>
+              <tr><td class="it">Dias da semana</td><td><div class="esp-chips"><button type="button" class="esp-chip" aria-pressed="true">seg</button><button type="button" class="esp-chip" aria-pressed="true">ter</button><button type="button" class="esp-chip" aria-pressed="true">qua</button><button type="button" class="esp-chip" aria-pressed="true">qui</button><button type="button" class="esp-chip" aria-pressed="true">sex</button></div></td><td class="esp-dim">—</td></tr>
+              <tr><td class="it" rowspan="4">Stop</td><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="true">pontos</button><input class="esp-inp w-s" value="50" aria-label="stop em pontos, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="2000" aria-label="stop em pontos, máximo"></span></td><td><input class="esp-inp w-s" value="50" aria-label="Passo do stop em pontos"></td></tr>
+              <tr><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="true">ATR</button><input class="esp-inp w-s" value="0,25" aria-label="stop em ATR, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="6" aria-label="stop em ATR, máximo"><span class="esp-dim" style="margin-left:8px">período</span><input class="esp-inp w-s" value="5" aria-label="Período do ATR do stop, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="60" aria-label="Período do ATR do stop, máximo"><span class="esp-dim">passo</span><input class="esp-inp w-s" value="5" aria-label="Passo do período do ATR do stop"></span></td><td><input class="esp-inp w-s" value="0,25" aria-label="Passo do stop em ATR"></td></tr>
+              <tr><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="true">%</button><input class="esp-inp w-s" value="0,05" aria-label="stop em porcentagem, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="1,5" aria-label="stop em porcentagem, máximo"></span></td><td><input class="esp-inp w-s" value="0,05" aria-label="Passo do stop em porcentagem"></td></tr>
+              <tr><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="false">sem stop</button></span></td><td class="esp-dim">—</td></tr>
+              <tr><td class="it" rowspan="5">Alvo</td><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="true">pontos</button><input class="esp-inp w-s" value="100" aria-label="alvo em pontos, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="4000" aria-label="alvo em pontos, máximo"></span></td><td><input class="esp-inp w-s" value="100" aria-label="Passo do alvo em pontos"></td></tr>
+              <tr><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="true">× stop</button><input class="esp-inp w-s" value="0,5" aria-label="alvo em vezes o stop, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="6" aria-label="alvo em vezes o stop, máximo"></span></td><td><input class="esp-inp w-s" value="0,5" aria-label="Passo do alvo em vezes o stop"></td></tr>
+              <tr><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="true">ATR</button><input class="esp-inp w-s" value="0,5" aria-label="alvo em ATR, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="10" aria-label="alvo em ATR, máximo"><span class="esp-dim" style="margin-left:8px">período</span><input class="esp-inp w-s" value="5" aria-label="Período do ATR do alvo, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="60" aria-label="Período do ATR do alvo, máximo"><span class="esp-dim">passo</span><input class="esp-inp w-s" value="5" aria-label="Passo do período do ATR do alvo"></span></td><td><input class="esp-inp w-s" value="0,25" aria-label="Passo do alvo em ATR"></td></tr>
+              <tr><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="false">%</button><input class="esp-inp w-s" value="0,1" aria-label="alvo em porcentagem, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="3" aria-label="alvo em porcentagem, máximo"></span></td><td><input class="esp-inp w-s" value="0,1" aria-label="Passo do alvo em porcentagem"></td></tr>
+              <tr><td><span class="esp-rng"><button type="button" class="esp-chip" aria-pressed="false">sem alvo</button></span></td><td class="esp-dim">—</td></tr>
+            </tbody>
+            <tbody>
+              <tr><td class="it">Período do RSI</td><td><span class="esp-rng"><input class="esp-inp w-s" value="2" aria-label="Período do RSI, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="30" aria-label="Período do RSI, máximo"></span></td><td><span class="esp-cy">proporcional</span></td></tr>
+              <tr><td class="it">Extremo do RSI (compra abaixo / venda acima do espelho)</td><td><span class="esp-rng"><input class="esp-inp w-s" value="1" aria-label="Extremo do RSI, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="45" aria-label="Extremo do RSI, máximo"></span></td><td><input class="esp-inp w-s" value="1" aria-label="Passo do extremo do RSI"></td></tr>
+              <tr><td class="it">Filtro de tendência (0 desliga)</td><td><span class="esp-rng"><input class="esp-inp w-s" value="0" aria-label="Filtro de tendência, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="600" aria-label="Filtro de tendência, máximo"></span></td><td><span class="esp-cy">proporcional</span></td></tr>
+              <tr><td class="it">Média curta de saída</td><td><span class="esp-rng"><input class="esp-inp w-s" value="2" aria-label="Média curta de saída, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="60" aria-label="Média curta de saída, máximo"></span></td><td><span class="esp-cy">proporcional</span></td></tr>
+              <tr><td class="it">Saída · 0 sinal contrário · 1 não sai · 2 vira a mão · 3 própria</td><td><div class="esp-chips"><button type="button" class="esp-chip" aria-pressed="true">sai e fica zerado</button><button type="button" class="esp-chip" aria-pressed="true">não sai no sinal</button><button type="button" class="esp-chip" aria-pressed="true">vira a mão</button><button type="button" class="esp-chip" aria-pressed="true">saída própria</button></div></td><td class="esp-dim">—</td></tr>
+            </tbody>
+            <tbody>
+              <tr><td class="it">Fechar posições às</td><td><span class="esp-rng"><span class="esp-dim">de</span><input class="esp-inp w-t" value="09:00" aria-label="Fechar posições às, de"><span class="esp-dim">até</span><input class="esp-inp w-t" value="17:30" aria-label="Fechar posições às, até"></span></td><td><input class="esp-inp" value="30 min" aria-label="Passo de fechar posições às"></td></tr>
+              <tr><td class="it">Tempo máximo na operação (barras)</td><td><span class="esp-rng"><input class="esp-inp w-s" value="0" aria-label="Tempo máximo, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="300" aria-label="Tempo máximo, máximo"></span></td><td><span class="esp-cy">proporcional</span></td></tr>
+              <tr><td class="it">Breakeven · gatilho (% do alvo)</td><td><span class="esp-rng"><input class="esp-inp w-s" value="0" aria-label="Breakeven, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="100" aria-label="Breakeven, máximo"></span></td><td><input class="esp-inp w-s" value="10" aria-label="Passo do breakeven"></td></tr>
+              <tr><td class="it">Ganho máx. por contrato no dia</td><td><span class="esp-rng"><input class="esp-inp w-s" value="0" aria-label="Ganho máximo, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="360" aria-label="Ganho máximo, máximo"></span></td><td><input class="esp-inp w-s" value="30" aria-label="Passo do ganho máximo"></td></tr>
+              <tr><td class="it">Perda máx. por contrato no dia</td><td><span class="esp-rng"><input class="esp-inp w-s" value="0" aria-label="Perda máxima, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="360" aria-label="Perda máxima, máximo"></span></td><td><input class="esp-inp w-s" value="30" aria-label="Passo da perda máxima"></td></tr>
+              <tr><td class="it">Máx. operações no dia</td><td><span class="esp-rng"><input class="esp-inp w-s" value="0" aria-label="Máximo de operações, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="10" aria-label="Máximo de operações, máximo"></span></td><td><input class="esp-inp w-s" value="1" aria-label="Passo do máximo de operações"></td></tr>
+              <tr><td class="it">Máx. prejuízos no dia</td><td><span class="esp-rng"><input class="esp-inp w-s" value="0" aria-label="Máximo de prejuízos, mínimo"><span class="esp-dim">a</span><input class="esp-inp w-s" value="5" aria-label="Máximo de prejuízos, máximo"></span></td><td><input class="esp-inp w-s" value="1" aria-label="Passo do máximo de prejuízos"></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ PROPOSTA ============ -->
+      <section id="esp-prop" aria-label="Espaço de busca, proposta">
+        <div class="esp-lockbar esp-lockpill" hidden>
+          <span class="esp-pill gray"><svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>só leitura</span>
+          <button type="button" class="esp-q" data-h="Ajuda sobre o espaço travado" data-tip="Travado enquanto a busca existe. As gavetas abrem para consulta. Para mudar faixas ou passos, use Nova busca.">?</button>
+        </div>
+
+        <div class="esp-ruler">
+          <div class="esp-rh">
+            <span class="l" id="esp-tot-l">Combinações<button type="button" class="esp-q" data-h="Ajuda sobre combinações" data-tip="Quantas combinações cabem no espaço: as variações de cada item multiplicadas. A busca não testa todas; escolhe onde testar. A barra mostra quanto cada grupo pesa no total.">?</button></span>
+            <span class="esp-total" id="esp-tot" aria-describedby="esp-tot-l"></span>
+            <button type="button" class="esp-btn ghost sm" id="esp-all" aria-controls="esp-gs">Abrir tudo</button>
+          </div>
+          <div class="esp-bar" id="esp-bar" role="group" aria-label="Peso de cada grupo no total"></div>
+          <div class="esp-sr" role="status" aria-live="polite" id="esp-live"></div>
+        </div>
+
+        <div class="esp-top2">
+          <div class="esp-blk"><h3>Regras</h3>
+            <div class="esp-fl">
+              <div><label for="esp-meta">Meta</label><select id="esp-meta" class="esp-dd esp-lk" style="width:210px"><option>Fator de recuperação</option><option>Profit factor</option><option>Lucro líquido</option><option>Menor drawdown</option></select></div>
+              <div><label for="esp-min">Mín. de trades</label><span style="display:inline-flex;align-items:center"><input id="esp-min" class="esp-inp esp-lk" value="400" inputmode="numeric"><button type="button" class="esp-q" data-h="Ajuda sobre mínimo de trades" data-tip="Abaixo disso o nicho fica listrado no mapa. 400 é o padrão: com menos de uns 300 trades o resultado tende a ser sorte.">?</button></span></div>
+            </div>
+          </div>
+          <div class="esp-blk"><h3>Fixos<button type="button" class="esp-q" data-h="Ajuda sobre fixos" data-tip="Valem iguais para todas as combinações. Para mudar, ajuste no menu antes de iniciar.">?</button></h3>
+            <div class="esp-kv">
+              <div><span>Filtro de mercado</span><b>—</b></div><div><span>Sem entradas</span><b>—</b></div><div><span>Stop móvel</span><b>desligado</b></div>
+              <div><span>Trailing</span><b>desligado</b></div><div><span>Custos</span><b>R$ 0,25 + 1 tick</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="esp-cols" aria-hidden="true"><span>Minerar</span><span>Item</span><span>Faixa</span><span>Variações</span></div>
+        <div id="esp-gs"></div>
+      </section>
+    </section>
+
+    <!-- barra direita -->
+    <aside class="esp-rail" aria-label="Controle da busca">
+      <div class="esp-rsec">
+        <span class="esp-pill lg gray" id="esp-st">Parada</span>
+        <div class="esp-when" id="esp-st-when">nenhuma busca rodando</div>
+      </div>
+      <div class="esp-rsec esp-acts">
+        <button type="button" class="esp-btn main full" id="esp-ini"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>Iniciar busca</button>
+        <button type="button" class="esp-btn warn" id="esp-pau" disabled>Pausar</button>
+        <button type="button" class="esp-btn main" id="esp-con" disabled>Continuar</button>
+        <button type="button" class="esp-btn neg full" id="esp-par" disabled>Parar e guardar</button>
+        <button type="button" class="esp-btn ghost full" id="esp-nova">Nova busca</button>
+      </div>
+      <div class="esp-rsec">
+        <h3>Parada</h3>
+        <div class="esp-rrow"><input type="checkbox" id="esp-c-hora" checked style="accent-color:#22E4FF"><label for="esp-c-hora">Parar às</label><input class="esp-inp" value="08:30" aria-label="Horário para parar"></div>
+        <div class="esp-rrow"><input type="checkbox" id="esp-c-lim" style="accent-color:#22E4FF"><label for="esp-c-lim">Limite de testes</label><input class="esp-inp" value="—" disabled aria-label="Número máximo de testes"></div>
+      </div>
+      <div class="esp-rsec">
+        <h3>Núcleos</h3>
+        <span class="esp-dim">20 de 24</span>
+      </div>
+      <div class="esp-rsec">
+        <h3>Buscas salvas</h3>
+        <ul class="esp-saved"><li><span>RSI WIN noite</span><span>03/11</span></li><li><span>ADX MNQ</span><span>01/11</span></li></ul>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<ul class="esp-notes">
+  <li><b>Régua no topo:</b> o total de combinações e o peso de cada grupo. Clicar num pedaço abre a gaveta dele.</li>
+  <li><b>Quatro gavetas</b> com resumo no título (quantos itens variam e o fator). Abrem e fecham; o app lembraria a escolha.</li>
+  <li><b>Coluna da direita:</b> verde = varia (com o número de variações), cinza = fixo ou desligado, rosa = corrigir.</li>
+  <li><b>Minerar</b> só nos itens que podem ficar desligados. Desligado: fixo em 0 (no fechamento, vale o horário do menu).</li>
+  <li><b>Stop e alvo</b> em blocos por tipo; "Sem stop" e "Sem alvo" viram uma etiqueta ao lado do nome.</li>
+  <li>Com erro, o total some e Iniciar busca fica desligado até corrigir. Em "Rodando", tudo trava e só as gavetas abrem.</li>
+</ul>
+
+<script>
+(function () {
+  var root = document.getElementById('esp-root');
+  function $(id) { return document.getElementById(id); }
+  function $$(s, el) { return Array.prototype.slice.call((el || root).querySelectorAll(s)); }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  /* ---------- números em pt-BR ---------- */
+  function inteiro(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+  function dec(v, c) { return v.toFixed(c).replace('.', ','); }
+  function numTxt(v) { return v == null ? '' : String(v).replace('.', ','); }
+  function numBR(s) {
+    s = String(s == null ? '' : s).replace(/[^\d,.\-]/g, '');
+    if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+    var v = parseFloat(s); return isNaN(v) ? null : v;
+  }
+  function minutos(h) { var m = /^(\d{1,2}):(\d{2})$/.exec(String(h).trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  var ESC = [[1e27, 'octilhão', 'octilhões'], [1e24, 'septilhão', 'septilhões'], [1e21, 'sextilhão', 'sextilhões'], [1e18, 'quintilhão', 'quintilhões'], [1e15, 'quatrilhão', 'quatrilhões'], [1e12, 'trilhão', 'trilhões'], [1e9, 'bilhão', 'bilhões'], [1e6, 'milhão', 'milhões']];
+  function grande(n) {
+    if (n < 1e6) return inteiro(n);
+    if (n >= 1e30) return '10^' + Math.floor(Math.log10(n));
+    for (var i = 0; i < ESC.length; i++) if (n >= ESC[i][0]) { var v = n / ESC[i][0]; return dec(v, v < 10 ? 1 : 0) + ' ' + (v < 2 ? ESC[i][1] : ESC[i][2]); }
+    return inteiro(n);
+  }
+
+  /* ---------- as réguas do core (catalogo.py) ---------- */
+  function grade(de, ate, passo) {
+    if (de == null || ate == null) return {n: 0, e: 'Preencha de e até.'};
+    if (ate < de) return {n: 0, e: 'O fim vem antes do início.'};
+    if (!passo || passo <= 0) return {n: 0, e: 'O passo precisa ser maior que 0.'};
+    return {n: Math.floor(Math.round((ate - de) / passo * 1e9) / 1e9) + 1};
+  }
+  function prop(de, ate) {
+    if (de == null || ate == null) return {n: 0, e: 'Preencha de e até.'};
+    if (ate < de) return {n: 0, e: 'O fim vem antes do início.'};
+    var n = 0, v = Math.round(de), last = null;
+    while (v <= ate) { n++; last = v; v = Math.max(v + 1, Math.round(v * 1.08)); }
+    if (last !== null && last !== ate && ate > last) n++;
+    return {n: n};
+  }
+
+  /* ---------- o espaço da RSI no WIN ---------- */
+  var G = [
+    {id: 'tempo', t: 'Tempo e janela', open: true},
+    {id: 'sa', t: 'Stop e alvo', open: true},
+    {id: 'estr', t: 'Estratégia', open: false},
+    {id: 'prot', t: 'Proteções e limites', open: false}
+  ];
+  var I = [
+    {k: 'tf', g: 'tempo', t: 'chips', r: 'Tempo gráfico', op: [['M1', 0], ['M2', 1], ['M3', 1], ['M5', 1], ['M10', 1], ['M15', 1], ['M30', 1], ['M60', 0]]},
+    {k: 'jan', g: 'tempo', t: 'janela', r: 'Horário de entrada', de: '09:00', ate: '17:00', passo: 30, min: 30,
+      q: 'A busca testa janelas de entrada dentro deste horário, de 30 min para cima, começando e terminando a cada passo.'},
+    {k: 'dias', g: 'tempo', t: 'dias', r: 'Dias', op: [['seg', 1], ['ter', 1], ['qua', 1], ['qui', 1], ['sex', 1]],
+      q: 'Testa qualquer combinação dos dias marcados (31 com os cinco): só terça, segunda e quarta, de terça a quinta etc.'},
+    {k: 'fech', g: 'tempo', t: 'hora', r: 'Fechar posições às', de: '09:00', ate: '17:30', passo: 30, extra: 1, on: 1, menu: '17:30',
+      q: 'Cada combinação escolhe um horário desta faixa, nunca antes do fim das entradas dela. Desligado: vale o horário do menu.'},
+
+    {k: 'stop', g: 'sa', t: 'gestao', r: 'Stop', sem: 'Sem stop', semOn: 0,
+      q: 'Liga os tipos que a busca pode usar. Sem stop: a operação sai pela saída da estratégia, pelo tempo máximo ou no fechamento.',
+      tipos: [
+        {k: 'pontos', r: 'Pontos', on: 1, de: 50, ate: 2000, passo: 50},
+        {k: 'atr', r: 'ATR', on: 1, de: 0.25, ate: 6, passo: 0.25, per: {de: 5, ate: 60, passo: 5}},
+        {k: 'pct', r: '%', on: 1, de: 0.05, ate: 1.5, passo: 0.05}
+      ]},
+    {k: 'alvo', g: 'sa', t: 'gestao', r: 'Alvo', sem: 'Sem alvo', semOn: 0,
+      q: 'Liga os tipos que a busca pode usar. × stop: o alvo é um múltiplo do stop da mesma combinação.',
+      tipos: [
+        {k: 'pontos', r: 'Pontos', on: 1, de: 100, ate: 4000, passo: 100},
+        {k: 'mult', r: '× stop', on: 1, de: 0.5, ate: 6, passo: 0.5},
+        {k: 'atr', r: 'ATR', on: 1, de: 0.5, ate: 10, passo: 0.25, per: {de: 5, ate: 60, passo: 5}},
+        {k: 'pct', r: '%', on: 0, de: 0.1, ate: 3, passo: 0.1}
+      ]},
+
+    {k: 'dir', g: 'estr', t: 'chips', r: 'Direção', op: [['compra', 1], ['venda', 1], ['as duas', 1]]},
+    {k: 'rsi', g: 'estr', t: 'num', r: 'Período do RSI', de: 2, ate: 30, prop: 1},
+    {k: 'ext', g: 'estr', t: 'num', r: 'Extremo do RSI', de: 1, ate: 45, passo: 1,
+      q: 'Compra quando o RSI fica abaixo deste valor; vende acima do espelho (100 menos o valor).'},
+    {k: 'tend', g: 'estr', t: 'num', r: 'Filtro de tendência', de: 0, ate: 600, prop: 1,
+      q: 'Período da média que define a tendência. 0 desliga o filtro e entra na busca como uma das opções.'},
+    {k: 'msai', g: 'estr', t: 'num', r: 'Média de saída', de: 2, ate: 60, prop: 1,
+      q: 'Período da média curta usada na saída própria da estratégia.'},
+    {k: 'modo', g: 'estr', t: 'chips', r: 'Modo de saída', op: [['sai e fica zerado', 1], ['não sai no sinal', 1], ['vira a mão', 1], ['saída própria', 1]],
+      q: 'O que fazer quando aparece o sinal contrário com a posição aberta.'},
+
+    {k: 'barras', g: 'prot', t: 'num', r: 'Tempo máximo', un: 'barras', de: 0, ate: 300, prop: 1, extra: 1, on: 1,
+      q: 'Fecha a operação depois deste número de barras. Ligado: a busca testa a faixa e o 0 (sem limite) entra junto.'},
+    {k: 'be', g: 'prot', t: 'num', r: 'Breakeven', un: '% do alvo', de: 0, ate: 100, passo: 10, extra: 1, on: 1,
+      q: 'Leva o stop para a entrada quando o preço anda esta parte do caminho até o alvo. 0 = sem breakeven.'},
+    {k: 'ganho', g: 'prot', t: 'num', r: 'Ganho máx. no dia', un: 'R$ por contrato', de: 0, ate: 360, passo: 30, extra: 1, on: 1,
+      q: 'Para de operar no dia ao chegar neste ganho por contrato. 0 = sem limite.'},
+    {k: 'perda', g: 'prot', t: 'num', r: 'Perda máx. no dia', un: 'R$ por contrato', de: 0, ate: 360, passo: 30, extra: 1, on: 1,
+      q: 'Para de operar no dia ao chegar nesta perda por contrato. 0 = sem limite.'},
+    {k: 'maxop', g: 'prot', t: 'num', r: 'Máx. operações', un: 'no dia', de: 0, ate: 10, passo: 1, extra: 1, on: 0,
+      q: 'Número máximo de operações por dia. 0 = sem limite.'},
+    {k: 'maxpr', g: 'prot', t: 'num', r: 'Máx. prejuízos', un: 'no dia', de: 0, ate: 5, passo: 1, extra: 1, on: 0,
+      q: 'Para no dia depois deste número de operações com prejuízo. 0 = sem limite.'}
+  ];
+  var byK = {}; I.forEach(function (it) { byK[it.k] = it; });
+  var travado = false;
+
+  /* ---------- contagem por item ---------- */
+  function conta(it) {
+    if (it.extra && !it.on) return {n: 1, off: 1};
+    if (it.t === 'chips' || it.t === 'dias') {
+      var on = it.op.filter(function (o) { return o[1]; }).length;
+      if (!on) return {n: 0, e: 'Marque ao menos uma opção.'};
+      return {n: it.t === 'dias' ? Math.pow(2, on) - 1 : on};
+    }
+    if (it.t === 'janela') {
+      var a = minutos(it.de), b = minutos(it.ate);
+      if (a == null || b == null) return {n: 0, e: 'Use o formato 09:30.'};
+      if (b <= a) return {n: 0, e: 'O fim vem antes do início.'};
+      if (!(it.passo > 0)) return {n: 0, e: 'O passo precisa ser maior que 0.'};
+      var p = Math.floor((b - a) / it.passo) + 1, k = Math.ceil(it.min / it.passo), n = 0;
+      for (var i = 0; i < p; i++) n += Math.max(0, p - i - k);
+      return n ? {n: n} : {n: 0, e: 'A faixa é menor que a janela mínima de 30 min.'};
+    }
+    if (it.t === 'hora') {
+      var x = minutos(it.de), y = minutos(it.ate);
+      if (x == null || y == null) return {n: 0, e: 'Use o formato 17:30.'};
+      if (y < x) return {n: 0, e: 'O fim vem antes do início.'};
+      if (!(it.passo > 0)) return {n: 0, e: 'O passo precisa ser maior que 0.'};
+      var q = Math.floor((y - x) / it.passo) + 1;
+      return {n: q + ((y - x) % it.passo ? 1 : 0)};
+    }
+    if (it.t === 'num') return it.prop ? prop(it.de, it.ate) : grade(it.de, it.ate, it.passo);
+    if (it.t === 'gestao') {
+      var tot = it.semOn ? 1 : 0, err = null;
+      it.tipos.forEach(function (tp) { tp._c = contaTipo(tp); if (tp.on) { if (tp._c.e) err = err || tp.r + ': ' + tp._c.e.charAt(0).toLowerCase() + tp._c.e.slice(1); tot += tp._c.n; } });
+      if (err) return {n: 0, e: err};
+      if (!tot) return {n: 0, e: 'Ligue ao menos um tipo.'};
+      return {n: tot};
+    }
+    return {n: 1};
+  }
+  function contaTipo(tp) {
+    var m = grade(tp.de, tp.ate, tp.passo);
+    if (m.e || !tp.per) return m;
+    var p = tp.per.passo ? grade(tp.per.de, tp.per.ate, tp.per.passo) : prop(tp.per.de, tp.per.ate);
+    if (p.e) return {n: 0, e: 'Período: ' + p.e.charAt(0).toLowerCase() + p.e.slice(1)};
+    return {n: m.n * p.n};
+  }
+
+  /* ---------- desenho ---------- */
+  var uid = 0;
+  function qb(h, t, cls) { return '<button type="button" class="esp-q' + (cls ? ' ' + cls : '') + '" data-h="Ajuda sobre ' + esc(h.toLowerCase()) + '" data-tip="' + esc(t) + '" aria-label="Ajuda sobre ' + esc(h.toLowerCase()) + ': ' + esc(t) + '">?</button>'; }
+  function campo(rot, aria, val, cls, data) {
+    var id = 'esp-i' + (++uid);
+    return '<span class="esp-f"><label for="' + id + '">' + rot + '</label><input id="' + id + '" class="esp-inp esp-lk ' + (cls || 'w-s') + '" value="' + esc(val) + '" aria-label="' + esc(aria) + '" ' + data + '></span>';
+  }
+  function sw(it) {
+    return '<button type="button" role="switch" class="esp-sw esp-lk" data-sw="' + it.k + '" aria-checked="' + !!it.on + '" aria-label="Minerar ' + esc(it.r.toLowerCase()) + '"></button>';
+  }
+  function ctlHTML(it) {
+    var d = 'data-k="' + it.k + '"', r = it.r, h = '';
+    if (it.t === 'chips' || it.t === 'dias') {
+      h = '<div class="esp-chips" role="group" aria-label="' + esc(r) + '">' + it.op.map(function (o, i) {
+        return '<button type="button" class="esp-chip esp-lk" data-k="' + it.k + '" data-o="' + i + '" aria-pressed="' + !!o[1] + '">' + esc(o[0]) + '</button>';
+      }).join('') + '</div>';
+    } else if (it.t === 'janela' || it.t === 'hora') {
+      h = '<span class="esp-fields">' + campo('de', r + ', de', it.de, 'w-t', d + ' data-f="de"') + campo('até', r + ', até', it.ate, 'w-t', d + ' data-f="ate"') +
+        '<span class="esp-gap"></span>' + campo('passo', r + ', passo em minutos', it.passo + ' min', 'w-t', d + ' data-f="passo" data-min="1"') + '</span>';
+      if (it.extra) h += '<span class="esp-fix">fixo em ' + it.menu + ' (menu)</span>';
+    } else if (it.t === 'num') {
+      h = '<span class="esp-fields">' + campo('de', r + ', de', numTxt(it.de), 'w-s', d + ' data-f="de"') + campo('até', r + ', até', numTxt(it.ate), 'w-s', d + ' data-f="ate"') +
+        '<span class="esp-gap"></span>' +
+        (it.prop ? '<span class="esp-f"><span>passo</span><span class="esp-prop">proporcional</span>' + qb('passo proporcional', 'Passo que cresce com o valor: perto de zero testa 2, 3, 4, 5; lá em cima pula uns 8%.') + '</span>'
+          : campo('passo', r + ', passo', numTxt(it.passo), 'w-s', d + ' data-f="passo"')) +
+        (it.un ? '<span class="esp-un">' + esc(it.un) + '</span>' : '') + '</span>';
+      if (it.extra) h += '<span class="esp-fix">fixo em 0</span>';
+    }
+    return h + '<div class="esp-err" id="esp-e-' + it.k + '"></div>';
+  }
+  function cardHTML(it, tp, i) {
+    var d = 'data-k="' + it.k + '" data-tp="' + i + '"', nome = it.r + ' em ' + (tp.k === 'pct' ? 'porcentagem' : tp.k === 'mult' ? 'vezes o stop' : tp.r);
+    function f(rot, aria, val, extra) { var id = 'esp-i' + (++uid); return '<label for="' + id + '">' + rot + '<input id="' + id + '" class="esp-inp esp-lk esp-tpf" value="' + esc(numTxt(val)) + '" aria-label="' + esc(aria) + '" ' + d + ' ' + extra + '></label>'; }
+    var h = '<div class="esp-card' + (tp.on ? ' on' : '') + '" id="esp-cd-' + it.k + i + '" role="group" aria-label="' + esc(nome) + '">' +
+      '<div class="esp-card-h"><button type="button" class="esp-chip esp-lk" data-k="' + it.k + '" data-tp="' + i + '" data-tg="1" aria-pressed="' + !!tp.on + '">' + esc(tp.r) + '</button><span class="n" id="esp-cn-' + it.k + i + '"></span></div>' +
+      '<div class="esp-card-r">' + (tp.per ? '<span class="esp-card-k">múltiplo</span>' : '') +
+      f('de', nome + ', de', tp.de, 'data-f="de"') + f('até', nome + ', até', tp.ate, 'data-f="ate"') + f('passo', nome + ', passo', tp.passo, 'data-f="passo"') + '</div>';
+    if (tp.per) h += '<div class="esp-card-r"><span class="esp-card-k">período</span>' +
+      f('de', 'Período do ATR do ' + it.r.toLowerCase() + ', de', tp.per.de, 'data-f="per.de"') +
+      f('até', 'Período do ATR do ' + it.r.toLowerCase() + ', até', tp.per.ate, 'data-f="per.ate"') +
+      f('passo', 'Período do ATR do ' + it.r.toLowerCase() + ', passo', tp.per.passo, 'data-f="per.passo"') + '</div>';
+    return h + '</div>';
+  }
+  function rowHTML(it) {
+    var lab = '<div class="esp-lab"><span id="esp-l-' + it.k + '">' + esc(it.r) + '</span>' + (it.q ? qb(it.r, it.q) : '') + '</div>';
+    var cnt = '<div class="esp-cnt"><span class="esp-pill" id="esp-c-' + it.k + '"></span></div>';
+    if (it.t === 'gestao') {
+      return '<div class="esp-row gest" id="esp-r-' + it.k + '" role="group" aria-labelledby="esp-l-' + it.k + '"><div></div>' + lab +
+        '<div class="esp-gtop"><button type="button" class="esp-chip esp-lk" data-k="' + it.k + '" data-sem="1" aria-pressed="' + !!it.semOn + '">' + esc(it.sem) + '</button><div class="esp-err" id="esp-e-' + it.k + '"></div></div>' + cnt +
+        '<div class="esp-cards">' + it.tipos.map(function (tp, i) { return cardHTML(it, tp, i); }).join('') + '</div></div>';
+    }
+    return '<div class="esp-row' + (it.extra && !it.on ? ' off' : '') + '" id="esp-r-' + it.k + '" role="group" aria-labelledby="esp-l-' + it.k + '">' +
+      '<div class="esp-swwrap">' + (it.extra ? sw(it) : '') + '</div>' + lab + '<div class="esp-ctl">' + ctlHTML(it) + '</div>' + cnt + '</div>';
+  }
+  function chev() { return '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+  function render() {
+    uid = 0;
+    $('esp-gs').innerHTML = G.map(function (g) {
+      return '<div class="esp-g" id="esp-g-' + g.id + '"><h3><button type="button" class="esp-gb" id="esp-gb-' + g.id + '" aria-expanded="' + g.open + '" aria-controls="esp-gp-' + g.id + '">' + chev() +
+        '<span class="esp-gt">' + esc(g.t) + '</span><span class="esp-gs" id="esp-gs-' + g.id + '"></span><span class="esp-gx" id="esp-gx-' + g.id + '"></span></button></h3>' +
+        '<div class="esp-gp" id="esp-gp-' + g.id + '" role="region" aria-labelledby="esp-gb-' + g.id + '"' + (g.open ? '' : ' hidden') + '>' +
+        I.filter(function (it) { return it.g === g.id; }).map(rowHTML).join('') + '</div></div>';
+    }).join('');
+    $('esp-bar').innerHTML = G.map(function (g, i) {
+      return '<button type="button" class="esp-seg s' + i + '" id="esp-sg-' + g.id + '" data-g="' + g.id + '"><span>' + esc(g.t) + '</span><b id="esp-sgx-' + g.id + '"></b></button>';
+    }).join('');
+    aplicaTrava(); atualiza(true);
+  }
+
+  /* ---------- atualizar contagens sem redesenhar (foco fica onde está) ---------- */
+  var liveT = null;
+  function atualiza(silencio) {
+    var total = 1, erros = 0;
+    G.forEach(function (g) {
+      var f = 1, ge = 0, vary = 0, n = 0;
+      I.filter(function (it) { return it.g === g.id; }).forEach(function (it) {
+        var c = conta(it), p = $('esp-c-' + it.k), e = $('esp-e-' + it.k);
+        n++;
+        if (c.e) { ge++; p.className = 'esp-pill rose'; p.textContent = 'corrigir'; }
+        else if (c.off) { p.className = 'esp-pill gray'; p.textContent = 'desligado'; }
+        else if (c.n === 1) { p.className = 'esp-pill gray'; p.textContent = 'fixo'; }
+        else { vary++; p.className = 'esp-pill green'; p.textContent = inteiro(c.n); }
+        p.setAttribute('aria-label', c.e ? 'Corrigir' : c.off ? 'Desligado' : c.n === 1 ? 'Fixo, 1 variação' : inteiro(c.n) + ' variações');
+        e.textContent = c.e || '';
+        $$('input[data-k="' + it.k + '"]').forEach(function (inp) { inp.setAttribute('aria-describedby', 'esp-e-' + it.k); });
+        if (it.t === 'gestao') it.tipos.forEach(function (tp, i) {
+          var cn = $('esp-cn-' + it.k + i);
+          cn.textContent = !tp.on ? 'desligado' : tp._c.e ? '—' : inteiro(tp._c.n);
+          $$('.esp-tpf[data-k="' + it.k + '"][data-tp="' + i + '"]').forEach(function (inp) {
+            inp.setAttribute('aria-invalid', tp.on && tp._c.e ? 'true' : 'false');
+          });
+        });
+        if (!c.e) f *= c.n;
+      });
+      erros += ge;
+      $('esp-gs-' + g.id).textContent = vary + ' de ' + n + ' variando';
+      var gx = $('esp-gx-' + g.id), sx = $('esp-sgx-' + g.id), sg = $('esp-sg-' + g.id);
+      if (ge) { gx.className = 'esp-gx bad'; gx.textContent = 'corrigir ' + ge; sx.textContent = '!'; sg.classList.add('err'); g._w = 1; }
+      else { gx.className = 'esp-gx'; gx.textContent = '× ' + grande(f); sx.textContent = '× ' + grande(f); sg.classList.remove('err'); g._w = Math.max(.6, Math.log10(f)); }
+      sg.setAttribute('aria-label', g.t + ': ' + (ge ? 'corrigir ' + ge + (ge > 1 ? ' itens' : ' item') : 'multiplica por ' + grande(f)) + '. Abrir gaveta');
+      total *= f;
+    });
+    G.forEach(function (g) { $('esp-sg-' + g.id).style.flex = g._w + ' 1 0'; });
+    var t = $('esp-tot'), msg;
+    if (erros) { t.className = 'esp-total bad'; msg = 'Corrija ' + erros + (erros > 1 ? ' itens' : ' item') + ' para ver o total'; t.textContent = msg; }
+    else { t.className = 'esp-total'; msg = (total >= 1e6 ? '≈ ' : '') + grande(total); t.textContent = msg; msg = 'Total: ' + msg + ' combinações'; }
+    $('esp-ini').disabled = !!erros || travado;
+    if (!silencio) { clearTimeout(liveT); liveT = setTimeout(function () { $('esp-live').textContent = msg; }, 700); }
+  }
+
+  /* ---------- trava ---------- */
+  function aplicaTrava() {
+    $$('.esp-lk').forEach(function (el) { el.disabled = travado; });
+    $$('.esp-root #esp-hoje input,.esp-root #esp-hoje select,.esp-root #esp-hoje .esp-chip').forEach(function (el) { el.disabled = travado; });
+    I.forEach(function (it) {
+      var row = $('esp-r-' + it.k); if (!row) return;
+      if (it.extra) {
+        row.classList.toggle('off', !it.on);
+        $$('.esp-fields', row).forEach(function (f) { f.hidden = !it.on; });
+        $$('.esp-fix', row).forEach(function (f) { f.hidden = !!it.on; });
+      }
+      if (it.t === 'gestao') it.tipos.forEach(function (tp, i) {
+        $('esp-cd-' + it.k + i).classList.toggle('on', !!tp.on);
+        $$('.esp-tpf[data-k="' + it.k + '"][data-tp="' + i + '"]').forEach(function (inp) { inp.disabled = travado || !tp.on; });
+      });
+    });
+    $$('.esp-lockpill').forEach(function (p) { p.hidden = !travado; });
+  }
+
+  /* ---------- eventos ---------- */
+  root.addEventListener('click', function (ev) {
+    var b = ev.target.closest('button'); if (!b || !root.contains(b) || b.disabled) return;
+    if (b.dataset.v) {
+      $$('.esp-sim [data-v]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+      $('esp-hoje').hidden = b.dataset.v !== 'hoje'; $('esp-prop').hidden = b.dataset.v !== 'prop'; return;
+    }
+    if (b.dataset.st) {
+      $$('.esp-sim [data-st]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+      travado = b.dataset.st === 'rodando';
+      var st = $('esp-st'); st.className = 'esp-pill lg ' + (travado ? 'green' : 'gray'); st.textContent = travado ? 'Rodando' : 'Parada';
+      $('esp-st-when').textContent = travado ? 'desde 22:04' : 'nenhuma busca rodando';
+      $('esp-pau').disabled = !travado; $('esp-par').disabled = !travado;
+      aplicaTrava(); atualiza(true); return;
+    }
+    if (b.classList.contains('esp-gb')) { abre(b.id.replace('esp-gb-', ''), b.getAttribute('aria-expanded') !== 'true'); syncAll(); return; }
+    if (b.classList.contains('esp-seg')) {
+      abre(b.dataset.g, true); syncAll();
+      var gb = $('esp-gb-' + b.dataset.g); gb.scrollIntoView({block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'}); gb.focus({preventScroll: true}); return;
+    }
+    if (b.id === 'esp-all') { var abrir = b.textContent === 'Abrir tudo'; G.forEach(function (g) { abre(g.id, abrir); }); syncAll(); return; }
+    if (b.closest('#esp-hoje') && b.classList.contains('esp-chip')) { b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); return; }
+    var it = byK[b.dataset.k]; if (!it) return;
+    if (b.dataset.sw) { it.on = it.on ? 0 : 1; b.setAttribute('aria-checked', !!it.on); }
+    else if (b.dataset.sem) { it.semOn = it.semOn ? 0 : 1; b.setAttribute('aria-pressed', !!it.semOn); }
+    else if (b.dataset.tg) { var tp = it.tipos[+b.dataset.tp]; tp.on = tp.on ? 0 : 1; b.setAttribute('aria-pressed', !!tp.on); }
+    else if (b.dataset.o != null) { var o = it.op[+b.dataset.o]; o[1] = o[1] ? 0 : 1; b.setAttribute('aria-pressed', !!o[1]); }
+    aplicaTrava(); atualiza();
+  });
+  root.addEventListener('input', function (ev) {
+    var inp = ev.target, it = byK[inp.dataset.k]; if (!it || !inp.dataset.f) return;
+    var alvo = inp.dataset.tp != null ? it.tipos[+inp.dataset.tp] : it, f = inp.dataset.f, v;
+    if (f.indexOf('per.') === 0) { alvo = alvo.per; f = f.slice(4); }
+    if ((it.t === 'janela' || it.t === 'hora') && f !== 'passo') v = inp.value;
+    else if (f === 'passo' && (it.t === 'janela' || it.t === 'hora')) v = parseInt(inp.value, 10) || 0;
+    else v = numBR(inp.value);
+    alvo[f] = v; atualiza();
+  });
+  function abre(id, sim) {
+    var g = G.filter(function (x) { return x.id === id; })[0]; g.open = sim;
+    $('esp-gb-' + id).setAttribute('aria-expanded', sim); $('esp-gp-' + id).hidden = !sim;
+  }
+  function syncAll() { $('esp-all').textContent = G.every(function (g) { return g.open; }) ? 'Fechar tudo' : 'Abrir tudo'; }
+
+  render(); syncAll();
+})();
+</script>
+</div>
