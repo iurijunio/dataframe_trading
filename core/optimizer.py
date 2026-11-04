@@ -212,6 +212,31 @@ def _init(symbol: str, de, ate, estrategia_nome: str):
     _ESTRATEGIA = importlib.import_module(f"strategies.{estrategia_nome}")
 
 
+def avaliar_resultado(res, perfil: ExecutionProfile, janelas, trial_id,
+                      params: dict) -> dict:
+    """A nota de uma combinação já executada — a linha da Varredura.
+
+    A busca automática avalia por aqui também: é o que garante que o número
+    de um nicho é o mesmo que a Varredura mostraria para aquela combinação.
+    """
+    if res.n_trades == 0:
+        vazio = wf.resumo(np.empty(0), perfil.capital_inicial)
+        return {"trial_id": trial_id, "params": params,
+                "geral": vazio, "holdout": vazio,
+                "folds": {"n": 0, "com_trades": 0, "positivos": 0,
+                          "mediana_fr": 0.0, "mediana_lucro": 0.0},
+                "consistencia": 0.0,
+                "passa_filtro": False, "score": float("-inf"), "erro": None}
+
+    liq = metrics.monetize(res)["liquido"]
+    aval = wf.avaliar(res.trades["entry_ts"], liq, janelas,
+                      perfil.capital_inicial, perfil.min_operacoes)
+    aval["trial_id"] = trial_id
+    aval["params"] = params
+    aval["erro"] = None
+    return aval
+
+
 def _uma(args):
     """Uma combinacao: um backtest sobre o periodo inteiro, depois repartido
     entre as janelas de treino e teste."""
@@ -219,23 +244,8 @@ def _uma(args):
     try:
         perfil = ExecutionProfile(**{**perfil_base, **campos_execucao})
         res = run_strategy(_BARS, _ESTRATEGIA, params_estrategia, perfil, _INST)
-        if res.n_trades == 0:
-            vazio = wf.resumo(np.empty(0), perfil.capital_inicial)
-            return {"trial_id": trial_id,
-                    "params": {**params_estrategia, **campos_execucao},
-                    "geral": vazio, "holdout": vazio,
-                    "folds": {"n": 0, "com_trades": 0, "positivos": 0,
-                              "mediana_fr": 0.0, "mediana_lucro": 0.0},
-                    "consistencia": 0.0,
-                    "passa_filtro": False, "score": float("-inf"), "erro": None}
-
-        liq = metrics.monetize(res)["liquido"]
-        aval = wf.avaliar(res.trades["entry_ts"], liq, janelas,
-                          perfil.capital_inicial, perfil.min_operacoes)
-        aval["trial_id"] = trial_id
-        aval["params"] = {**params_estrategia, **campos_execucao}
-        aval["erro"] = None
-        return aval
+        return avaliar_resultado(res, perfil, janelas, trial_id,
+                                 {**params_estrategia, **campos_execucao})
     except Exception as erro:  # nunca derruba a varredura inteira
         return {"trial_id": trial_id, "params": {**params_estrategia, **campos_execucao},
                 "erro": str(erro), "score": float("-inf"), "passa_filtro": False,
