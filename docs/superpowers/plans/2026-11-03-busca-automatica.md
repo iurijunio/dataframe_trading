@@ -148,7 +148,7 @@ def test_motor_bate_com_o_gabarito(gabarito, casos):
   é barata), `("atr", p)` e `("adx", p)` em LRU de no máximo 4 entradas cada.
   O revisor confirmou que `kernel.run` só escreve nos arrays `o_*`: nada em
   cache precisa de cópia. `build_session_arrays` ganha o parâmetro opcional
-  `relogio=` para receber o trio pronto.
+  `rel=` para receber o trio pronto.
 
 - [ ] **Passo 1: testes falhando.**
 

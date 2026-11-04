@@ -193,9 +193,32 @@ def _ao_abrir(v):
     return out
 
 
+@dataclass
+class Preparado:
+    """O que só depende do SINAL: tempo gráfico, parâmetros da estratégia e
+    ativo. É a parte cara (agregar, calcular indicador), feita uma vez; janela,
+    dias, direção, stop e alvo rodam por cima, muitas vezes (`executar`).
+
+    `cache` guarda o relógio das barras e ATR/ADX por período, com limite: a
+    busca automática passa milhares de perfis pelo mesmo Preparado. Não é
+    seguro entre threads: um Preparado pertence a um processo (núcleo) só."""
+    timeframe: str
+    bars: dict
+    sinais: Any
+    bars_tf: dict
+    fechada: np.ndarray
+    inst_m: dict
+    ficha: Any
+    cache: dict = field(default_factory=dict)
+
+
 def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
                  instrument: dict, vela_aberta: bool = False) -> "BacktestResult":
     """Caminho completo: agrega no timeframe, gera sinais, executa em M1.
+
+    São as duas camadas em sequência — `preparar` (sinal) e `executar`
+    (camada 4) —, e é por isso que a busca automática, que reaproveita o
+    Preparado, dá o mesmo número que o backtest.
 
     `vela_aberta` é do papel ao vivo: a última barra M1 é de uma vela do
     timeframe que o relógio ainda não fechou. `resample` a daria por
@@ -207,6 +230,28 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
     Hoje o stop/alvo já não depende da flag (`vela_do_nivel` lê o minuto
     anterior); ela segue valendo para o ADX daquela barra.
     """
+    prep = preparar(bars, estrategia, params, profile.timeframe, instrument,
+                    vela_aberta=vela_aberta)
+    return executar(prep, profile)
+
+
+def executar(prep: Preparado, profile: "ExecutionProfile") -> "BacktestResult":
+    """A camada 4 sobre um sinal já preparado."""
+    from core import ativo
+
+    if profile.timeframe != prep.timeframe:
+        raise ValueError(
+            f"perfil em {profile.timeframe} sobre sinal preparado em {prep.timeframe}")
+    perfil_m = ativo.perfil_para_motor(profile, prep.ficha)
+    res = backtest(prep.bars, prep.sinais, perfil_m, prep.inst_m, prep.bars_tf,
+                   prep.fechada, cache=prep.cache)
+    res.profile = profile  # o perfil humano; o instrumento fica convertido
+    return res
+
+
+def preparar(bars, estrategia, params, timeframe: str, instrument: dict,
+             vela_aberta: bool = False) -> Preparado:
+    """Agrega no timeframe e gera os sinais, já levados ao índice M1."""
     from core import ativo
     from strategies.base import Signals
 
@@ -214,12 +259,11 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
     # Nova York, preco em moeda) vira unidade guardada, sobre COPIAS
     f = ativo.ficha_do_instrumento(instrument)
     inst_m = ativo.instrumento_para_motor(instrument, f)
-    perfil_m = ativo.perfil_para_motor(profile, f)
     params_m = ativo.params_para_motor(
         params, getattr(estrategia, "params_schema", {}), f)
 
     n = len(bars["open"])
-    passo = TIMEFRAMES.get(profile.timeframe, 1)
+    passo = TIMEFRAMES.get(timeframe, 1)
     if passo == 1:
         bars_tf, fechada, fim = bars, np.arange(n), np.arange(n)
         inicio = np.arange(n)
@@ -266,9 +310,40 @@ def run_strategy(bars, estrategia, params, profile: "ExecutionProfile",
         tp_points=nivel(s.tp_points),
         virar=bool(getattr(s, "virar", False)),
     )
-    res = backtest(bars, sig, perfil_m, inst_m, bars_tf, fechada)
-    res.profile = profile  # o perfil humano; o instrumento fica convertido
-    return res
+    return Preparado(timeframe=timeframe, bars=bars, sinais=sig,
+                     bars_tf=bars_tf, fechada=fechada, inst_m=inst_m, ficha=f)
+
+
+_LIMITE_CACHE = 4   # ATR e ADX guardados por Preparado, de cada tipo
+
+
+def _so_leitura(v):
+    """O que vai para o cache vale para TODOS os perfis seguintes do mesmo
+    Preparado: travado contra escrita, um `*=` futuro estoura na hora em vez
+    de contaminar em silêncio o resultado do perfil seguinte."""
+    for a in (v if isinstance(v, tuple) else (v,)):
+        if isinstance(a, np.ndarray):
+            a.flags.writeable = False
+    return v
+
+
+def _memo(cache: dict | None, chave: tuple, calcular):
+    """Lembra `calcular()` em `cache[chave]`, no máximo `_LIMITE_CACHE` por
+    tipo (o 1º elemento da chave), descartando o usado há mais tempo. Cada
+    entrada tem o tamanho da série inteira: sem teto, 20 núcleos varrendo
+    períodos de ATR estouram a memória."""
+    if cache is None:
+        return calcular()
+    if chave in cache:
+        v = cache.pop(chave)
+        cache[chave] = v          # reinserir = marcar como usado agora
+        return v
+    v = _so_leitura(calcular())
+    cache[chave] = v
+    mesmos = [k for k in cache if k[0] == chave[0]]
+    for k in mesmos[:-_LIMITE_CACHE]:
+        del cache[k]
+    return v
 
 
 def atr(bars: dict, periodo: int) -> np.ndarray:
@@ -361,11 +436,13 @@ def _adx_wilder(h, l, c, n):
     return da, dip, dim
 
 
-def _nivel(bars_tf, vela, tipo, pontos, periodo, mult, n_m1) -> np.ndarray:
+def _nivel(bars_tf, vela, tipo, pontos, periodo, mult, n_m1,
+           cache: dict | None = None) -> np.ndarray:
     """Stop ou alvo em pontos, por barra M1 (`vela` = `vela_do_nivel`)."""
     if tipo == "pontos":
         return np.full(n_m1, max(0, int(pontos)), dtype=np.int64)
-    valores = atr(bars_tf, int(periodo)) * float(mult)
+    p = int(periodo)
+    valores = _memo(cache, ("atr", p), lambda: atr(bars_tf, p)) * float(mult)
     valores = np.nan_to_num(valores, nan=0.0)
     seguro = np.clip(vela, 0, len(valores) - 1)
     fora = vela < 0
@@ -397,17 +474,27 @@ class SessionArrays:
     day_id: np.ndarray
 
 
-def build_session_arrays(ts: np.ndarray, profile: ExecutionProfile) -> SessionArrays:
+def relogio(ts: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(dia, minuto do dia, dia da semana ISO) de cada barra: a parte da
+    sessão que não depende do perfil, e a mais cara de montar."""
+    dias = ts.astype("datetime64[D]").astype(np.int64)
+    minuto = ts.astype("datetime64[m]").astype(np.int64) % 1440
+    dow_iso = ((dias + 3) % 7) + 1  # 1970-01-01 foi quinta
+    return dias, minuto, dow_iso
+
+
+def build_session_arrays(ts: np.ndarray, profile: ExecutionProfile,
+                         rel: tuple | None = None) -> SessionArrays:
     """Janela de ENTRADA e horario de FECHAMENTO sao coisas diferentes.
 
     Entre o fim das entradas e o fechamento a posicao segue viva, mas nenhuma
     nova e aberta. O fechamento nao precisa de calendario de feriado: como
     nenhum pregao do historico fecha antes das 17:54, qualquer horario ate
     ali e sempre alcancado.
+
+    `rel` = `relogio(ts)` já pronto (a busca automática o reaproveita).
     """
-    dias = ts.astype("datetime64[D]").astype(np.int64)
-    minuto = ts.astype("datetime64[m]").astype(np.int64) % 1440
-    dow_iso = ((dias + 3) % 7) + 1  # 1970-01-01 foi quinta
+    dias, minuto, dow_iso = rel if rel is not None else relogio(ts)
 
     permitidos = np.zeros(8, dtype=bool)
     for d in profile.dias_semana:
@@ -480,9 +567,17 @@ def _override(base: np.ndarray, custom, n: int) -> np.ndarray:
 
 
 def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
-             bars_tf=None, fechada=None) -> BacktestResult:
+             bars_tf=None, fechada=None, cache: dict | None = None) -> BacktestResult:
+    """`cache` (o do `Preparado`) guarda o que não depende do perfil: o
+    relógio das barras e ATR/ADX por período. Nada guardado ali é escrito
+    depois — o kernel só escreve nos arrays de saída."""
     n = len(bars["open"])
-    sess = build_session_arrays(bars["ts"], profile)
+    rel = None
+    if cache is not None:
+        rel = cache.get(("relogio",))
+        if rel is None:
+            rel = cache[("relogio",)] = _so_leitura(relogio(bars["ts"]))
+    sess = build_session_arrays(bars["ts"], profile, rel)
 
     if bars_tf is None:
         passo = TIMEFRAMES.get(profile.timeframe, 1)
@@ -497,7 +592,7 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         sl = _nivel_pct(bars["open"], profile.stop_pct, tick)
     else:
         sl = _nivel(bars_tf, vela, profile.stop_tipo, profile.stop_pontos,
-                    profile.stop_atr_periodo, profile.stop_atr_mult, n)
+                    profile.stop_atr_periodo, profile.stop_atr_mult, n, cache)
     sl = _override(sl, _ao_abrir(signals.sl_points), n)
     if profile.alvo_tipo == "multiplicador":
         # o alvo e o stop VIGENTE x razao, por barra; stop 0 nao ha o que
@@ -511,7 +606,7 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
         tp = _nivel_pct(bars["open"], profile.alvo_pct, tick)
     else:
         tp = _nivel(bars_tf, vela, profile.alvo_tipo, profile.alvo_pontos,
-                    profile.alvo_atr_periodo, profile.alvo_atr_mult, n)
+                    profile.alvo_atr_periodo, profile.alvo_atr_mult, n, cache)
     tp = _override(tp, _ao_abrir(signals.tp_points), n)
 
     # protecoes em % do alvo -> pontos, por barra
@@ -537,7 +632,8 @@ def backtest(bars, signals, profile: ExecutionProfile, instrument: dict,
     if (profile.filtro_adx in ("tendencia", "rango")
             and int(profile.adx_periodo or 0) > 0
             and int(profile.adx_limiar or 0) > 0):
-        va, dip, dim = adx(bars_tf, int(profile.adx_periodo))
+        p_adx = int(profile.adx_periodo)
+        va, dip, dim = _memo(cache, ("adx", p_adx), lambda: adx(bars_tf, p_adx))
         if profile.filtro_adx == "rango":
             # DI e "subindo" pedem direcao/aceleracao - quem procura rango
             # nao quer isso, entao valem so no modo tendencia
