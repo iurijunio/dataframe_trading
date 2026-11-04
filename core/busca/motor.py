@@ -48,6 +48,7 @@ BATIMENTO_S = 5.0
 # novo os lotes desde o último (o banco os descarta na retomada).
 SALVAR_A_CADA_S = 30.0
 SINAIS_POR_NUCLEO = 1     # sinais novos por lote = núcleos × isto
+REAGRUPAR_A_CADA_S = 300.0   # grupos refeitos de 5 em 5 min e ao parar
 MAX_HISTORICO = 200
 
 
@@ -367,6 +368,7 @@ class Busca:
                 "restante_s": restante, "estimativa_total": estimativa,
                 "historico_nichos": s["historico"], "versao": s["lote_n"],
                 "nucleos": ctl.get("nucleos"), "pendentes": len(s["pendentes"]),
+                "versao_grupos": s.get("versao_grupos"),
                 **extra}
             escrever_estado(self.pasta, self._estado)
 
@@ -438,6 +440,7 @@ class Busca:
                 if ctl.get("pedido") == "pausar":
                     self._fechar_nucleos()
                     self._salvar(s, ja=True)
+                    self._reagrupar(s, ja=True)
                     self._marcar("pausada")
                     self._publicar(s, "pausada", ctl, pausada_em=self.agora().isoformat(
                         timespec="seconds"))
@@ -454,6 +457,7 @@ class Busca:
                 if getattr(self, "_status_pendente", None):
                     self._marcar()
                 self._salvar(s)
+                self._reagrupar(s)
                 self._publicar(s, "rodando", ctl)
                 feitos += 1
                 if max_lotes is not None and feitos >= max_lotes:
@@ -472,12 +476,31 @@ class Busca:
         self._fechar_nucleos()
         self._insistir(self._gravar_tudo, s)
         self._salvar(s, ja=True)
+        self._reagrupar(s, ja=True)
         if status == "concluida":
             self._insistir(banco.marcar_status, self.busca_id, "concluida",
                            fim=self.agora(), **self._contagens(s))
             self._publicar(s, "concluida", ctl, fim=self.agora().isoformat(timespec="seconds"),
                            motivo=getattr(self, "_motivo", None))
         return status
+
+    def _reagrupar(self, s: dict, ja: bool = False) -> None:
+        """Refaz os grupos com o que já está no banco. Banco ocupado: fica
+        para a próxima vez — grupo atrasado não estraga nada."""
+        agora = time.monotonic()
+        if not ja and agora - getattr(self, "_agrupado_em", agora - 1e18) < REAGRUPAR_A_CADA_S:
+            return
+        from . import grupos
+
+        try:
+            versao = int((banco.ler_busca(self.busca_id) or {}).get("versao_grupos") or 0) + 1
+            gs = grupos.agrupar(banco.ler_elites(self.busca_id),
+                                banco.ler_combos(self.busca_id), self.esp)
+            banco.gravar_grupos(self.busca_id, versao, gs)
+            self._agrupado_em = agora
+            s["versao_grupos"] = versao
+        except banco.BancoOcupado:
+            pass
 
     def _gravar_tudo(self, s: dict) -> None:
         self._gravar_pendentes(s)

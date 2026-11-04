@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS elites_hist (
 CREATE TABLE IF NOT EXISTS grupos (
     busca_id INTEGER, grupo_id INTEGER, versao INTEGER, lider_casa VARCHAR,
     lider VARCHAR, membros VARCHAR, mediana_obj DOUBLE, n_membros INTEGER);
+-- as casas finas de cada grupo (o mapa acha o grupo de uma casa por aqui)
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS casas VARCHAR;
 """
 
 COLS_COMBO = ("busca_id", "lote_n", "teste_n", "casa", "combo", "trades", "lucro",
@@ -192,11 +194,13 @@ def gravar_grupos(busca_id: int, versao: int, grupos: list[dict]) -> None:
     with conectar(True) as con, db.transacao(con):
         con.execute("DELETE FROM grupos WHERE busca_id = ?", [busca_id])
         _inserir(con, "grupos", ("busca_id", "grupo_id", "versao", "lider_casa", "lider",
-                                 "membros", "mediana_obj", "n_membros"),
+                                 "membros", "mediana_obj", "n_membros", "casas"),
                  [{"busca_id": busca_id, "versao": versao, "grupo_id": g["grupo_id"],
                    "lider_casa": g["lider_casa"], "lider": json.dumps(g["lider"]),
                    "membros": json.dumps(g["membros"]), "mediana_obj": g["mediana_obj"],
-                   "n_membros": g["n_membros"]} for g in grupos])
+                   "n_membros": g["n_membros"],
+                   "casas": json.dumps(g.get("casas") or [g["lider_casa"]])}
+                  for g in grupos])
         _atualizar(con, busca_id, {"versao_grupos": versao})
 
 
@@ -273,4 +277,5 @@ def ler_grupos(busca_id: int) -> list[dict]:
     for g in gs:
         g["lider"] = json.loads(g["lider"])
         g["membros"] = json.loads(g["membros"])
+        g["casas"] = json.loads(g["casas"]) if g.get("casas") else [g["lider_casa"]]
     return gs

@@ -418,3 +418,17 @@ def test_retomada_corta_os_pendentes_ja_gravados(busca):
         pickle.dump(s, f)
     b._carregar()
     assert sorted(c["teste_n"] for c in B.ler_combos(busca)) == [1, 2, 3]
+
+
+def test_reagrupa_ao_parar_e_de_tempos_em_tempos(busca, monkeypatch):
+    monkeypatch.setattr(M, "REAGRUPAR_A_CADA_S", 0.0)
+    M.escrever_json(B.pasta_da(busca) / "controle.json",
+                    {"parar_as_ligado": False, "nucleos": 3, "limite": 400})
+    M.Busca(busca, avaliar=Falso()).rodar()
+    b = B.ler_busca(busca)
+    gs = B.ler_grupos(busca)
+    assert b["versao_grupos"] >= 2 and gs
+    validas = {e["casa"] for e in B.ler_elites(busca) if e["valida"]}
+    assert {c for g in gs for c in g["casas"]} == validas
+    est = M.ler_json(B.pasta_da(busca) / "estado.json")
+    assert est["versao_grupos"] == b["versao_grupos"]
