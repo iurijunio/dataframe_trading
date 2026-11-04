@@ -134,3 +134,10 @@ def test_bom_e_fraco_com_infinito():
     assert P.e_bom("fr", None) is True and P.e_fraco("fr", None) is False
     assert P.e_bom("fr", 3.0) and not P.e_bom("fr", 2.9)
     assert P.e_fraco("fr", 1.4) and P.e_bom("lucro", 10) is None
+
+
+def test_evolucao_e_o_melhor_ate_ali():
+    hist = [{"casa": "c", "teste_n": 1, "objetivo": 5.0},
+            {"casa": "c", "teste_n": 2, "objetivo": 3.0},
+            {"casa": "c", "teste_n": 3, "objetivo": 8.0}]
+    assert P.evolucao(0, ["c"], pontos=3, hist_todo=hist, total=3) == [5.0, 5.0, 8.0]

@@ -132,3 +132,16 @@ def test_agrupar_aguenta_uma_noite(esp):
     gs = agrupar(linhas, linhas, esp)
     assert time.monotonic() - t < 20
     assert sum(len(g["casas"]) for g in gs) == len(linhas)
+
+
+def test_elite_parecida_com_dois_lideres_vai_ao_de_maior_nota(esp):
+    i = esp.params_vals["di_periodo"].index(14)
+    v = esp.params_vals["di_periodo"]
+    a = _linha(esp, _c(esp), 10.0)
+    # uma elite por casa: as três têm janelas diferentes, todas vizinhas
+    b = _linha(esp, _c(esp, fim="12:00", p={"di_periodo": v[i + 3]}), 9.0)  # 3 degraus de A
+    c = _linha(esp, _c(esp, ini="10:30", p={"di_periodo": v[i + 2]}), 8.0)  # perto dos dois
+    gs = agrupar([c, b, a], [a, b, c], esp)
+    assert len(gs) == 2
+    assert c["casa"] in gs[0]["casas"] and gs[0]["lider_casa"] == a["casa"]
+    assert c["casa"] not in gs[1]["casas"]
