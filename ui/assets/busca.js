@@ -213,7 +213,7 @@
       var x = m.casas[+b.dataset.i], cls = 'b-cell';
       b.style.background = ''; b.style.color = '';
       if (x.estado === 'vazia') { cls += ' un'; b.textContent = ''; b.setAttribute('aria-label', nome(x) + ': ainda não testado'); b.setAttribute('aria-disabled', 'true'); }
-      else if (x.estado === 'poucos') { cls += ' low'; b.textContent = fmt(x.trades || 0); b.setAttribute('aria-label', nome(x) + ': só ' + fmt(x.trades || 0) + ' trades, menos de ' + fmt(minimo())); b.setAttribute('aria-disabled', 'true'); }
+      else if (x.estado === 'poucos') { cls += ' low'; b.textContent = x.trades == null ? '<' + fmt(minimo()) : fmt(x.trades); b.setAttribute('aria-label', nome(x) + ': ' + (x.trades == null ? 'menos' : 'só ' + fmt(x.trades) + ' trades, menos') + ' de ' + fmt(minimo()) + ' trades'); b.setAttribute('aria-disabled', 'true'); }
       else {
         var c = ramp(sc.paradas, val(x)); b.style.background = css(c); b.style.color = ink(c);
         b.textContent = txt(x); b.removeAttribute('aria-disabled');
@@ -237,7 +237,7 @@
   function tipHTML(x) {
     var m = mapa(), h = '<div class="t-h"><b>' + esc(m.linhas[x.linha]) + '</b><span>' + esc(m.colunas[x.coluna]) + '</span></div>';
     if (x.estado === 'vazia') return h + '<p class="b-dim">Ainda não testado</p>';
-    if (x.estado === 'poucos') return h + '<p class="b-warn">Só ' + fmt(x.trades || 0) + ' trades, menos de ' + fmt(minimo()) + '</p>';
+    if (x.estado === 'poucos') return h + '<p class="b-warn">' + (x.trades == null ? 'Menos de ' + fmt(minimo()) + ' trades' : 'Só ' + fmt(x.trades) + ' trades, menos de ' + fmt(minimo())) + '</p>';
     h += '<dl>';
     dims(x).forEach(function (d) { h += '<dt>' + esc(d[0]) + '</dt><dd>' + esc(d[1]) + '</dd>'; });
     h += '<hr><dt>FR</dt><dd class="big">' + frTxt(x) + '</dd><dt>PF</dt><dd>' + (x.pf == null ? '∞' : dec(x.pf, 2)) + '</dd><dt>Trades</dt><dd>' + fmt(x.trades) + '</dd>';

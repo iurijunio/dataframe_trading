@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import os
+import threading
 import time
 from datetime import datetime
 
@@ -51,6 +52,11 @@ DICA_ESTADO = {
 }
 
 _cache: dict = {}
+# uma atualização da tela por vez: com a busca grande, uma leitura pode levar
+# segundos, e pedidos empilhados ocupavam o servidor do app inteiro
+_ATUALIZANDO = threading.Lock()
+# no app a leitura do banco da busca desiste rápido (ver banco.LEITURA_TENTATIVAS)
+banco.LEITURA_TENTATIVAS = 2
 
 
 def _json_seguro(v):
@@ -187,34 +193,48 @@ def _fixos(p, moeda: str = "") -> list[list[str]]:
 
 
 # ------------------------------------------------------------ dados
-def _mapas(busca_id: int, versao) -> dict:
-    """Os três eixos, com a evolução da lista pendurada em cada casa. Caro:
-    só refeito quando a busca muda de versão."""
+MAPA_A_CADA_S = 10.0
+
+
+def _mapas(busca_id: int, versao, rodando: bool) -> dict | None:
+    """Os três eixos, com a evolução pendurada em cada casa. Caro (segundos
+    numa busca grande): com a busca rodando, refeito no máximo a cada 10 s.
+
+    Sem esse teto a tela travava: a versão muda a cada lote, cada leitura
+    levava mais que o relógio de 2 s, e o Dash descarta a resposta que chega
+    depois do pedido seguinte — nenhuma chegava a tempo. Banco ocupado pela
+    busca: fica o último mapa."""
     chave = (busca_id, versao)
-    if _cache.get("mapas_chave") == chave:
+    cache_ok = _cache.get("mapas_busca") == busca_id
+    if cache_ok and (_cache.get("mapas_chave") == chave or (
+            rodando and time.monotonic() - _cache.get("mapas_em", 0) < MAPA_A_CADA_S)):
         return _cache["mapas"]
-    mapas = {}
-    for eixo in EIXOS:
-        m = projecao.mapa(busca_id, eixo, "fr")
-        evol = {(x["linha"], x["coluna"]): x["evolucao"]
-                for x in projecao.lista(busca_id, eixo, "fr")}
+    try:
+        mapas = projecao.mapas_todos(busca_id, "fr")
+    except banco.BancoOcupado:
+        return _cache["mapas"] if cache_ok else None
+    for m in mapas.values():
         for c in m["casas"]:
-            c["evolucao"] = evol.get((c["linha"], c["coluna"]), [])
             c["dims"] = [list(d) for d in c["dims"]]
         m["linhas"] = [ROTULO_TF.get(t, t) for t in m["linhas"]]
-        mapas[eixo] = m
-    _cache.update(mapas_chave=chave, mapas=mapas)
+    _cache.update(mapas_chave=chave, mapas_busca=busca_id, mapas=mapas,
+                  mapas_em=time.monotonic())
     return mapas
 
 
 def _salvas(estrategia, simbolo, viva) -> list[dict]:
+    try:
+        lista = banco.listar(estrategia, simbolo)
+    except banco.BancoOcupado:
+        return _cache.get(("salvas", estrategia, simbolo), [])
     out = []
-    for x in banco.listar(estrategia, simbolo):
+    for x in lista:
         st = x["status"]
         if st in ("rodando", "pausada") and x["busca_id"] != viva:
             st = "interrompida"
         out.append({"id": x["busca_id"], "data": f"{x['criada_em']:%d/%m}",
                     "status": st, "testes": _milhar(x["testes"] or 0)})
+    _cache[("salvas", estrategia, simbolo)] = out
     return out
 
 
@@ -236,7 +256,10 @@ def dados_da_tela(sel, estrategia, simbolo, perfil, menu_ok=True) -> dict:
                              "parar_as_ligado": True, "limite": None},
                 "mapas": None}
     e = controle.ler(bid)
-    b = e.get("busca") or banco.ler_busca(bid) or {}
+    try:
+        b = e.get("busca") or banco.ler_busca(bid) or {}
+    except banco.BancoOcupado:          # a busca gravando: vale o estado.json
+        b = {}
     cfg = b.get("config") or {}
     st = e["status"]
     if st == "erro":          # falhou e parou: na tela, como a que caiu
@@ -263,7 +286,8 @@ def dados_da_tela(sel, estrategia, simbolo, perfil, menu_ok=True) -> dict:
         faltam = f"caiu às {_hora(e.get('vivo_em'))}" if e.get("vivo_em") else ""
     else:
         faltam = ""
-    mapas = _mapas(bid, (e.get("versao"), b.get("versao_grupos"))) if distintos else None
+    mapas = (_mapas(bid, (e.get("versao"), b.get("versao_grupos")), st == "rodando")
+             if distintos else None)
     return {**base, "busca_id": bid, "status": st, "vivo": e.get("vivo"),
             "versao_grupos": b.get("versao_grupos"),
             "dica": DICA_ESTADO.get(st, ""), "quando": _quando(st, e, b),
@@ -355,7 +379,15 @@ def register(app):
         State({"type": "val", "p": ALL}, "value"), State({"type": "val", "p": ALL}, "id"),
         *[State(cid, prop) for cid, prop in MENU_PERFIL],
     )
-    def atualizar(_n, feito, sel, qual, subtela, estrategia, ativo, valores, ids_val, *menu):
+    def atualizar(*args):
+        if not _ATUALIZANDO.acquire(blocking=False):
+            return no_update             # a anterior ainda está montando
+        try:
+            return _atualizar(*args)
+        finally:
+            _ATUALIZANDO.release()
+
+    def _atualizar(_n, feito, sel, qual, subtela, estrategia, ativo, valores, ids_val, *menu):
         if qual != "mineracao" or subtela != "busca":
             return no_update
         simbolo = _simbolo(ativo)

@@ -141,3 +141,27 @@ def test_evolucao_e_o_melhor_ate_ali():
             {"casa": "c", "teste_n": 2, "objetivo": 3.0},
             {"casa": "c", "teste_n": 3, "objetivo": 8.0}]
     assert P.evolucao(0, ["c"], pontos=3, hist_todo=hist, total=3) == [5.0, 5.0, 8.0]
+
+
+def test_descartada_sem_rodar_nao_vira_zero_trades(busca):
+    bid, esp = busca
+    c = _comb(esp, "M15", "13:00", "14:00")
+    B.gravar_lote(bid, 2, [], [{"casa": json.dumps(list(esp.casa(c))), "combo": c.chave(),
+                                "objetivo": -1e9, "valida": False, "trades": None,
+                                "lucro": None, "pf": None, "dd": None, "fr": None,
+                                "achado_em": 2}], [], {})
+    m = P.mapa(bid, "horario", "fr")
+    nc = len(m["colunas"])
+    casa = m["casas"][1 * nc + m["colunas"].index("13:00")]
+    assert casa["estado"] == "poucos" and casa["trades"] is None
+
+
+def test_mapas_todos_igual_a_mapa_por_eixo(busca):
+    bid, _ = busca
+    todos = P.mapas_todos(bid)
+    for eixo in P.EIXOS:
+        um = P.mapa(bid, eixo, "fr")
+        assert [c["estado"] for c in todos[eixo]["casas"]] == [c["estado"] for c in um["casas"]]
+        assert todos[eixo]["n_com_resultado"] == um["n_com_resultado"]
+    ok = [c for c in todos["horario"]["casas"] if c["estado"] == "ok"]
+    assert all("evolucao" in c for c in ok)

@@ -119,18 +119,49 @@ def _grupos_por_casa(busca_id: int) -> dict:
 
 def mapa(busca_id: int, eixo: str = "horario", metrica: str = "fr") -> dict:
     b = banco.ler_busca(busca_id)
+    return _mapa(b, Espaco.de_json(b["config"]["espaco"]), banco.ler_elites(busca_id),
+                 _grupos_por_casa(busca_id), eixo, metrica)
+
+
+def mapas_todos(busca_id: int, metrica: str = "fr") -> dict:
+    """Os três eixos, com a evolução de cada casa, numa leitura só do banco.
+    A tela pede isto com a busca gravando ao lado: cada leitura a menos é
+    uma chance a menos de esbarrar no escritor."""
+    b = banco.ler_busca(busca_id)
     esp = Espaco.de_json(b["config"]["espaco"])
+    elites = banco.ler_elites(busca_id)
+    grupos = _grupos_por_casa(busca_id)
+    hist = banco.ler_hist(busca_id)
+    total = b.get("distintos") or 0
+    out = {}
+    for eixo in EIXOS:
+        m = _mapa(b, esp, elites, grupos, eixo, metrica)
+        colunas = _colunas(esp, eixo)
+        finas: dict[tuple, list] = {}
+        for e in elites:
+            c = Combinacao.de_chave(e["combo"])
+            finas.setdefault((esp.timeframes.index(c.timeframe),
+                              colunas.index(_valor_coluna(eixo, c))), []).append(e["casa"])
+        for casa in m["casas"]:
+            casa["evolucao"] = (evolucao(busca_id, finas.get((casa["linha"], casa["coluna"]), []),
+                                         hist_todo=hist, total=total)
+                                if casa["estado"] == "ok" else [])
+        out[eixo] = m
+    return out
+
+
+def _mapa(b: dict, esp: Espaco, elites: list, grupos: dict, eixo: str,
+          metrica: str) -> dict:
     crit = b["config"].get("criterio", "fr")
     colunas = _colunas(esp, eixo)
     linhas = list(esp.timeframes)
     melhor: dict[tuple, dict] = {}
-    for e in banco.ler_elites(busca_id):
+    for e in elites:
         c = Combinacao.de_chave(e["combo"])
         k = (c.timeframe, _valor_coluna(eixo, c))
         atual = melhor.get(k)
         if atual is None or e["objetivo"] > atual["objetivo"]:
             melhor[k] = {**e, "_c": c}
-    grupos = _grupos_por_casa(busca_id)
     corte = BONS.get(crit)
     validas = [m for m in melhor.values() if m["valida"]]
     campeao = max(validas, key=lambda m: m["objetivo"], default=None)
@@ -156,8 +187,9 @@ def mapa(busca_id: int, eixo: str = "horario", metrica: str = "fr") -> dict:
                                 membros=g["n_membros"] if g else None,
                                 mediana=g["mediana_obj"] if g else None)
                 else:
-                    casa.update(estado="poucos", trades=m["trades"]
-                                if m["trades"] is not None else int(m["objetivo"] - INVALIDA))
+                    # descartada antes de rodar (poucos sinais) não tem
+                    # contagem: None, e a tela escreve "<400" em vez de "0"
+                    casa.update(estado="poucos", trades=m["trades"])
             casas.append(casa)
     ok = [c for c in casas if c["estado"] == "ok"]
     return {"eixo": eixo, "metrica": metrica, "nome_eixo": NOME_EIXO[eixo],

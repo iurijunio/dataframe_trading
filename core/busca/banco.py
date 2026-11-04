@@ -76,11 +76,21 @@ CAMPOS_STATUS = {"status", "testes", "distintos", "descartados", "inicio", "fim"
                  "duracao_s", "erro", "historico", "lote_n", "versao_grupos", "config"}
 
 
+# Paciência da LEITURA. O processo da busca espera a vez (20 × 0,25 s); o
+# app troca para pouca (`ui/callbacks_busca.py`): a tela lê várias vezes a
+# cada 2 s, e esperar 5 s por leitura com a busca gravando empilhava pedidos
+# até o app inteiro parar de responder. Desistir rápido e mostrar a última
+# leitura é o certo para a tela.
+LEITURA_TENTATIVAS = 20
+
+
 @contextlib.contextmanager
-def conectar(escrita: bool, tentativas: int = 20, espera_s: float = 0.25):
+def conectar(escrita: bool, tentativas: int | None = None, espera_s: float = 0.25):
     """Conexão de vida curta, com paciência (mesmo padrão de
     `db.connect_write`). Leitura com o arquivo ainda inexistente cria o
     esquema primeiro, para a tela nunca quebrar na primeira abertura."""
+    if tentativas is None:
+        tentativas = 20 if escrita else LEITURA_TENTATIVAS
     if not escrita and not CAMINHO.exists():
         with conectar(True, tentativas, espera_s):
             pass
