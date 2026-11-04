@@ -154,3 +154,39 @@ def test_lru_de_preparados(ctx):
     for c in _amostra(ctx, 30, 41):
         A._preparado(c.chave_essencial())
     assert len(A._PREPS) <= A.N_PREPARADOS
+
+
+def _prep_falso(longs, shorts):
+    """Barras de uma terça às 10:00, com sinais nos minutos pedidos."""
+    from types import SimpleNamespace
+
+    ts = np.datetime64("2024-03-05T10:00") + np.arange(20).astype("timedelta64[m]")
+    el = np.zeros(20, bool)
+    es = np.zeros(20, bool)
+    el[longs] = True
+    es[shorts] = True
+    return SimpleNamespace(bars={"ts": ts.astype("datetime64[ns]")}, cache={}, ficha=None,
+                           sinais=SimpleNamespace(entry_long=el, entry_short=es))
+
+
+def test_teto_conta_so_antes_do_fim_da_otimizacao():
+    prep = _prep_falso([1, 3, 5, 11, 12, 13, 14, 15], [])
+    perfil = ExecutionProfile(entrada_inicio="10:00", entrada_fim="10:30")
+    assert A.teto_de_trades(prep, perfil, np.datetime64("2024-03-05T10:10")) == 3
+
+
+def test_teto_respeita_a_direcao():
+    prep = _prep_falso([1, 2, 3, 4], [6, 7])
+    fim = np.datetime64("2024-03-06")
+    def t(d):
+        return A.teto_de_trades(prep, ExecutionProfile(entrada_inicio="10:00",
+                                                       entrada_fim="10:30", direcao=d), fim)
+    assert (t("compra"), t("venda"), t("ambas")) == (4, 2, 6)
+
+
+def test_teto_respeita_janela_e_dia():
+    prep = _prep_falso([1, 2, 8, 9], [])
+    fim = np.datetime64("2024-03-06")
+    assert A.teto_de_trades(prep, ExecutionProfile(entrada_inicio="10:05",
+                                                   entrada_fim="10:30"), fim) == 2
+    assert A.teto_de_trades(prep, ExecutionProfile(dias_semana=(3,)), fim) == 0

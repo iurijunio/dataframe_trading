@@ -400,3 +400,21 @@ def test_fechamento_de_uma_fonte_so(busca):
     cfg = {**cfg, "perfil_base": {**cfg["perfil_base"], "fechamento": "16:00"}}
     with pytest.raises(ValueError, match="fechamento"):
         M.Busca(B.criar(cfg))
+
+
+def test_retomada_corta_os_pendentes_ja_gravados(busca):
+    """Arquivo salvo com lotes 4 e 5 pendentes, mas o 4 chegou ao banco logo
+    antes da queda: a retomada tira 4 e 5 do banco (voltam a ser gravados
+    uma vez só pelos pendentes)."""
+    import pickle
+
+    for lote in range(1, 6):
+        B.gravar_lote(busca, lote, [{"teste_n": lote, "casa": "c", "combo": f"k{lote}",
+                                     "objetivo": 1.0, "valida": True}], [], [], {})
+    b = M.Busca(busca, avaliar=Falso())
+    s = b._novo()
+    s.update(lote_n=5, pendentes=[{"lote_n": 4}, {"lote_n": 5}])
+    with open(B.pasta_da(busca) / "arquivo.pkl", "wb") as f:
+        pickle.dump(s, f)
+    b._carregar()
+    assert sorted(c["teste_n"] for c in B.ler_combos(busca)) == [1, 2, 3]
