@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from core import db_manager as db
@@ -88,9 +89,15 @@ def ajustar(busca_id: int, **campos) -> None:
     escrever_json(_caminho_controle(busca_id), {**atual, **campos})
 
 
+FOLGA_ABRIR_S = 60   # o processo leva uns segundos até pegar a trava
+
+
 def _abrir(busca_id: int) -> None:
     pasta = banco.pasta_da(busca_id)
     pasta.mkdir(parents=True, exist_ok=True)
+    # sem isto, a tela via "Interrompida" logo depois do Iniciar: o banco já
+    # diz rodando e o processo ainda não pegou a trava
+    ajustar(busca_id, aberto_em=time.time())
     log = open(pasta / "processo.log", "a", encoding="utf-8")
     subprocess.Popen(
         [sys.executable, str(ROTEIRO), str(busca_id), "--pasta", str(banco.PASTA),
@@ -145,10 +152,12 @@ def ler(busca_id: int) -> dict:
         b = None
     status = (b or {}).get("status") or estado.get("status") or "parada"
     vivo = ativa() == busca_id
-    if status in ("rodando", "pausada") and not vivo:
+    controle = ler_controle(pasta)
+    abrindo = time.time() - float(controle.get("aberto_em") or 0) < FOLGA_ABRIR_S
+    if status in ("rodando", "pausada") and not vivo and not abrindo:
         status = "interrompida"
-    return {**estado, "status": status, "vivo": vivo,
-            "controle": ler_controle(pasta), "busca": b}
+    return {**estado, "status": status, "vivo": vivo, "abrindo": abrindo and not vivo,
+            "controle": controle, "busca": b}
 
 
 def excluir(busca_id: int) -> None:

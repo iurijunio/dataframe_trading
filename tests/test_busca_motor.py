@@ -42,6 +42,12 @@ class Falso:
         return out[::-1] if self.embaralhar else out
 
 
+@pytest.fixture(autouse=True)
+def _salvar_todo_lote(monkeypatch):
+    # nos testes de queda o arquivo é salvo a cada lote, como pior caso
+    monkeypatch.setattr(M, "SALVAR_A_CADA_S", 0.0)
+
+
 @pytest.fixture
 def busca():
     esp = Espaco("adx_direcao", "WIN$N", fechamento="17:30",
@@ -190,11 +196,11 @@ def test_queda_entre_banco_e_pickle_nao_duplica(busca, monkeypatch):
     original = M.Busca._salvar
     chamadas = {"n": 0}
 
-    def cai_no_terceiro(self, s):
+    def cai_no_terceiro(self, s, ja=False):
         chamadas["n"] += 1
         if chamadas["n"] == 3:
             raise KeyboardInterrupt("PC desligou")
-        original(self, s)
+        original(self, s, ja)
 
     monkeypatch.setattr(M.Busca, "_salvar", cai_no_terceiro)
     with pytest.raises(KeyboardInterrupt):
@@ -231,3 +237,36 @@ def test_erro_marca_a_busca(busca):
         M.Busca(busca, avaliar=quebra).rodar()
     b = B.ler_busca(busca)
     assert b["status"] == "erro" and "quebrou" in b["erro"]
+
+
+def test_queda_entre_salvamentos_refaz_so_o_que_faltou(busca, monkeypatch):
+    """Arquivo salvo de 30 em 30 s: a queda perde os lotes desde o último
+    salvamento, que rodam de novo sem ficar em dobro no banco."""
+    M.Busca(busca, avaliar=Falso()).rodar(max_lotes=4)
+    direto, ns_direto = _elites(busca), sorted(_teste_ns(busca))
+
+    outra = B.criar(B.ler_busca(busca)["config"])
+    M.escrever_json(B.pasta_da(outra) / "controle.json", {"parar_as_ligado": False})
+    monkeypatch.setattr(M, "SALVAR_A_CADA_S", 1e9)     # só o 1º lote é salvo
+    original = M.Busca._gravar_pendentes
+    chamadas = {"n": 0}
+
+    def cai_no_terceiro(self, s):
+        original(self, s)
+        chamadas["n"] += 1
+        if chamadas["n"] == 3:
+            raise KeyboardInterrupt("PC desligou")
+
+    monkeypatch.setattr(M.Busca, "_gravar_pendentes", cai_no_terceiro)
+    with pytest.raises(KeyboardInterrupt):
+        M.Busca(outra, avaliar=Falso()).rodar(max_lotes=4)
+    monkeypatch.setattr(M.Busca, "_gravar_pendentes", original)
+    M.Busca(outra, avaliar=Falso()).rodar(max_lotes=3)
+    ns = _teste_ns(outra)
+    assert len(ns) == len(set(ns)) and sorted(ns) == ns_direto
+    assert _elites(outra) == direto
+
+
+def test_digital_estavel():
+    assert M.digital("abc") == M.digital("abc") != M.digital("abd")
+    assert 0 <= M.digital("abc") < 2**64

@@ -144,3 +144,12 @@ def test_continuar_reabre_quando_nao_ha_processo(monkeypatch):
     K.pausar(bid)
     K.continuar(bid)
     assert abertos == [bid] and M.ler_controle(B.pasta_da(bid))["pedido"] is None
+
+
+def test_logo_depois_de_abrir_nao_e_interrompida(monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: None)
+    bid = K.iniciar(_config())       # processo "ainda subindo": sem trava
+    e = K.ler(bid)
+    assert e["status"] == "rodando" and e["abrindo"]
+    monkeypatch.setattr(K.time, "time", lambda: 10**12)
+    assert K.ler(bid)["status"] == "interrompida"

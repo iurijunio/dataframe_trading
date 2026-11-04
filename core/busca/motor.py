@@ -19,6 +19,7 @@ alguém clicar em Continuar (desenho §5).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pickle
@@ -41,6 +42,10 @@ SIGMA_FILTRO = 0.12
 N_INICIAIS = 200
 LOTE_POR_EMISSOR = 36
 BATIMENTO_S = 5.0
+# O arquivo da pyribs cresce com a busca; regravá-lo a cada lote custaria
+# segundos numa noite inteira. Cair entre dois salvamentos só faz rodar de
+# novo os lotes desde o último (o banco os descarta na retomada).
+SALVAR_A_CADA_S = 30.0
 MAX_HISTORICO = 200
 
 
@@ -100,6 +105,12 @@ def proximo_horario(hhmm: str, depois_de: datetime) -> datetime:
     h, m = (int(x) for x in hhmm.split(":")[:2])
     alvo = depois_de.replace(hour=h, minute=m, second=0, microsecond=0)
     return alvo if alvo > depois_de else alvo + timedelta(days=1)
+
+
+def digital(chave: str) -> int:
+    """8 bytes por combinação na memória de "já testei": com a chave inteira
+    (~250 caracteres) um milhão de testes ocupariam ~400 MB."""
+    return int.from_bytes(hashlib.blake2b(chave.encode(), digest_size=8).digest(), "big")
 
 
 # ------------------------------------------------------------ a busca
@@ -204,10 +215,12 @@ class Busca:
         sols = s["scheduler"].ask()
         combos = [self.esp.decodificar(x) for x in sols]
         chaves = [c.chave() for c in combos]
-        novas, grupos = [], {}
+        novas, grupos, vistas = [], {}, set()
         for c, k in zip(combos, chaves):
-            if k in s["memo"] or k in novas:
+            d = digital(k)
+            if d in s["memo"] or d in vistas:
                 continue
+            vistas.add(d)
             novas.append(k)
             teste_n = s["distintos"] + len(novas)
             grupos.setdefault(c.chave_essencial(), []).append((teste_n, k))
@@ -222,7 +235,7 @@ class Busca:
             c = Combinacao.de_chave(k)
             casa = json.dumps(list(self.esp.casa(c)))
             obj = float(r.get("objetivo", INVALIDA))
-            s["memo"][k] = (obj, casa)
+            s["memo"][digital(k)] = obj
             if r.get("descartada"):
                 s["descartados"] += 1
             linhas.append({col: r.get(col) for col in banco.COLS_COMBO
@@ -240,7 +253,7 @@ class Busca:
         s["testes"] += len(chaves)
 
         # tell na ordem do ask: repetidas recebem o resultado guardado
-        objs = np.array([s["memo"][k][0] for k in chaves], dtype=float)
+        objs = np.array([s["memo"][digital(k)] for k in chaves], dtype=float)
         medidas = np.array([np.array(self.esp.casa(c)) + 0.5 for c in combos], dtype=float)
         s["scheduler"].tell(objs, medidas)
 
@@ -271,8 +284,12 @@ class Busca:
                 "descartados": s["descartados"], "duracao_s": s["decorrido_s"],
                 "historico": s["historico"]}
 
-    def _salvar(self, s: dict) -> None:
+    def _salvar(self, s: dict, ja: bool = False) -> None:
+        agora = time.monotonic()
+        if not ja and agora - getattr(self, "_salvo_em", -1e18) < SALVAR_A_CADA_S:
+            return
         _salvar_pickle(self.pasta / "arquivo.pkl", s)
+        self._salvo_em = agora
 
     # -------------------------------------------------------- estado.json
     def _publicar(self, s: dict, status: str, ctl: dict, **extra) -> None:
@@ -340,6 +357,7 @@ class Busca:
                     break
                 if ctl.get("pedido") == "pausar":
                     self._fechar_nucleos()
+                    self._salvar(s, ja=True)
                     banco.marcar_status(self.busca_id, "pausada")
                     self._publicar(s, "pausada", ctl, pausada_em=self.agora().isoformat(
                         timespec="seconds"))
@@ -369,7 +387,7 @@ class Busca:
         self._parar_batimento.set()
         self._fechar_nucleos()
         self._gravar_pendentes(s)
-        self._salvar(s)
+        self._salvar(s, ja=True)
         if status == "concluida":
             banco.marcar_status(self.busca_id, "concluida", fim=self.agora(),
                                 **self._contagens(s))
