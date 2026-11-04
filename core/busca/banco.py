@@ -60,13 +60,18 @@ CREATE TABLE IF NOT EXISTS grupos (
     lider VARCHAR, membros VARCHAR, mediana_obj DOUBLE, n_membros INTEGER);
 -- as casas finas de cada grupo (o mapa acha o grupo de uma casa por aqui)
 ALTER TABLE grupos ADD COLUMN IF NOT EXISTS casas VARCHAR;
+-- mediana e faixas sobre TODOS os membros (só os 200 melhores ficam guardados)
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS mediana_fr DOUBLE;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS faixas VARCHAR;
+-- trades da elite: o campeão não pode contar duas vezes entre os membros
+ALTER TABLE elites ADD COLUMN IF NOT EXISTS trades_hash VARCHAR;
 """
 
 COLS_COMBO = ("busca_id", "lote_n", "teste_n", "casa", "combo", "trades", "lucro",
               "pf", "dd", "fr", "consistencia", "mediana_fold", "score",
               "objetivo", "valida", "trades_hash", "descartada")
 COLS_ELITE = ("busca_id", "casa", "combo", "objetivo", "valida", "trades", "lucro",
-              "pf", "dd", "fr", "achado_em")
+              "pf", "dd", "fr", "achado_em", "trades_hash")
 CAMPOS_STATUS = {"status", "testes", "distintos", "descartados", "inicio", "fim",
                  "duracao_s", "erro", "historico", "lote_n", "versao_grupos", "config"}
 
@@ -194,12 +199,15 @@ def gravar_grupos(busca_id: int, versao: int, grupos: list[dict]) -> None:
     with conectar(True) as con, db.transacao(con):
         con.execute("DELETE FROM grupos WHERE busca_id = ?", [busca_id])
         _inserir(con, "grupos", ("busca_id", "grupo_id", "versao", "lider_casa", "lider",
-                                 "membros", "mediana_obj", "n_membros", "casas"),
+                                 "membros", "mediana_obj", "n_membros", "casas",
+                                 "mediana_fr", "faixas"),
                  [{"busca_id": busca_id, "versao": versao, "grupo_id": g["grupo_id"],
                    "lider_casa": g["lider_casa"], "lider": json.dumps(g["lider"]),
                    "membros": json.dumps(g["membros"]), "mediana_obj": g["mediana_obj"],
                    "n_membros": g["n_membros"],
-                   "casas": json.dumps(g.get("casas") or [g["lider_casa"]])}
+                   "casas": json.dumps(g.get("casas") or [g["lider_casa"]]),
+                   "mediana_fr": g.get("mediana_fr"),
+                   "faixas": json.dumps(g.get("faixas") or {})}
                   for g in grupos])
         _atualizar(con, busca_id, {"versao_grupos": versao})
 
@@ -255,11 +263,18 @@ def ler_elites(busca_id: int) -> list[dict]:
             "SELECT * FROM elites WHERE busca_id = ? ORDER BY objetivo DESC", [busca_id]))
 
 
-def ler_combos(busca_id: int, so_validas: bool = True) -> list[dict]:
+# o que o agrupamento lê: só isto, para milhões de combinações caberem
+COLS_AGRUPAR = ("combo", "casa", "objetivo", "valida", "trades_hash", "trades",
+                "lucro", "pf", "dd", "fr")
+
+
+def ler_combos(busca_id: int, so_validas: bool = True,
+               colunas: tuple | None = None) -> list[dict]:
     filtro = "AND valida" if so_validas else ""
+    cols = ", ".join(colunas) if colunas else "*"
     with conectar(False) as con:
         return _linhas(con.execute(
-            f"SELECT * FROM combos WHERE busca_id = ? {filtro} ORDER BY teste_n",
+            f"SELECT {cols} FROM combos WHERE busca_id = ? {filtro} ORDER BY teste_n",
             [busca_id]))
 
 
@@ -278,4 +293,5 @@ def ler_grupos(busca_id: int) -> list[dict]:
         g["lider"] = json.loads(g["lider"])
         g["membros"] = json.loads(g["membros"])
         g["casas"] = json.loads(g["casas"]) if g.get("casas") else [g["lider_casa"]]
+        g["faixas"] = json.loads(g["faixas"]) if g.get("faixas") else {}
     return gs

@@ -432,3 +432,23 @@ def test_reagrupa_ao_parar_e_de_tempos_em_tempos(busca, monkeypatch):
     assert {c for g in gs for c in g["casas"]} == validas
     est = M.ler_json(B.pasta_da(busca) / "estado.json")
     assert est["versao_grupos"] == b["versao_grupos"]
+
+
+
+def test_erro_no_agrupamento_nao_derruba_a_busca(busca, monkeypatch):
+    from core.busca import grupos
+
+    def quebra(*a, **k):
+        raise MemoryError("grupos demais")
+
+    monkeypatch.setattr(grupos, "agrupar", quebra)
+    monkeypatch.setattr(M, "REAGRUPAR_A_CADA_S", 0.0)
+    M.escrever_json(B.pasta_da(busca) / "controle.json",
+                    {"parar_as_ligado": False, "nucleos": 3, "limite": 300})
+    assert M.Busca(busca, avaliar=Falso()).rodar() == "concluida"
+    assert B.ler_busca(busca)["status"] == "concluida"
+
+
+def test_elite_guarda_o_hash_dos_trades(busca):
+    M.Busca(busca, avaliar=Falso()).rodar(max_lotes=1)
+    assert all(e["trades_hash"] for e in B.ler_elites(busca))

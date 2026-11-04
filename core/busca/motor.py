@@ -295,7 +295,8 @@ class Busca:
                 e = {"casa": casa, "combo": k, "objetivo": obj,
                      "valida": bool(r.get("valida")), "trades": r.get("trades"),
                      "lucro": r.get("lucro"), "pf": r.get("pf"), "dd": r.get("dd"),
-                     "fr": r.get("fr"), "achado_em": r["teste_n"]}
+                     "fr": r.get("fr"), "achado_em": r["teste_n"],
+                     "trades_hash": r.get("trades_hash")}
                 s["melhor"][casa] = e
                 mudaram[casa] = e
                 hist.append({"casa": casa, "teste_n": r["teste_n"], "objetivo": obj})
@@ -488,19 +489,27 @@ class Busca:
         """Refaz os grupos com o que já está no banco. Banco ocupado: fica
         para a próxima vez — grupo atrasado não estraga nada."""
         agora = time.monotonic()
-        if not ja and agora - getattr(self, "_agrupado_em", agora - 1e18) < REAGRUPAR_A_CADA_S:
+        espera = max(REAGRUPAR_A_CADA_S, 5 * getattr(self, "_custo_grupos", 0.0))
+        if not ja and agora - getattr(self, "_agrupado_em", agora - 1e18) < espera:
             return
         from . import grupos
 
         try:
             versao = int((banco.ler_busca(self.busca_id) or {}).get("versao_grupos") or 0) + 1
             gs = grupos.agrupar(banco.ler_elites(self.busca_id),
-                                banco.ler_combos(self.busca_id), self.esp)
+                                banco.ler_combos(self.busca_id, colunas=banco.COLS_AGRUPAR),
+                                self.esp)
             banco.gravar_grupos(self.busca_id, versao, gs)
-            self._agrupado_em = agora
             s["versao_grupos"] = versao
-        except banco.BancoOcupado:
-            pass
+        except Exception as erro:
+            # o grupo é leitura secundária: errar aqui nunca pode custar a
+            # busca da noite inteira — fica para a próxima vez
+            print(f"reagrupar falhou: {erro!r}", flush=True)
+        # o relógio conta do FIM da conta (e da tentativa que falhou): uma
+        # conta longa não pode emendar na seguinte e parar a busca
+        fim = time.monotonic()
+        self._custo_grupos = fim - agora
+        self._agrupado_em = fim
 
     def _gravar_tudo(self, s: dict) -> None:
         self._gravar_pendentes(s)

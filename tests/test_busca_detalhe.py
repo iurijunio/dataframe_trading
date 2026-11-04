@@ -67,7 +67,9 @@ def test_hora_dia_formato_e_regiao(no_banco):
     assert len(hd["valores"]) == len(hd["horas"]) == len(hd["dentro"])
     dentro = [(h, d) for h, linha in zip(hd["horas"], hd["dentro"])
               for d, x in zip(range(1, 6), linha) if x]
-    assert dentro and all(c.ini <= h <= c.fim and d in c.dias for h, d in dentro)
+    assert dentro and all(c.ini <= h < c.fim and d in c.dias for h, d in dentro)
+    # a última linha é a do fim (já fora da região), como no protótipo
+    assert hd["horas"][-1] <= c.fim
     assert all(v is None or isinstance(v, float) for linha in hd["valores"] for v in linha)
 
 
@@ -126,3 +128,58 @@ def test_regiao_com_um_membro_ainda_tem_o_que_minerar(no_banco, monkeypatch):
     assert f["de"] < dict(camp.params)["di_periodo"] < f["ate"] or \
         dict(camp.params)["di_periodo"] in (f["de"], f["ate"])
     assert (r["entrada_inicio"], r["entrada_fim"]) == (camp.ini, camp.fim)
+
+
+
+def test_hora_dia_nao_conta_o_mesmo_backtest_duas_vezes(no_banco):
+    """Membros que só diferem na janela viram o mesmo backtest no horário
+    inteiro: contam uma vez."""
+    import json as _json
+
+    bid, e = no_banco
+    c = Combinacao.de_chave(e["combo"])
+    cfg = B.ler_busca(bid)["config"]
+    from core.busca.espaco import Espaco
+
+    esp = Espaco.de_json(cfg["espaco"])
+    outra_janela = Combinacao(**{**c.__dict__, "ini": esp.inicios[0]})
+    copia = {**e, "combo": outra_janela.chave(), "trades_hash": "outro"}
+    ficha = None
+    janelas = D._janelas(cfg)
+    so = D._hora_dia(esp, c, [e], cfg["perfil_base"], ficha, janelas.fim_otimizacao, 30)
+    dois = D._hora_dia(esp, c, [e, copia], cfg["perfil_base"], ficha,
+                       janelas.fim_otimizacao, 30)
+    assert dois["n_backtests"] == 1 and dois["n_trades"] == so["n_trades"]
+    assert dois["valores"] == so["valores"]
+
+
+def test_por_ano_marca_o_ano_todo_no_holdout(no_banco):
+    from types import SimpleNamespace
+
+    bid, e = no_banco
+    cfg = B.ler_busca(bid)["config"]
+    from core.busca.espaco import Espaco
+
+    esp = Espaco.de_json(cfg["espaco"])
+    jan = SimpleNamespace(holdout_de=np.datetime64("2024-01-01T00:00:00"),
+                          fim_otimizacao=np.datetime64("2024-01-01T00:00:00"))
+    anos = D._por_ano(esp, [e], cfg["perfil_base"], {**cfg, "de": "2023-01-01"}, jan)
+    assert anos[-1] == {"ano": 2024, "holdout": True, "pct_lucro": None}
+    assert anos[0]["ano"] == 2023 and not anos[0]["holdout"]
+
+
+def test_campeao_leva_o_corte_com_a_hora(no_banco):
+    bid, e = no_banco
+    cb = D.campeao_para_backtest(bid, e["casa"])
+    cfg = B.ler_busca(bid)["config"]
+    assert cb["fim_otimizacao"] == str(D._janelas(cfg).fim_otimizacao)[:19]
+    assert len(cb["fim_otimizacao"]) == 19
+
+
+def test_fr_mediano_vem_de_todos_os_membros(no_banco, monkeypatch):
+    bid, e = no_banco
+    g = D._grupo_da(bid, e["casa"])
+    if g is None:
+        pytest.skip("sem grupo")
+    monkeypatch.setattr(D, "_grupo_da", lambda _b, _c: {**g, "mediana_fr": -123.0})
+    assert D.detalhe(bid, e["casa"])["kpis"]["fr_mediano"] == -123.0

@@ -13,6 +13,7 @@ detalhe usa só o campeão.
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 
 import numpy as np
@@ -21,6 +22,7 @@ from core import ativo, metrics
 from core.engine.execution import executar
 
 from . import avaliador, banco
+from .catalogo import PASSO_JANELA
 from .espaco import CAMPO_ALVO, CAMPO_STOP, Combinacao, Espaco
 
 MAX_MEMBROS = 24
@@ -28,6 +30,9 @@ MIN_TRADES_HORA_DIA = 40
 MAX_PONTOS_CURVA = 400
 
 _CARREGADO: tuple | None = None
+# Barras e sinais preparados são globais do módulo `avaliador` (um núcleo só
+# no app): duas gavetas ao mesmo tempo trocariam as barras no meio da conta.
+_TRAVA = threading.Lock()
 
 
 def _garantir_barras(c: dict) -> None:
@@ -99,8 +104,19 @@ def _hora_dia(esp, campeao: Combinacao, membros, perfil_base, ficha, fim_otim, p
     fim0 = esp.fins_de[ini0][-1]
     desloc = ficha.deslocamento_min if ficha and ficha.sessao_abertura else 0
     soma: dict[tuple, list] = {}
+    # Membros que só diferem em janela ou dias viram O MESMO backtest no
+    # horário inteiro: contá-los todos multiplicava os trades (2 viravam 48 e
+    # passavam do mínimo de 40) e pesava mais o parâmetro repetido.
+    vistos, unicos = set(), []
     for m in membros:
         c = Combinacao.de_chave(m["combo"])
+        k = (c.timeframe, c.params, c.direcao, c.stop_tipo, c.stop_valor,
+             c.alvo_tipo, c.alvo_valor)
+        if k not in vistos:
+            vistos.add(k)
+            unicos.append(c)
+    n_trades = 0
+    for c in unicos:
         res, liq = _rodar(esp, c, perfil_base, entrada_inicio=ini0, entrada_fim=fim0,
                           dias_semana=(1, 2, 3, 4, 5))
         if not len(liq):
@@ -112,12 +128,15 @@ def _hora_dia(esp, campeao: Combinacao, membros, perfil_base, ficha, fim_otim, p
         for mi, d, v, ok in zip(minuto, dow, liq, dentro):
             if ok:
                 soma.setdefault((int(mi), int(d)), []).append(v)
+                n_trades += 1
 
     def hm(h):
         return ativo.hora_para_minuto(h)
 
+    # linhas: um degrau antes do início até o fim (como o protótipo); a
+    # região do nicho é [início, fim) — a linha do fim já está fora
     a, z = hm(campeao.ini), hm(campeao.fim)
-    lo, hi = max(hm(esp.horarios[0]), a - passo), min(hm(esp.horarios[-1]), z + passo)
+    lo, hi = max(hm(esp.horarios[0]), a - passo), min(hm(esp.horarios[-1]), z)
     horas = list(range(lo - (lo - hm(esp.horarios[0])) % passo, hi + 1, passo))
     valores, marca = [], []
     for h in horas:
@@ -126,12 +145,12 @@ def _hora_dia(esp, campeao: Combinacao, membros, perfil_base, ficha, fim_otim, p
             vs = [v for (mi, dd), lista in soma.items() if dd == d and h <= mi < h + passo
                   for v in lista]
             lv.append(float(np.mean(vs)) if len(vs) >= MIN_TRADES_HORA_DIA else None)
-            lm.append(a <= h <= z and d in campeao.dias)
+            lm.append(a <= h < z and d in campeao.dias)
         valores.append(lv)
         marca.append(lm)
     return {"horas": [f"{h // 60:02d}:{h % 60:02d}" for h in horas],
             "dias": ["seg", "ter", "qua", "qui", "sex"], "valores": valores,
-            "dentro": marca}
+            "dentro": marca, "n_trades": n_trades, "n_backtests": len(unicos)}
 
 
 def _por_ano(esp, membros, perfil_base, c_cfg, janelas):
@@ -159,30 +178,36 @@ def _por_ano(esp, membros, perfil_base, c_cfg, janelas):
     return out
 
 
-def _espalhamento(esp, campeao: Combinacao, membros):
+def _espalhamento(esp, campeao: Combinacao, membros, faixas: dict | None):
+    """Faixa e mediana de cada item entre os membros. Com grupo, vêm de
+    TODOS os membros (`faixas` do grupo); sem, dos membros à mão."""
     combos = [Combinacao.de_chave(m["combo"]) for m in membros]
     itens = []
 
-    def linha(rotulo, testada, vals, camp):
-        vals = [v for v in vals if v is not None]
-        if not vals or not testada:
+    def linha(rotulo, chave, testada, vals, camp):
+        if faixas and chave in faixas:
+            a, z, med = faixas[chave]
+        else:
+            vals = [v for v in vals if v is not None]
+            if not vals:
+                return
+            a, z, med = min(vals), max(vals), float(np.median(vals))
+        if not testada:
             return
         itens.append({"item": rotulo, "testada": (min(testada), max(testada)),
-                      "membros": (min(vals), max(vals)),
-                      "mediana": float(np.median(vals)), "campeao": camp})
+                      "membros": (a, z), "mediana": med, "campeao": camp})
 
     for n in esp.nomes_params:
         if n == "saida":
             continue
-        rot = esp.catalogo[n].rotulo
-        linha(rot, esp.params_vals[n], [dict(c.params)[n] for c in combos],
-              dict(campeao.params)[n])
+        linha(esp.catalogo[n].rotulo, n, esp.params_vals[n],
+              [dict(c.params)[n] for c in combos], dict(campeao.params)[n])
     if campeao.stop_tipo in esp.stops:
-        linha(f"Stop ({campeao.stop_tipo})", esp.stops[campeao.stop_tipo],
+        linha(f"Stop ({campeao.stop_tipo})", "_stop", esp.stops[campeao.stop_tipo],
               [c.stop_valor for c in combos if c.stop_tipo == campeao.stop_tipo],
               campeao.stop_valor)
     if campeao.alvo_tipo in esp.alvos and campeao.alvo_tipo != "sem":
-        linha(f"Alvo ({campeao.alvo_tipo})", esp.alvos[campeao.alvo_tipo],
+        linha(f"Alvo ({campeao.alvo_tipo})", "_alvo", esp.alvos[campeao.alvo_tipo],
               [c.alvo_valor for c in combos if c.alvo_tipo == campeao.alvo_tipo],
               campeao.alvo_valor)
     return itens
@@ -204,6 +229,11 @@ def _curva(esp, campeao, perfil_base, fim_otim):
 
 # --------------------------------------------------------------- públicas
 def detalhe(busca_id: int, casa_fina: str) -> dict:
+    with _TRAVA:
+        return _detalhe(busca_id, casa_fina)
+
+
+def _detalhe(busca_id: int, casa_fina: str) -> dict:
     b, c, esp = _contexto(busca_id)
     _garantir_barras(c)
     elite = _elite(busca_id, casa_fina)
@@ -212,18 +242,22 @@ def detalhe(busca_id: int, casa_fina: str) -> dict:
     uso = membros[:MAX_MEMBROS]
     janelas = _janelas(c)
     ficha = ativo.ficha(c["simbolo"]) if c["simbolo"] != "WIN$N" else None
-    passo = int((esp.faixas.get("janela") or esp.catalogo["janela"].padrao)["passo"])
+    passo = int((esp.faixas.get("janela") or esp.catalogo["janela"].padrao).get("passo")
+                or PASSO_JANELA)
     frs = [m["fr"] for m in membros if m.get("fr") is not None]
+    fr_mediano = (grupo.get("mediana_fr") if grupo and grupo.get("mediana_fr") is not None
+                  else (float(np.median(frs)) if frs else None))
     return {
         "busca_id": busca_id, "casa": casa_fina, "campeao": elite,
         "combinacao": json.loads(elite["combo"]),
-        "kpis": {"fr": elite["fr"], "fr_mediano": float(np.median(frs)) if frs else None,
+        "kpis": {"fr": elite["fr"], "fr_mediano": fr_mediano,
                  "pf": elite["pf"], "trades": elite["trades"], "maior_queda": elite["dd"],
                  "membros": grupo["n_membros"] if grupo else len(membros)},
         "hora_dia": _hora_dia(esp, campeao, uso, c["perfil_base"], ficha,
                               janelas.fim_otimizacao, passo),
         "por_ano": _por_ano(esp, uso, c["perfil_base"], c, janelas),
-        "espalhamento": _espalhamento(esp, campeao, membros),
+        "espalhamento": _espalhamento(esp, campeao, membros,
+                                      (grupo or {}).get("faixas")),
         "curva": _curva(esp, campeao, c["perfil_base"], janelas.fim_otimizacao),
         "moeda": ativo.moeda_de(c["simbolo"]),
         "versao_grupos": b.get("versao_grupos"),
@@ -299,4 +333,6 @@ def campeao_para_backtest(busca_id: int, casa_fina: str) -> dict:
             "params": esp.params(camp),
             "perfil": esp.perfil(camp, c["perfil_base"]).to_config(),
             "de": c["de"], "ate": c["ate"],
-            "fim_otimizacao": str(_janelas(c).fim_otimizacao)[:10]}
+            # com a hora: o corte cai no meio do dia, e "AAAA-MM-DD" viraria
+            # 00:00 no Backtest e tiraria um pregão da otimização
+            "fim_otimizacao": str(_janelas(c).fim_otimizacao)[:19]}

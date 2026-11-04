@@ -222,11 +222,16 @@ def lista(busca_id: int, eixo: str = "horario", metrica: str = "fr") -> list[dic
 
 
 def e_bom(criterio: str, valor) -> bool | None:
+    """`valor` de uma elite VÁLIDA; None é FR/PF infinito (nunca perdeu)."""
     corte = BONS.get(criterio)
-    return None if corte is None or valor is None else valor >= corte
+    if corte is None:
+        return None
+    return True if valor is None else valor >= corte
 
 
 def e_fraco(criterio: str, valor) -> bool | None:
     corte = FRACO.get(criterio)
-    return None if corte is None or valor is None else valor < corte
+    if corte is None:
+        return None
+    return False if valor is None else valor < corte
 

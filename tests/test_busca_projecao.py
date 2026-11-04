@@ -127,3 +127,10 @@ def test_com_uma_busca_real():
     m = P.mapa(bid, "horario", "fr")
     assert m["n_com_resultado"] > 0
     assert sum(c["estado"] != "vazia" for c in m["casas"]) >= m["n_com_resultado"]
+
+
+
+def test_bom_e_fraco_com_infinito():
+    assert P.e_bom("fr", None) is True and P.e_fraco("fr", None) is False
+    assert P.e_bom("fr", 3.0) and not P.e_bom("fr", 2.9)
+    assert P.e_fraco("fr", 1.4) and P.e_bom("lucro", 10) is None

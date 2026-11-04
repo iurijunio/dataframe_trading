@@ -47,7 +47,9 @@ def test_parecidas_regras(esp):
 
 
 def test_trinta_variacoes_do_mesmo_ponto_viram_um_grupo(esp):
-    """O anti-objetivo do desenho: a lista não pode ser 30 cópias."""
+    """O anti-objetivo do desenho: a lista não pode ser 30 cópias. Pela
+    regra do líder (vizinhos a 1 degrau DELE), 27 variações em 3 eixos viram
+    poucos grupos, não 27."""
     variacoes = [_c(esp, ini=i, fim=f, dias=d)
                  for i in ("09:30", "10:00", "10:30")
                  for f in ("11:00", "11:30", "12:00")
@@ -92,3 +94,41 @@ def test_elite_entra_no_grupo_do_lider_e_guarda_a_casa(esp):
     g = agrupar([lb, la], [la, lb], esp)
     assert len(g) == 1 and g[0]["lider_casa"] == la["casa"]
     assert set(g[0]["casas"]) == {la["casa"], lb["casa"]}
+
+
+
+def test_mediana_e_faixas_sobre_todos_os_membros(esp, monkeypatch):
+    from core.busca import grupos as G
+
+    monkeypatch.setattr(G, "MAX_MEMBROS_GUARDADOS", 2)
+    lider = _c(esp)
+    membros = [_c(esp, p={"amplitude_max": amp, "adx_suavizacao": suav})
+               for amp in (1000, 1005, 1010) for suav in (14, 15)]
+    linhas = [_linha(esp, m, 5.0 - k) for k, m in enumerate(membros)]
+    g = agrupar([linhas[0]], linhas, esp)[0]
+    assert g["n_membros"] == 6 and len(g["membros"]) == 2
+    assert g["mediana_fr"] == 2.5                      # de todos, não dos 2 guardados
+    assert g["faixas"]["amplitude_max"] == [1000, 1010, 1005.0]
+    assert lider.chave() == linhas[0]["combo"]
+
+
+def test_agrupar_aguenta_uma_noite(esp):
+    """Dezenas de milhares de elites e combinações em segundos (antes: quase
+    1 minuto com 37 mil elites, quadrático)."""
+    import time
+
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    vistos, linhas = set(), []
+    for x in rng.random((40000, esp.n_genes)):
+        c = esp.decodificar(x)
+        k = c.chave()
+        if k in vistos:
+            continue
+        vistos.add(k)
+        linhas.append(_linha(esp, c, float(rng.random() * 5)))
+    t = time.monotonic()
+    gs = agrupar(linhas, linhas, esp)
+    assert time.monotonic() - t < 20
+    assert sum(len(g["casas"]) for g in gs) == len(linhas)
