@@ -21,7 +21,7 @@ substituindo o fluxo que antes vivia no MT5. Branch de trabalho:
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.776 testes em 03/11/2026)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.938 testes em 04/11/2026)
 ```
 
 - Para ver o app: rode `ui/app.py` e abra http://127.0.0.1:8050. Quem tiver
@@ -103,12 +103,12 @@ As quatro camadas (pergunta: *de quem é essa informação?*):
 
 Os seis modos do topo (`ui/app.py`; o app abre em Ao vivo › Estratégias) e
 onde vivem. O Backtest não é mais aba: é a subtela Backtest da Mineração
-(Varredura | Backtest), e clicar numa linha, ponto da nuvem ou aprovada roda o
+(Varredura | Busca automática | Backtest), e clicar numa linha, ponto da nuvem ou aprovada roda o
 backtest e pula para ela:
 
 | Modo | Contas (`core/`) | Tela (`ui/`) |
 |---|---|---|
-| Mineração (Varredura + Backtest) | Varredura: `optimizer.py`, `walkforward.py`, `mineracao_stats.py`, `porteira.py`. Backtest: `engine/kernel.py`, `engine/execution.py`, `metrics.py`, `analytics.py`, `detalhes.py`, `robustez.py` | `components/mining.py`, `mine_*.py`, `scatter.py`; Backtest: `callbacks.py`, `components/stats_cards.py`, `charts.py`, `results_grid.py` |
+| Mineração (Varredura + Busca automática + Backtest) | Varredura: `optimizer.py`, `walkforward.py`, `mineracao_stats.py`, `porteira.py`. Busca automática: `busca/*` (catalogo, espaco, avaliador, motor, nucleos, banco, controle, prioridade, grupos, projecao, detalhe) + o processo `busca.py` da raiz. Backtest: `engine/kernel.py`, `engine/execution.py` (`preparar`/`executar`), `metrics.py`, `analytics.py`, `detalhes.py`, `robustez.py` | `components/mining.py`, `mine_*.py`, `scatter.py`; Busca: `callbacks_busca.py`, `components/busca_panel.py`, `assets/busca.js`, `assets/busca.css`; Backtest: `callbacks.py`, `components/stats_cards.py`, `charts.py`, `results_grid.py` |
 | Walk-Forward | `wfa.py`, `wfa_runner.py`, `wfa_store.py` | `components/wfa_panel.py` |
 | Candidata | `candidata.py`, `candidata_runner.py`, `aleatorio.py`, `spa.py`, `tamanho.py`, `plano.py` | `callbacks_candidata.py`, `components/candidata_panel.py` |
 | Estratégias | `variantes.py` | `callbacks_estrategias.py`, `components/estrategias_panel.py` |
@@ -303,6 +303,31 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - **Ids de rótulo de moeda: um `type` por tela** (`moeda-c4`, `moeda-cand`).
   - **Textos de (?) de layout fixo ficam em R$** (lista na spec, "Estado depois
     da etapa 3"); não tente trocar um por um.
+- **Busca automática (`core/busca/`, `busca.py`; spec
+  `docs/superpowers/specs/2026-11-03-busca-automatica-design.md`):**
+  - **Banco próprio `data/buscas.duckdb`** (fora do git). Abre-faz-fecha: nunca
+    segure aberto. Ocupado vira `BancoOcupado`; o app mostra e tenta depois.
+  - **A busca roda no processo `busca.py`**, sem janela e abaixo do normal, e só
+    lê o Parquet (nunca o banco principal) — por isso roda no pregão. **Uma
+    busca viva por vez**, marcada por trava `msvcrt`. Nunca `os.kill` (no
+    Windows mata) nem o pid do `Popen` (não é o do processo real).
+  - **Motor em camadas** (`preparar` = sinal, caro; `executar` = janela, dias,
+    direção, stop e alvo). O gabarito `tests/dados/motor_camadas.json`
+    **nunca se regrava**; `scripts/gabarito_motor.py conferir` o confere. Mexeu
+    no motor? Rode-o junto com a foto do WIN.
+  - **`scripts/conferir_busca.py <busca_id>`** prova que a busca dá o número da
+    Varredura (refaz as melhores elites pelo caminho antigo, sem tolerância).
+  - **Período fixo na criação** da busca: não muda depois.
+  - **"Abrir o campeão no Backtest"** leva o recorte da busca (`store-combinacao`
+    com `origem: "busca"`); Minerar e Minerar a região o apagam.
+    `perfil_da_busca` = perfil do menu + as proteções.
+  - **A tela é de `ui/assets/busca.js`**, a partir do protótipo (contrato); o
+    Dash só manda dados pelos stores `busca-*`. Desvio visual: perguntar antes.
+  - **JSON sem `inf`/`NaN`** para o navegador (`_json_seguro` em
+    `ui/callbacks_busca.py`).
+  - O `ribs` traz scipy como dependência; `core/robustez.py` segue sem ele.
+  - Mexeu em `core/busca/*` ou `busca.py`? Busca em andamento segue com o
+    código antigo: pare-a e continue depois.
 - **Nunca passe dicionário (ou qualquer coisa que não seja componente) como
   filho de `html.*`.** O Dash 4 falha ao desenhar e, em silêncio, devolve o
   estado de OUTROS componentes: o menu e as sub-telas voltavam sozinhos para
@@ -324,17 +349,18 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 
 ## Documentos: qual confiar
 
-| Documento | Estado (03/11/2026) |
+| Documento | Estado (04/11/2026) |
 |---|---|
+| `docs/superpowers/specs/2026-11-03-busca-automatica-design.md` + `plans/2026-11-03-busca-automatica.md` (+ protótipo `2026-11-03-busca-automatica/layout-b.html`, contrato visual) | busca automática por nichos — implementada (etapas 1–3 no `master`, etapa 4 da tela na branch `busca-automatica`) |
 | `docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md` + `plans/2026-11-01-menu-e-mineracao.md` | redesenho do menu e Backtest dentro da Mineração — implementado, no `master` |
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
 | `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
 | `docs/superpowers/specs/2026-10-28-ativos-cme-design.md` + `plans/2026-10-28-ativos-cme-etapa1.md`, `2026-10-29-ativos-cme-etapa2.md`, `2026-10-30-ativos-cme-etapa4.md` | ativos da CME; as seções "Herança da etapa 1", "Estado depois da etapa 2", "Estado depois da etapa 3" e "Estado depois da etapa 4" dizem o que ficou |
-| `CHANGELOG.md` | atualizado até o redesenho do menu (03/11/2026); **não cobre variantes, portfólio nem gatilho** |
-| `README.md` | atualizado até o redesenho do menu (03/11/2026); o texto do MVP segue como história |
-| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 03/11/2026 |
+| `CHANGELOG.md` | atualizado até a busca automática (04/11/2026); **não cobre variantes, portfólio nem gatilho** |
+| `README.md` | atualizado até a busca automática (04/11/2026); o texto do MVP segue como história |
+| `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 04/11/2026 |
 
 Na dúvida entre documento e código, o código manda. Use o agente
 `documentador` para pôr a documentação em dia depois de uma entrega.
@@ -467,6 +493,16 @@ corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
   F5 o menu acompanha a mineração da memória (`8ea95d4`..`20de045`). Guarda:
   `scripts/campos_menu.py` + `tests/dados/campos_menu.json`. Suíte: 2.776
   testes. Spec: `docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md`.
+
+- **Busca automática por nichos ✅ (04/11/2026; etapas 1–3 no `master`, tela
+  na branch `busca-automatica`, `9d80ce9` e `cc4f654`).** Subtela nova da
+  Mineração (Varredura | Busca automática | Backtest): testa milhares de
+  combinações de uma estratégia num ativo (pyribs, MAP-Elites) num processo à
+  parte e mostra um mapa de nichos, com detalhe e "Minerar a região". Motor
+  dividido em `preparar`/`executar` com resultado idêntico (gabarito).
+  Suíte: 2.938 testes. Spec: `docs/superpowers/specs/2026-11-03-busca-automatica-design.md`.
+  Pendência: `scripts/campos_menu.py conferir` já falhava no `master` antes
+  desta entrega (só rótulos; `tests/test_campos_menu.py` passa) — a olhar.
 
 Também entraram em 21–23/10: stop e alvo em porcentagem do preço de entrada
 (`7d1d272`) e a estratégia `adx_direcao` (`cdb74bc`, `8eaca51`: parâmetros

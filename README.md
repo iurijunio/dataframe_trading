@@ -196,7 +196,13 @@ core/importar_lse.py       importação dos candles da CME (cli.py importar-lse)
 configs/instruments/       win.yaml, mes.yaml, mnq.yaml
 scripts/foto_win.py        foto do WIN: prova resultado idêntico após mexer no motor
 scripts/reassinar_codigo.py  reassina o hash de planos quando o código muda sem mudar trades
-tests/                     2.776 testes
+core/busca/                busca automática: catálogo, espaço, motor MAP-Elites, núcleos, banco, controle, grupos, projeção, detalhe
+busca.py                   processo da busca (sem janela, prioridade baixa, só lê o Parquet)
+data/buscas.duckdb         banco próprio da busca (fora do git)
+scripts/gabarito_motor.py  prova que o motor em camadas dá os mesmos trades de antes
+scripts/conferir_busca.py  prova que a busca dá o número da Varredura
+ui/assets/busca.js         desenha a tela da busca; o Dash só manda os dados
+tests/                     2.938 testes
 ```
 
 ## O dashboard
@@ -278,12 +284,29 @@ da Lightweight Charts, não enfeite. Não desligar.
 
 | Modo | Para quê |
 |---|---|
-| Mineração | subtela Varredura (varrer parâmetros e achar o platô) e subtela Backtest (uma combinação, com diagnóstico em cinco abas) |
+| Mineração | subtela Varredura (varrer parâmetros e achar o platô), subtela Busca automática (milhares de combinações num processo à parte, com mapa de nichos) e subtela Backtest (uma combinação, com diagnóstico em cinco abas) |
 | Walk-Forward | validar fora da amostra (seletor de ativo próprio; lista só do ativo escolhido) |
 | Candidata | 12 portões, contratos e o plano de operação (seletor de ativo próprio) |
 | Estratégias | variantes (configurações salvas) e sua ficha de rastreio |
 | Portfólio | correlação, capital, Kelly e risco de ruína |
 | Ao vivo | Pregão, Operação e Estratégias em tempo real |
+
+## Busca automática
+
+Subtela da Mineração (Varredura | Busca automática | Backtest). Faz o
+reconhecimento do terreno: testa o máximo de combinações de uma estratégia num
+ativo (tempo gráfico, horário, dias, direção, stop, alvo e parâmetros) e mostra
+**nichos** bons e diferentes entre si, num mapa. Não salva nada no Portfólio;
+validar continua sendo seu.
+
+- Roda no processo `busca.py`, sem janela e com prioridade baixa; o app pode
+  estar fechado. Só lê o Parquet, então pode rodar no pregão. Uma busca viva
+  por vez. Nada volta sozinho: parada só continua quando você clica.
+- Cada combinação vale pelo mesmo número da Varredura (mínimo de 400
+  trades; critério padrão fator de recuperação).
+- Clicar num nicho abre a gaveta de detalhe. Dali: **abrir o campeão no
+  Backtest** ou **Minerar a região** (leva à Varredura com as faixas do grupo).
+- Dados num banco próprio, `data/buscas.duckdb`.
 
 ## Ao vivo: papel e demo
 

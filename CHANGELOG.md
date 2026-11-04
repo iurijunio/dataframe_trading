@@ -18,6 +18,54 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
   troca mais a estratégia da memória.
 
 ### Adicionado
+- **Busca automática por nichos** (`core/busca/`, `busca.py`,
+  `ui/callbacks_busca.py`, `ui/components/busca_panel.py`,
+  `ui/assets/busca.js`, `ui/assets/busca.css`,
+  `scripts/gabarito_motor.py`, `scripts/conferir_busca.py`; desenho em
+  [docs/superpowers/specs/2026-11-03-busca-automatica-design.md](docs/superpowers/specs/2026-11-03-busca-automatica-design.md),
+  plano em [docs/superpowers/plans/2026-11-03-busca-automatica.md](docs/superpowers/plans/2026-11-03-busca-automatica.md)).
+  Reconhecimento do terreno: testa milhares de combinações de UMA estratégia
+  num ativo e entrega nichos bons e diferentes entre si (tempo gráfico,
+  horário, dias, direção, stop e alvo). Validar continua sendo do usuário.
+  - **Motor em camadas** (`core/engine/execution.py`: `preparar` e
+    `executar`). O sinal (caro) é calculado uma vez por tempo gráfico e
+    parâmetros essenciais; janela, dias, direção, stop e alvo (baratos) rodam
+    por cima, muitas vezes. O resultado é idêntico ao de antes, provado pelo
+    gabarito `tests/dados/motor_camadas.json` (um hash por caso: cada
+    estratégia × stop/alvo de cada tipo, janela, dias, direção, ADX, limites,
+    proteções e vários tempos gráficos, no WIN e no MES; gravado antes da
+    divisão, nunca regravar) e por `scripts/gabarito_motor.py conferir`.
+    `optimizer.avaliar_resultado` passou a ser compartilhado com a Varredura
+    (`core/optimizer.py`).
+  - **A busca** (`core/busca/`). Catálogo declarativo do que se varre
+    (`catalogo.py`; parâmetro global novo entra como mais um item), vetor da
+    pyribs ↔ combinação ↔ perfil (`espaco.py`), laço MAP-Elites com pyribs
+    0.12.0, retomável (`motor.py`), um processo por núcleo com cache de sinal
+    por dono estável (`nucleos.py`), avaliação com a MESMA conta da Varredura
+    (`avaliador.py`). Mínimo de 400 trades; critério padrão fator de
+    recuperação; holdout segue a caixa do menu. `scripts/conferir_busca.py
+    <busca_id>` refaz as melhores elites pelo caminho da Varredura e compara
+    sem tolerância.
+  - **Processo à parte** (`busca.py`, `core/busca/controle.py`). Abre sem
+    janela e com prioridade abaixo do normal, só lê o Parquet (nunca o banco
+    principal), então pode rodar no pregão ao lado da captura e das Ordens
+    real. Uma busca viva por vez, marcada por trava do Windows. Controles:
+    Iniciar, Pausar, Continuar, Parar e guardar, Nova busca; "parar às 08:30"
+    e limite de testes; núcleos mudam a partir do próximo lote. Nada volta
+    sozinho. Banco próprio `data/buscas.duckdb` (`core/busca/banco.py`),
+    fora do git.
+  - **Leitura do resultado.** Grupos de campeões parecidos (`grupos.py`),
+    projeções do mapa por tempo × início, dias ou direção (`projecao.py`) e
+    detalhe do nicho com hora × dia, por ano, espalhamento e curva do
+    campeão (`detalhe.py`).
+  - **Tela** (nova subtela Mineração: Varredura | Busca automática |
+    Backtest). Mapa de nichos, lista e espaço de busca, menu lateral direito
+    com controles e buscas salvas, e gaveta de detalhe. Desenhada por
+    `ui/assets/busca.js` a partir do protótipo aprovado (layout B); o Dash só
+    manda dados, pelos stores `busca-*`. "Abrir o campeão no Backtest" leva o
+    recorte da busca; "Minerar a região" leva à Varredura com faixas, tempo,
+    janela, dias, stop e alvo preenchidos.
+  - Suíte: 2.938 testes (eram 2.776).
 - **Redesenho do menu e do Backtest dentro da Mineração** (`ui/app.py`,
   `ui/components/mining.py`, `ui/components/wfa_panel.py`,
   `ui/components/candidata_panel.py`, `scripts/campos_menu.py`,

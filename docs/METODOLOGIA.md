@@ -379,7 +379,7 @@ já não funcionou.
 | Passo | Situação |
 |---|---|
 | 1 Criar estratégia | ✅ backtest com auditoria visual, 5 abas de diagnóstico |
-| 2 Busca de clusters | ✅ dispersão com cross-filtering |
+| 2 Busca de clusters | ✅ dispersão com cross-filtering · ✅ **busca automática por nichos** (04/11/2026): subtela da Mineração que testa milhares de combinações num processo à parte e entrega um mapa de nichos; minerar a região e validar seguem à mão |
 | 3 Pegar um cluster | ✅ clique carrega a combinação, roda o backtest e pula para a subtela Backtest da Mineração |
 | 4 Mineração de parâmetros | ✅ paralela, interrompível |
 | 5 Mineração de resultados | ✅ distribuição, curva ordenada, score robusto e porteira |
