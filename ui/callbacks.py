@@ -936,6 +936,47 @@ def perfil_do_menu(v: dict, m: dict) -> ExecutionProfile:
     )
 
 
+# Campos `val` da camada 4 que um perfil completo define (os demais `val` são
+# parâmetros da estratégia).
+VAL_DO_PERFIL = ("adx_periodo", "adx_limiar", "adx_filtro_di", "adx_subindo",
+                 "alvo_atr_periodo", "alvo_atr_mult", "alvo_pct", "stop_atr_periodo",
+                 "stop_atr_mult", "stop_pct", "stop_pontos", "alvo_pontos", "alvo_razao",
+                 "breakeven_pct", "step_gatilho_pct", "step_distancia_pct",
+                 "trailing_pontos")
+PROTECOES = ("breakeven_pct", "step_gatilho_pct", "step_distancia_pct", "trailing_pontos")
+
+
+def perfil_da_busca(v: dict, m: dict) -> ExecutionProfile:
+    """O perfil fixo de uma Busca automática: o do menu MAIS as proteções.
+    Na Varredura as proteções viajam como campos mineráveis (`campos`); a
+    busca não as varre, então elas entram fixas — senão a busca rodaria sem
+    breakeven e o Backtest do campeão, com."""
+    p = perfil_do_menu(v, m)
+    for k in PROTECOES:
+        if v.get(k) is not None:
+            setattr(p, k, v[k])
+    return p
+
+
+def menu_do_perfil(p: dict) -> tuple[dict, dict]:
+    """O caminho de volta de `perfil_do_menu`: (campos do menu por id,
+    valores `val` por parâmetro) que reproduzem o perfil `p`."""
+    m = {"e-timeframe": p["timeframe"], "e-ent-ini": p["entrada_inicio"],
+         "e-ent-fim": p["entrada_fim"], "e-fechamento": p["fechamento"],
+         "e-dias": list(p["dias_semana"]), "e-direcao": p["direcao"],
+         "e-filtro-adx": p["filtro_adx"], "e-sem-ent1": p["sem_entrada1"],
+         "e-sem-ent2": p["sem_entrada2"], "e-sem-ent3": p["sem_entrada3"],
+         "e-alvo-tipo": p["alvo_tipo"], "e-stop-tipo": p["stop_tipo"],
+         "e-max-barras": p["max_barras"], "e-lim-ganho": p["limite_ganho_contrato"],
+         "e-lim-perda": p["limite_perda_contrato"], "e-max-trades": p["max_trades_dia"],
+         "e-max-loss": p["max_prejuizos_dia"], "e-corretagem": p["corretagem_por_contrato"],
+         "e-emolumentos": p["emolumentos_por_contrato"], "e-slippage": p["slippage_ticks"],
+         "e-modo": p["modo_posicao"], "e-contratos": p["contratos"],
+         "e-risco": p["risco_por_trade"], "e-capital": p["capital_inicial"],
+         "e-min-ops": p["min_operacoes"]}
+    return m, {k: p[k] for k in VAL_DO_PERFIL if k in p}
+
+
 def _menu_atual(ids_val, valores_val, holdout, menu) -> dict:
     """O menu numa forma comparável: `val:<p>`, `excluir-holdout` e os
     demais campos por id (`menu` já vem como {id: valor})."""
@@ -1917,9 +1958,12 @@ def register(app):
         Input("estrategia", "value"),
         Input("mine-carregar", "value"),
         Input("ativo", "value"),
+        # uma Varredura nova também: o corte que um campeão da Busca
+        # automática trouxe não pode valer para o backtest dela
+        Input("btn-minerar", "n_clicks"),
         prevent_initial_call=True,
     )
-    def esquecer_combinacao(_estrategia, _run_id, _ativo):
+    def esquecer_combinacao(_estrategia, _run_id, _ativo, _minerar):
         return _esquecer_combinacao(ctx.triggered_id)
 
     # ------------------------------- passo 5: a regiao, e nao o campeao

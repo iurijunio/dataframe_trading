@@ -148,48 +148,94 @@ def test_excluir_viva_avisa_e_nao_apaga(monkeypatch):
 
 
 # ------------------------------------------------------------ ir
-def test_ir_regiao_escreve_faixas_e_volta_para_a_varredura():
+def _saida(out) -> dict:
+    """A tupla do callback `ir` por nome: val, on, opt, os campos do menu,
+    d-de, d-ate, holdout, btn-run, subtela, store."""
+    nomes = (["val", "on", "opt"] + [cid for cid, _p in MENU_PERFIL]
+             + ["d-de", "d-ate", "holdout", "btn-run", "subtela", "store"])
+    assert len(out) == len(nomes)
+    return dict(zip(nomes, out))
+
+
+PERFIL_BUSCA = ExecutionProfile(corretagem_por_contrato=1.25, fechamento="17:00",
+                                adx_periodo=14, adx_limiar=20, breakeven_pct=40,
+                                max_trades_dia=3).to_config()
+
+
+def test_ir_regiao_escreve_faixas_fixos_e_volta_para_a_varredura():
     r = {"timeframe": "M15", "entrada_inicio": "10:00", "entrada_fim": "11:30",
          "dias_semana": [2, 4], "direcao": "venda", "stop_tipo": "atr",
          "alvo_tipo": "multiplicador",
          "campos": {"di_periodo": {"on": True, "de": 10, "ate": 20, "passo": 1, "valor": 14},
                     "stop_atr_mult": {"on": False, "de": 1.5, "ate": 1.5, "passo": 0.25,
                                       "valor": 1.5}}}
-    ids_val = [{"p": "di_periodo"}, {"p": "stop_atr_mult"}, {"p": "outro"}]
-    ids_on = [{"p": "di_periodo"}, {"p": "stop_atr_mult"}, {"p": "outro"}]
+    cfg = {"perfil_base": PERFIL_BUSCA, "de": "2021-03-16T00:00:00",
+           "ate": "2026-11-03T23:59:59"}
+    ids_val = [{"p": "di_periodo"}, {"p": "stop_atr_mult"}, {"p": "adx_periodo"},
+               {"p": "breakeven_pct"}]
+    ids_on = [{"p": "di_periodo"}, {"p": "stop_atr_mult"}, {"p": "breakeven_pct"}]
     ids_opt = [{"p": "di_periodo", "k": "de"}, {"p": "di_periodo", "k": "ate"},
                {"p": "outro", "k": "de"}]
-    out = CB._ir_regiao(r, ids_val, [1, 2, 3], ids_on, [[], [], ["on"]], ids_opt, [0, 0, 9])
-    val, on, opt = out[0], out[1], out[2]
-    assert val == [14, 1.5, 3] and on == [["on"], [], ["on"]] and opt == [10, 20, 9]
-    assert out[3:10] == ("M15", "10:00", "11:30", [2, 4], "venda", "atr", "multiplicador")
-    assert out[14] == "varredura"
+    o = _saida(CB._ir_regiao(r, cfg, ids_val, [1, 2, 3, 4], ids_on, [[], [], ["on"]],
+                             ids_opt, [0, 0, 9]))
+    assert o["val"] == [14, 1.5, 14, 40]                 # região + fixos da busca
+    assert o["on"] == [["on"], [], []]                   # marca velha sai do minerar
+    assert o["opt"] == [10, 20, 9]
+    assert (o["e-timeframe"], o["e-ent-ini"], o["e-ent-fim"], o["e-dias"],
+            o["e-direcao"], o["e-stop-tipo"], o["e-alvo-tipo"]) == \
+        ("M15", "10:00", "11:30", [2, 4], "venda", "atr", "multiplicador")
+    assert (o["e-corretagem"], o["e-fechamento"], o["e-max-trades"]) == (1.25, "17:00", 3)
+    assert (o["d-de"], o["d-ate"]) == ("2021-03-16", "2026-11-03")
+    assert o["subtela"] == "varredura" and o["store"] is None
 
 
-def test_ir_backtest_leva_o_corte_e_nao_nasce_editado():
+def test_ir_backtest_leva_o_perfil_inteiro_o_corte_e_nao_nasce_editado():
     from ui.callbacks import _linha_combinacao, _menu_atual
 
+    perfil = {**ExecutionProfile(timeframe="M2", entrada_inicio="13:00", entrada_fim="13:30",
+                                 dias_semana=(2, 5), stop_tipo="percentual", stop_pct=0.5,
+                                 alvo_tipo="multiplicador", alvo_razao=3.5).to_config(),
+              **{k: PERFIL_BUSCA[k] for k in ("corretagem_por_contrato", "fechamento",
+                                              "adx_periodo", "adx_limiar", "breakeven_pct",
+                                              "max_trades_dia")}}
     cb = {"params": {"di_periodo": 33}, "de": "2021-03-16T00:00:00",
           "ate": "2026-11-03T23:59:59", "fim_otimizacao": "2025-11-08T23:59:59",
-          "perfil": ExecutionProfile(timeframe="M2", entrada_inicio="13:00",
-                                     entrada_fim="13:30", dias_semana=(2, 5),
-                                     stop_tipo="percentual", stop_pct=0.5,
-                                     alvo_tipo="multiplicador", alvo_razao=3.5).to_config()}
-    ids_val = [{"p": "di_periodo"}, {"p": "stop_pct"}, {"p": "alvo_razao"}]
+          "perfil": perfil}
+    ids_val = [{"p": "di_periodo"}, {"p": "stop_pct"}, {"p": "alvo_razao"},
+               {"p": "adx_periodo"}, {"p": "breakeven_pct"}]
     menu = {"ativo": "WIN$N", "e-capital": 10000}
-    out = CB._ir_backtest(cb, 3, ids_val, [14, 0.2, 2.0], [], [], [], [], 4, menu)
-    assert out[0] == [33, 0.5, 3.5]
-    assert out[3:12] == ("M2", "13:00", "13:30", [2, 5], "ambas", "percentual",
-                         "multiplicador", "2021-03-16", "2026-11-03")
-    assert out[12] == ["on"] and out[13] == 5 and out[14] == "backtest"
-    store = out[15]
+    o = _saida(CB._ir_backtest(cb, 3, ids_val, [14, 0.2, 2.0, 0, 0], [], [], [], [], 4, menu))
+    assert o["val"] == [33, 0.5, 3.5, 14, 40]
+    assert (o["e-timeframe"], o["e-ent-ini"], o["e-ent-fim"], o["e-dias"],
+            o["e-stop-tipo"], o["e-alvo-tipo"]) == \
+        ("M2", "13:00", "13:30", [2, 5], "percentual", "multiplicador")
+    assert (o["e-corretagem"], o["e-fechamento"], o["e-max-trades"]) == (1.25, "17:00", 3)
+    assert (o["d-de"], o["d-ate"]) == ("2021-03-16", "2026-11-03")
+    assert o["holdout"] == ["on"] and o["btn-run"] == 5 and o["subtela"] == "backtest"
+    store = o["store"]
     assert store["origem"] == "busca" and store["corte"] == "2025-11-08T23:59:59"
-    # o menu logo depois do clique é igual à foto: a linha não nasce "editado"
-    depois = _menu_atual(ids_val, out[0], ["on"], {
-        **menu, "e-timeframe": "M2", "e-ent-ini": "13:00", "e-ent-fim": "13:30",
-        "e-dias": [2, 5], "e-direcao": "ambas", "e-stop-tipo": "percentual",
-        "e-alvo-tipo": "multiplicador", "d-de": "2021-03-16", "d-ate": "2026-11-03"})
+    escrito = {cid: o[cid] for cid, _p in MENU_PERFIL}
+    depois = _menu_atual(ids_val, o["val"], ["on"],
+                         {**menu, **escrito, "d-de": o["d-de"], "d-ate": o["d-ate"]})
     assert "editado" not in _linha_combinacao(store, depois)
+
+
+def test_menu_do_perfil_e_o_caminho_de_volta():
+    from ui.callbacks import menu_do_perfil
+
+    m, v = menu_do_perfil(PERFIL_BUSCA)
+    # a Varredura não lê proteção do menu (ela vem pelos campos mineráveis);
+    # a busca lê, e com ela o perfil volta inteiro
+    assert perfil_do_menu(v, m).to_config() == {**PERFIL_BUSCA, "breakeven_pct": 0.0}
+    from ui.callbacks import perfil_da_busca
+    assert perfil_da_busca(v, m).to_config() == PERFIL_BUSCA
+
+
+def test_busca_escolhida_de_outra_estrategia_nao_aparece():
+    bid = B.criar({"simbolo": "WIN$N", "estrategia": "adx_direcao"})
+    assert CB._busca_da_tela(bid, "adx_direcao", "WIN$N") == bid
+    assert CB._busca_da_tela(bid, "rompimento_canal", "WIN$N") is None
+    assert CB._busca_da_tela(bid, "adx_direcao", "MES") is None
 
 
 @pytest.mark.skipif(not _tem_parquet(), reason="sem Parquet do WIN")

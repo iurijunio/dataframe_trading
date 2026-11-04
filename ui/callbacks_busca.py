@@ -24,7 +24,7 @@ from core.busca.espaco import CAMPO_ALVO, CAMPO_STOP, Espaco
 from strategies import registry
 
 from .callbacks import (MENU_COMBINACAO, MENU_PERFIL, _menu_atual, _simbolo,
-                        perfil_do_menu)
+                        menu_do_perfil, perfil_da_busca)
 
 EIXOS = projecao.EIXOS
 ROTULO_TF = {"H1": "M60"}             # o protótipo escreve M60
@@ -110,7 +110,12 @@ def _busca_da_tela(sel, estrategia, simbolo):
     if sel == "nova":
         return None
     if isinstance(sel, int):
-        return sel
+        # a escolhida só vale enquanto é da estratégia e do ativo do menu:
+        # trocar o menu mostra as buscas DELES (e "Abrir o campeão" nunca
+        # leva os números de uma estratégia para outra)
+        b = banco.ler_busca(sel)
+        if b and b["estrategia"] == estrategia and b["simbolo"] == simbolo:
+            return sel
     try:
         lista = banco.listar(estrategia, simbolo)
     except banco.BancoOcupado:
@@ -176,7 +181,7 @@ def _fixos(p, moeda: str = "") -> list[list[str]]:
             ["Stop móvel", f"{p.step_gatilho_pct:g}% / {p.step_distancia_pct:g}%"
              if p.step_gatilho_pct else "desligado"],
             ["Custos", f"{moeda} {_num_br(p.corretagem_por_contrato + p.emolumentos_por_contrato)}"
-             f" + {p.slippage_ticks} tick".strip()]]
+             f" + {p.slippage_ticks} tick{'s' if p.slippage_ticks != 1 else ''}".strip()]]
 
 
 # ------------------------------------------------------------ dados
@@ -218,6 +223,7 @@ def dados_da_tela(sel, estrategia, simbolo, perfil, menu_ok=True) -> dict:
     base = {"cpu_total": os.cpu_count() or 24, "moeda": moeda,
             "salvas": _salvas(estrategia, simbolo, viva), "menu_ok": menu_ok,
             "metas": [{"valor": k, "rotulo": v} for k, v in NOME_META.items()]}
+    base.update(estrategia=estrategia, simbolo=simbolo)
     if bid is None:
         return {**base, "busca_id": None, "status": "parada",
                 "dica": DICA_ESTADO["parada"], "quando": "",
@@ -257,6 +263,7 @@ def dados_da_tela(sel, estrategia, simbolo, perfil, menu_ok=True) -> dict:
         faltam = ""
     mapas = _mapas(bid, (e.get("versao"), b.get("versao_grupos"))) if distintos else None
     return {**base, "busca_id": bid, "status": st, "vivo": e.get("vivo"),
+            "versao_grupos": b.get("versao_grupos"),
             "dica": DICA_ESTADO.get(st, ""), "quando": _quando(st, e, b),
             "criterio": crit, "sigla": SIGLA_META.get(crit, crit),
             "minimo": cfg.get("minimo", 400),
@@ -351,8 +358,8 @@ def register(app):
             return no_update
         simbolo = _simbolo(ativo)
         estrategia = estrategia or registry.nome_atual()
-        perfil = perfil_do_menu({i["p"]: v for i, v in zip(ids_val, valores)},
-                                {cid: v for (cid, _p), v in zip(MENU_PERFIL, menu)})
+        perfil = perfil_da_busca({i["p"]: v for i, v in zip(ids_val, valores)},
+                                 {cid: v for (cid, _p), v in zip(MENU_PERFIL, menu)})
         try:
             d = dados_da_tela(sel, estrategia, simbolo, perfil)
         except banco.BancoOcupado as erro:
@@ -381,8 +388,8 @@ def register(app):
              valores, ids_val, *menu):
         if not acao:
             return no_update, no_update
-        perfil = perfil_do_menu({i["p"]: v for i, v in zip(ids_val, valores)},
-                                {cid: v for (cid, _p), v in zip(MENU_PERFIL, menu)})
+        perfil = perfil_da_busca({i["p"]: v for i, v in zip(ids_val, valores)},
+                                 {cid: v for (cid, _p), v in zip(MENU_PERFIL, menu)})
         wf = {"treino_meses": treino or 12, "teste_meses": teste or 3,
               "passo_meses": passo or 3, "holdout_meses": holdout or 0}
         novo, aviso = atender(acao, sel, estrategia or registry.nome_atual(),
@@ -408,13 +415,7 @@ def register(app):
         Output({"type": "val", "p": ALL}, "value", allow_duplicate=True),
         Output({"type": "opt-on", "p": ALL}, "value", allow_duplicate=True),
         Output({"type": "opt", "p": ALL, "k": ALL}, "value", allow_duplicate=True),
-        Output("e-timeframe", "value", allow_duplicate=True),
-        Output("e-ent-ini", "value", allow_duplicate=True),
-        Output("e-ent-fim", "value", allow_duplicate=True),
-        Output("e-dias", "value", allow_duplicate=True),
-        Output("e-direcao", "value", allow_duplicate=True),
-        Output("e-stop-tipo", "value", allow_duplicate=True),
-        Output("e-alvo-tipo", "value", allow_duplicate=True),
+        *[Output(cid, prop, allow_duplicate=True) for cid, prop in MENU_PERFIL],
         Output("d-de", "date", allow_duplicate=True),
         Output("d-ate", "date", allow_duplicate=True),
         Output("excluir-holdout", "value", allow_duplicate=True),
@@ -427,61 +428,83 @@ def register(app):
         State({"type": "opt", "p": ALL, "k": ALL}, "id"),
         State({"type": "opt", "p": ALL, "k": ALL}, "value"),
         State("btn-run", "n_clicks"),
+        State("estrategia", "value"), State("ativo", "value"),
         *[State(cid, prop) for cid, prop in MENU_COMBINACAO],
         prevent_initial_call=True,
     )
-    def ir(pedido, ids_val, vals, ids_on, ons, ids_opt, opts, n_run, *menu):
+    def ir(pedido, ids_val, vals, ids_on, ons, ids_opt, opts, n_run, estrategia,
+           ativo, *menu):
+        nada = (no_update,) * (9 + len(MENU_PERFIL))
         if not pedido or not pedido.get("casa"):
-            return (no_update,) * 16
+            return nada
         bid, casa = int(pedido["id"]), pedido["casa"]
-        if pedido.get("acao") == "regiao":
-            return _ir_regiao(detalhe.regiao_para_varredura(bid, casa),
-                              ids_val, vals, ids_on, ons, ids_opt, opts)
-        return _ir_backtest(detalhe.campeao_para_backtest(bid, casa), bid,
-                            ids_val, vals, ids_on, ons, ids_opt, opts, n_run,
-                            {cid: v for (cid, _p), v in zip(MENU_COMBINACAO, menu)})
+        try:
+            cfg = (banco.ler_busca(bid) or {}).get("config") or {}
+            # números de uma estratégia ou ativo nunca vão para o menu de outro
+            if (cfg.get("estrategia"), cfg.get("simbolo")) != \
+                    (estrategia or registry.nome_atual(), _simbolo(ativo)):
+                return nada
+            if pedido.get("acao") == "regiao":
+                return _ir_regiao(detalhe.regiao_para_varredura(bid, casa), cfg,
+                                  ids_val, vals, ids_on, ons, ids_opt, opts)
+            return _ir_backtest(detalhe.campeao_para_backtest(bid, casa), bid,
+                                ids_val, vals, ids_on, ons, ids_opt, opts, n_run,
+                                {cid: v for (cid, _p), v in zip(MENU_COMBINACAO, menu)})
+        except (banco.BancoOcupado, ValueError) as erro:
+            print(f"busca: não deu para abrir a casa {casa}: {erro}", flush=True)
+            return nada
 
 
-def _campos_execucao(perfil: dict) -> dict:
-    """Os campos `val` da camada 4 que a combinação define."""
-    return {k: perfil[k] for k in (*CAMPO_STOP.values(), *CAMPO_ALVO.values())
-            if k in perfil}
+def _menu_saida(m: dict) -> list:
+    """Os campos de `MENU_PERFIL` na ordem dos Outputs (no_update no que
+    `m` não traz)."""
+    return [m.get(cid, no_update) for cid, _p in MENU_PERFIL]
+
+
+def _data(v):
+    return str(v)[:10] if v else no_update
 
 
 def _ir_backtest(cb, bid, ids_val, vals, ids_on, ons, ids_opt, opts, n_run,
                  menu: dict | None = None):
-    """Abre o campeão no Backtest: os mesmos campos que o clique numa linha
-    da Varredura escreve, mais tempo, janela, dias, direção, tipos e período
-    — a combinação da busca é mais do que os `val`. O corte do holdout vai
-    junto (`corte`): o Backtest o prefere ao da Varredura na memória."""
-    p = cb["perfil"]
-    novos = {**cb["params"], **_campos_execucao(p)}
+    """Abre o campeão no Backtest com o perfil INTEIRO da busca: tempo,
+    janela, dias, direção, stop e alvo do campeão e os fixos com que a busca
+    rodou (custos, ADX, limites, proteções, período) — o menu pode ter mudado
+    desde o início. O corte do holdout vai junto (`corte`): o Backtest o
+    prefere ao da Varredura na memória."""
+    m, val_perfil = menu_do_perfil(cb["perfil"])
+    novos = {**val_perfil, **cb["params"]}
     val = [novos.get(i["p"], v) for i, v in zip(ids_val, vals)]
+    escritos = {**m, "d-de": _data(cb["de"]), "d-ate": _data(cb["ate"])}
     # a foto do menu DEPOIS desta escrita (o menu inteiro, como o clique na
     # Varredura): sem os demais campos, a linha nasceria "editado"
-    escritos = {"e-timeframe": p["timeframe"], "e-ent-ini": p["entrada_inicio"],
-                "e-ent-fim": p["entrada_fim"], "e-dias": list(p["dias_semana"]),
-                "e-direcao": p["direcao"], "e-stop-tipo": p["stop_tipo"],
-                "e-alvo-tipo": p["alvo_tipo"], "d-de": cb["de"][:10],
-                "d-ate": cb["ate"][:10]}
     store = {"origem": "busca", "n": bid, "params": cb["params"],
              "corte": cb["fim_otimizacao"],
-             "menu": _menu_atual(ids_val, val, ["on"], {**(menu or {}), **escritos})}
+             "menu": _menu_atual(ids_val, val, ["on"],
+                                 {**(menu or {}), **{k: v for k, v in escritos.items()
+                                                     if v is not no_update}})}
     return (val, [no_update] * len(ids_on), [no_update] * len(ids_opt),
-            p["timeframe"], p["entrada_inicio"], p["entrada_fim"],
-            list(p["dias_semana"]), p["direcao"], p["stop_tipo"], p["alvo_tipo"],
-            cb["de"][:10], cb["ate"][:10], ["on"], (n_run or 0) + 1, "backtest", store)
+            *_menu_saida(m), escritos["d-de"], escritos["d-ate"], ["on"],
+            (n_run or 0) + 1, "backtest", store)
 
 
-def _ir_regiao(r, ids_val, vals, ids_on, ons, ids_opt, opts):
-    """Minerar a região: as faixas do grupo nos campos da Varredura."""
+def _ir_regiao(r, cfg, ids_val, vals, ids_on, ons, ids_opt, opts):
+    """Minerar a região: as faixas do grupo nos campos da Varredura, sobre o
+    mesmo período e os mesmos fixos com que a busca rodou. Campo fora da
+    região sai do "minerar" (senão uma marca velha varreria o que a busca
+    nunca variou). A combinação aberta no Backtest é esquecida: o corte
+    dela não vale para a mineração nova."""
     campos = r["campos"]
-    val = [campos[i["p"]]["valor"] if i["p"] in campos else v
-           for i, v in zip(ids_val, vals)]
-    on = [(["on"] if campos[i["p"]].get("on") else []) if i["p"] in campos else o
-          for i, o in zip(ids_on, ons)]
+    m, val_perfil = menu_do_perfil(cfg.get("perfil_base") or {}) \
+        if cfg.get("perfil_base") else ({}, {})
+    m.update({"e-timeframe": r["timeframe"], "e-ent-ini": r["entrada_inicio"],
+              "e-ent-fim": r["entrada_fim"], "e-dias": r["dias_semana"],
+              "e-direcao": r["direcao"], "e-stop-tipo": r["stop_tipo"],
+              "e-alvo-tipo": r["alvo_tipo"]})
+    novos = {**val_perfil, **{k: f["valor"] for k, f in campos.items()}}
+    val = [novos.get(i["p"], v) for i, v in zip(ids_val, vals)]
+    on = [["on"] if campos.get(i["p"], {}).get("on") else [] for i in ids_on]
     opt = [campos[i["p"]].get(i["k"], o) if i["p"] in campos else o
            for i, o in zip(ids_opt, opts)]
-    return (val, on, opt, r["timeframe"], r["entrada_inicio"], r["entrada_fim"],
-            r["dias_semana"], r["direcao"], r["stop_tipo"], r["alvo_tipo"],
-            no_update, no_update, no_update, no_update, "varredura", no_update)
+    return (val, on, opt, *_menu_saida(m), _data(cfg.get("de")), _data(cfg.get("ate")),
+            no_update, no_update, "varredura", None)

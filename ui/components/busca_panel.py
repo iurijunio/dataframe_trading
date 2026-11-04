@@ -35,7 +35,7 @@ def painel() -> html.Div:
             dcc.Store(id="busca-pedido"),
             dcc.Store(id="busca-ir"),
             dcc.Store(id="busca-feito"),        # conta ações atendidas: força leitura
-            html.Div(id="busca-raiz", className="busca",
+            html.Div(id="busca-raiz", className="busca", role="region",
                      **{"aria-label": "Busca automática"}),
         ],
         className="busca-wrap",

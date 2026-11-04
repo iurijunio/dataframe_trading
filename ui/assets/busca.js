@@ -257,8 +257,11 @@
   function hideTip() { var t = $('b-tip'); if (t) { t.hidden = true; t._cell = null; } }
 
   /* ------------------------------------------------------------ lista */
-  function bom(x) { return x.fr == null || x.fr >= 3; }
-  function fraco(x) { return x.fr != null && x.fr < 1.5; }
+  // selos pela META da busca (o contador "Bons" usa o mesmo corte); lucro e
+  // drawdown não têm corte de "bom"
+  function crit() { return (D && D.criterio) || 'fr'; }
+  function bom(x) { var c = crit(); if (c === 'fr') return x.fr == null || x.fr >= 3; if (c === 'pf') return x.pf == null || x.pf >= 1.25; return false; }
+  function fraco(x) { var c = crit(); if (c === 'fr') return x.fr != null && x.fr < 1.5; if (c === 'pf') return x.pf != null && x.pf < 1.1; return false; }
   function chaveOrd(x) {
     if (sortK === 'fr') return x.fr == null ? Infinity : x.fr;
     if (sortK === 'pf') return x.pf == null ? Infinity : x.pf;
@@ -299,7 +302,7 @@
     $('b-l-all').textContent = showAll ? 'Mostrar só os 12 primeiros' : 'Mostrar todos (' + all.length + ')';
     $$('.b-list th[data-k]').forEach(function (th) { th.setAttribute('aria-sort', th.dataset.k === sortK ? (sortDir < 0 ? 'descending' : 'ascending') : 'none'); });
     var h = '';
-    if (!rows.length) h = '<tr><td colspan="8" class="b-dim" style="text-align:center;padding:24px">Nenhum nicho bom ainda</td></tr>';
+    if (!rows.length) h = '<tr><td colspan="8" class="b-dim" style="text-align:center;padding:24px">' + (onlyGood ? 'Nenhum nicho bom ainda' : 'Nenhum nicho com ' + fmt(minimo()) + ' trades ainda') + '</td></tr>';
     var m = mapa();
     rows.forEach(function (i, n) {
       var x = casas()[i], c = ramp(D.legendas.fr.paradas, x.fr), sub = dims(x).map(function (d) { return d[1]; }).join(', ');
@@ -318,7 +321,13 @@
   }
 
   /* ------------------------------------------------------------ espaço */
-  function numBR(s) { s = String(s == null ? '' : s).replace(/[^\d,.\-]/g, '').replace(/\./g, '').replace(',', '.'); var v = parseFloat(s); return isNaN(v) ? null : v; }
+  function numBR(s) {
+    // "1.234,5" (pt-BR), "80.000" (milhar) e "1.5" (ponto decimal, o hábito dos outros campos)
+    s = String(s == null ? '' : s).replace(/[^\d,.\-]/g, '');
+    if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+    var v = parseFloat(s); return isNaN(v) ? null : v;
+  }
   function numTxt(v) { return v == null ? '' : String(v).replace('.', ','); }
   function iniciarRasc() {
     rasc = {};
@@ -346,7 +355,7 @@
       h += '<div class="b-chips">' + it.opcoes.map(function (o) {
         return '<button type="button" class="b-chip" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" aria-pressed="' + !!(f.tipos[o.tipo] && f.tipos[o.tipo].on) + '">' + esc(o.rotulo) + '</button>';
       }).join('') + '</div></td><td><span class="b-rng">' + it.opcoes.filter(function (o) { return o.tipo !== 'sem'; }).map(function (o) {
-        return '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="passo" value="' + numTxt(f.tipos[o.tipo].passo) + '" aria-label="Passo do ' + esc(it.rotulo.toLowerCase()) + ' em ' + esc(o.rotulo.split(' ')[0]) + '">';
+        return '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="passo" value="' + numTxt(f.tipos[o.tipo].passo) + '" aria-label="Passo do ' + esc(it.rotulo.toLowerCase()) + ' em ' + ({pontos: 'pontos', atr: 'ATR', percentual: 'porcentagem', multiplicador: 'vezes o stop'}[o.tipo] || o.tipo) + '">';
       }).join('') + '</span></td></tr>';
       return h;
     }
@@ -368,7 +377,14 @@
       E.itens.filter(function (it) { return it.onde === 'param'; }).map(linhaItem).join('') + '</tbody></table></div>';
     $('b-cfg-corpo').innerHTML = h;
     initTips($('b-cfg-corpo'));
-    $('b-cfg').disabled = !!E.travado; $('b-cfg-lock').hidden = !E.travado; $('b-esp-lock').style.display = E.travado ? '' : 'none';
+    // o fieldset fica ativo: desligá-lo desligaria também os (?) de dentro
+    $$('#b-cfg input,#b-cfg select,#b-cfg .b-chip').forEach(function (el) { el.disabled = !!E.travado; });
+    $('b-cfg-lock').hidden = !E.travado; $('b-esp-lock').style.display = E.travado ? '' : 'none';
+  }
+  function renderEspTrava() {
+    var t = !!D.espaco.travado;
+    $$('#b-cfg input,#b-cfg select,#b-cfg .b-chip').forEach(function (el) { el.disabled = t; });
+    $('b-cfg-lock').hidden = !t; $('b-esp-lock').style.display = t ? '' : 'none';
   }
   function lerEsp() {
     var faixas = {};
@@ -415,7 +431,8 @@
     $('b-k-n').textContent = m ? m.n_com_resultado : '—'; $('b-k-nde').textContent = m ? 'de ' + m.n_casas : '';
     $('b-k-b').textContent = m && m.bons != null ? m.bons : '—';
     var best = m && m.melhor; $('b-k-bl').textContent = 'Melhor ' + sig;
-    var bv = best ? (crit === 'pf' ? (best.pf == null ? '∞' : dec(best.pf, 2)) : frTxt(best)) : '—';
+    var bv = !best ? '—' : crit === 'pf' ? (best.pf == null ? '∞' : dec(best.pf, 2))
+      : crit === 'lucro' ? moeda(best.objetivo) : crit === 'dd' ? moeda(-best.objetivo) : frTxt(best);
     $('b-k-fr').textContent = bv; $('b-k-best').disabled = !best;
     $('b-k-best').setAttribute('aria-label', best ? 'Melhor ' + sig + ' ' + bv + ', ir até ele no mapa' : 'Sem melhor ainda');
     $('b-k-dec').textContent = D.decorrido || '—'; $('b-k-fal').textContent = D.faltam || ''; $('b-k-tl').textContent = D.rotulo_tempo || 'Decorrido';
@@ -433,7 +450,8 @@
   }
 
   /* ------------------------------------------------------------ aplicar */
-  var ultimoStatus = null, ultimaBusca = undefined, formaMapa = '';
+  var ultimoStatus = null, ultimoStatusFoco = undefined, ultimaBusca = undefined, formaMapa = '', chaveEsp = '', versaoGrupos = null;
+  var salvasJson = '', casaJson = '', feitoVisto = null, avisoT = null, focoDepois = null;
   function apply() {
     var s = st(), nomeSt = status();
     $('b-st-pill').className = 'b-pill lg ' + s.pill; $('b-st-spin').hidden = !s.spin; $('b-st-txt').textContent = s.txt;
@@ -447,6 +465,10 @@
     $('b-l-empty').hidden = tem; $('b-l-has').hidden = !tem;
     // com a busca já rodando, o vazio é só espera: nada de "Iniciar busca"
     $$('[data-go="ini"]').forEach(function (b) { b.hidden = nomeSt !== 'parada'; });
+    var chave = D.busca_id + '|' + D.estrategia + '|' + D.simbolo;
+    // o rascunho do espaço é da estratégia e do ativo: trocou o menu, refaz
+    if (chave !== chaveEsp) { rasc = null; chaveEsp = chave; }
+    if (D.versao_grupos !== versaoGrupos) { detCache = {}; pedidos = {}; versaoGrupos = D.versao_grupos; }
     if (D.busca_id !== ultimaBusca) {           // trocou de busca: refaz tudo
       rasc = null; detCache = {}; pedidos = {}; if (drOpen) closeDr();
       var c = D.controle || {};
@@ -463,9 +485,27 @@
     var m = mapa(), forma = m ? D.busca_id + '|' + axis + '|' + m.linhas.length + 'x' + m.colunas.length : '';
     if (m) { if (forma !== formaMapa) renderMap(); else { renderLegend(); paint(); } if (view === 'lista') renderList(); }
     formaMapa = forma;
-    renderEsp(); renderSaved();
-    $('b-svmsg').textContent = D.aviso || '';
-    if (drOpen) { if (abre(casas()[di])) fillDrawer(); else closeDr(); }
+    if (!rasc || !$('b-cfg-corpo').innerHTML) renderEsp(); else renderEspTrava();
+    // só redesenha o que mudou: a cada 2 s o foco do teclado não pode sumir
+    var sj = JSON.stringify(D.salvas || []) + D.busca_id;
+    if (sj !== salvasJson) { salvasJson = sj; renderSaved(); }
+    if (D.feito && D.feito !== feitoVisto) {
+      feitoVisto = D.feito; $('b-svmsg').textContent = D.aviso || '';
+      clearTimeout(avisoT); avisoT = setTimeout(function () { $('b-svmsg').textContent = ''; }, 4000);
+    }
+    if (drOpen) {
+      var cx = casas()[di];
+      if (!abre(cx)) closeDr();
+      else { var cj = JSON.stringify(cx) + status(); if (cj !== casaJson) { casaJson = cj; fillDrawer(); } }
+    }
+    // depois de uma ação o botão clicado se desliga: o foco vai ao próximo útil
+    var ae = document.activeElement;
+    if (focoDepois === 'salvas') { focoDepois = null; var sv = $('b-saved').querySelector('.b-sv'); (sv || $('b-ini')).focus(); }
+    else if (ultimoStatusFoco !== nomeSt && (!ae || ae === document.body || ae.disabled) && root.contains(ae || root)) {
+      var alvo = ['b-con', 'b-pau', 'b-ini', 'b-nova'].map($).filter(function (b) { return b && !b.disabled; })[0];
+      if (alvo && ultimoStatusFoco !== undefined) alvo.focus();
+    }
+    ultimoStatusFoco = nomeSt;
   }
 
   /* ------------------------------------------------------------ visão */
@@ -522,12 +562,13 @@
     var line = y.map(function (v, i) { return sx(i).toFixed(1) + ',' + sy(v).toFixed(1); }).join(' ');
     var g = ''; [0, 0.5, 1].forEach(function (f) { var yy = pad + (H - pad * 2) * f; g += '<line x1="46" x2="' + W + '" y1="' + yy + '" y2="' + yy + '" stroke="#1d1d22"/>'; });
     var anos = {}, xl = ''; cv.x.forEach(function (d, i) { var a = d.slice(0, 4); if (!(a in anos)) { anos[a] = i; xl += '<text x="' + sx(i).toFixed(0) + '" y="' + (H - 2) + '" text-anchor="middle" fill="#8B8B93" font-size="10">' + a + '</text>'; } });
-    var yl = '<text x="46" y="' + (pad - 6) + '" text-anchor="start" fill="#8B8B93" font-size="10">' + esc(moeda(mx)) + '</text><text x="40" y="' + (sy(0) + 4).toFixed(0) + '" text-anchor="end" fill="#8B8B93" font-size="10">0</text>';
+    var yl = '<text x="46" y="' + (pad - 6) + '" text-anchor="start" fill="#8B8B93" font-size="10">' + esc(Math.abs(mx) >= 1000 ? (D.moeda ? D.moeda + ' ' : '') + fmt(mx / 1000) + ' mil' : moeda(mx)) + '</text><text x="40" y="' + (sy(0) + 4).toFixed(0) + '" text-anchor="end" fill="#8B8B93" font-size="10">0</text>';
     return '<svg class="b-curve" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Curva de capital do campeão: termina em ' + esc(moeda(y[n - 1])) + '">' + g +
       '<polygon points="' + sx(0) + ',' + sy(mn) + ' ' + line + ' ' + sx(n - 1) + ',' + sy(mn) + '" fill="rgba(0,245,160,.07)"/><polyline fill="none" stroke="#00F5A0" stroke-width="1.8" stroke-linejoin="round" points="' + line + '"/>' + yl + xl + '</svg>';
   }
   function kpi(l, v, cls, extra) { return '<div class="b-kpi"><span class="l">' + l + (extra || '') + '</span><b' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</b></div>'; }
   function fillDrawer() {
+    casaJson = JSON.stringify(casas()[di]) + status();
     var x = casas()[di], m = mapa(), ord = order(), p = ord.indexOf(di), det = detCache[x.casa_fina];
     $('b-dr-tf').textContent = m.linhas[x.linha]; $('b-dr-cv').textContent = m.colunas[x.coluna];
     var pills = dims(x).map(function (d) { return '<span class="b-pill gray sm"><span class="b-dim" style="font-weight:400">' + esc(d[0].toLowerCase()) + '</span>' + esc(d[1]) + '</span>'; }).join('');
@@ -542,7 +583,7 @@
     $('b-dr-body').innerHTML =
       '<div class="b-kpis">' +
         kpi('<i style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:' + css(kfr) + '"></i>FR', frTxt(x), 'cy') +
-        kpi('FR mediano', k && k.fr_mediano != null ? dec(k.fr_mediano, 1) : (x.mediana != null ? dec(x.mediana, 1) : '—'), '', q('Ajuda sobre FR mediano', 'Mediana do FR dos membros. Perto do FR do campeão indica região sólida, não um ponto de sorte.')) +
+        kpi('FR mediano', k && k.fr_mediano != null ? dec(k.fr_mediano, 1) : (crit() === 'fr' && x.mediana != null ? dec(x.mediana, 1) : '—'), '', q('Ajuda sobre FR mediano', 'Mediana do FR dos membros. Perto do FR do campeão indica região sólida, não um ponto de sorte.')) +
         kpi('PF', x.pf == null ? '∞' : dec(x.pf, 2)) + kpi('Trades', fmt(x.trades)) +
         kpi('Maior queda', k && k.maior_queda != null ? esc(moeda(k.maior_queda)) : '—') +
         kpi('Membros', membros == null ? '—' : membros, membros != null && membros < 15 ? 'warn' : '', q('Ajuda sobre membros', 'Combinações parecidas que também passaram. Menos de 15 pode ser pico isolado.', 'r')) +
@@ -555,7 +596,8 @@
     var ok = !!D.menu_ok; $('b-dr-bt').disabled = !ok; $('b-dr-min').disabled = !ok;
     initTips($('b-drawer'));
     // um pedido por casa: a tela se redesenha a cada 2 s com a busca rodando
-    if (!det && !pedidos[x.casa_fina]) { pedidos[x.casa_fina] = 1; pedidoN++; enviar('busca-pedido', {id: D.busca_id, casa: x.casa_fina, pedido: pedidoN}); }
+    if (det && det.erro) { delete detCache[x.casa_fina]; delete pedidos[x.casa_fina]; }
+    if ((!det || det.erro) && !pedidos[x.casa_fina]) { pedidos[x.casa_fina] = 1; pedidoN++; enviar('busca-pedido', {id: D.busca_id, casa: x.casa_fina, pedido: pedidoN}); }
   }
   function navBtn(b, i, word) {
     if (i === undefined) { b.disabled = true; b.setAttribute('aria-label', 'Sem nicho ' + word); b.setAttribute('data-tip', 'Sem nicho ' + word); return; }
@@ -563,6 +605,10 @@
     b.setAttribute('aria-label', t); b.setAttribute('data-tip', t); b._to = i;
   }
   function setInert(on) {
+    // o menu e as subtelas do app ficam fora para o leitor de tela também
+    [document.getElementById('sidebar'), document.querySelector('.mine-subtelas')].forEach(function (el) {
+      if (!el) return; el.inert = on; if (on) el.setAttribute('aria-hidden', 'true'); else el.removeAttribute('aria-hidden');
+    });
     Array.prototype.forEach.call(root.children, function (ch) {
       if (ch === $('b-drawer') || ch === $('b-cf') || ch === $('b-scrim') || ch === $('b-tip')) return;
       ch.inert = on; if (on) ch.setAttribute('aria-hidden', 'true'); else ch.removeAttribute('aria-hidden');
@@ -611,7 +657,7 @@
   }
   function closeCf(done) {
     $('b-cf').hidden = true; $('b-scrim').hidden = true; setInert(false);
-    if (done) acao('excluir', {id: delId});
+    if (done) { focoDepois = 'salvas'; acao('excluir', {id: delId}); }
     else if (cfOpener && root.contains(cfOpener)) cfOpener.focus();
     delId = null;
   }
@@ -666,6 +712,9 @@
     $('b-mt').addEventListener('change', function () { metric = this.value; renderLegend(); paint(); });
     $('b-k-best').addEventListener('click', function () { var i = casas().findIndex(function (x) { return x.melhor; }); if (i < 0) return; if (view !== 'mapa') setView('mapa'); focusCell(i); });
 
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && drOpen && !$('b-drawer').contains(e.target)) { e.preventDefault(); closeDr(); }
+    });
     var drawer = $('b-drawer');
     drawer.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { e.preventDefault(); closeDr(); return; }
@@ -709,7 +758,7 @@
 
     // espaço de busca: chips e campos editam o rascunho
     $('b-cfg').addEventListener('click', function (e) {
-      var c = e.target.closest('.b-chip'); if (!c || $('b-cfg').disabled) return;
+      var c = e.target.closest('.b-chip'); if (!c || c.disabled || D.espaco.travado) return;
       var it = c.dataset.it, on = c.getAttribute('aria-pressed') !== 'true';
       c.setAttribute('aria-pressed', String(on));
       if (c.dataset.tipo) { rasc[it].tipos[c.dataset.tipo].on = on; return; }

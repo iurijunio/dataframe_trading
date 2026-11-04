@@ -302,7 +302,7 @@
   .busca .b-cf p{margin:0 0 16px;font-family:var(--sans);font-size:13px;color:var(--ink-2)}
   .busca .b-cf .acts{display:flex;justify-content:flex-end;gap:8px}
 
-  @media (max-width:1180px){
+  @container busca (max-width:1150px){
     .busca .b-rail{width:100%;border-left:0;border-top:1px solid var(--line);border-radius:0 0 8px 8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
     .busca .b-rsec{border-bottom:0}
   }
@@ -315,9 +315,14 @@
    lado. No app o menu é o da Mineração; a subtela recebe principal + trilho. */
 .busca{max-width:none;margin:0;display:flex;min-height:0;flex:1 1 auto;
   border:1px solid var(--line);border-radius:8px;background:var(--ground)}
-.busca .b-main{overflow:auto}
-.busca .b-rail{border-radius:0 8px 8px 0;overflow:auto}
-@media (max-width:1180px){
+/* Sem rolagem própria em principal e trilho: ela cortava os balões do (?).
+   Quem rola é a área central do app; o mapa rola em .b-mapwrap. */
+.busca .b-rail{border-radius:0 8px 8px 0}
+/* O corte de "trilho embaixo" do protótipo media a JANELA (menu de 168 px);
+   no app o menu tem 400 px, então mede-se a largura da própria subtela. */
+.busca-wrap{container-type:inline-size;container-name:busca}
+.busca .b-stepper :focus-visible{outline-offset:-2px}
+@container busca (max-width:1150px){
   .busca{flex-wrap:wrap}
 }
 /* O app usa .main para a área central (flex em coluna, padding, rolagem);
