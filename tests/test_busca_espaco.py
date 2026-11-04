@@ -130,3 +130,27 @@ def test_faixa_da_tela_muda_a_lista():
     for x in np.random.default_rng(6).random((200, esp.n_genes)):
         c = esp.decodificar(x)
         assert (c.timeframe, c.direcao) == ("M5", "venda")
+
+
+
+def test_periodo_do_atr_entra_na_combinacao_e_no_perfil(espaco):
+    vistos = set()
+    for x in np.random.default_rng(8).random((3000, espaco.n_genes)):
+        c = espaco.decodificar(x)
+        if c.stop_tipo == "atr":
+            assert c.stop_atr_periodo in espaco.stop_periodos
+            vistos.add(c.stop_atr_periodo)
+            p = espaco.perfil(c, PERFIL_BASE)
+            assert p.stop_atr_periodo == c.stop_atr_periodo
+        else:
+            assert c.stop_atr_periodo is None
+    assert len(vistos) > 5
+
+
+def test_busca_antiga_reabre_sem_o_periodo(espaco):
+    """Busca gravada antes do período do ATR: mesmo vetor, mesma chave."""
+    antigo = {k: v for k, v in espaco.para_json().items() if k != "com_periodo_atr"}
+    velho = Espaco.de_json(antigo)
+    assert velho.n_genes == espaco.n_genes - 2 and velho.stop_periodos is None
+    c = velho.decodificar(np.full(velho.n_genes, 0.3))
+    assert "stop_atr_periodo" not in c.chave() and Combinacao.de_chave(c.chave()) == c

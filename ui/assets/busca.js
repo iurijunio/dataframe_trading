@@ -359,8 +359,12 @@
         var lin = '<tr>' + (k === 0 ? '<td class="it" rowspan="' + it.opcoes.length + '">' + esc(it.rotulo) + '</td>' : '') +
           '<td><span class="b-rng"><button type="button" class="b-chip" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" aria-pressed="' + !!ft.on + '">' + esc(o.rotulo) + '</button>';
         if (o.tipo === 'sem') return lin + '</span></td><td class="b-dim">—</td></tr>';
+        // ATR: o multiplicador e o período (período anda em degrau proporcional)
+        var per = ft.periodo ? '<span class="b-dim" style="margin-left:8px">período</span>' +
+          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_de" value="' + numTxt(ft.periodo.de) + '" aria-label="Período do ATR do ' + esc(it.rotulo.toLowerCase()) + ', mínimo"><span class="b-dim">a</span>' +
+          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_ate" value="' + numTxt(ft.periodo.ate) + '" aria-label="Período do ATR do ' + esc(it.rotulo.toLowerCase()) + ', máximo">' : '';
         return lin + '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="de" value="' + numTxt(ft.de) + '" aria-label="' + alvo + ', mínimo"><span class="b-dim">a</span>' +
-          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="ate" value="' + numTxt(ft.ate) + '" aria-label="' + alvo + ', máximo"></span></td>' +
+          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="ate" value="' + numTxt(ft.ate) + '" aria-label="' + alvo + ', máximo">' + per + '</span></td>' +
           '<td><input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="passo" value="' + numTxt(ft.passo) + '" aria-label="Passo do ' + alvo + '"></td></tr>';
       }).join('');
     }
@@ -776,6 +780,9 @@
       if (t.id === 'b-r-min') { rasc._min = numBR(t.value) || 400; return; }
       var it = t.dataset.it, k = t.dataset.k; if (!it || !k) return;
       if (it === 'janela') { rasc.janela[k] = (k === 'de' || k === 'ate') ? t.value : (parseInt(t.value, 10) || rasc.janela[k]); return; }
+      if (t.dataset.tipo && k.indexOf('periodo_') === 0) {
+        rasc[it].tipos[t.dataset.tipo].periodo[k.slice(8)] = numBR(t.value); return;
+      }
       if (t.dataset.tipo) { rasc[it].tipos[t.dataset.tipo][k] = numBR(t.value); return; }
       rasc[it][k] = numBR(t.value);
     });

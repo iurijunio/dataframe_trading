@@ -43,10 +43,18 @@ class Combinacao:
     alvo_tipo: str
     alvo_valor: float
     params: tuple   # ((nome, valor), ...) em ordem de nome
+    # período do ATR do stop/alvo (só com tipo ATR; None nas buscas antigas,
+    # que não variavam o período)
+    stop_atr_periodo: int | None = None
+    alvo_atr_periodo: int | None = None
 
     def chave(self) -> str:
-        """Identidade da combinação: JSON canônico, ordenado."""
+        """Identidade da combinação: JSON canônico, ordenado. Campo novo
+        vazio não entra: a chave de uma busca antiga continua a mesma."""
         d = asdict(self)
+        for k in ("stop_atr_periodo", "alvo_atr_periodo"):
+            if d[k] is None:
+                del d[k]
         d["dias"] = list(self.dias)
         d["params"] = [list(p) for p in self.params]
         return json.dumps(d, sort_keys=True, separators=(",", ":"))
@@ -58,6 +66,8 @@ class Combinacao:
     @classmethod
     def de_chave(cls, chave: str) -> "Combinacao":
         d = json.loads(chave)
+        d.setdefault("stop_atr_periodo", None)
+        d.setdefault("alvo_atr_periodo", None)
         d["dias"] = tuple(d["dias"])
         d["params"] = tuple(tuple(p) for p in d["params"])
         return cls(**d)
@@ -70,7 +80,8 @@ def _escolher(x: float, n: int) -> int:
 class Espaco:
     def __init__(self, estrategia: str, simbolo: str, fechamento: str,
                  faixas: dict | None = None,
-                 dims_nicho: tuple[str, ...] = DIMS_PADRAO):
+                 dims_nicho: tuple[str, ...] = DIMS_PADRAO,
+                 com_periodo_atr: bool = True):
         self.estrategia = estrategia
         self.simbolo = simbolo
         self.fechamento = fechamento
@@ -88,6 +99,17 @@ class Espaco:
         self.horarios = lista("janela")
         self.stops = lista("stop")
         self.alvos = lista("alvo")
+        # período do ATR: genes a mais só nas buscas novas (as antigas
+        # reabrem com o mesmo vetor que gravaram)
+        self.com_periodo_atr = com_periodo_atr
+
+        def per(nome):
+            item = self.catalogo[nome]
+            tipos = (self.faixas.get(nome) or item.padrao).get("tipos") or {}
+            return C.periodos_atr(tipos.get("atr")) if com_periodo_atr else None
+
+        self.stop_periodos = per("stop")
+        self.alvo_periodos = per("alvo")
         self.nomes_params = sorted(n for n, i in self.catalogo.items() if i.onde == "param")
         self.params_vals = {n: lista(n) for n in self.nomes_params}
         for nome, vals in [("timeframe", self.timeframes), ("direcao", self.direcoes),
@@ -99,7 +121,8 @@ class Espaco:
         # genes: tempo, direção, início, fim, dias, tipo e valor de stop e de
         # alvo, e um por parâmetro da estratégia
         self._genes = (["timeframe", "direcao", "ini", "fim", "dias", "stop_tipo",
-                        "stop_valor", "alvo_tipo", "alvo_valor"] + self.nomes_params)
+                        "stop_valor", "alvo_tipo", "alvo_valor"] + self.nomes_params
+                       + (["stop_atr_per", "alvo_atr_per"] if com_periodo_atr else []))
         self.n_genes = len(self._genes)
 
     # ------------------------------------------------------------ janela
@@ -143,6 +166,10 @@ class Espaco:
             alvo_valor=self.alvos[at][_escolher(g["alvo_valor"], len(self.alvos[at]))],
             params=tuple((n, self.params_vals[n][_escolher(g[n], len(self.params_vals[n]))])
                          for n in self.nomes_params),
+            stop_atr_periodo=(self.stop_periodos[_escolher(g["stop_atr_per"], len(self.stop_periodos))]
+                              if st == "atr" and self.stop_periodos else None),
+            alvo_atr_periodo=(self.alvo_periodos[_escolher(g["alvo_atr_per"], len(self.alvo_periodos))]
+                              if at == "atr" and self.alvo_periodos else None),
         )
 
     def genes_essenciais(self) -> np.ndarray:
@@ -177,15 +204,22 @@ class Espaco:
             p.update(alvo_tipo="pontos", alvo_pontos=0)
         else:
             p.update(alvo_tipo=c.alvo_tipo, **{CAMPO_ALVO[c.alvo_tipo]: c.alvo_valor})
+        if c.stop_atr_periodo is not None:
+            p["stop_atr_periodo"] = int(c.stop_atr_periodo)
+        if c.alvo_atr_periodo is not None:
+            p["alvo_atr_periodo"] = int(c.alvo_atr_periodo)
         return ExecutionProfile(**p)
 
     # ------------------------------------------------------------ guardar
     def para_json(self) -> dict:
         return {"estrategia": self.estrategia, "simbolo": self.simbolo,
                 "fechamento": self.fechamento, "faixas": self.faixas,
-                "dims_nicho": list(self.dims_nicho)}
+                "dims_nicho": list(self.dims_nicho),
+                "com_periodo_atr": self.com_periodo_atr}
 
     @classmethod
     def de_json(cls, d: dict) -> "Espaco":
+        # busca gravada antes do período do ATR: sem a chave, sem os genes
         return cls(d["estrategia"], d["simbolo"], d["fechamento"], d.get("faixas"),
-                   tuple(d.get("dims_nicho") or DIMS_PADRAO))
+                   tuple(d.get("dims_nicho") or DIMS_PADRAO),
+                   com_periodo_atr=bool(d.get("com_periodo_atr", False)))

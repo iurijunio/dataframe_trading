@@ -49,21 +49,26 @@ JANELA_CME = ("09:30", "16:00")
 PASSO_JANELA = 30
 JANELA_MINIMA = 30
 
-# Stop e alvo em pontos do ativo sem `faixas` na ficha (o WIN), na escala dele.
-# Largos de propósito (decisão do usuário, 04/11/2026): a busca não testa
-# tudo, escolhe onde testar — faixa estreita só esconde trade bom de 1.200 pts.
+# Stop e alvo em pontos saem do stop/alvo PADRÃO da ficha do ativo
+# (`perfil_padrao`), na mesma proporção para todo ativo: passo = padrão / 6,
+# até = padrão × 20/3. No WIN (300/600) dá 50–2.000 e 100–4.000. Largos de
+# propósito (decisão do usuário, 04/11/2026): a busca não testa tudo,
+# escolhe onde testar — faixa estreita só esconde trade bom de 1.200 pts.
+# Ativo novo entra sozinho pela ficha. Sem padrão na ficha, vale isto:
 PONTOS_SEM_FAIXA = {
     "stop_pontos": {"de": 50, "ate": 2000, "passo": 50},
     "alvo_pontos": {"de": 100, "ate": 4000, "passo": 100},
 }
+# Período do ATR do stop e do alvo (degrau proporcional, como as médias).
+ATR_PERIODO = {"de": 5, "ate": 60}
 # Múltiplos e porcentagens valem para qualquer ativo.
 STOP_TIPOS = {
-    "atr": {"on": True, "de": 0.25, "ate": 6.0, "passo": 0.25},
+    "atr": {"on": True, "de": 0.25, "ate": 6.0, "passo": 0.25, "periodo": dict(ATR_PERIODO)},
     "percentual": {"on": True, "de": 0.05, "ate": 1.50, "passo": 0.05},
 }
 ALVO_TIPOS = {
     "multiplicador": {"on": True, "de": 0.5, "ate": 6.0, "passo": 0.5},
-    "atr": {"on": True, "de": 0.5, "ate": 10.0, "passo": 0.25},
+    "atr": {"on": True, "de": 0.5, "ate": 10.0, "passo": 0.25, "periodo": dict(ATR_PERIODO)},
     "percentual": {"on": False, "de": 0.10, "ate": 3.0, "passo": 0.10},
     # alvo em pontos = 0: o kernel trata como "sem alvo"
     "sem": {"on": False},
@@ -177,9 +182,27 @@ def _janela_padrao(simbolo: str) -> tuple[str, str]:
     return p.get("entrada_inicio", "09:00"), p.get("entrada_fim", "17:00")
 
 
-def _pontos(faixas_ativo: dict, campo: str) -> dict:
-    f = faixas_ativo.get(campo) or PONTOS_SEM_FAIXA[campo]
-    return {"on": True, "de": f["de"], "ate": f["ate"], "passo": f["passo"]}
+def _pontos(simbolo: str, campo: str) -> dict:
+    """Faixa de stop/alvo em pontos a partir do padrão da ficha do ativo."""
+    try:
+        padrao = (ativo.ficha(simbolo).perfil_padrao or {}).get(campo)
+    except FileNotFoundError:
+        padrao = None
+    if not padrao:
+        f = PONTOS_SEM_FAIXA[campo]
+        return {"on": True, "de": f["de"], "ate": f["ate"], "passo": f["passo"]}
+    passo = max(1, round(padrao / 6))
+    ate = max(passo, round(padrao * 20 / 3 / passo) * passo)
+    return {"on": True, "de": passo, "ate": ate, "passo": passo}
+
+
+def periodos_atr(faixa_tipo: dict) -> list[int] | None:
+    """Os períodos de ATR que a busca percorre para um tipo (None se o tipo
+    não tem período, ou busca antiga sem ele)."""
+    p = (faixa_tipo or {}).get("periodo")
+    if not p:
+        return None
+    return degraus_proporcionais(int(p["de"]), int(p["ate"]))
 
 
 def montar_catalogo(estrategia: str, simbolo: str) -> list[Item]:
@@ -202,10 +225,10 @@ def montar_catalogo(estrategia: str, simbolo: str) -> list[Item]:
         Item("dias", "Dias da semana", "dias", "filtro", "-",
              {"valores": [1, 2, 3, 4, 5], "ligados": [1, 2, 3, 4, 5]}),
         Item("stop", "Stop", "gestao", "filtro", "fixo",
-             {"tipos": {"pontos": _pontos(faixas_ativo, "stop_pontos"),
+             {"tipos": {"pontos": _pontos(simbolo, "stop_pontos"),
                         **{k: dict(v) for k, v in STOP_TIPOS.items()}}}),
         Item("alvo", "Alvo", "gestao", "filtro", "fixo",
-             {"tipos": {"pontos": _pontos(faixas_ativo, "alvo_pontos"),
+             {"tipos": {"pontos": _pontos(simbolo, "alvo_pontos"),
                         **{k: dict(v) for k, v in ALVO_TIPOS.items()}}}),
     ]
     for nome, meta in mod.params_schema.items():

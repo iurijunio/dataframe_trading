@@ -184,3 +184,13 @@ def test_ajustes_simultaneos_nao_se_apagam(monkeypatch):
         t.join()
     c = M.ler_controle(B.pasta_da(bid))
     assert all(c[f"k{i}"] == i for i in range(12))
+
+
+
+def test_pedidos_da_tela_ficam_no_diario(monkeypatch):
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: None)
+    bid = K.iniciar(_config())
+    K.pausar(bid)
+    K.ajustar(bid, nucleos=3)
+    log = (B.pasta_da(bid) / "acoes.log").read_text(encoding="utf-8")
+    assert "'pedido': 'pausar'" in log and "'nucleos': 3" in log

@@ -94,6 +94,19 @@ def ajustar(busca_id: int, **campos) -> None:
     with _TRAVA_AJUSTE:
         atual = ler_controle(banco.pasta_da(busca_id))
         escrever_json(_caminho_controle(busca_id), {**atual, **campos})
+        _registrar(busca_id, campos)
+
+
+def _registrar(busca_id: int, campos: dict) -> None:
+    """Diário dos pedidos da tela (`acoes.log`): quando alguém pergunta "eu
+    cliquei em Pausar e ela concluiu?", a resposta está aqui."""
+    try:
+        pasta = banco.pasta_da(busca_id)
+        pasta.mkdir(parents=True, exist_ok=True)
+        with open(pasta / "acoes.log", "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {campos}\n")
+    except OSError:
+        pass                            # diário não pode impedir o comando
 
 
 def resolver_periodo(config: dict) -> dict:

@@ -111,7 +111,7 @@ def _hora_dia(esp, campeao: Combinacao, membros, perfil_base, ficha, fim_otim, p
     for m in membros:
         c = Combinacao.de_chave(m["combo"])
         k = (c.timeframe, c.params, c.direcao, c.stop_tipo, c.stop_valor,
-             c.alvo_tipo, c.alvo_valor)
+             c.alvo_tipo, c.alvo_valor, c.stop_atr_periodo, c.alvo_atr_periodo)
         if k not in vistos:
             vistos.add(k)
             unicos.append(c)
@@ -210,6 +210,12 @@ def _espalhamento(esp, campeao: Combinacao, membros, faixas: dict | None):
         linha(f"Alvo ({campeao.alvo_tipo})", "_alvo", esp.alvos[campeao.alvo_tipo],
               [c.alvo_valor for c in combos if c.alvo_tipo == campeao.alvo_tipo],
               campeao.alvo_valor)
+    if campeao.stop_atr_periodo is not None and esp.stop_periodos:
+        linha("Stop (ATR período)", "_stop_per", esp.stop_periodos,
+              [c.stop_atr_periodo for c in combos], campeao.stop_atr_periodo)
+    if campeao.alvo_atr_periodo is not None and esp.alvo_periodos:
+        linha("Alvo (ATR período)", "_alvo_per", esp.alvo_periodos,
+              [c.alvo_atr_periodo for c in combos], campeao.alvo_atr_periodo)
     return itens
 
 
@@ -317,6 +323,12 @@ def regiao_para_varredura(busca_id: int, casa_fina: str) -> dict:
             [x.alvo_valor for x in combos if x.alvo_tipo == camp.alvo_tipo]
             + vizinhos(esp.alvos[camp.alvo_tipo], camp.alvo_valor, DEGRAUS_GESTAO),
             pal[camp.alvo_tipo]["passo"], camp.alvo_valor)
+    for campo, v, lista, attr in (
+            ("stop_atr_periodo", camp.stop_atr_periodo, esp.stop_periodos, "stop_atr_periodo"),
+            ("alvo_atr_periodo", camp.alvo_atr_periodo, esp.alvo_periodos, "alvo_atr_periodo")):
+        if v is not None and lista:
+            campos[campo] = faixa([getattr(x, attr) for x in combos if getattr(x, attr) is not None]
+                                  + vizinhos(lista, v, DEGRAUS_PARAM), 1, v)
     return {"timeframe": camp.timeframe,
             "entrada_inicio": min(x.ini for x in mesmos),
             "entrada_fim": max(x.fim for x in mesmos),

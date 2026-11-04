@@ -52,10 +52,26 @@ def test_faixa_do_ativo_manda_sobre_o_schema():
         {"de": 0, "ate": 10000, "passo": 5}
 
 
-def test_mes_stop_e_alvo_do_ativo_e_janela_ny():
+def test_stop_e_alvo_em_pontos_saem_do_padrao_da_ficha():
+    """Mesma proporção em todo ativo: passo = padrão/6, até = padrão × 20/3
+    (WIN 300/600 -> 50–2.000 e 100–4.000; MNQ 45/90; MES 8/16)."""
+    def pontos(simbolo):
+        cat = _por_nome("adx_direcao", simbolo)
+        return (cat["stop"].padrao["tipos"]["pontos"], cat["alvo"].padrao["tipos"]["pontos"])
+
+    st, al = pontos("WIN$N")
+    assert (st["de"], st["ate"], st["passo"]) == (50, 2000, 50)
+    assert (al["de"], al["ate"], al["passo"]) == (100, 4000, 100)
+    st, al = pontos("MNQ")
+    assert (st["de"], st["ate"], st["passo"]) == (8, 304, 8)
+    assert (al["de"], al["ate"], al["passo"]) == (15, 600, 15)
+    st, al = pontos("MES")
+    assert (st["de"], st["ate"], st["passo"]) == (1, 53, 1)
+    assert (al["de"], al["ate"], al["passo"]) == (3, 108, 3)
+
+
+def test_janela_ny_nos_micros():
     cat = _por_nome("adx_direcao", "MNQ")
-    assert cat["stop"].padrao["tipos"]["pontos"] == {"on": True, "de": 15, "ate": 90, "passo": 5}
-    assert cat["alvo"].padrao["tipos"]["pontos"] == {"on": True, "de": 30, "ate": 180, "passo": 10}
     assert cat["janela"].padrao == {"de": "09:30", "ate": "16:00", "passo": 30, "minima": 30}
     assert _por_nome("adx_direcao", "WIN$N")["janela"].padrao["de"] == "09:00"
 
@@ -142,3 +158,12 @@ def test_declaracao_no_modulo_tem_prioridade(monkeypatch):
     mod = registry.carregar("adx_direcao")
     monkeypatch.setattr(mod, "busca", {"proporcional": ["amplitude_max"]}, raising=False)
     assert _por_nome("adx_direcao", "WIN$N")["amplitude_max"].degrau == "proporcional"
+
+
+
+def test_atr_tem_periodo_proporcional():
+    cat = _por_nome("adx_direcao", "WIN$N")
+    for item in ("stop", "alvo"):
+        per = C.periodos_atr(cat[item].padrao["tipos"]["atr"])
+        assert per[0] == 5 and per[-1] == 60 and per == sorted(set(per))
+    assert C.periodos_atr(cat["stop"].padrao["tipos"]["pontos"]) is None
