@@ -22,6 +22,7 @@ import cli  # noqa: E402
 import corrigir_base  # noqa: E402
 from core import db_manager as db  # noqa: E402
 from core import comandos  # noqa: E402
+from core.busca import banco as busca_banco  # noqa: E402
 from core import diario_ordens  # noqa: E402
 from core import ponte  # noqa: E402
 from ui import data as ui_data  # noqa: E402
@@ -37,6 +38,10 @@ def pytest_configure(config):
 @pytest.fixture(autouse=True)
 def _banco_isolado(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "isolado.duckdb")
+    # banco e pastas da busca automática: um teste não pode criar busca no
+    # data/ do usuário nem apagar a pasta de uma busca de verdade
+    monkeypatch.setattr(busca_banco, "CAMINHO", tmp_path / "buscas.duckdb")
+    monkeypatch.setattr(busca_banco, "PASTA", tmp_path / "buscas")
     estado = tmp_path / "ao_vivo" / "estado.json"
     for modulo in (ui_data, cli, corrigir_base):
         monkeypatch.setattr(modulo, "ESTADO_CAPTURA", estado)
