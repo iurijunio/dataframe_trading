@@ -21,7 +21,7 @@ substituindo o fluxo que antes vivia no MT5. Branch de trabalho:
 
 ```
 .venv/Scripts/python.exe ui/app.py          # http://127.0.0.1:8050
-.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.938 testes em 04/11/2026)
+.venv/Scripts/python.exe -m pytest -q       # suíte inteira (2.972 testes em 04/11/2026)
 ```
 
 - Para ver o app: rode `ui/app.py` e abra http://127.0.0.1:8050. Quem tiver
@@ -351,14 +351,14 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
 
 | Documento | Estado (04/11/2026) |
 |---|---|
-| `docs/superpowers/specs/2026-11-03-busca-automatica-design.md` + `plans/2026-11-03-busca-automatica.md` (+ protótipo `2026-11-03-busca-automatica/layout-b.html`, contrato visual) | busca automática por nichos — implementada (etapas 1–3 no `master`, etapa 4 da tela na branch `busca-automatica`) |
+| `docs/superpowers/specs/2026-11-03-busca-automatica-design.md` + `plans/2026-11-03-busca-automatica.md` (+ protótipo `2026-11-03-busca-automatica/layout-b.html`, contrato visual) | busca automática por nichos — implementada, tudo no `master`; a seção 3 da spec ficou velha, vale "Estado depois da implementação (04/11/2026)" |
 | `docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md` + `plans/2026-11-01-menu-e-mineracao.md` | redesenho do menu e Backtest dentro da Mineração — implementado, no `master` |
 | `docs/superpowers/specs/*` e `plans/*` | desenho de cada entrega recente — **fonte mais confiável** do porquê |
 | `docs/CALCULOS-WFA.md`, `docs/CALCULOS-CANDIDATA.md` | como cada número é calculado — confiável |
 | `docs/PLANO*.md`, `docs/EXECUCAO-CANDIDATA-*.md` | histórico de decisões; planos já executados |
 | `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md` | spec da parte 4 (ordens) — implementada; o `...-ordens-decisoes.md` é o rascunho que a originou |
 | `docs/superpowers/specs/2026-10-28-ativos-cme-design.md` + `plans/2026-10-28-ativos-cme-etapa1.md`, `2026-10-29-ativos-cme-etapa2.md`, `2026-10-30-ativos-cme-etapa4.md` | ativos da CME; as seções "Herança da etapa 1", "Estado depois da etapa 2", "Estado depois da etapa 3" e "Estado depois da etapa 4" dizem o que ficou |
-| `CHANGELOG.md` | atualizado até a busca automática (04/11/2026); **não cobre variantes, portfólio nem gatilho** |
+| `CHANGELOG.md` | atualizado até a busca automática e a camada 4 nela (04/11/2026); **não cobre variantes, portfólio nem gatilho** |
 | `README.md` | atualizado até a busca automática (04/11/2026); o texto do MVP segue como história |
 | `docs/METODOLOGIA.md` "Estado da plataforma" | atualizado em 04/11/2026 |
 
@@ -494,13 +494,21 @@ corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
   `scripts/campos_menu.py` + `tests/dados/campos_menu.json`. Suíte: 2.776
   testes. Spec: `docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md`.
 
-- **Busca automática por nichos ✅ (04/11/2026; etapas 1–3 no `master`, tela
-  na branch `busca-automatica`, `9d80ce9` e `cc4f654`).** Subtela nova da
+- **Busca automática por nichos ✅ (04/11/2026; tudo no `master`, tela
+  incluída, já no GitHub).** Subtela nova da
   Mineração (Varredura | Busca automática | Backtest): testa milhares de
   combinações de uma estratégia num ativo (pyribs, MAP-Elites) num processo à
   parte e mostra um mapa de nichos, com detalhe e "Minerar a região". Motor
   dividido em `preparar`/`executar` com resultado idêntico (gabarito).
-  Suíte: 2.938 testes. Spec: `docs/superpowers/specs/2026-11-03-busca-automatica-design.md`.
+  **Hoje a busca varre** os parâmetros da estratégia, tempo, direção, horário
+  de entrada, dias, stop e alvo (com período do ATR) e quase toda a camada 4
+  (fechamento, tempo máximo, horas sem entradas, ADX, breakeven, limites do
+  dia), sempre com o "desligado" na faixa. **Fixos, valem o menu:** stop móvel,
+  trailing (`FORA_DA_BUSCA`), custos e tamanho (`NAO_MINERAVEIS`); campo novo
+  do perfil de execução tem de entrar numa das duas listas (um teste cobra).
+  Faixas em pontos saem do stop/alvo padrão da ficha. Suíte: 2.972 testes.
+  Spec: `docs/superpowers/specs/2026-11-03-busca-automatica-design.md`
+  (seção "Estado depois da implementação").
   Pendência: `scripts/campos_menu.py conferir` já falhava no `master` antes
   desta entrega (só rótulos; `tests/test_campos_menu.py` passa) — a olhar.
 

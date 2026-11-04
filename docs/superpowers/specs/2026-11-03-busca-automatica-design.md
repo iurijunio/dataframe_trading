@@ -201,3 +201,27 @@ Subtela nova na Mineração: **Varredura | Busca automática | Backtest**.
 - Tamanho do lote, critério numérico do descarte cedo (desde que respeite a
   regra da melhor janela), distância usada no agrupamento.
 - Formato exato das tabelas de `data/buscas.duckdb`.
+
+## 11. Estado depois da implementação (04/11/2026)
+
+O que vale hoje (commits `030ef6d` a `85519c9`) e difere da seção 3:
+
+- **Entra a camada 4 quase toda**: horário de fechamento, tempo máximo na
+  operação, três horas "sem entradas", filtro ADX (régua, período, limiar,
+  DI, ADX subindo), breakeven, limites do dia (ganho, perda, operações,
+  prejuízos) e o período do ATR do stop e do alvo (5 a 60, de 5 em 5, passo
+  editável). Em toda faixa entra o "desligado". Lista sem nada marcado
+  desliga o recurso; sem régua, o ADX inteiro fica desligado.
+- **Fica fixo (valor do menu, bloco "Fixos"):** stop móvel e trailing
+  (`FORA_DA_BUSCA`, decisão do usuário), custos e dimensionamento
+  (`NAO_MINERAVEIS`). Antes a seção 3 dizia que ADX, sem entradas, limites e
+  breakeven eram fixos: não são mais. Campo novo do perfil de execução tem de
+  entrar na busca ou numa dessas listas (um teste cobra).
+- **Faixas largas e editáveis:** stop e alvo em pontos saem do padrão da
+  ficha do ativo (passo = padrão/6, até = padrão x 20/3; WIN 50-2.000 e
+  100-4.000). Cada tipo tem de, até e passo editáveis. Janela mínima não é
+  campo da tela: 30 min fixos.
+- **Tempos gráficos** espelham o motor (16, de M1 a H4; marcados de 2 a 30
+  min).
+- **Cópias viram uma:** combinações que dão os mesmos trades (`canonico`).
+- Buscas gravadas antes reabrem iguais (sem os extras, mesmas chaves).

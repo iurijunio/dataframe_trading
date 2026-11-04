@@ -202,7 +202,7 @@ data/buscas.duckdb         banco próprio da busca (fora do git)
 scripts/gabarito_motor.py  prova que o motor em camadas dá os mesmos trades de antes
 scripts/conferir_busca.py  prova que a busca dá o número da Varredura
 ui/assets/busca.js         desenha a tela da busca; o Dash só manda os dados
-tests/                     2.938 testes
+tests/                     2.972 testes
 ```
 
 ## O dashboard
@@ -306,6 +306,12 @@ validar continua sendo seu.
   trades; critério padrão fator de recuperação).
 - Clicar num nicho abre a gaveta de detalhe. Dali: **abrir o campeão no
   Backtest** ou **Minerar a região** (leva à Varredura com as faixas do grupo).
+- Varre os parâmetros da estratégia e quase toda a camada 4: tempo gráfico,
+  direção, horário de entrada (passo de 30 min), dias, stop e alvo (cada tipo
+  com de, até e passo editáveis, inclusive o período do ATR), horário de
+  fechamento, tempo máximo, horas sem entradas, filtro ADX, breakeven e
+  limites do dia. O "desligado" entra em toda faixa. Ficam fixos, com o
+  valor do menu: stop móvel, trailing, custos e tamanho.
 - Dados num banco próprio, `data/buscas.duckdb`.
 
 ## Ao vivo: papel e demo

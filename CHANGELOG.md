@@ -65,7 +65,39 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
     manda dados, pelos stores `busca-*`. "Abrir o campeão no Backtest" leva o
     recorte da busca; "Minerar a região" leva à Varredura com faixas, tempo,
     janela, dias, stop e alvo preenchidos.
-  - Suíte: 2.938 testes (eram 2.776).
+  - **Camada 4 inteira na busca** (`core/busca/catalogo.py`, `espaco.py`,
+    `detalhe.py`, `grupos.py`; commits `65b4b0a`, `e86d38d`, `85519c9`).
+    Hoje a busca varre, além do que está acima: horário de fechamento, tempo
+    máximo na operação, três horas "sem entradas", filtro ADX (régua,
+    período, limiar, DI confirma o lado, ADX subindo), breakeven, limites do
+    dia (ganho, perda, operações, prejuízos) e o período do ATR do stop e do
+    alvo (de 5 a 60, de 5 em 5; o passo é editável). Em toda faixa entra o
+    "desligado" (0 ou vazio), para comparar com e sem o recurso. Lista sem
+    nada marcado desliga o recurso: sem régua, o ADX inteiro fica desligado.
+    Faixas em pontos saem do stop/alvo padrão da ficha do ativo (passo =
+    padrão/6, até = padrão x 20/3): WIN igual ao de antes (50 a 2.000 e 100
+    a 4.000), MES e MNQ largos. Combinações que dão os mesmos trades viram
+    uma só (`canonico`). **Ficam fixas, com o valor do menu:** stop móvel e
+    trailing (aparecem em "Fixos"), custos e dimensionamento. Um teste obriga
+    todo campo novo do perfil de execução a entrar na busca ou na lista de
+    "não mineráveis". Buscas antigas reabrem sem os extras e com as mesmas
+    chaves.
+  - **Tela: faixas e tempos** (`030ef6d`, `3decd08`). Tempos gráficos
+    espelham o motor (16, de M1 a H4; marcados de 2 a 30 min). Faixas padrão
+    do WIN largas (stop 50 a 2.000, alvo 100 a 4.000). Cada tipo de stop e
+    alvo é uma linha com de, até e passo editáveis. Sem o campo "janela
+    mínima": são 30 min fixos, ditos no (?) do horário. Contraste de bordas e
+    cinzas ajustado na tela e no protótipo.
+  - **App travava com a busca rodando** (`8099477`, `core/busca/banco.py`,
+    `projecao.py`, `ui/callbacks_busca.py`). Cada leitura do banco da busca
+    esperava até 5 s pelo escritor e a tela lia várias vezes a cada 2 s: os
+    pedidos empilhavam até o app parar. Agora a leitura desiste rápido e usa
+    a última, há uma atualização por vez e os mapas vêm numa leitura só, no
+    máximo a cada 10 s com a busca rodando. Casa descartada sem rodar mostra
+    "<400", não 0.
+  - **Diário de pedidos:** cada pedido da tela fica em `acoes.log` da busca
+    (`core/busca/controle.py`).
+  - Suíte: 2.972 testes (eram 2.776).
 - **Redesenho do menu e do Backtest dentro da Mineração** (`ui/app.py`,
   `ui/components/mining.py`, `ui/components/wfa_panel.py`,
   `ui/components/candidata_panel.py`, `scripts/campos_menu.py`,
