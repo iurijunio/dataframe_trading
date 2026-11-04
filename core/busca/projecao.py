@@ -169,14 +169,21 @@ def mapa(busca_id: int, eixo: str = "horario", metrica: str = "fr") -> dict:
             "legenda": CORES[metrica]}
 
 
-def evolucao(busca_id: int, casas_finas: list[str], pontos: int = 10) -> list[float]:
-    """Como o melhor da casa subiu ao longo da busca (até `pontos` pontos)."""
-    hist = [h for h in banco.ler_hist(busca_id)
-            if h["casa"] in set(casas_finas) and h["objetivo"] > INVALIDA / 2]
+def evolucao(busca_id: int, casas_finas: list[str], pontos: int = 10,
+             hist_todo: list | None = None, total: int | None = None) -> list[float]:
+    """Como o melhor da casa subiu ao longo da busca (até `pontos` pontos).
+    A lista passa `hist_todo`/`total` já lidos: uma leitura do banco por linha
+    deixava a lista em segundos."""
+    if hist_todo is None:
+        hist_todo = banco.ler_hist(busca_id)
+    finas = set(casas_finas)
+    hist = [h for h in hist_todo if h["casa"] in finas and h["objetivo"] > INVALIDA / 2]
     if not hist:
         return []
     hist.sort(key=lambda h: h["teste_n"])
-    total = max(banco.ler_busca(busca_id)["distintos"], hist[-1]["teste_n"])
+    if total is None:
+        total = banco.ler_busca(busca_id)["distintos"]
+    total = max(total, hist[-1]["teste_n"])
     marcas = np.linspace(total / pontos, total, pontos)
     out, i, atual = [], 0, None
     for t in marcas:
@@ -200,6 +207,8 @@ def lista(busca_id: int, eixo: str = "horario", metrica: str = "fr") -> list[dic
         c = Combinacao.de_chave(e["combo"])
         k = (esp.timeframes.index(c.timeframe), colunas.index(_valor_coluna(eixo, c)))
         finas_por_proj.setdefault(k, []).append(e["casa"])
+    hist = banco.ler_hist(busca_id)
+    total = b["distintos"]
     out = []
     for casa in m["casas"]:
         if casa["estado"] != "ok":
@@ -207,7 +216,7 @@ def lista(busca_id: int, eixo: str = "horario", metrica: str = "fr") -> list[dic
         out.append({**casa, "tf": m["linhas"][casa["linha"]],
                     "coluna_rotulo": m["colunas"][casa["coluna"]],
                     "evolucao": evolucao(busca_id, finas_por_proj.get(
-                        (casa["linha"], casa["coluna"]), []))})
+                        (casa["linha"], casa["coluna"]), []), hist_todo=hist, total=total)})
     out.sort(key=lambda c: c.get("objetivo", -1e18), reverse=True)
     return out
 

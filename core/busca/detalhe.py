@@ -235,7 +235,20 @@ def regiao_para_varredura(busca_id: int, casa_fina: str) -> dict:
     """Os campos do menu para minerar a região do nicho à mão: tempo, janela,
     dias e direção do campeão (janela de = menor início, até = maior fim dos
     membros) e, por campo minerável, a faixa dos membros com o passo da TELA
-    (não o proporcional da busca)."""
+    (não o proporcional da busca).
+
+    A faixa é no mínimo a VIZINHANÇA do campeão (os mesmos degraus que fazem
+    duas combinações "parecidas"): no começo da busca o grupo pode ter um
+    membro só, e uma faixa de um valor não deixaria nada para minerar. A
+    janela não alarga: ela muda os trades, não é um parâmetro a varrer."""
+    from .grupos import DEGRAUS_GESTAO, DEGRAUS_PARAM
+
+    def vizinhos(lista, v, k):
+        if v not in lista:
+            return [v]
+        i = lista.index(v)
+        return [lista[max(0, i - k)], v, lista[min(len(lista) - 1, i + k)]]
+
     _b, c, esp = _contexto(busca_id)
     elite = _elite(busca_id, casa_fina)
     camp = Combinacao.de_chave(elite["combo"])
@@ -253,18 +266,22 @@ def regiao_para_varredura(busca_id: int, casa_fina: str) -> dict:
 
     campos = {}
     for n in esp.nomes_params:
-        campos[n] = faixa([dict(x.params)[n] for x in combos],
-                          schema[n].get("step") or 1, dict(camp.params)[n])
+        v = dict(camp.params)[n]
+        extra = [] if n == "saida" else vizinhos(esp.params_vals[n], v, DEGRAUS_PARAM)
+        campos[n] = faixa([dict(x.params)[n] for x in combos] + extra,
+                          schema[n].get("step") or 1, v)
     pst = (esp.faixas.get("stop") or esp.catalogo["stop"].padrao)["tipos"]
     campos[CAMPO_STOP[camp.stop_tipo]] = faixa(
-        [x.stop_valor for x in combos if x.stop_tipo == camp.stop_tipo],
+        [x.stop_valor for x in combos if x.stop_tipo == camp.stop_tipo]
+        + vizinhos(esp.stops[camp.stop_tipo], camp.stop_valor, DEGRAUS_GESTAO),
         pst[camp.stop_tipo]["passo"], camp.stop_valor)
     if camp.alvo_tipo == "sem":
         campos["alvo_pontos"] = {"on": False, "valor": 0}
     else:
         pal = (esp.faixas.get("alvo") or esp.catalogo["alvo"].padrao)["tipos"]
         campos[CAMPO_ALVO[camp.alvo_tipo]] = faixa(
-            [x.alvo_valor for x in combos if x.alvo_tipo == camp.alvo_tipo],
+            [x.alvo_valor for x in combos if x.alvo_tipo == camp.alvo_tipo]
+            + vizinhos(esp.alvos[camp.alvo_tipo], camp.alvo_valor, DEGRAUS_GESTAO),
             pal[camp.alvo_tipo]["passo"], camp.alvo_valor)
     return {"timeframe": camp.timeframe,
             "entrada_inicio": min(x.ini for x in mesmos),

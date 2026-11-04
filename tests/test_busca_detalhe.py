@@ -113,3 +113,16 @@ def test_campeao_no_backtest_da_as_metricas_da_elite(no_banco):
     r = optimizer._uma((0, cb["params"], {}, ExecutionProfile(**cb["perfil"]).to_config(),
                         janelas))
     assert r["geral"]["trades"] == e["trades"] and r["geral"]["lucro"] == e["lucro"]
+
+
+def test_regiao_com_um_membro_ainda_tem_o_que_minerar(no_banco, monkeypatch):
+    bid, e = no_banco
+    monkeypatch.setattr(D, "_membros", lambda _b, el: ([el], None))
+    r = D.regiao_para_varredura(bid, e["casa"])
+    camp = Combinacao.de_chave(e["combo"])
+    ligados = [n for n, f in r["campos"].items() if f.get("on")]
+    assert "di_periodo" in ligados and CAMPO_STOP[camp.stop_tipo] in ligados
+    f = r["campos"]["di_periodo"]
+    assert f["de"] < dict(camp.params)["di_periodo"] < f["ate"] or \
+        dict(camp.params)["di_periodo"] in (f["de"], f["ate"])
+    assert (r["entrada_inicio"], r["entrada_fim"]) == (camp.ini, camp.fim)
