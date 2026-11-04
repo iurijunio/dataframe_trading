@@ -25,6 +25,14 @@ from . import catalogo as C
 
 DIMS_PADRAO = ("timeframe", "ini", "fim", "dias", "direcao")
 
+# extras das buscas criadas em 04/11/2026 antes de `FORA_DA_BUSCA` (com
+# `com_extras` e sem `nomes_extras` gravado): reabrem com o vetor delas
+EXTRAS_04_11 = ("adx_filtro_di", "adx_limiar", "adx_periodo", "adx_subindo",
+                "breakeven_pct", "fechamento", "filtro_adx", "limite_ganho_contrato",
+                "limite_perda_contrato", "max_barras", "max_prejuizos_dia",
+                "max_trades_dia", "sem_entrada1", "sem_entrada2", "sem_entrada3",
+                "step_distancia_pct", "step_gatilho_pct", "trailing_pontos")
+
 # tipo de stop/alvo -> campo do perfil que recebe o valor
 CAMPO_STOP = {"pontos": "stop_pontos", "atr": "stop_atr_mult", "percentual": "stop_pct"}
 CAMPO_ALVO = {"pontos": "alvo_pontos", "atr": "alvo_atr_mult",
@@ -89,13 +97,21 @@ class Espaco:
     def __init__(self, estrategia: str, simbolo: str, fechamento: str,
                  faixas: dict | None = None,
                  dims_nicho: tuple[str, ...] = DIMS_PADRAO,
-                 com_periodo_atr: bool = True, com_extras: bool = True):
+                 com_periodo_atr: bool = True, com_extras: bool = True,
+                 nomes_extras: list[str] | None = None):
         self.estrategia = estrategia
         self.simbolo = simbolo
         self.fechamento = fechamento
         self.faixas = dict(faixas or {})
         self.dims_nicho = tuple(dims_nicho)
-        self.catalogo = {i.nome: i for i in C.montar_catalogo(estrategia, simbolo)}
+        # `nomes_extras` gravado manda: a busca reabre com o vetor que tinha,
+        # mesmo que o catálogo de hoje não varra mais algum deles
+        itens = C.montar_catalogo(estrategia, simbolo,
+                                  com_fora_da_busca=bool(set(nomes_extras or ())
+                                                         & C.FORA_DA_BUSCA))
+        if nomes_extras is not None:
+            itens = [i for i in itens if i.onde != "extra" or i.nome in nomes_extras]
+        self.catalogo = {i.nome: i for i in itens}
 
         def lista(nome):
             item = self.catalogo[nome]
@@ -123,10 +139,20 @@ class Espaco:
         self.com_extras = com_extras
         self.nomes_extras = (sorted(n for n, i in self.catalogo.items() if i.onde == "extra")
                              if com_extras else [])
-        self.extras_vals = {n: lista(n) for n in self.nomes_extras}
-        for n, vals in self.extras_vals.items():
-            if not vals:
-                raise ValueError(f"nada para varrer em {n}")
+        self.extras_vals = {}
+        for n in self.nomes_extras:
+            vals = lista(n)
+            if not vals:        # nada marcado = recurso desligado
+                off = C.desligado(self.catalogo[n])
+                if off is None:
+                    raise ValueError(f"nada para varrer em {n}")
+                vals = [off]
+            self.extras_vals[n] = vals
+        if "filtro_adx" in self.extras_vals and not lista("filtro_adx"):
+            # sem régua marcada o ADX inteiro desliga (o gene fica, de um valor)
+            for n in C.ADX_DEPENDENTES:
+                if n in self.extras_vals:
+                    self.extras_vals[n] = [0]
         self._montar_janelas()
         self.nomes_params = sorted(n for n, i in self.catalogo.items() if i.onde == "param")
         self.params_vals = {n: lista(n) for n in self.nomes_params}
@@ -267,12 +293,17 @@ class Espaco:
         return {"estrategia": self.estrategia, "simbolo": self.simbolo,
                 "fechamento": self.fechamento, "faixas": self.faixas,
                 "dims_nicho": list(self.dims_nicho),
-                "com_periodo_atr": self.com_periodo_atr, "com_extras": self.com_extras}
+                "com_periodo_atr": self.com_periodo_atr, "com_extras": self.com_extras,
+                "nomes_extras": list(self.nomes_extras)}
 
     @classmethod
     def de_json(cls, d: dict) -> "Espaco":
         # busca gravada antes do período do ATR: sem a chave, sem os genes
+        com_extras = bool(d.get("com_extras", False))
+        nomes = d.get("nomes_extras")
+        if nomes is None and com_extras:
+            nomes = list(EXTRAS_04_11)
         return cls(d["estrategia"], d["simbolo"], d["fechamento"], d.get("faixas"),
                    tuple(d.get("dims_nicho") or DIMS_PADRAO),
                    com_periodo_atr=bool(d.get("com_periodo_atr", False)),
-                   com_extras=bool(d.get("com_extras", False)))
+                   com_extras=com_extras, nomes_extras=nomes)

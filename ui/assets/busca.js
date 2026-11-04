@@ -342,7 +342,12 @@
   function linhaItem(it) {
     var f = rasc[it.nome], h = '<tr><td class="it">' + esc(it.rotulo) + '</td><td>';
     if (it.tipo === 'lista' || it.tipo === 'dias') {
-      h += '<div class="b-chips">' + chips(it, f.ligados || []) + (it.tipo === 'dias' ? q('Ajuda sobre dias', 'Testa qualquer combinação dos dias marcados (31 no total): só terça, segunda e quarta, de terça a quinta etc.') : '') + '</div></td><td class="b-dim">—</td></tr>';
+      // nenhum chip marcado = item desligado na busca (vale para "sem entradas" e o ADX)
+      var ajLista = it.tipo === 'dias' ? q('Ajuda sobre dias', 'Testa qualquer combinação dos dias marcados (31 no total): só terça, segunda e quarta, de terça a quinta etc.')
+        : it.nome.indexOf('sem_entrada') === 0 ? q('Ajuda sobre ' + it.rotulo.toLowerCase(), 'Nenhum horário marcado: sem bloqueio de entradas.')
+        : it.nome === 'filtro_adx' ? q('Ajuda sobre a régua do ADX', 'Nenhuma régua marcada: ADX desligado. Período e limiar do ADX não são testados.')
+        : '';
+      h += '<div class="b-chips">' + chips(it, f.ligados || []) + ajLista + '</div></td><td class="b-dim">—</td></tr>';
       return h;
     }
     if (it.tipo === 'hora') {
@@ -362,10 +367,15 @@
         var lin = '<tr>' + (k === 0 ? '<td class="it" rowspan="' + it.opcoes.length + '">' + esc(it.rotulo) + '</td>' : '') +
           '<td><span class="b-rng"><button type="button" class="b-chip" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" aria-pressed="' + !!ft.on + '">' + esc(o.rotulo) + '</button>';
         if (o.tipo === 'sem') return lin + '</span></td><td class="b-dim">—</td></tr>';
-        // ATR: o multiplicador e o período (período anda em degrau proporcional)
+        // ATR: o multiplicador e o período; o passo do período fica junto dele
+        // (a coluna "Passo" é do multiplicador). Passo vazio = proporcional.
+        var perRot = 'Período do ATR do ' + esc(it.rotulo.toLowerCase());
         var per = ft.periodo ? '<span class="b-dim" style="margin-left:8px">período</span>' +
-          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_de" value="' + numTxt(ft.periodo.de) + '" aria-label="Período do ATR do ' + esc(it.rotulo.toLowerCase()) + ', mínimo"><span class="b-dim">a</span>' +
-          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_ate" value="' + numTxt(ft.periodo.ate) + '" aria-label="Período do ATR do ' + esc(it.rotulo.toLowerCase()) + ', máximo">' : '';
+          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_de" value="' + numTxt(ft.periodo.de) + '" aria-label="' + perRot + ', mínimo"><span class="b-dim">a</span>' +
+          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_ate" value="' + numTxt(ft.periodo.ate) + '" aria-label="' + perRot + ', máximo">' +
+          '<span class="b-dim">passo</span>' +
+          '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="periodo_passo" value="' + numTxt(ft.periodo.passo) + '" placeholder="—" aria-label="Passo do ' + perRot.charAt(0).toLowerCase() + perRot.slice(1) + ' (vazio: proporcional)">' +
+          q('Ajuda sobre o passo do período do ATR', 'De quanto em quanto o período do ATR anda. Vazio: passo proporcional, que cresce com o valor. O passo da coluna ao lado é o do multiplicador.') : '';
         return lin + '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="de" value="' + numTxt(ft.de) + '" aria-label="' + alvo + ', mínimo"><span class="b-dim">a</span>' +
           '<input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="ate" value="' + numTxt(ft.ate) + '" aria-label="' + alvo + ', máximo">' + per + '</span></td>' +
           '<td><input class="b-inp w-s" data-it="' + it.nome + '" data-tipo="' + o.tipo + '" data-k="passo" value="' + numTxt(ft.passo) + '" aria-label="Passo do ' + alvo + '"></td></tr>';

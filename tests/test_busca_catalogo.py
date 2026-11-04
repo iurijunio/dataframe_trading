@@ -177,17 +177,17 @@ def test_todo_campo_do_motor_esta_classificado():
 
     extras = {i.nome for i in C.montar_catalogo("adx_direcao", "WIN$N") if i.onde == "extra"}
     todos = set(ExecutionProfile.__dataclass_fields__)
-    assert C.JA_NA_BUSCA | C.NAO_MINERAVEIS | extras == todos
-    assert not (C.JA_NA_BUSCA & extras) and not (C.NAO_MINERAVEIS & extras)
+    assert C.JA_NA_BUSCA | C.NAO_MINERAVEIS | C.FORA_DA_BUSCA | extras == todos
+    assert not ((C.JA_NA_BUSCA | C.NAO_MINERAVEIS | C.FORA_DA_BUSCA) & extras)
 
 
 def test_extras_incluem_o_desligado():
     cat = _por_nome("adx_direcao", "WIN$N")
     for nome in ("max_barras", "adx_periodo", "adx_limiar", "breakeven_pct",
-                 "step_gatilho_pct", "trailing_pontos", "limite_perda_contrato",
+                 "limite_perda_contrato",
                  "max_trades_dia"):
         assert C.valores(cat[nome], cat[nome].padrao)[0] == 0, nome
-    assert "" in C.valores(cat["sem_entrada1"], cat["sem_entrada1"].padrao)
+    assert "" in cat["sem_entrada1"].padrao["valores"]
     fech = C.valores(cat["fechamento"], cat["fechamento"].padrao)
     assert fech[0] == "09:00" and fech[-1] == "17:30"
 
@@ -227,16 +227,6 @@ def test_fechamento_chega_ao_ate_fora_do_passo():
     assert C.valores(it, {"de": "09:00", "ate": "16:50", "passo": 30})[-1] == "16:50"
 
 
-def test_trailing_segue_a_faixa_da_ficha():
-    from core import ativo
-
-    ff = ativo.faixas_do_ativo("MES", "adx_direcao").get("trailing_pontos")
-    if not ff:
-        pytest.skip("ficha do MES sem faixa de trailing")
-    it = _por_nome("adx_direcao", "MES")["trailing_pontos"]
-    assert it.padrao["de"] == 0 and it.padrao["ate"] == ff["ate"] and it.padrao["passo"] == ff["passo"]
-
-
 def test_canonico_prejuizos_e_ordem_das_horas():
     assert C.canonico({"max_trades_dia": 3, "max_prejuizos_dia": 3})["max_prejuizos_dia"] == 0
     assert C.canonico({"max_trades_dia": 3, "max_prejuizos_dia": 2})["max_prejuizos_dia"] == 2
@@ -247,3 +237,30 @@ def test_canonico_prejuizos_e_ordem_das_horas():
 def test_sem_entrada_vai_ate_a_hora_do_fechamento():
     cat = _por_nome("adx_direcao", "WIN$N")
     assert cat["sem_entrada1"].padrao["valores"][-1] == "17:00"
+
+
+def test_sem_entradas_e_regua_do_adx_comecam_desmarcados():
+    """Nenhum chip marcado de saída: o recurso fica desligado (04/11/2026)."""
+    cat = _por_nome("adx_direcao", "WIN$N")
+    for nome in ("sem_entrada1", "sem_entrada2", "sem_entrada3", "filtro_adx"):
+        assert cat[nome].padrao["ligados"] == [], nome
+        assert C.valores(cat[nome], cat[nome].padrao) == [], nome
+
+
+def test_stop_movel_e_trailing_ficam_fora_da_busca():
+    assert C.FORA_DA_BUSCA == {"step_gatilho_pct", "step_distancia_pct", "trailing_pontos"}
+    assert not (C.FORA_DA_BUSCA & set(_por_nome("adx_direcao", "WIN$N")))
+
+
+def test_periodo_do_atr_anda_pelo_passo():
+    assert C.ATR_PERIODO == {"de": 5, "ate": 60, "passo": 5}
+    cat = _por_nome("adx_direcao", "WIN$N")
+    assert C.periodos_atr(cat["stop"].padrao["tipos"]["atr"]) == list(range(5, 61, 5))
+    assert C.periodos_atr({"periodo": {"de": 10, "ate": 30, "passo": 10}}) == [10, 20, 30]
+
+
+def test_periodo_do_atr_sem_passo_continua_proporcional():
+    """Busca gravada antes do passo (ou passo vazio na tela) reabre igual."""
+    prop = C.degraus_proporcionais(5, 60)
+    assert C.periodos_atr({"periodo": {"de": 5, "ate": 60}}) == prop
+    assert C.periodos_atr({"periodo": {"de": 5, "ate": 60, "passo": None}}) == prop

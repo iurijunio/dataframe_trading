@@ -59,8 +59,9 @@ PONTOS_SEM_FAIXA = {
     "stop_pontos": {"de": 50, "ate": 2000, "passo": 50},
     "alvo_pontos": {"de": 100, "ate": 4000, "passo": 100},
 }
-# Período do ATR do stop e do alvo (degrau proporcional, como as médias).
-ATR_PERIODO = {"de": 5, "ate": 60}
+# Período do ATR do stop e do alvo: de 5 em 5. Busca gravada sem "passo"
+# (ou passo vazio na tela) anda em degrau proporcional, como as médias.
+ATR_PERIODO = {"de": 5, "ate": 60, "passo": 5}
 # Múltiplos e porcentagens valem para qualquer ativo.
 STOP_TIPOS = {
     "atr": {"on": True, "de": 0.25, "ate": 6.0, "passo": 0.25, "periodo": dict(ATR_PERIODO)},
@@ -77,7 +78,7 @@ ALVO_TIPOS = {
 
 # Todo campo do perfil de execução do motor tem lugar aqui. Campo novo no
 # motor quebra `test_todo_campo_do_motor_esta_classificado` até ser posto
-# numa das três listas — ninguém precisa conferir um por um (04/11/2026).
+# numa das listas abaixo (ou virar extra) — ninguém precisa conferir um por um (04/11/2026).
 JA_NA_BUSCA = {"timeframe", "entrada_inicio", "entrada_fim", "dias_semana", "direcao",
                "alvo_tipo", "alvo_pontos", "alvo_atr_periodo", "alvo_atr_mult",
                "alvo_razao", "alvo_pct", "stop_tipo", "stop_pontos", "stop_atr_periodo",
@@ -86,6 +87,11 @@ JA_NA_BUSCA = {"timeframe", "entrada_inicio", "entrada_fim", "dias_semana", "dir
 NAO_MINERAVEIS = {"corretagem_por_contrato", "emolumentos_por_contrato", "slippage_ticks",
                   "modo_posicao", "contratos", "risco_por_trade", "capital_inicial",
                   "min_operacoes"}
+# a busca não varre (decisão do usuário, 04/11/2026): valem o do menu
+# (`perfil_base`) e aparecem no bloco "Fixos". Buscas criadas antes disso os
+# varriam e reabrem com eles (`Espaco.de_json`), por isso `_extras` ainda os
+# declara.
+FORA_DA_BUSCA = {"step_gatilho_pct", "step_distancia_pct", "trailing_pontos"}
 
 
 @dataclass(frozen=True)
@@ -218,13 +224,18 @@ def periodos_atr(faixa_tipo: dict) -> list[int] | None:
     p = (faixa_tipo or {}).get("periodo")
     if not p:
         return None
+    if p.get("passo"):
+        return _grade(int(p["de"]), int(p["ate"]), int(p["passo"]), inteiro=True)
     return degraus_proporcionais(int(p["de"]), int(p["ate"]))
 
 
-def _extras(simbolo: str, janela_de: str, estrategia: str | None = None) -> list[Item]:
+def _extras(simbolo: str, janela_de: str, estrategia: str | None = None,
+            com_fora_da_busca: bool = False) -> list[Item]:
     """Os demais campos mineráveis da camada 4. Em toda faixa entra o
     "desligado" (0 ou vazio): a busca compara com e sem o recurso, como a
-    Varredura já faz com o ADX. Pontos e dinheiro saem do padrão da ficha."""
+    Varredura já faz com o ADX. Pontos e dinheiro saem do padrão da ficha.
+    Listas sem nada marcado (sem entradas, régua do ADX) = desligado.
+    `com_fora_da_busca` traz também os de `FORA_DA_BUSCA` (buscas antigas)."""
     try:
         f = ativo.ficha(simbolo)
         pp, pv = f.perfil_padrao or {}, float(f.point_value or 1)
@@ -248,8 +259,8 @@ def _extras(simbolo: str, janela_de: str, estrategia: str | None = None) -> list
             degrau = "fixo"
         return Item(nome, rotulo, tipo, "filtro", degrau, padrao, onde="extra")
 
-    sem = {"valores": [""] + horas, "ligados": [""] + horas}
-    return [
+    sem = {"valores": [""] + horas, "ligados": []}
+    itens = [
         it("fechamento", "Fechar posições às", "hora",
            {"de": janela_de, "ate": fech, "passo": PASSO_JANELA}, "minutos"),
         it("max_barras", "Tempo máximo na operação (barras)", "inteiro",
@@ -258,7 +269,7 @@ def _extras(simbolo: str, janela_de: str, estrategia: str | None = None) -> list
         it("sem_entrada2", "Sem entradas · 2", "lista", dict(sem)),
         it("sem_entrada3", "Sem entradas · 3", "lista", dict(sem)),
         it("filtro_adx", "ADX · régua", "lista",
-           {"valores": ["tendencia", "rango"], "ligados": ["tendencia", "rango"]}),
+           {"valores": ["tendencia", "rango"], "ligados": []}),
         it("adx_periodo", "ADX · período", "inteiro", {"de": 0, "ate": 50, "passo": 1},
            "proporcional"),
         it("adx_limiar", "ADX · limiar", "inteiro", {"de": 0, "ate": 50, "passo": 5}),
@@ -279,6 +290,25 @@ def _extras(simbolo: str, janela_de: str, estrategia: str | None = None) -> list
         it("max_trades_dia", "Máx. operações no dia", "inteiro", {"de": 0, "ate": 10, "passo": 1}),
         it("max_prejuizos_dia", "Máx. prejuízos no dia", "inteiro", {"de": 0, "ate": 5, "passo": 1}),
     ]
+    return [i for i in itens if com_fora_da_busca or i.nome not in FORA_DA_BUSCA]
+
+
+# régua do ADX sem nada marcado: o ADX inteiro desliga, e estes ficam em 0
+# mesmo que a faixa deles tenha valores
+ADX_DEPENDENTES = ("adx_periodo", "adx_limiar", "adx_filtro_di", "adx_subindo")
+
+
+def desligado(item: Item):
+    """O valor "recurso desligado" de um extra (o que vale com a lista
+    vazia); None quando não há (horário de fechamento)."""
+    if item.tipo == "lista":
+        vals = item.padrao["valores"]
+        return "" if "" in vals else vals[0]
+    if item.tipo == "inteiro":
+        return 0
+    if item.tipo == "real":
+        return 0.0
+    return None
 
 
 def canonico(extras: dict, listas: dict | None = None, sem_alvo: bool = False,
@@ -328,7 +358,8 @@ def canonico(extras: dict, listas: dict | None = None, sem_alvo: bool = False,
     return {k: e[k] for k in extras}
 
 
-def montar_catalogo(estrategia: str, simbolo: str) -> list[Item]:
+def montar_catalogo(estrategia: str, simbolo: str,
+                    com_fora_da_busca: bool = False) -> list[Item]:
     """Itens na ordem da aba "Espaço de busca": tempo, direção, janela, dias,
     stop, alvo e os parâmetros da estratégia."""
     from strategies import registry
@@ -353,7 +384,7 @@ def montar_catalogo(estrategia: str, simbolo: str) -> list[Item]:
         Item("alvo", "Alvo", "gestao", "filtro", "fixo",
              {"tipos": {"pontos": _pontos(simbolo, "alvo_pontos"),
                         **{k: dict(v) for k, v in ALVO_TIPOS.items()}}}),
-        *_extras(simbolo, ini, estrategia),
+        *_extras(simbolo, ini, estrategia, com_fora_da_busca),
     ]
     for nome, meta in mod.params_schema.items():
         lo, hi = meta.get("min"), meta.get("max")

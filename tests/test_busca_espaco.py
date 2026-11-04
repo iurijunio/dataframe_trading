@@ -193,3 +193,70 @@ def test_fechamento_invalido_sai_da_faixa():
         pytest.skip("sem ficha do MES")
     vals = esp.extras_vals["fechamento"]
     assert "17:30" not in vals and "17:00" in vals      # 17:30 cai na pausa da CME
+
+
+# ------------------------------------------------ ajustes de 04/11/2026
+ADX = ("adx_periodo", "adx_limiar", "adx_filtro_di", "adx_subindo")
+
+
+def test_padrao_sem_entradas_e_adx_desligados(espaco):
+    v = espaco.extras_vals
+    for n in ("sem_entrada1", "sem_entrada2", "sem_entrada3"):
+        assert v[n] == [""], n
+    assert v["filtro_adx"] == ["tendencia"]
+    for n in ADX:
+        assert v[n] == [0], n
+        assert "x:" + n in espaco._genes        # mesmo número de genes
+    for x in np.random.default_rng(21).random((300, espaco.n_genes)):
+        e = dict(espaco.decodificar(x).extras)
+        assert (e["adx_periodo"], e["adx_limiar"], e["sem_entrada1"]) == (0, 0, "")
+
+
+def test_regua_desmarcada_ignora_as_faixas_do_adx():
+    esp = Espaco("adx_direcao", "WIN$N", fechamento="17:30",
+                 faixas={"filtro_adx": {"ligados": []},
+                         "adx_periodo": {"de": 5, "ate": 30, "passo": 1},
+                         "adx_limiar": {"de": 10, "ate": 40, "passo": 5},
+                         "adx_filtro_di": {"ligados": [0, 1]}})
+    assert all(esp.extras_vals[n] == [0] for n in ADX)
+    assert esp.extras_vals["filtro_adx"] == ["tendencia"]
+
+
+def test_regua_marcada_varre_o_adx():
+    esp = Espaco("adx_direcao", "WIN$N", fechamento="17:30",
+                 faixas={"filtro_adx": {"ligados": ["rango"]}})
+    assert esp.extras_vals["filtro_adx"] == ["rango"]
+    assert 0 in esp.extras_vals["adx_periodo"] and len(esp.extras_vals["adx_periodo"]) > 1
+
+
+def test_sem_entrada_marcada_varre_as_horas():
+    esp = Espaco("adx_direcao", "WIN$N", fechamento="17:30",
+                 faixas={"sem_entrada1": {"ligados": ["", "10:00"]}})
+    assert esp.extras_vals["sem_entrada1"] == ["", "10:00"]
+
+
+def test_stop_movel_e_trailing_valem_o_do_menu(espaco):
+    assert not (C.FORA_DA_BUSCA & set(espaco.nomes_extras))
+    base = {**PERFIL_BASE, "step_gatilho_pct": 40.0, "step_distancia_pct": 10.0,
+            "trailing_pontos": 150}
+    for x in np.random.default_rng(22).random((200, espaco.n_genes)):
+        p = espaco.perfil(espaco.decodificar(x), base)
+        assert (p.step_gatilho_pct, p.step_distancia_pct, p.trailing_pontos) == (40.0, 10.0, 150)
+
+
+def test_extras_gravados_reabrem_iguais(espaco):
+    d = espaco.para_json()
+    assert d["nomes_extras"] == espaco.nomes_extras
+    de_novo = Espaco.de_json(d)
+    assert de_novo.nomes_extras == espaco.nomes_extras and de_novo.n_genes == espaco.n_genes
+
+
+def test_busca_de_hoje_cedo_reabre_com_stop_movel_e_trailing(espaco):
+    """Criada antes de FORA_DA_BUSCA (com_extras, sem a lista gravada): os três
+    campos seguem no vetor dela."""
+    antigo = {k: v for k, v in espaco.para_json().items() if k != "nomes_extras"}
+    velho = Espaco.de_json(antigo)
+    assert C.FORA_DA_BUSCA <= set(velho.nomes_extras)
+    assert velho.n_genes == espaco.n_genes + 3
+    c = velho.decodificar(np.full(velho.n_genes, 0.6))
+    assert "trailing_pontos" in dict(c.extras) and Combinacao.de_chave(c.chave()) == c

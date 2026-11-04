@@ -190,11 +190,15 @@ def _num_br(v) -> str:
 
 def _fixos(p, moeda: str = "", minerados=()) -> list[list[str]]:
     """O que vale igual para todas as combinações (bloco "Fixos"). Busca nova
-    varre a camada 4 inteira: aí só os custos são fixos."""
+    varre a camada 4 quase inteira: fixos só os custos e o que fica fora da
+    busca (stop móvel e trailing, `catalogo.FORA_DA_BUSCA`)."""
     custos = ["Custos", f"{moeda} {_num_br(p.corretagem_por_contrato + p.emolumentos_por_contrato)}"
               f" + {p.slippage_ticks} tick{'s' if p.slippage_ticks != 1 else ''}".strip()]
+    movel = ["Stop móvel", f"{p.step_gatilho_pct:g}% / {p.step_distancia_pct:g}%"
+             if p.step_gatilho_pct else "desligado"]
     if minerados:
-        return [custos]
+        return [movel, ["Trailing", f"{p.trailing_pontos} pts" if p.trailing_pontos
+                        else "desligado"], custos]
     adx = ("—" if not (int(p.adx_periodo or 0) and int(p.adx_limiar or 0))
            else f"{'tendência' if p.filtro_adx == 'tendencia' else 'rango'} "
                 f"{p.adx_periodo}/{p.adx_limiar}")
@@ -206,9 +210,7 @@ def _fixos(p, moeda: str = "", minerados=()) -> list[list[str]]:
     return [["Filtro de mercado", adx], ["Sem entradas", sem],
             ["Limites diários", ", ".join(x for x in lim if x) or "—"],
             ["Breakeven", f"{p.breakeven_pct:g}% do alvo" if p.breakeven_pct else "desligado"],
-            ["Stop móvel", f"{p.step_gatilho_pct:g}% / {p.step_distancia_pct:g}%"
-             if p.step_gatilho_pct else "desligado"],
-            custos]
+            movel, custos]
 
 
 # ------------------------------------------------------------ dados

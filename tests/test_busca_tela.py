@@ -253,3 +253,12 @@ def test_com_uma_busca_real_os_mapas_vao_inteiros():
     assert len(m["casas"]) == len(m["linhas"]) * len(m["colunas"])
     assert all("evolucao" in c for c in m["casas"])
     assert d["de_txt"] == "feitos" and d["barra"] == 100
+
+
+def test_fixos_da_busca_nova_mostram_stop_movel_e_trailing():
+    p = ExecutionProfile(step_gatilho_pct=40, step_distancia_pct=10, trailing_pontos=150)
+    f = dict(CB._fixos(p, "R$", True))
+    assert set(f) == {"Custos", "Stop móvel", "Trailing"}
+    assert f["Stop móvel"] == "40% / 10%" and f["Trailing"] == "150 pts"
+    f = dict(CB._fixos(ExecutionProfile(), "R$", True))
+    assert f["Stop móvel"] == "desligado" and f["Trailing"] == "desligado"
