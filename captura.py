@@ -38,7 +38,7 @@ from core import captura as C
 from core import comandos, contrato_dia, diario_ordens, ordens, papel
 from core import corretora as K
 from core import db_manager as db
-from core import papel_backtest, papel_vivo, ponte
+from core import conferencia_ordens, ordens_backtest, papel_backtest, papel_vivo, ponte
 from core import rollovers as roll
 from core.mt5_source import barras_de_taxas
 
@@ -145,6 +145,16 @@ def _nao_hibernar(pregao: bool) -> None:
     except (ImportError, AttributeError):
         return
     kernel.SetThreadExecutionState(0x80000000 | 0x00000001 if pregao else 0x80000000)
+
+
+def _momento(dia, provisoria_ts, hoje) -> tuple:
+    """O minuto de barras de um cálculo do papel: (dia, minuto em formação
+    usado, último candle fechado). Desejados e papel gravado só se comparam
+    com o MESMO momento — com um minuto de diferença a divergência seria
+    do relógio, não do cálculo."""
+    ts = hoje["ts"]
+    ultimo = ts[-1].astype("datetime64[us]").item() if len(ts) else None
+    return (dia, provisoria_ts, ultimo)
 
 
 def _hora_do_tick(tick) -> datetime | None:
@@ -272,6 +282,10 @@ class Servico:
         self._formacao = None           # (máxima, mínima) do minuto em formação
         self._toque_em: dict = {}       # ligação -> hora da primeira volta tocada
         self._disponivel = False
+        # o minuto de barras dos desejados (`_momento`); None = sem cálculo
+        self._desejados_momento = None
+        # desejados × papel gravado: só avisa (chamado), nunca mexe em ordem
+        self._vigia_papel = conferencia_ordens.Vigia()
         # ponte com a real: o seq sobe só quando o conteúdo publicado muda
         # (reinício zera; a real compara "mudou", não "aumentou")
         self._seq_ponte = 0
@@ -656,6 +670,43 @@ class Servico:
         self.papel_em = agora
         self.papel_erros["calculo"] = None
         self._anotar_papel(res)
+        self._conferir_ordens_papel(
+            res, (dia, provisoria[0] if provisoria else None, self.ultimo),
+            self.agora_srv or agora)
+
+    def _conferir_ordens_papel(self, res, momento, quando) -> None:
+        """Os desejados das ordens contra o papel que acabou de ser
+        calculado (`core/conferencia_ordens.py`). Só AVISA — chamado
+        `divergencia_papel`, que toca o selo e o alarme do topo e vai ao
+        diário; nada aqui manda, cancela ou zera ordem. Só compara o MESMO
+        minuto de barras dos dois lados. Qualquer falha vai ao log: a
+        conferência nunca pode parar o papel nem os candles."""
+        if self.motor is None:
+            return
+        try:
+            r = self.retrato
+            if (momento is None or momento != self._desejados_momento
+                    or r is None or r.antigo or r.dia != momento[0]):
+                return
+            # o diário do dia antes de mexer nos chamados: trocar de dia
+            # zera a lista dentro do próprio `_chamar` (chamado novo some)
+            self.motor.diario(quando.date())
+            comp = conferencia_ordens.comparar(self._desejados_ordens,
+                                               r.ligacoes, res)
+            abertos = self._vigia_papel.observar(
+                momento[0], momento[1] or momento[2], comp)
+            for chave, c in list(self.motor.chamados.items()):
+                if c.get("tipo") == conferencia_ordens.TIPO and chave not in abertos:
+                    self.motor._fechar(chave, quando)
+            for chave, (lig, texto) in abertos.items():
+                if chave not in self.motor.chamados:
+                    log.warning("%s", texto)
+                self.motor._chamar(chave, conferencia_ordens.TIPO, texto, quando,
+                                   ligacao_id=lig)
+        except Exception as e:
+            self._falha("conferência ordens × papel falhou", e)
+        else:
+            self._sem_falha("conferência ordens × papel falhou")
 
     def _anotar_papel(self, resultados) -> None:
         # O `dia` vai junto: um pregão de ontem que ficou "rodando" (o cálculo
@@ -699,7 +750,8 @@ class Servico:
                     log.exception("não consegui listar o papel por conferir")
                     falha_papel = str(e)
                     papel_dias, reabrir = [], []
-                backtest = self._backtest_pendentes(con, agora)
+                backtest = (self._backtest_pendentes(con, agora)
+                            + self._ordens_bt_pendentes(con, agora))
                 self._divergencias(con)
         except _Ocupado:
             return      # a janela não conta: tenta de novo na volta seguinte
@@ -778,6 +830,16 @@ class Servico:
             log.exception("não consegui listar a conferência papel × backtest")
             return []
 
+    def _ordens_bt_pendentes(self, con, agora) -> list:
+        if not self._pode_backtest(agora):
+            return []
+        try:
+            return [p for p in ordens_backtest.pendentes(con, self.simbolo)
+                    if p not in self._backtest_falhou]
+        except Exception:
+            log.exception("não consegui listar a conferência ordens × backtest")
+            return []
+
     def _conferir_backtest(self, con, agora) -> None:
         """Cada pregão pendente à parte: um plano que não roda não impede
         a conferência dos outros, nem a dos candles (já gravada). O relógio
@@ -795,6 +857,21 @@ class Servico:
             except Exception:
                 log.exception("papel × backtest da ligação %s em %s falhou "
                               "(não tento de novo até reabrir a captura)", lig, dia)
+                self._backtest_falhou.add(p)
+        # depois da papel × backtest, com a mesma régua: o que foi à
+        # corretora (real e demo à parte) contra o mesmo backtest
+        for p in self._ordens_bt_pendentes(con, agora):
+            if not self._pode_backtest(agora):
+                log.info("ordens × backtest: corte da manhã; o resto fica para depois")
+                break
+            lig, dia, origem = p
+            try:
+                ordens_backtest.conferir(con, lig, dia, origem, self.cache_codigo,
+                                         agora, symbol=self.simbolo)
+            except Exception:
+                log.exception("ordens × backtest da ligação %s em %s (%s) falhou "
+                              "(não tento de novo até reabrir a captura)",
+                              lig, dia, origem)
                 self._backtest_falhou.add(p)
 
     def _conferir_papel(self, con, dia, agora) -> None:
@@ -1201,6 +1278,7 @@ class Servico:
         self._guarda_bloqueada = False
         self._minuto_calculado, self._desejados, self._disponivel = None, {}, False
         self._desejados_ordens, self._formacao, self._toque_em = {}, None, {}
+        self._desejados_momento = None
 
     def _automacao_posicionada(self, diario) -> bool:
         """Há posição com o magic da automação (na corretora ou aberta no
@@ -1433,7 +1511,7 @@ class Servico:
         if srv is None:
             # sem relógio do servidor nada se sabe: só a proteção (§5.1)
             self._desejados, self._disponivel, self._minuto_calculado = {}, False, None
-            self._provisoria_ts = None
+            self._provisoria_ts = self._desejados_momento = None
             return
         hoje, provisoria = self._barras_hoje(srv)
         self._provisoria_ts = provisoria[0] if provisoria else None
@@ -1441,6 +1519,7 @@ class Servico:
             # o retrato salvo não tem plano nem código: papel indisponível
             # (só protege) até o banco responder
             self._desejados, self._disponivel, self._minuto_calculado = {}, False, None
+            self._desejados_momento = None
             return
         # o candle fechado que o MT5 revisa (caso 11) também refaz: a chave
         # leva o conteúdo das barras, não só o minuto
@@ -1454,8 +1533,10 @@ class Servico:
         except Exception as e:
             self._falha("papel das ordens falhou", e)
             self._desejados, self._disponivel = {}, False
+            self._desejados_momento = None
         else:
             self._sem_falha("papel das ordens falhou")
+            self._desejados_momento = _momento(srv.date(), self._provisoria_ts, hoje)
         self._minuto_calculado = chave
 
     # ---------------------------------------------------------------- volta

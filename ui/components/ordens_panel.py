@@ -329,6 +329,8 @@ _SUBTEXTO = {
     "conta_errada": "Nada é enviado enquanto o MT5 estiver em outra conta.",
     "algo_desligado": "Ligue o Algo Trading no MT5; nada sai até lá.",
     "mt5_fora": "O stop e o alvo seguem na corretora.",
+    "divergencia_papel": "Nada foi cancelado: confira a posição na corretora "
+                         "e o papel na tela Operação.",
     "teste_preso": "Posição da Ordem de teste (magic 7000000). A captura segue "
                    "tentando encerrar a cada 1 s.",
 }
