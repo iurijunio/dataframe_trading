@@ -857,6 +857,37 @@ def test_na_manha_seguinte_reconfere_ontem_uma_vez_e_exporta(base, monkeypatch):
     assert chamadas == [ontem]               # uma vez só
 
 
+def test_reconferencia_que_muda_o_passado_rele_o_aquecimento(base):
+    """05/11/2026: o aquecimento lido às 08:55 ficou com o leilão de ontem
+    como candle próprio; a reconferência das 08:59 o consolidou e as ordens
+    seguiram calculando com o passado velho (venda virou compra na real)."""
+    from core import papel_vivo
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    # um aquecimento que, sem a reconferência, o retrato manteria: mesma
+    # chave (sem ligações) e pregões de sobra
+    velho = papel_vivo.Aquecimento(barras={}, pregoes=999)
+    s.aquecimento, s.aquecimento_chave = velho, ()
+    mt5.minutos = [t for t in mt5.minutos if t.minute != 31]
+    s.agora = lambda: datetime(2026, 10, 2, 8, 56)
+    mono.t += P.A_CADA_CONFERENCIA
+    s.volta()
+    assert s.aquecimento is not velho
+
+
+def test_reconferencia_sem_mudanca_mantem_o_aquecimento(base, monkeypatch):
+    mono = Mono()
+    s, mt5 = _pregao_com_leilao(base, mono)
+    velho = object()
+    s.aquecimento, s.aquecimento_chave = velho, (1,)
+    monkeypatch.setattr(C, "reconferir_dia", lambda *a, **k:
+                        {"revisados": 0, "faltantes": 0, "removidos": 0})
+    s.agora = lambda: datetime(2026, 10, 2, 8, 56)
+    mono.t += P.A_CADA_CONFERENCIA
+    s._reconferir_com(None, s.agora(), {datetime(2026, 10, 1).date(): None}, [])
+    assert s.aquecimento is velho
+
+
 def test_reconferencia_sem_o_dia_no_mt5_nao_apaga_e_tenta_de_novo(base):
     mono = Mono()
     s, mt5 = _pregao_com_leilao(base, mono)

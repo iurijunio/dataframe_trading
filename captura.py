@@ -922,6 +922,14 @@ class Servico:
                      r["removidos"])
             feitos.append(dia)
             self.reexportar = True
+            if r["revisados"] or r["faltantes"] or r["removidos"]:
+                # O passado mudou: o aquecimento em memória (lido antes, às
+                # 08:55) é da versão velha. A ADX é recursiva — o leilão de
+                # 04/11 consolidado no 18:24 virou a venda das 09:45 de
+                # 05/11 numa compra às 10:15 na conta real. Descartar faz o
+                # próximo retrato reler do banco já reconferido.
+                self.aquecimento = self.aquecimento_chave = None
+                self._retrato_tentado = None
         if feitos or erros:
             self.reconferencia = {
                 **self.reconferencia,
