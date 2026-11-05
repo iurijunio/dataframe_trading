@@ -329,8 +329,9 @@ _SUBTEXTO = {
     "conta_errada": "Nada é enviado enquanto o MT5 estiver em outra conta.",
     "algo_desligado": "Ligue o Algo Trading no MT5; nada sai até lá.",
     "mt5_fora": "O stop e o alvo seguem na corretora.",
-    "divergencia_papel": "Nada foi cancelado: confira a posição na corretora "
-                         "e o papel na tela Operação.",
+    # regra da tela: nada de frase explicativa visível; o texto do chamado
+    # (e o diário) já dizem tudo
+    "divergencia_papel": None,
     "teste_preso": "Posição da Ordem de teste (magic 7000000). A captura segue "
                    "tentando encerrar a cada 1 s.",
 }
@@ -366,11 +367,10 @@ def faixa_chamados(ordens: dict | None, nomes: dict | None = None, *,
             continue
         lig = c.get("ligacao_id")
         ticket = c.get("ticket")
-        texto = [html.B(_nome(nomes, lig)), " · ", c.get("texto") or "chamado",
-                 html.Br(),
-                 html.Span(_SUBTEXTO.get(c.get("tipo"),
-                                         "O stop e o alvo seguem na corretora."),
-                           className="mut")]
+        sub = _SUBTEXTO.get(c.get("tipo"), "O stop e o alvo seguem na corretora.")
+        texto = [html.B(_nome(nomes, lig)), " · ", c.get("texto") or "chamado"]
+        if sub:
+            texto += [html.Br(), html.Span(sub, className="mut")]
         acoes = []
         if ticket is not None:
             r, cl = rotulo_botao("encerrar", ticket, armado)

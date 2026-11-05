@@ -167,6 +167,19 @@ def test_chamado_tem_os_dois_botoes_com_os_ids():
             "id": "saida_pendente:222@2026-10-14T14:35:00"} in ids
 
 
+def test_chamado_divergencia_papel_sem_texto_explicativo():
+    # regra da tela: nada de frase explicativa visível — só o texto do chamado
+    c = _chamado(chave="divergencia_papel:8:2026-11-05:09:45",
+                 tipo="divergencia_papel", ticket=None,
+                 texto="ordem ≠ papel: ligação 8 — ordens comprado desde 10:15, "
+                       "papel vendido desde 09:45")
+    f = OR.faixa_chamados(_ordens(chamados=[c]), NOMES)
+    t = textos(f)
+    assert "ordem ≠ papel" in t
+    assert "Nada foi cancelado" not in t and "seguem na corretora" not in t
+    assert not [x for x in todos(f) if "mut" in classes(x)]
+
+
 def test_chamado_escondido_some_e_reaberto_volta():
     o = _ordens(chamados=[_chamado()])
     chave = "saida_pendente:222@2026-10-14T14:35:00"
