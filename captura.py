@@ -927,15 +927,33 @@ class Servico:
                 # 08:55) é da versão velha. A ADX é recursiva — o leilão de
                 # 04/11 consolidado no 18:24 virou a venda das 09:45 de
                 # 05/11 numa compra às 10:15 na conta real. Descartar faz o
-                # próximo retrato reler do banco já reconferido.
-                self.aquecimento = self.aquecimento_chave = None
-                self._retrato_tentado = None
+                # Relê aqui, com o banco já aberto: deixar para o retrato
+                # seguinte abriria um buraco sem aquecimento (banco ocupado
+                # por mineração, virada) em que nada entra.
+                self._reler_aquecimento(con, agora)
         if feitos or erros:
             self.reconferencia = {
                 **self.reconferencia,
                 "em": agora if feitos else self.reconferencia["em"],
                 "dias": feitos, "erro": "; ".join(erros) or None}
         return feitos
+
+    def _reler_aquecimento(self, con, agora) -> None:
+        """O aquecimento das ordens de novo do banco (depois de a reconferência
+        mudar o passado). Sem retrato ainda, só descarta: o primeiro retrato
+        carrega. Falha também descarta — o retrato seguinte tenta de novo."""
+        if self.retrato is None or self.aquecimento is None:
+            self.aquecimento = self.aquecimento_chave = None
+            return
+        try:
+            self.aquecimento = papel_vivo.carregar_aquecimento(
+                con, self.simbolo, agora.date(), self.retrato)
+        except Exception as e:
+            log.warning("não consegui reler o aquecimento: %s", e)
+            self.aquecimento = self.aquecimento_chave = None
+            self._retrato_tentado = None
+            return
+        self._versao_papel += 1
 
     def _reabrir_papel(self, con, dia, agora) -> None:
         try:

@@ -875,6 +875,24 @@ def test_reconferencia_que_muda_o_passado_rele_o_aquecimento(base):
     assert s.aquecimento is not velho
 
 
+def test_reconferencia_rele_o_aquecimento_na_hora_com_o_banco_dela(base, monkeypatch):
+    """Relê já na reconferência (sem esperar o retrato): com o banco ocupado
+    depois, o aquecimento nunca fica vazio."""
+    from core import papel_vivo
+    mono = Mono()
+    s, _mt5 = _pregao_com_leilao(base, mono)
+    novo = papel_vivo.Aquecimento(barras={}, pregoes=5)
+    s.retrato = object()
+    s.aquecimento = papel_vivo.Aquecimento(barras={}, pregoes=999)
+    monkeypatch.setattr(papel_vivo, "carregar_aquecimento", lambda *a: novo)
+    monkeypatch.setattr(C, "reconferir_dia", lambda *a, **k:
+                        {"revisados": 35, "faltantes": 0, "removidos": 1})
+    versao = s._versao_papel
+    s._reconferir_com("con", datetime(2026, 10, 2, 8, 59),
+                      {datetime(2026, 10, 1).date(): None}, [])
+    assert s.aquecimento is novo and s._versao_papel == versao + 1
+
+
 def test_reconferencia_sem_mudanca_mantem_o_aquecimento(base, monkeypatch):
     mono = Mono()
     s, mt5 = _pregao_com_leilao(base, mono)
