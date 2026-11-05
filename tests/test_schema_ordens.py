@@ -24,7 +24,7 @@ def test_colunas_novas_e_padroes():
 
 def test_tabelas_novas_existem():
     with _con() as con:
-        for t in ("ordens_eventos", "papel_backtest"):
+        for t in ("ordens_eventos", "papel_backtest", "ordens_backtest"):
             assert con.execute("SELECT count(*) FROM information_schema.tables "
                                "WHERE table_name = ?", [t]).fetchone()[0] == 1
 

@@ -493,6 +493,21 @@ CREATE TABLE IF NOT EXISTS papel_backtest (
     PRIMARY KEY (ligacao_id, dia)
 );
 
+-- conferência diária ordens × backtest: as entradas que a conta (origem
+-- "real" ou "demo") de fato executou no dia, comparadas com o backtest do
+-- plano nos mesmos candles reconferidos (core/ordens_backtest.py)
+CREATE TABLE IF NOT EXISTS ordens_backtest (
+    ligacao_id   BIGINT NOT NULL,
+    dia          DATE NOT NULL,
+    origem       VARCHAR NOT NULL,
+    conferido_em TIMESTAMP NOT NULL,
+    ok           BOOLEAN NOT NULL,
+    n_ordens     INTEGER,
+    n_backtest   INTEGER,
+    diferencas   JSON,
+    PRIMARY KEY (ligacao_id, dia, origem)
+);
+
 -- o plano sabe de que variante é SEM depender da mineração (retrato): a
 -- mineração pode ser apagada, o histórico da variante não
 ALTER TABLE planos_operacao ADD COLUMN IF NOT EXISTS variante_id BIGINT;

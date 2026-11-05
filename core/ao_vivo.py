@@ -16,6 +16,7 @@ from . import diario
 from . import diario_ordens
 from . import optimizer as _optimizer
 from . import papel
+from . import ordens_backtest as _ob
 from . import papel_backtest as _pb
 from . import plano as _plano
 from . import variantes as V
@@ -723,6 +724,17 @@ def _restricoes(con, ligacao_id, fase: str = "demo") -> dict:
     if antigas:
         avisos.append(f"{len(antigas)} diferença(s) de antes da última mudança "
                       "de código ou motor: já não valem, mas confira")
+    # o que foi à corretora pesa igual ao papel: é a mesma promessa
+    o_atuais, o_antigas = _ob.falhas(con, ligacao_id, codigo.hash_estrategia(est),
+                                     engine.VERSAO)
+    if o_atuais:
+        motivos.append(
+            f"as ordens diferiram do backtest em {len(o_atuais)} pregão(ões) "
+            f"com o código e o motor de hoje (último: {o_atuais[-1]:%d/%m/%Y}): "
+            "resolva a diferença antes de promover")
+    if o_antigas:
+        avisos.append(f"{len(o_antigas)} diferença(s) das ordens de antes da "
+                      "última mudança de código ou motor: já não valem, mas confira")
     if not _pb.situacao(con, ligacao_id)["pregoes"]:
         avisos.append("nenhum pregão conferido contra o backtest ainda")
     if fase == "real":

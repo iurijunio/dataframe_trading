@@ -145,6 +145,41 @@ def test_falha_de_motor_antigo_nao_bloqueia_e_vira_aviso(banco):
                for a in AV.restricoes_para_demo(f.lig)["avisos"])
 
 
+def _ordens_bt(lig, plano_id, estrategia, *, ok, motor=...):
+    """Um pregão conferido do papel (igual ao backtest) e a linha da
+    ordens × backtest da conta real."""
+    _conferencia(lig, plano_id, estrategia, ok=True, motor=motor)
+    with db.connect_write() as con:
+        con.execute(
+            "INSERT INTO ordens_backtest (ligacao_id, dia, origem, conferido_em, "
+            "ok, n_ordens, n_backtest, diferencas) VALUES (?,?,'real',?,?,1,1,?)",
+            [lig, DIA, datetime(2026, 10, 6, 1), ok,
+             json.dumps({"operacoes": [] if ok else [{"tipo": "a_mais"}]})])
+
+
+def test_ordens_diferentes_do_backtest_bloqueiam(banco):
+    f, _ = _montar()
+    _ordens_bt(f.lig, f.plano_id, "rompimento_canal", ok=False)
+    with pytest.raises(ValueError, match="ordens diferiram do backtest"):
+        AV.mudar_fase(f.lig, "demo")
+    assert _fase(f.lig)[0] == "papel"
+
+
+def test_ordens_diferentes_de_motor_antigo_viram_aviso(banco):
+    f, _ = _montar()
+    _ordens_bt(f.lig, f.plano_id, "rompimento_canal", ok=False,
+               motor="2025.01.01")
+    AV.mudar_fase(f.lig, "demo")
+    assert any("ordens" in a for a in AV.restricoes_para_demo(f.lig)["avisos"])
+
+
+def test_ordens_iguais_ao_backtest_deixam_promover(banco):
+    f, _ = _montar()
+    _ordens_bt(f.lig, f.plano_id, "rompimento_canal", ok=True)
+    AV.mudar_fase(f.lig, "demo")
+    assert _fase(f.lig)[0] == "demo"
+
+
 def test_falha_de_codigo_antigo_nao_bloqueia(banco):
     f, _ = _montar()
     _conferencia(f.lig, f.plano_id, "rompimento_canal", ok=False,
