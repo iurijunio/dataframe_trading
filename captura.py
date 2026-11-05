@@ -834,7 +834,8 @@ class Servico:
         if not self._pode_backtest(agora):
             return []
         try:
-            return [p for p in ordens_backtest.pendentes(con, self.simbolo)
+            return [p for p in ordens_backtest.pendentes(con, self.simbolo,
+                                                         hoje=agora.date())
                     if p not in self._backtest_falhou]
         except Exception:
             log.exception("não consegui listar a conferência ordens × backtest")

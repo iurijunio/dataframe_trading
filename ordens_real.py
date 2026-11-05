@@ -256,6 +256,7 @@ class ServicoReal:
         simbolo = (contrato or {}).get("simbolo")
         if no_pregao and simbolo:
             self._vigiar_preco(simbolo, srv)
+            self._marcar_rolagem(diario, simbolo, srv)
         contrato_ok, motivo_contrato = self._checar_contrato(contrato, simbolo)
         est = self.motor.passo(
             self.mt5, agora_srv=srv, retrato=self.retrato, desejados=desejados,
@@ -269,6 +270,19 @@ class ServicoReal:
             ponte.gravar_ack(seq)
             self._seq_tratado = seq
         self.ordens_estado = {**est, **self._extra()}
+
+    def _marcar_rolagem(self, diario, simbolo, srv) -> None:
+        """A `rolagem` do dia, como a captura grava na demo: o contrato que
+        a real opera e a prova de que o processo esteve vivo no pregão (a
+        conferência ordens × backtest só cobra "não entrou" de quem estava
+        no ar). Uma vez por contrato; falhar aqui nunca para as ordens."""
+        try:
+            rolagens = [e for e in diario.eventos if e["tipo"] == "rolagem"]
+            if not rolagens or rolagens[-1].get("simbolo") != simbolo:
+                diario.registrar("rolagem", quando=srv, simbolo=simbolo,
+                                 motivo="contrato da ponte")
+        except Exception:
+            log.exception("não consegui gravar a rolagem do dia na real")
 
     def _ler_desejados(self):
         """Só o arquivo fresco conta; velho ou ausente = nada entra, só se protege."""

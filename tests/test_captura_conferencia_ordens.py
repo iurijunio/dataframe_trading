@@ -161,7 +161,7 @@ def test_ordens_backtest_roda_com_a_papel_backtest_so_fora_do_pregao(
                         lambda con, lig, dia, *a, **k: ordem.append(("papel", lig)) or {})
     feitos = []
     monkeypatch.setattr(ordens_backtest, "pendentes",
-                        lambda con, symbol="WIN$N": [p for p in [
+                        lambda con, symbol="WIN$N", **k: [p for p in [
                             (mundo.lig, date(2026, 10, 8), "real"),
                             (mundo.lig, date(2026, 10, 8), "demo")] if p not in feitos])
 

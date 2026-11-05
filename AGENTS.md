@@ -265,8 +265,8 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
     minutos de barra distintos, sem igualdade no meio, abre o chamado
     `divergencia_papel`; fecha quando volta a bater. Só avisa, nunca mexe em ordem.
   - **Ordens × backtest** (`core/ordens_backtest.py`, tabela `ordens_backtest`):
-    na manhã, depois da papel × backtest; por origem; todo dia na fase da conta e
-    ligada, também sem nenhuma ordem (= deixou de entrar); fora só ensaio. Diferença
+    na manhã, só pregão encerrado; por origem; todo dia na fase da conta e ligada,
+    também sem ordem (= deixou de entrar) se a conta tem prova de vida no dia (`rolagem`, que a real também grava); fora: ensaio, sem dados. Diferença
     do código/motor de hoje barra a promoção, como a do papel.
   - **Dado protegido:** `data/ao_vivo/ordens/real/*.jsonl` nunca se apaga (é o
     diário write-ahead da conta real, como o da demo).

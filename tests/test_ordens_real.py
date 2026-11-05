@@ -179,6 +179,16 @@ def test_arquivo_fresco_com_posicao_envia_entrada_na_real_e_grava_ack(cena):
     assert cena.mt5.inits == [TERMINAL_REAL]
 
 
+def test_real_grava_a_rolagem_do_dia_uma_vez(cena):
+    # a prova de vida da conta real no dia (ordens × backtest): sem ela, um
+    # pregão sem nenhuma ordem não se distingue de um processo fechado
+    _desejados_no_arquivo()
+    cena.voltas(5)
+    rol = [e for e in eventos_reais() if e["tipo"] == "rolagem"]
+    assert [e["simbolo"] for e in rol] == [CONTRATO["simbolo"]]
+    assert rol[0]["evento_id"].startswith("real-")
+
+
 def test_contratos_da_real_caem_no_plano_sem_contratos_da_conta(cena):
     cena.ret["atual"].ligacoes[4].contratos_conta = None
     cena.ret["atual"].ligacoes[4].plano = {"contratos": 3}

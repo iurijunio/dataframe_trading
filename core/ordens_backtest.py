@@ -13,13 +13,23 @@ operação saiu no dia. Preço e minuto da saída não entram — derrapagem e a
 saída a mercado depois do toque são da corretora e já têm o comparativo
 deles na tela Operação.
 
-Confere todo dia em que a ligação esteve na fase dessa conta e ligada —
-inclusive o dia SEM nenhuma ordem: o backtest entrou e a conta não é
-justamente "a automação deixou de entrar". Fica de fora o dia fora da fase
-ou desligada o dia todo (sem nenhuma tentativa: com tentativa, o que entrou
-fora da fase é diferença), e o dia de ensaio — só "seria enviada", o Envio
-desligado. Do backtest, só as entradas enquanto a ligação estava na fase e
-ligada: a promovida às 14h não deixou de fazer o que entrou às 10h.
+Confere todo pregão JÁ ENCERRADO em que a ligação esteve na fase dessa
+conta e ligada — inclusive o dia SEM nenhuma ordem dela: o backtest entrou
+e a conta não é justamente "a automação deixou de entrar". Fica de fora
+(`ok = None`, nada gravado):
+- o dia corrente (`dia_aberto`): só se confere pregão fechado;
+- a conta sem prova de vida no dia (`sem_dados`): NENHUM evento daquela
+  origem no dia, de ligação nenhuma — terminal desligado, processo fechado.
+  A prova de vida é a `rolagem` que cada processo (captura na demo, Ordens
+  real na real) grava na primeira volta conectada do pregão, ou qualquer
+  outro evento da conta no dia; sem ela, "não entrou" não prova nada;
+- a ligação fora da fase ou desligada o dia todo, sem tentativa
+  (`fora_da_fase`; com tentativa, o que entrou fora da fase é diferença);
+- o dia todo de ensaio — só "seria enviada", o Envio desligado
+  (`sem_ordens`). Num dia misto, a entrada que só teve ensaio sai dos dois
+  lados (Envio desligado naquela hora).
+Do backtest, só as entradas enquanto a ligação estava na fase e ligada: a
+promovida às 14h não deixou de fazer o que entrou às 10h.
 """
 from __future__ import annotations
 
@@ -42,44 +52,81 @@ _FASES_DA_ORIGEM = {"demo": ("demo", "real", "real_minimo"),
                     "real": ("real", "real_minimo")}
 
 
-def ordens_do_dia(con, ligacao_id: int, dia: date, origem: str) -> dict | None:
-    """`{entry_ts: {lado, entrou, fechada, situacao}}` das operações do dia
-    nessa conta (vazio: nenhuma), ou None no dia de ensaio — só "seria
-    enviada", sem tentativa de verdade. As saídas só trazem o ticket:
-    casam com a entrada por ele."""
+def _limites(dia: date) -> tuple[datetime, datetime]:
     ini = datetime.combine(dia, datetime.min.time())
+    return ini, ini + timedelta(days=1)
+
+
+def conta_viva(con, dia: date, origem: str) -> bool:
+    """A prova de vida do processo daquela conta no dia: algum evento dela
+    (a `rolagem` da primeira volta conectada do pregão, de qualquer
+    ligação ou de nenhuma)."""
+    ini, fim = _limites(dia)
+    return con.execute(
+        "SELECT count(*) FROM ordens_eventos WHERE origem = ? AND quando >= ? "
+        "AND quando < ?", [origem, ini, fim]).fetchone()[0] > 0
+
+
+def ordens_do_dia(con, ligacao_id: int, dia: date, origem: str) -> dict:
+    """As operações da ligação no dia nessa conta: `ops = {entry_ts: {lado,
+    entrou, fechada, situacao}}` (só as tentativas de verdade), `ensaio` (as
+    entradas que só tiveram "seria enviada") e `so_ensaio` (o dia inteiro
+    foi ensaio).
+
+    A saída casa com a entrada pelo ticket ou, sem ele, pela operação
+    (`entry_ts`): o `saiu_antes` (stop/alvo da corretora) traz o entry_ts, e
+    a entrada adotada pode não ter ticket, ou ter outro."""
+    ini, fim = _limites(dia)
     evs = con.execute(
         "SELECT tipo, entry_ts, lado, ticket FROM ordens_eventos "
         "WHERE ligacao_id = ? AND origem = ? AND quando >= ? AND quando < ? "
-        "ORDER BY quando, evento_id",
-        [ligacao_id, origem, ini, ini + timedelta(days=1)]).fetchall()
-    if not any(t in _TENTOU for t, *_ in evs):
-        return None if any(t == "seria_enviada" for t, *_ in evs) else {}
+        "ORDER BY quando, evento_id", [ligacao_id, origem, ini, fim]).fetchall()
     ops: dict = {}
     dono: dict = {}
+    ensaio: set = set()
+    saidas = []
     for tipo, ts, lado, ticket in evs:
-        if ts is not None:
-            o = ops.setdefault(ts, {"lado": None, "entrou": False,
-                                    "fechada": False, "situacao": None})
-            if lado and o["lado"] is None:
-                o["lado"] = int(lado)
-            if tipo in _ENTROU:
-                o["entrou"] = True
-                if ticket:
-                    dono[int(ticket)] = ts
-            if tipo in _TENTOU:
-                o["situacao"] = tipo
-        elif tipo in _SAIDA_FINAL and ticket and int(ticket) in dono:
-            ops[dono[int(ticket)]]["fechada"] = True
-    return ops
+        if tipo in _SAIDA_FINAL:
+            saidas.append((ts, ticket))
+            continue
+        if ts is None:
+            continue
+        if tipo == "seria_enviada":
+            ensaio.add(ts)
+            continue
+        if tipo not in _TENTOU:
+            continue
+        o = ops.setdefault(ts, {"lado": None, "entrou": False,
+                                "fechada": False, "situacao": None})
+        if lado and o["lado"] is None:
+            o["lado"] = int(lado)
+        if tipo in _ENTROU:
+            o["entrou"] = True
+            if ticket:
+                dono[int(ticket)] = ts
+        o["situacao"] = tipo
+    # depois de todas as entradas: a ordem dos eventos não importa
+    for ts, ticket in saidas:
+        alvo = dono.get(int(ticket)) if ticket else None
+        if alvo is None and ts in ops:
+            alvo = ts
+        if alvo is not None:
+            ops[alvo]["fechada"] = True
+    return {"ops": ops, "ensaio": ensaio - set(ops),
+            "so_ensaio": bool(ensaio) and not ops}
 
 
-def comparar(ordens: dict, backtest: list[tuple]) -> list[dict]:
+def comparar(ordens: dict, backtest: list[tuple],
+             tolerancia: timedelta = timedelta(0)) -> list[dict]:
     """As diferenças, pela entrada: `a_mais` (a conta entrou, o backtest
     não), `a_menos` (o backtest entrou, a conta não), `lado` (os dois
     entraram em lados opostos) e `sem_saida` (a conta entrou e a operação
     não saiu no dia). Só entrada EXECUTADA é entrada; a tentativa que não
-    entrou vai junto na `situacao`, para a tela dizer o porquê."""
+    entrou vai junto na `situacao`, para a tela dizer o porquê.
+
+    Um `a_mais` e um `a_menos` do mesmo lado a até `tolerancia` (1 candle
+    do timeframe do plano) são a MESMA operação em outro horário: viram uma
+    diferença só, `horario_diferente` — que continua sendo diferença."""
     do_bt = {o[0]: int(o[1]) for o in backtest}
     entrou = {ts: o for ts, o in ordens.items() if o["entrou"]}
     out = []
@@ -95,7 +142,34 @@ def comparar(ordens: dict, backtest: list[tuple]) -> list[dict]:
             out.append({**base, "tipo": "lado"})
         elif not o["fechada"]:
             out.append({**base, "tipo": "sem_saida"})
-    return out
+    return _juntar_horarios(out, tolerancia)
+
+
+def _juntar_horarios(difs: list[dict], tolerancia: timedelta) -> list[dict]:
+    if tolerancia <= timedelta(0):
+        return difs
+    menos = [d for d in difs if d["tipo"] == "a_menos"]
+    usados: set = set()
+    out = []
+    for d in difs:
+        if d["tipo"] != "a_mais":
+            continue
+        # o par mais perto, do mesmo lado, ainda livre
+        perto = sorted((abs(m["entry_ts"] - d["entry_ts"]), i)
+                       for i, m in enumerate(menos)
+                       if i not in usados and m["backtest"] == d["ordem"]
+                       and abs(m["entry_ts"] - d["entry_ts"]) <= tolerancia)
+        if perto:
+            i = perto[0][1]
+            usados.add(i)
+            m = menos[i]
+            out.append({**m, "tipo": "horario_diferente", "ordem": d["ordem"],
+                        "ordem_ts": d["entry_ts"], "situacao": d["situacao"]})
+        else:
+            out.append(d)
+    out += [d for d in difs if d["tipo"] not in ("a_mais", "a_menos")]
+    out += [m for i, m in enumerate(menos) if i not in usados]
+    return sorted(out, key=lambda d: d["entry_ts"])
 
 
 def _fase_em(trocas: list[tuple], atual: str, desde: datetime | None,
@@ -140,6 +214,22 @@ def _json(diferencas: list[dict]) -> str:
                                      for d in diferencas]})
 
 
+def _fora(con, ligacao_id: int, dia: date, origem: str, hoje: date):
+    """Por que o dia NÃO se confere nessa conta (o nome da marca em
+    `conferir`), ou None. Também devolve o que já leu, para não ler de novo."""
+    if dia >= hoje:
+        return "dia_aberto", None, None
+    if not conta_viva(con, dia, origem):
+        return "sem_dados", None, None
+    ordens = ordens_do_dia(con, ligacao_id, dia, origem)
+    if ordens["so_ensaio"]:
+        return "sem_ordens", ordens, None
+    conta, esteve = _regua(con, ligacao_id, dia, origem)
+    if not esteve and not ordens["ops"]:
+        return "fora_da_fase", ordens, conta
+    return None, ordens, conta
+
+
 def conferir(con, ligacao_id: int, dia: date, origem: str, cache_codigo: dict,
              agora: datetime, *, symbol: str = papel.SIMBOLO) -> dict:
     """Compara as ordens do dia nessa conta com o backtest e grava em
@@ -166,16 +256,13 @@ def conferir(con, ligacao_id: int, dia: date, origem: str, cache_codigo: dict,
         raise ValueError(f"pregão {dia} da ligação #{ligacao_id} "
                          "não está conferido")
     out = {"ok": None, "n_ordens": 0, "n_backtest": 0, "diferencas": [],
-           "sem_ordens": False, "fora_da_fase": False,
-           "outra_versao": False, "outro_codigo": False}
-    ordens = ordens_do_dia(con, ligacao_id, dia, origem)
-    if ordens is None:
-        out["sem_ordens"] = True
+           "dia_aberto": False, "sem_dados": False, "sem_ordens": False,
+           "fora_da_fase": False, "outra_versao": False, "outro_codigo": False}
+    motivo, dia_ordens, conta = _fora(con, ligacao_id, dia, origem, agora.date())
+    if motivo:
+        out[motivo] = True
         return out
-    conta, esteve = _regua(con, ligacao_id, dia, origem)
-    if not esteve and not ordens:
-        out["fora_da_fase"] = True
-        return out
+    ordens = dia_ordens["ops"]
     plano = _plano.detalhes(plano_id, con=con)
     estrategia = plano["strategy"] or est_variante
     hashes: dict = {}
@@ -185,8 +272,12 @@ def conferir(con, ligacao_id: int, dia: date, origem: str, cache_codigo: dict,
         return out
 
     mod = papel._modulo(estrategia, hashes[estrategia], cache_codigo)
-    bt = [o for o in _pb._backtest(con, plano, mod, dia, symbol) if conta(o[0])]
-    diferencas = comparar(ordens, bt)
+    # a entrada que só teve ensaio (Envio desligado naquela hora) sai dos
+    # dois lados: a conta não podia tê-la feito
+    bt = [o for o in _pb._backtest(con, plano, mod, dia, symbol)
+          if conta(o[0]) and o[0] not in dia_ordens["ensaio"]]
+    passo = papel.TIMEFRAMES.get(papel.perfil_do_plano(plano)[1].timeframe, 1)
+    diferencas = comparar(ordens, bt, timedelta(minutes=passo))
     out.update(ok=not diferencas, n_backtest=len(bt), diferencas=diferencas,
                n_ordens=sum(1 for o in ordens.values() if o["entrou"]))
     con.execute(
@@ -201,12 +292,15 @@ def conferir(con, ligacao_id: int, dia: date, origem: str, cache_codigo: dict,
     return out
 
 
-def pendentes(con, symbol: str = papel.SIMBOLO) -> list[tuple[int, date, str]]:
+def pendentes(con, symbol: str = papel.SIMBOLO, *,
+              hoje: date | None = None) -> list[tuple[int, date, str]]:
     """Os `(ligacao_id, dia, origem)` que a manhã ainda precisa conferir: as
     condições da `papel_backtest.pendentes` (reconferência feita, papel
     conferido, checagem mais nova que os dois) e o dia ser conferível nessa
-    conta (`conferir`: na fase e ligada, ou com tentativa; nunca ensaio).
-    O dia que não é fica fora sem custo de backtest."""
+    conta (`_fora`: encerrado antes de `hoje`, conta viva, na fase e
+    ligada ou com tentativa, não só ensaio). O dia que não é fica fora sem
+    custo de backtest."""
+    hoje = hoje or date.today()
     linhas = con.execute(
         "WITH reconf AS ("
         "  SELECT source_file, max(source_max_ts) AS quando FROM ingest_log "
@@ -232,8 +326,7 @@ def pendentes(con, symbol: str = papel.SIMBOLO) -> list[tuple[int, date, str]]:
     for lig, d, origem, motor, hash_dia, est in linhas:
         if _pb._incomparavel(motor, hash_dia, est, hashes) is not None:
             continue
-        ordens = ordens_do_dia(con, int(lig), d, origem)
-        if ordens is None or not (ordens or _regua(con, int(lig), d, origem)[1]):
+        if _fora(con, int(lig), d, origem, hoje)[0] is not None:
             continue
         out.append((int(lig), d, origem))
     return out
