@@ -351,6 +351,7 @@ def test_ordens_da_ficha_traz_fase_contratos_selo_e_restricoes(banco):
     o = CA.ordens_da_ficha(f.lig)
     assert o["contratos_demo"] == 2
     assert o["situacao"]["ok"] is None
+    assert o["ordens_backtest"] == {"pregoes": 0, "diferencas": 0, "ok": None}
     assert any("conta demo" in m for m in o["restricoes"]["motivos"])
 
 
@@ -373,6 +374,27 @@ def test_ordens_da_ficha_com_banco_ocupado_vira_none(banco, monkeypatch):
 ])
 def test_selo_papel_backtest(sit, trecho):
     assert trecho in textos(AP.selo_papel_backtest(sit))
+
+
+@pytest.mark.parametrize("sit, trecho", [
+    ({"pregoes": 12, "diferencas": 0, "ok": True}, "✓ 12 pregões"),
+    ({"pregoes": 1, "diferencas": 0, "ok": True}, "✓ 1 pregão"),
+    ({"pregoes": 3, "diferencas": 2, "ok": False},
+     "3 pregões, 2 diferenças — não pode subir"),
+    ({"pregoes": 1, "diferencas": 1, "ok": False},
+     "1 pregão, 1 diferença — não pode subir"),
+    ({"pregoes": 0, "diferencas": 0, "ok": None}, "ainda sem pregão conferido"),
+    (None, "ainda sem pregão conferido"),
+])
+def test_selo_ordens_backtest(sit, trecho):
+    assert trecho in textos(AP.selo_ordens_backtest(sit))
+
+
+def test_ficha_mostra_ordens_x_backtest():
+    t = textos(_ficha("real", ordens_backtest={"pregoes": 2, "diferencas": 1,
+                                               "ok": False}))
+    assert "Ordens × backtest" in t
+    assert "2 pregões, 1 diferença — não pode subir" in t
 
 
 def _ficha(fase, **mudar):

@@ -113,7 +113,7 @@ backtest e pula para ela:
 | Candidata | `candidata.py`, `candidata_runner.py`, `aleatorio.py`, `spa.py`, `tamanho.py`, `plano.py` | `callbacks_candidata.py`, `components/candidata_panel.py` |
 | Estratégias | `variantes.py` | `callbacks_estrategias.py`, `components/estrategias_panel.py` |
 | Portfólio | `portfolio.py` | `callbacks_portfolio.py`, `components/portfolio_panel.py` |
-| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`), `papel.py`, `papel_leitura.py`, `papel_vivo.py`, `papel_backtest.py`, `corretora.py`, `ordens.py`, `diario_ordens.py`, `comandos.py`, `contrato_dia.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py`, `callbacks_operacao.py`, `components/operacao_panel.py`, `components/ordens_panel.py` |
+| Ao vivo | `ao_vivo.py`, `diario.py`, `codigo.py`, `captura.py` (o processo da captura é o `captura.py` da raiz, aberto pelo `captura.bat`), `papel.py`, `papel_leitura.py`, `papel_vivo.py`, `papel_backtest.py`, `conferencia_ordens.py`, `ordens_backtest.py`, `corretora.py`, `ordens.py`, `diario_ordens.py`, `comandos.py`, `contrato_dia.py` | `callbacks_ao_vivo.py`, `components/ao_vivo_panel.py`, `callbacks_pregao.py`, `components/pregao_panel.py`, `callbacks_operacao.py`, `components/operacao_panel.py`, `components/ordens_panel.py` |
 
 Outros: `core/mt5_source.py` (sincronização com o MT5, sem botão na tela — a
 captura já preenche o que falta; o `ui/callbacks_mt5.py` foi removido); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
@@ -259,6 +259,15 @@ variante** e resolve o plano ativo na hora (`variantes.plano_ativo`).
   - **`ordens_eventos.origem`** (`demo` ou `real`): todo leitor de eventos filtra
     por origem. Quem espelha a real no banco é a captura, nunca o processo da real.
   - **Ordem de teste na conta do processo** (demo ou real, liberada na real em 21/10/2026): botão fora da tela desde 21/10 (motor mantido; para religar veja o commit 6ceaa18); confere login, tipo cadastrado e trade_mode do MT5 antes de enviar; não depende do Envio.
+  - **Ordens × papel no mesmo dia** (`core/conferencia_ordens.py`, desde
+    05/11/2026): a cada papel gravado a captura compara os desejados com ele,
+    só com o MESMO minuto de barras (`captura._momento`). Divergência em 3
+    minutos de barra distintos, sem igualdade no meio, abre o chamado
+    `divergencia_papel`; fecha quando volta a bater. Só avisa, nunca mexe em ordem.
+  - **Ordens × backtest** (`core/ordens_backtest.py`, tabela `ordens_backtest`):
+    na manhã, depois da papel × backtest; por origem; só dia em que a conta
+    tentou operar (ensaio não conta) e só backtest na fase da conta. Diferença
+    do código/motor de hoje barra a promoção, como a do papel.
   - **Dado protegido:** `data/ao_vivo/ordens/real/*.jsonl` nunca se apaga (é o
     diário write-ahead da conta real, como o da demo).
 - **Ativos da CME (MES, MNQ; `core/ativo.py`, spec

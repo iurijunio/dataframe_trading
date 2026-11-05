@@ -14,6 +14,7 @@ from dash.exceptions import PreventUpdate
 from core import ao_vivo as AV
 from core import db_manager as db
 from core import mt5_source
+from core import ordens_backtest as OB
 from core import papel_backtest as PB
 from core import papel_leitura as PLE
 from core import plano as PL
@@ -336,6 +337,7 @@ def ordens_da_ficha(lig) -> dict | None:
                             "FROM portfolio_membros WHERE ligacao_id = ?",
                             [lig]).fetchone()
             situacao = PB.situacao(con, lig)
+            ordens_bt = OB.situacao(con, lig)
             demo = (None if r is None else
                     _demo_ate_agora(con, r[0], lig,
                                     D.dia_do_pregao(D.estado_captura())))
@@ -344,7 +346,8 @@ def ordens_da_ficha(lig) -> dict | None:
         return None
     return {"contratos_demo": None if r is None or r[1] is None else int(r[1]),
             "contratos_real": None if r is None or r[2] is None else int(r[2]),
-            "situacao": situacao, "restricoes": restricoes,
+            "situacao": situacao, "ordens_backtest": ordens_bt,
+            "restricoes": restricoes,
             "demo_ate_agora": demo}
 
 

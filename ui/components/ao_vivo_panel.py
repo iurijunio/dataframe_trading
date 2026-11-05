@@ -593,6 +593,26 @@ def selo_papel_backtest(sit: dict | None) -> html.Span:
     return _etiqueta("ainda sem pregão conferido", "cinza", explica)
 
 
+def selo_ordens_backtest(sit: dict | None) -> html.Span:
+    """Ordens × backtest para a promoção, no estilo do selo do papel:
+    ✓ N pregões | N pregões, K diferenças | ainda sem pregão conferido."""
+    s = sit or {}
+    n, dif = int(s.get("pregoes") or 0), int(s.get("diferencas") or 0)
+    explica = ("Toda manhã a captura compara as ordens que a conta executou "
+               "(real e demo à parte) com o backtest do plano: entrada no "
+               "mesmo minuto, mesmo lado e com saída no dia. Bom: ✓ (bateu). "
+               "Ruim: qualquer diferença — a variante não sobe até resolver. "
+               "Só entram os pregões em que a conta operou a variante.")
+    pregoes = f"{n} {'pregão' if n == 1 else 'pregões'}"
+    if dif > 0:
+        return _etiqueta(f"{pregoes}, {dif} "
+                         f"{'diferença' if dif == 1 else 'diferenças'} — "
+                         "não pode subir", "rosa", explica)
+    if s.get("ok") and n:
+        return _etiqueta(f"✓ {pregoes}", "verde", explica)
+    return _etiqueta("ainda sem pregão conferido", "cinza", explica)
+
+
 def _trilha(fase):
     """papel → demo → real, com a fase atual acesa e as outras apagadas."""
     partes = []
@@ -702,6 +722,10 @@ def bloco_ordens_ficha(l: dict, ordens: dict | None, armado) -> html.Div:
         html.Div([html.Span("Papel × backtest", className="av-ord-rot-txt")],
                  className="av-ord-rot"),
         html.Div(selo_papel_backtest(ordens.get("situacao")),
+                 className="av-ord-val"),
+        html.Div([html.Span("Ordens × backtest", className="av-ord-rot-txt")],
+                 className="av-ord-rot"),
+        html.Div(selo_ordens_backtest(ordens.get("ordens_backtest")),
                  className="av-ord-val"),
         html.Div([html.Span("Na demo até agora", className="av-ord-rot-txt"),
                   dica("Só o que a demo fez nesta variante, nos pregões em que "
