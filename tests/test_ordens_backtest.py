@@ -43,8 +43,8 @@ def mundo(banco):
                           contratos=CONTRATOS, portfolio_id=P.criar("pf"))
     with db.connect_write() as con:
         # na real desde muito antes dos pregões do teste
-        con.execute("UPDATE portfolio_membros SET fase = 'real' "
-                    "WHERE ligacao_id = ?", [f.lig])
+        con.execute("UPDATE portfolio_membros SET fase = 'real', fase_desde = ? "
+                    "WHERE ligacao_id = ?", [datetime(2025, 12, 1, 9), f.lig])
     dia = dias[30]
     with db.connect() as con:
         _conferir_papel(con, dia)
@@ -173,6 +173,48 @@ def test_so_ensaio_nao_e_comparado(mundo):
         assert _gravado(con, mundo.lig, mundo.dia) is None
 
 
+def test_dia_sem_nenhuma_entrada_e_diferenca(mundo):
+    # a automação deixou de entrar: nenhum evento, ligação na real e ligada
+    with db.connect() as con:
+        r = OB.conferir(con, mundo.lig, mundo.dia, "real", {}, _as(mundo.dia, 23))
+        g = _gravado(con, mundo.lig, mundo.dia)
+    assert r["ok"] is False
+    assert g["n_ordens"] == 0 and g["n_backtest"] == len(mundo.bt)
+    assert _tipos(g) == ["a_menos"] * len(mundo.bt)
+
+
+def test_dia_fora_da_fase_sem_ordens_fica_fora(mundo):
+    d = mundo.dia
+    with db.connect() as con:
+        con.execute("UPDATE portfolio_membros SET fase = 'papel' "
+                    "WHERE ligacao_id = ?", [mundo.lig])
+        _marca_reconferencia(con, d, _as(d + timedelta(days=1), 8, 56))
+        assert OB.pendentes(con, SIMB) == []
+        r = OB.conferir(con, mundo.lig, d, "real", {}, _as(d, 23))
+        assert r["ok"] is None and r["fora_da_fase"] is True
+        assert _gravado(con, mundo.lig, d) is None
+
+
+def test_fase_de_depois_do_dia_nao_vale_para_tras(mundo):
+    # sem `fase_mudou` no diário: a fase de hoje só vale desde `fase_desde`
+    d = mundo.dia
+    with db.connect() as con:
+        con.execute("UPDATE portfolio_membros SET fase_desde = ? "
+                    "WHERE ligacao_id = ?", [_as(d + timedelta(days=3), 9), mundo.lig])
+        _marca_reconferencia(con, d, _as(d + timedelta(days=1), 8, 56))
+        assert OB.pendentes(con, SIMB) == []
+
+
+def test_desligada_o_dia_todo_fica_fora(mundo):
+    d = mundo.dia
+    with db.connect() as con:
+        con.execute("UPDATE portfolio_membros SET ligada = false "
+                    "WHERE ligacao_id = ?", [mundo.lig])
+        _marca_reconferencia(con, d, _as(d + timedelta(days=1), 8, 56))
+        assert OB.pendentes(con, SIMB) == []
+        assert OB.conferir(con, mundo.lig, d, "real", {}, _as(d, 23))["fora_da_fase"]
+
+
 def test_entrada_antes_de_entrar_na_fase_nao_conta(mundo):
     # promovida à real depois da 1ª entrada do backtest: ela não é "a menos"
     primeira, segunda = mundo.bt[0][0], (mundo.bt[1][0] if len(mundo.bt) > 1 else None)
@@ -205,9 +247,14 @@ def test_pendentes_so_depois_da_reconferencia_e_com_ordens(mundo):
         _operar(con, mundo, mundo.bt, origem="real")
         assert OB.pendentes(con, SIMB) == []
         _marca_reconferencia(con, d, _as(d + timedelta(days=1), 8, 56))
-        assert OB.pendentes(con, SIMB) == [(mundo.lig, d, "real")]
-        OB.conferir(con, mundo.lig, d, "real", {}, _as(d + timedelta(days=1), 8, 57))
+        # a demo também: real ⊃ demo, e a conta demo não fez nada
+        assert OB.pendentes(con, SIMB) == [(mundo.lig, d, "real"),
+                                           (mundo.lig, d, "demo")]
+        for origem in ("real", "demo"):
+            OB.conferir(con, mundo.lig, d, origem, {},
+                        _as(d + timedelta(days=1), 8, 57))
         assert OB.pendentes(con, SIMB) == []
+        assert set(_tipos(_gravado(con, mundo.lig, d, "demo"))) == {"a_menos"}
 
 
 def test_situacao_agrega(mundo):

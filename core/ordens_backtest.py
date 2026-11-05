@@ -13,10 +13,13 @@ operação saiu no dia. Preço e minuto da saída não entram — derrapagem e a
 saída a mercado depois do toque são da corretora e já têm o comparativo
 deles na tela Operação.
 
-Só conta o dia em que a conta OPEROU a ligação (ao menos uma tentativa de
-verdade; o ensaio "seria enviada" com o Envio desligado não conta), e só as
-entradas do backtest enquanto a ligação estava na fase dessa conta e
-ligada — a ligação promovida às 14h não deixou de fazer o que entrou às 10h.
+Confere todo dia em que a ligação esteve na fase dessa conta e ligada —
+inclusive o dia SEM nenhuma ordem: o backtest entrou e a conta não é
+justamente "a automação deixou de entrar". Fica de fora o dia fora da fase
+ou desligada o dia todo (sem nenhuma tentativa: com tentativa, o que entrou
+fora da fase é diferença), e o dia de ensaio — só "seria enviada", o Envio
+desligado. Do backtest, só as entradas enquanto a ligação estava na fase e
+ligada: a promovida às 14h não deixou de fazer o que entrou às 10h.
 """
 from __future__ import annotations
 
@@ -41,8 +44,9 @@ _FASES_DA_ORIGEM = {"demo": ("demo", "real", "real_minimo"),
 
 def ordens_do_dia(con, ligacao_id: int, dia: date, origem: str) -> dict | None:
     """`{entry_ts: {lado, entrou, fechada, situacao}}` das operações do dia
-    nessa conta, ou None se a conta não tentou operar a ligação no dia.
-    As saídas só trazem o ticket: casam com a entrada por ele."""
+    nessa conta (vazio: nenhuma), ou None no dia de ensaio — só "seria
+    enviada", sem tentativa de verdade. As saídas só trazem o ticket:
+    casam com a entrada por ele."""
     ini = datetime.combine(dia, datetime.min.time())
     evs = con.execute(
         "SELECT tipo, entry_ts, lado, ticket FROM ordens_eventos "
@@ -50,7 +54,7 @@ def ordens_do_dia(con, ligacao_id: int, dia: date, origem: str) -> dict | None:
         "ORDER BY quando, evento_id",
         [ligacao_id, origem, ini, ini + timedelta(days=1)]).fetchall()
     if not any(t in _TENTOU for t, *_ in evs):
-        return None
+        return None if any(t == "seria_enviada" for t, *_ in evs) else {}
     ops: dict = {}
     dono: dict = {}
     for tipo, ts, lado, ticket in evs:
@@ -94,14 +98,39 @@ def comparar(ordens: dict, backtest: list[tuple]) -> list[dict]:
     return out
 
 
-def _fase_em(trocas: list[tuple], atual: str, instante: datetime) -> str:
+def _fase_em(trocas: list[tuple], atual: str, desde: datetime | None,
+             instante: datetime) -> str:
     """A fase da ligação num instante, pelos `fase_mudou` (quando, de,
-    para). Antes da primeira troca vale o `de` dela; sem troca nenhuma,
-    a fase de agora."""
+    para). Antes da primeira troca vale o `de` dela; sem troca nenhuma no
+    diário, a fase de agora desde `fase_desde` e papel antes — senão o
+    histórico inteiro de uma ligação na real viraria "a menos"."""
     if not trocas:
-        return atual
+        return atual if desde is None or instante >= desde else "papel"
     antes = [t for t in trocas if t[0] <= instante]
     return antes[-1][2] if antes else trocas[0][1]
+
+
+def _regua(con, ligacao_id: int, dia: date, origem: str):
+    """`(conta(entry_ts) -> bool, esteve)`: se uma entrada do backtest
+    conta para essa conta (ligada E na fase dela) e se a ligação esteve
+    assim em algum momento do dia."""
+    pf, atual, desde = con.execute(
+        "SELECT portfolio_id, fase, fase_desde FROM portfolio_membros "
+        "WHERE ligacao_id = ?", [ligacao_id]).fetchone()
+    periodos = papel.periodos_ligados(con, ligacao_id, pf, dia)
+    trocas = con.execute(
+        "SELECT quando, de, para FROM ao_vivo_eventos WHERE tipo = 'fase_mudou' "
+        "AND ligacao_id = ? ORDER BY quando, evento_id", [ligacao_id]).fetchall()
+    fases = _FASES_DA_ORIGEM[origem]
+
+    def conta(t):
+        return (papel._conta(t, periodos)
+                and _fase_em(trocas, atual, desde, t) in fases)
+    # a fase só muda nas trocas (e no `fase_desde`): basta olhar o começo de
+    # cada trecho ligado e cada mudança dentro dele
+    marcos = [a for a, _b in periodos] + [t[0] for t in trocas] + (
+        [desde] if desde is not None else [])
+    return conta, any(conta(m) for m in marcos)
 
 
 def _json(diferencas: list[dict]) -> str:
@@ -132,15 +161,20 @@ def conferir(con, ligacao_id: int, dia: date, origem: str, cache_codigo: dict,
         "WHERE pm.ligacao_id = ?", [dia, ligacao_id]).fetchone()
     if r is None:
         raise ValueError(f"ligação #{ligacao_id} não existe")
-    portfolio_id, fase_atual, est_variante, plano_id, status, motor, hash_dia = r
+    _pf, _fase, est_variante, plano_id, status, motor, hash_dia = r
     if status != "conferido" or plano_id is None:
         raise ValueError(f"pregão {dia} da ligação #{ligacao_id} "
                          "não está conferido")
     out = {"ok": None, "n_ordens": 0, "n_backtest": 0, "diferencas": [],
-           "sem_ordens": False, "outra_versao": False, "outro_codigo": False}
+           "sem_ordens": False, "fora_da_fase": False,
+           "outra_versao": False, "outro_codigo": False}
     ordens = ordens_do_dia(con, ligacao_id, dia, origem)
     if ordens is None:
         out["sem_ordens"] = True
+        return out
+    conta, esteve = _regua(con, ligacao_id, dia, origem)
+    if not esteve and not ordens:
+        out["fora_da_fase"] = True
         return out
     plano = _plano.detalhes(plano_id, con=con)
     estrategia = plano["strategy"] or est_variante
@@ -151,14 +185,7 @@ def conferir(con, ligacao_id: int, dia: date, origem: str, cache_codigo: dict,
         return out
 
     mod = papel._modulo(estrategia, hashes[estrategia], cache_codigo)
-    periodos = papel.periodos_ligados(con, ligacao_id, portfolio_id, dia)
-    trocas = con.execute(
-        "SELECT quando, de, para FROM ao_vivo_eventos WHERE tipo = 'fase_mudou' "
-        "AND ligacao_id = ? ORDER BY quando, evento_id", [ligacao_id]).fetchall()
-    fases = _FASES_DA_ORIGEM[origem]
-    bt = [o for o in _pb._backtest(con, plano, mod, dia, symbol)
-          if papel._conta(o[0], periodos)
-          and _fase_em(trocas, fase_atual, o[0]) in fases]
+    bt = [o for o in _pb._backtest(con, plano, mod, dia, symbol) if conta(o[0])]
     diferencas = comparar(ordens, bt)
     out.update(ok=not diferencas, n_backtest=len(bt), diferencas=diferencas,
                n_ordens=sum(1 for o in ordens.values() if o["entrou"]))
@@ -177,20 +204,17 @@ def conferir(con, ligacao_id: int, dia: date, origem: str, cache_codigo: dict,
 def pendentes(con, symbol: str = papel.SIMBOLO) -> list[tuple[int, date, str]]:
     """Os `(ligacao_id, dia, origem)` que a manhã ainda precisa conferir: as
     condições da `papel_backtest.pendentes` (reconferência feita, papel
-    conferido, checagem mais nova que os dois) e a conta ter tentado operar
-    a ligação no dia."""
-    tentou = ", ".join(f"'{t}'" for t in _TENTOU)
+    conferido, checagem mais nova que os dois) e o dia ser conferível nessa
+    conta (`conferir`: na fase e ligada, ou com tentativa; nunca ensaio).
+    O dia que não é fica fora sem custo de backtest."""
     linhas = con.execute(
         "WITH reconf AS ("
         "  SELECT source_file, max(source_max_ts) AS quando FROM ingest_log "
         "  WHERE symbol = ? AND source_file LIKE ? GROUP BY source_file), "
-        "operou AS ("
-        "  SELECT DISTINCT ligacao_id, CAST(quando AS DATE) AS dia, origem "
-        f"  FROM ordens_eventos WHERE tipo IN ({tentou}) "
-        "  AND ligacao_id IS NOT NULL AND origem IN ('real', 'demo')) "
+        "origens AS (SELECT unnest(['real', 'demo']) AS origem) "
         "SELECT pp.ligacao_id, pp.dia, o.origem, pp.motor_versao, pp.codigo_hash, "
         "coalesce(p.strategy, ev.estrategia) FROM papel_pregoes pp "
-        "JOIN operou o ON o.ligacao_id = pp.ligacao_id AND o.dia = pp.dia "
+        "CROSS JOIN origens o "
         "JOIN planos_operacao p ON p.plano_id = pp.plano_id "
         "JOIN portfolio_membros pm ON pm.ligacao_id = pp.ligacao_id "
         "JOIN estrategia_variantes ev ON ev.variante_id = pm.variante_id "
@@ -204,8 +228,15 @@ def pendentes(con, symbol: str = papel.SIMBOLO) -> list[tuple[int, date, str]]:
         [symbol, f"{PREFIXO_RECONFERENCIA}%", PREFIXO_RECONFERENCIA,
          symbol]).fetchall()
     hashes: dict = {}
-    return [(int(lig), d, origem) for lig, d, origem, motor, hash_dia, est in linhas
-            if _pb._incomparavel(motor, hash_dia, est, hashes) is None]
+    out = []
+    for lig, d, origem, motor, hash_dia, est in linhas:
+        if _pb._incomparavel(motor, hash_dia, est, hashes) is not None:
+            continue
+        ordens = ordens_do_dia(con, int(lig), d, origem)
+        if ordens is None or not (ordens or _regua(con, int(lig), d, origem)[1]):
+            continue
+        out.append((int(lig), d, origem))
+    return out
 
 
 def situacao(con, ligacao_id: int) -> dict:
