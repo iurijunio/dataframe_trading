@@ -160,10 +160,15 @@ def _salvar_contratos(lig, valor, conta: str) -> str:
     return f"contratos da {conta} gravados — valem a partir da próxima operação"
 
 
+# mudar de fase é raro e o usuário está esperando: a espera curta da tela
+# (0,5 s) perdia para a captura gravando e o clique não promovia (06/11/2026)
+TENTATIVAS_FASE = 20
+
+
 def _executar(nome, alvo, campos) -> str:
     c = lambda campo: campos.get((campo, alvo))
     if nome in _FASE_DE:
-        AV.mudar_fase(alvo, _FASE_DE[nome], tentativas=TENTATIVAS_BANCO)
+        AV.mudar_fase(alvo, _FASE_DE[nome], tentativas=TENTATIVAS_FASE)
         return _MSG_FASE[nome]
     if nome == "contratos-salvar":
         gravou, msg = OPC.salvar_editor(alvo, c("contratos"))
@@ -545,7 +550,11 @@ def register(app):
         armado, aberta, aviso = acao(nome_acao, alvo, campos, armado, aberta,
                                      posicoes=posicoes, armado_em=armado_em,
                                      agora_s=agora_s)
-        return ((versao or 0) + 1, armado, aberta, aviso,
+        # flutua na tela (`.av-toast`): o aviso no topo da página ficava fora
+        # da vista de quem clicou lá embaixo, na ficha. A chave nova reinicia
+        # a animação que o some
+        return ((versao or 0) + 1, armado, aberta,
+                html.Div(aviso, className="av-toast", key=str(agora_s)) if aviso else "",
                 agora_s if armado else None)
 
     @app.callback(

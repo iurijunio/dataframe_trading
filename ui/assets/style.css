@@ -1233,6 +1233,13 @@ body{
 .av-aviso{font-size:var(--fs-sm);color:var(--warn);min-height:0;padding:8px 12px;
   border:1px solid rgba(255,201,60,.35);border-radius:6px;background:rgba(255,201,60,.06);}
 .av-aviso:empty{display:none;}
+/* o aviso das ações flutua: quem clica na ficha está longe do topo da página */
+.av-topo-est .av-aviso{padding:0;border:0;background:none;}
+.av-toast{position:fixed;top:64px;right:24px;z-index:1000;max-width:460px;
+  font-size:var(--fs-sm);color:var(--warn);padding:10px 14px;border-radius:6px;
+  border:1px solid rgba(255,201,60,.45);background:#14120a;
+  box-shadow:0 6px 24px rgba(0,0,0,.5);animation:av-toast-some 12s forwards;}
+@keyframes av-toast-some{0%,90%{opacity:1;}100%{opacity:0;visibility:hidden;}}
 
 /* etiquetas */
 .av-tag{display:inline-flex;align-items:center;gap:2px;padding:2px 9px;

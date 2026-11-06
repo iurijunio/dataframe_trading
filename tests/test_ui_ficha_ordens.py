@@ -125,8 +125,9 @@ def test_banco_ocupado_na_fase_nao_congela(banco, monkeypatch):
     armado, _, aviso = CA.acao("fase-demo", f.lig, {}, f"fase-demo:{f.lig}",
                                None)
     assert armado is None and "banco ocupado" in aviso
-    # espera pouco pelo banco: a tela não congela 10 s
-    assert vistos == [{"tentativas": CA.TENTATIVAS_BANCO}]
+    # espera o bastante para a captura soltar o banco, sem congelar 10 s
+    assert vistos == [{"tentativas": CA.TENTATIVAS_FASE}]
+    assert CA.TENTATIVAS_FASE * 0.25 <= 5
 
 
 # ----------------------------------------------------------------- contratos
@@ -547,3 +548,34 @@ def test_clique_pelo_despacho_arma_com_a_hora_e_o_segundo_executa(banco):
     r2 = clicar(r1["av-armado"], r1["av-armado-em"])
     assert r2["av-armado"] is None and r2["av-armado-em"] is None
     assert _fase(f.lig) == "demo"
+
+
+def _ids_acao(c) -> set:
+    """As ações dos botões de uma árvore de componentes."""
+    if isinstance(c, (list, tuple)):
+        return set().union(*[_ids_acao(x) for x in c]) if c else set()
+    if c is None or isinstance(c, (str, int, float)):
+        return set()
+    i = getattr(c, "id", None)
+    proprio = {i["acao"]} if isinstance(i, dict) and "acao" in i else set()
+    return proprio | _ids_acao(getattr(c, "children", None))
+
+
+def test_fase_papel_oferece_ir_direto_para_real(banco):
+    """06/11/2026: o usuário quer pular a demo; o core já aceita papel → real
+    e faltava o botão."""
+    f, _c = _montar()
+    bloco = AP.bloco_ordens_ficha({"ligacao_id": f.lig, "fase": "papel"},
+                                  CA.ordens_da_ficha(f.lig), None)
+    assert {"fase-demo", "fase-real"} <= _ids_acao(bloco)
+    assert "Promover para real" in textos(bloco)
+
+
+def test_mudar_de_fase_espera_o_banco_o_bastante(banco, monkeypatch):
+    """Com o espera curta da tela (0,5 s), a captura gravando já dava "banco
+    ocupado": o clique não promovia e o aviso ficava fora da vista."""
+    visto = {}
+    monkeypatch.setattr(CA.AV, "mudar_fase",
+                        lambda lig, fase, tentativas: visto.update(t=tentativas))
+    CA._executar("fase-real", 1, {})
+    assert visto["t"] >= 20           # 20 x 0,25 s = 5 s

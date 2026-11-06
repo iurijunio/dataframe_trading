@@ -685,9 +685,12 @@ def bloco_ordens_ficha(l: dict, ordens: dict | None, armado) -> html.Div:
             "Não foi possível ler agora: banco ocupado — feche e abra a ficha "
             "de novo.", className="av-alerta")], className="av-ficha-acoes")
     fase = l["fase"]
+    direto = None
     if fase == "papel":
         proximo = _botao("Promover para demo", "fase-demo", lig, armado,
                          "btn-ghost btn-sm av-btn-principal")
+        direto = _botao("Promover para real", "fase-real", lig, armado,
+                        "btn-ghost btn-sm av-btn-principal")
         voltar = None
     elif fase == "demo":
         proximo = _botao("Promover para real", "fase-real", lig, armado,
@@ -706,7 +709,7 @@ def bloco_ordens_ficha(l: dict, ordens: dict | None, armado) -> html.Div:
     linhas_restr = [] if fase != "papel" else (
         [html.P("✖ " + m, className="av-alerta") for m in motivos]
         + [html.P("⚠ " + a, className="av-texto") for a in avisos])
-    acoes = [a for a in (voltar, proximo) if a is not None]
+    acoes = [a for a in (voltar, proximo, direto) if a is not None]
     contratos_demo = ordens.get("contratos_demo")
     contratos_real = ordens.get("contratos_real")
     plano = ordens.get("contratos_plano")
