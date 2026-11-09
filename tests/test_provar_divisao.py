@@ -173,6 +173,14 @@ def test_register_dividido_em_partes_passa():
     assert pd.comparar(REG_ANTES, REG_DEPOIS)[0] == []
 
 
+def test_register_que_chama_outro_arquivo_importado_dentro_dele_passa():
+    antes = {"ui/cb.py": REG_ANTES["ui/cb.py"] + "\n    from ui import outro\n    outro.register(app)\n"}
+    parte = REG_DEPOIS["ui/cbp/p2.py"] + "\n    from ui import outro\n    outro.register(app)\n"
+    assert pd.comparar(antes, dict(REG_DEPOIS, **{"ui/cbp/p2.py": parte}))[0] == []
+    # a chamada a outro arquivo some: reprova
+    assert any("delegação sumiu" in p for p in pd.comparar(antes, REG_DEPOIS)[0])
+
+
 def test_parte_de_register_esquecida_reprova():
     depois = dict(REG_DEPOIS, **{"ui/cb.py": "from .cbp import p1, p2\n\n\ndef register(app):\n    p1.register(app)\n"})
     assert any("ninguém o chama" in p for p in pd.comparar(REG_ANTES, depois)[0])

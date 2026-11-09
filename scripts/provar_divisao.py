@@ -72,10 +72,18 @@ def delegacoes(fontes: dict[str, str]) -> tuple[set[str], set[str]]:
                 chamados.add(_absoluto(caminho, no))  # a casca reexporta o register inteiro
             if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)) and no.name in RECIPIENTES:
                 com_recipiente.add(_modulo_de(caminho))
+                locais = {}  # `from ui import x` dentro do próprio register
+                for filho in no.body:
+                    if isinstance(filho, ast.ImportFrom):
+                        for a in filho.names:
+                            locais[a.asname or a.name] = f"{_absoluto(caminho, filho)}.{a.name}"
+                    elif isinstance(filho, ast.Import):
+                        for a in filho.names:
+                            locais[a.asname or a.name] = a.name
                 for filho in no.body:
                     alias = _delegacao(no, filho)
                     if alias:
-                        chamados.add(orig[caminho].get(alias, "?").removeprefix("import:"))
+                        chamados.add(locais.get(alias) or orig[caminho].get(alias, "?").removeprefix("import:"))
     return chamados, com_recipiente
 
 
@@ -308,7 +316,8 @@ def comparar(antes: dict[str, str], depois: dict[str, str]) -> tuple[list[str], 
     chamados_a, _ = delegacoes(antes)
     chamados_d, com_recipiente = delegacoes(depois)
     novos = {_modulo_de(c) for c in depois if c not in antes}
-    for mod in sorted(chamados_d - com_recipiente):
+    fora = {m for m in chamados_d if not any(_modulo_de(c) == m for c in depois)}  # módulo não envolvido na divisão
+    for mod in sorted(chamados_d - com_recipiente - fora):
         problemas.append(f"delegação para {mod}, que não tem register")
     for mod in sorted((com_recipiente & novos) - chamados_d):
         problemas.append(f"{mod} tem register, mas ninguém o chama: os callbacks dele não seriam ligados")
