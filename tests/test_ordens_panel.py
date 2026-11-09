@@ -974,7 +974,8 @@ def test_comparativo_de_dia_passado_vem_do_cache(demo, monkeypatch):
     def contando(con, pid, d, origem="demo"):
         chamadas.append(d)
         return original(con, pid, d, origem)
-    monkeypatch.setattr(PL, "_demo_do_dia", contando)
+    from core.leitura import demo_resumo  # onde _pregoes_demo procura _demo_do_dia
+    monkeypatch.setattr(demo_resumo, "_demo_do_dia", contando)
     depois = date(2026, 10, 15)
     a = _ler(lambda con: PL.comparativo_demo(con, 1, dia=depois))
     b = _ler(lambda con: PL.comparativo_demo(con, 1, dia=depois))

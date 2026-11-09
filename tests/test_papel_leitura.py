@@ -859,7 +859,8 @@ def test_comparativo_demo_dia_passado_usa_o_cache(cenario_demo, monkeypatch):
     primeiro = _cmp_demo(dia=amanha, hoje=amanha)["demo"]
     chamadas = []
     original = L.operacoes_demo
-    monkeypatch.setattr(L, "operacoes_demo",
+    from core.leitura import demo_resumo  # onde _demo_do_dia procura operacoes_demo
+    monkeypatch.setattr(demo_resumo, "operacoes_demo",
                         lambda *a, **k: chamadas.append(a) or original(*a, **k))
     de_novo = _cmp_demo(dia=amanha, hoje=amanha)["demo"]
     assert de_novo == primeiro and de_novo["n"] == 2
