@@ -383,6 +383,12 @@ def _git(*args: str) -> str:
 def _trocas_em_testes(antes: dict[str, str], depois: dict[str, str]) -> list[str]:
     """Teste que troca (monkeypatch) um nome que mudou de arquivo pode deixar de valer em silêncio."""
     alertas = []
+    for caminho in antes:
+        modulo = _modulo_de(caminho)
+        for teste in sorted((RAIZ / "tests").glob("test_*.py")):
+            for n, linha in enumerate(teste.read_text(encoding="utf-8").splitlines(), 1):
+                if f'"{modulo}"' in linha or f"'{modulo}'" in linha:
+                    alertas.append(f"tests/{teste.name}:{n} cita o módulo {modulo} por texto (lê o código-fonte?)")
     for caminho, fonte in antes.items():
         ficou = {c.split(" ")[-1] for c in pecas(depois.get(caminho, ""))}
         # o nome não mora mais na casca: trocá-lo nela não chega a quem usa
