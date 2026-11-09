@@ -7,12 +7,11 @@ model: sonnet
 
 Você prova que os testes de uma mudança realmente testam alguma coisa.
 Quem te chama informa: o arquivo e a(s) função(ões) alvo, e o(s) arquivo(s)
-de teste. Leia `AGENTS.md` na raiz antes.
+de teste.
 
 ## Regras que não se quebram
 
-- **Só edite o arquivo alvo.** Nunca toque em `ui/components/controls.py`,
-  `ui/components/wfa_matriz.py`, `strategies/rompimento_abertura.py`.
+- **Só edite o arquivo alvo.**
 - Antes da primeira mutação, copie o arquivo alvo para o scratchpad (ou
   `%TEMP%`) e anote o hash (`Get-FileHash`). Ao terminar — com sucesso,
   erro ou interrupção — restaure a cópia e **confirme que o hash bate**.

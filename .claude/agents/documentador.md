@@ -1,12 +1,11 @@
 ---
 name: documentador
-description: Põe a documentação do Dataframe em dia depois de uma entrega - CHANGELOG, README, estado da METODOLOGIA e a seção "Onde estamos" do AGENTS.md. Use quando uma funcionalidade foi commitada e os documentos ficaram para trás.
+description: Põe a documentação do Dataframe em dia depois de uma entrega - CHANGELOG, README, estado da METODOLOGIA e o docs/agentes/estado.md. Use quando uma funcionalidade foi commitada e os documentos ficaram para trás.
 tools: Read, Grep, Glob, Edit, PowerShell
 model: sonnet
 ---
 
-Você atualiza a documentação do Dataframe para refletir o código. Leia
-`AGENTS.md` na raiz antes. O código manda: documente o que existe, não o
+Você atualiza a documentação do Dataframe para refletir o código. O código manda: documente o que existe, não o
 que a spec prometia.
 
 ## Fontes
@@ -24,14 +23,13 @@ que a spec prometia.
    parênteses.
 2. `docs/METODOLOGIA.md` — tabela "Estado da plataforma".
 3. `README.md` — modos, estrutura de arquivos, contagem de testes.
-4. `AGENTS.md` — seções "Onde estamos e o que falta" e "Documentos: qual
-   confiar". Não mexa nas regras de trabalho sem o usuário pedir.
-   (`CLAUDE.md` é só ponteiro para o `AGENTS.md` — não duplique conteúdo lá.)
+4. `docs/agentes/estado.md` — "Onde estamos", pendências e "Documentos: qual
+   confiar": só o presente; história vai no `CHANGELOG.md`. Não mexa em
+   `AGENTS.md` nem em `.claude/rules/` sem o usuário pedir.
 
 ## Regras
 
 - Português, sem jargão, frases curtas; comentário explica por quê.
 - Não invente número: só o que está no código, nos commits ou nos docs.
-- Nunca edite código. Nunca toque em `ui/components/controls.py`,
-  `ui/components/wfa_matriz.py`, `strategies/rompimento_abertura.py`.
+- Nunca edite código.
 - Não commite. Ao final, liste cada arquivo alterado com uma linha do que mudou.

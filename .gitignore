@@ -14,3 +14,4 @@ data/backup_antes_cme/
 data/buscas.duckdb
 data/buscas.duckdb.wal
 data/buscas/
+ativos_temp/

@@ -1495,3 +1495,156 @@ As razões por trás das decisões ficam em [docs/PLANO.md](docs/PLANO.md).
   `COPY` e caminho de `read_parquet` precisam ser literais.
 - Carga que falhava no meio deixava linha órfã em `ingest_log`. A ingestão
   agora é transacional.
+
+---
+
+## Histórico da plataforma (até 04/11/2026)
+
+Projetos (`docs/PLANO-CANDIDATA.md §11`): **A** Candidata ✅ · **B** MT5 ✅ ·
+**D** Portfólio: parte 1 identidade ✅, parte 2 correlação ✅ (+ capital, tabela
+comparativa, Kelly, risco de ruína, simulador de crescimento), parte 3 gatilho:
+fatia 1 (selo de reotimização) ✅ · **C** Incubação 🔨 · **E** Execução ao vivo ❌.
+
+**Em andamento: tela "Ao vivo"** (projeto C + E), dividida em partes:
+1. **Seção 1** (1a blindagem do banco + 1b sub-tela Ao vivo › Estratégias com a
+   ficha de rastreio) ✅. Spec: `docs/superpowers/specs/2026-09-30-ao-vivo-estrategias-design.md`.
+2. Candles ao vivo (serviço de captura grava cada M1; completa lacunas;
+   conferência do dia; sub-tela Pregão; selo da captura no topo) ✅. Spec:
+   `docs/superpowers/specs/2026-10-01-ao-vivo-captura-design.md`.
+3. Incubação em papel (**o papel roda sempre**, em qualquer fase) + sub-tela
+   Operação ✅. Spec: `docs/superpowers/specs/2026-10-02-ao-vivo-papel-design.md`.
+4. Ordens pelo próprio Dataframe na conta demo + comparativo backtest ×
+   papel × demo (sinal no mesmo minuto, preço, derrapagem) ✅ **implementada**
+   (branch `live-trading`, 16 tarefas). Spec:
+   `docs/superpowers/specs/2026-10-08-ao-vivo-ordens-design.md`; decisões em
+   `...-ordens-decisoes.md`. O **Envio de ordens nasce desligado** e registra
+   "seria enviada". Conta real ficou para a parte 5. Pausar com posição
+   aberta encerra na hora.
+   A **ordem de teste** na demo passou em 15/10/2026 (entrada 149 ms,
+   proteção 676 ms, saída 496 ms). A parte 4 foi mergeada no `master` (PR #2).
+   **Situação em 29/10/2026:** desde 21/10 as ligações do
+   `rompimento_ema_abertura` (plano #6) e do `rompimento_canal` (plano #5)
+   estão na **fase real, com 1 contrato e o Envio LIGADO na conta real**
+   (Clear). O Envio da demo está desligado. A ligação da `adx_direcao`
+   (plano #7, desde 27/10) segue só no papel.
+   **Opção "Saída" (18/10/2026, `strategies/saida.py`):** parâmetro `saida`
+   em toda estratégia (inclusive a `adx_direcao`) menos o `rompimento_abertura` (um sinal por dia: os
+   modos dariam os mesmos trades, cópia = platô falso), minerável como
+   inteiro (o "até" da faixa já vem no último modo) — 0 sinal contrário, 1 não
+   sai, 2 vira a mão (sai e entra do outro lado na mesma abertura; o motor
+   aplica direção, janela, horas sem entrada e limites do dia), 3 saída
+   própria (só `reversao_rsi`). O padrão de cada uma reproduz o de antes
+   (cruzamento e canal 0, RSI 3, EMA da abertura 1; `tests/dados/saida_antes.json`)
+   e plano sem a chave usa o padrão — `engine.VERSAO` não subiu. Na demo, a
+   virada só entra com a posição contrária fora da conta (`ordens.planejar`
+   e `Motor.executar`); passada a janela de 30 s com a contrária presa, a
+   entrada vira "perdida". Mexer na estratégia — ou num ajudante que ela
+   importa, como o `saida.py` (`codigo.ajudantes`) — muda o `codigo_hash`: plano
+   gravado antes acusa "código mudou desde o plano". Mudança que NÃO muda
+   os trades se reassina sem regravar o plano:
+   `scripts/reassinar_codigo.py --de <commit antigo> [--aplicar]` roda o
+   backtest de cada plano com o código antigo e com o novo e só troca o
+   hash (do plano e dos `papel_pregoes` dele) com trades idênticos; faz
+   backup antes; o hash gravado é conferido também pela receita de hash do
+   commit antigo. Os planos #5 e #6 foram reassinados assim em 18/10/2026
+   (backup em `C:\Users\mrRobot\Documents\Neturna\backups\2026-10-18-antes-resign-hash`);
+   #5, #6 e #7 de novo em 29/10/2026.
+5. **Conta real** ✅ **implementada** (21/10/2026). Spec:
+   `docs/superpowers/specs/2026-10-19-conta-real-design.md`. A conta real roda
+   **em paralelo com a demo, com a real primeiro**, pelo processo próprio
+   **"Ordens real"** (`ordens_real.py`, aberto pelo `iniciar.bat`): lê os
+   desejados que a captura publica e manda ordens só na conta real, pelo
+   terminal dela. A captura segue com a demo. O Envio da conta real tem o
+   mesmo interruptor de dois cliques da demo e **nasce desligado**; ligar é
+   decisão do usuário.
+   **Vigia de stop e alvo** (21/10, commits `d987d91`..`cf8540c`): o papel
+   sai no **toque** do stop ou do alvo, no candle em formação, sem esperar o
+   fim do candle. A corretora tem 1 s para executar o stop/alvo tocado; depois
+   disso a automação sai a mercado e abre chamado. Execução assim sai marcada
+   como "fora do mercado" e fica fora da derrapagem.
+      Em 23/10 duas correções na real: preço confirmado pelo negócio (a bolsa
+   devolve `price` 0) e a real aplica os próprios contratos, fase e chave aos
+   desejados da ponte.
+   Ideias para depois: recursos com LLM fora do caminho da ordem; aba Conta.
+Cada parte 2–4 terá spec própria; o que herdam da seção 1 está no §10 da spec.
+
+Entrega futura: aba **Conta** no topo (nome escolhido pelo usuário; nunca
+"Mesa"): todo o controle e a visão por conta/ativo ficam lá. Ainda sem spec.
+
+Camada 4 minerável (06–07/10): alvo como múltiplo do stop (arredondado ao
+tick), stop/alvo ATR em faixa, três janelas "sem entradas", filtro de
+mercado ADX (tendência/rango, 0 desliga) e a estratégia
+`rompimento_ema_abertura`. O ADX é o de Wilder — **não bate com o ADX
+padrão do MT5**, que suaviza diferente. Nos timeframes M7/M11/M13/M17 a
+primeira vela do pregão sai parcial (contam da meia-noite); igual em todos
+os modos.
+
+**Ativos da CME na pesquisa (MES e MNQ; ramo `new-strategies`, desde
+28/10/2026)** — só pesquisa; a operação ao vivo não inclui os micros (sem
+corretora). Spec `docs/superpowers/specs/2026-10-28-ativos-cme-design.md`.
+- **Etapa 1 ✅:** fichas `configs/instruments/mes.yaml` e `mnq.yaml`,
+  `core/ativo.py` (ficha, relógio de pregão, escala de preço), importação do
+  London Strategic Edge (`cli.py importar-lse --symbol MES <arquivos>`, em
+  `core/importar_lse.py`), gráfico em hora de NY e preço com centavos. Pregões
+  descartados: MES 43, MNQ 44 (lista nos YAML).
+- **Etapa 2 ✅:** conversão em `run_strategy`, `bars["tick"]`/`abertura_min`/
+  `inicio_min`, abertura de referência (09:30 NY), perfil padrão por ativo
+  (`perfil_padrao` no YAML), `janela_valida` (recusa janela que atravessa a
+  pausa; vale também para o WIN), trades, marcadores, Detalhes e Walk-Forward
+  em hora de NY e pontos. A EMA de abertura só sinaliza depois da barra de
+  abertura.
+- **Etapa 3 (moeda) ✅ (29/10/2026):** `cartao.dinheiro`, rótulos na moeda do
+  ativo, Walk-Forward/Candidata/ficha/Portfólio/linha de comando, risco diário
+  do portfólio na escala do ativo, capital "10.000" = dez mil, referência das
+  telas do WIN (`scripts/referencia_telas.py`). O portão "Aguenta custo
+  maior?" só vale para moeda BRL.
+- **Etapa 4 (faixas de mineração por ativo) ✅ (30/10/2026, no `master`):**
+  faixas no YAML dos micros e `faixas_do_ativo`; passo 1 nos micros. Stop/alvo
+  padrão: MES 8/16, MNQ 45/90. Trocar o ativo sem mineração na tela refaz
+  parâmetros e stop/alvo/trailing (zera o que foi digitado e as marcas de
+  "minerar"). Com mineração parada na tela (do banco ou recém-rodada, salva
+  ou não), a troca a tira da tela, como a troca de estratégia, e refaz tudo
+  para o ativo novo; rodando, o seletor do ativo fica desligado. Mineração
+  carregada ajusta stop/alvo/trailing ao ativo dela (no WIN, os não varridos
+  voltam a 300/600/0). Suíte: 2.713 testes. Spec: "Estado depois da etapa 4".
+- Pendências pequenas em "Estado depois da etapa 2" e "Estado depois da etapa 3" da spec.
+- **A investigar:** erro React #31 (2 vezes) ao abrir o app; já existe no
+  `master`, causa desconhecida.
+- ~~Seletor de ativo não acompanha a mineração carregada~~ — **resolvido** pelo
+  redesenho do menu (abaixo): as listas filtram pelo ativo e a troca de ativo
+  limpa a mineração parada da tela.
+- **Redesenho do menu e Backtest dentro da Mineração ✅ (03/11/2026, no
+  `master`, `682d12c`..`6920550`).** Sai do topo o seletor de ativo, o botão
+  Sincronizar e a aba Backtest (agora subtela da Mineração: Varredura |
+  Backtest, com salto automático ao clicar numa linha, ponto ou aprovada). O
+  app abre sempre em Ao vivo › Estratégias. Menu de 400 px com topo fixo e 5
+  abas (Entrada, Saída, Filtros, Risco, Períodos), gavetas com resumo. Listas
+  salvas só do ativo escolhido; Walk-Forward e Candidata ganharam seletor de
+  ativo (`wfa-ativo`, `cand-ativo`). Trocar o ativo com mineração parada tira
+  a mineração da tela; o seletor trava enquanto ela roda ou é salva. A lista
+  de salvas segue a estratégia do menu (não a da memória do servidor); após
+  F5 o menu acompanha a mineração da memória (`8ea95d4`..`20de045`). Guarda:
+  `scripts/campos_menu.py` + `tests/dados/campos_menu.json`. Suíte: 2.776
+  testes. Spec: `docs/superpowers/specs/2026-11-01-menu-e-mineracao-design.md`.
+
+- **Busca automática por nichos ✅ (04/11/2026; tudo no `master`, tela
+  incluída, já no GitHub).** Subtela nova da
+  Mineração (Varredura | Busca automática | Backtest): testa milhares de
+  combinações de uma estratégia num ativo (pyribs, MAP-Elites) num processo à
+  parte e mostra um mapa de nichos, com detalhe e "Minerar a região". Motor
+  dividido em `preparar`/`executar` com resultado idêntico (gabarito).
+  **Hoje a busca varre** os parâmetros da estratégia, tempo, direção, horário
+  de entrada, dias, stop e alvo (com período do ATR) e quase toda a camada 4
+  (fechamento, tempo máximo, horas sem entradas, ADX, breakeven, limites do
+  dia), sempre com o "desligado" na faixa. **Fixos, valem o menu:** stop móvel,
+  trailing (`FORA_DA_BUSCA`), custos e tamanho (`NAO_MINERAVEIS`); campo novo
+  do perfil de execução tem de entrar numa das duas listas (um teste cobra).
+  Faixas em pontos saem do stop/alvo padrão da ficha. Suíte: 2.972 testes.
+  Spec: `docs/superpowers/specs/2026-11-03-busca-automatica-design.md`
+  (seção "Estado depois da implementação").
+  Pendência: `scripts/campos_menu.py conferir` já falhava no `master` antes
+  desta entrega (só rótulos; `tests/test_campos_menu.py` passa) — a olhar.
+
+Também entraram em 21–23/10: stop e alvo em porcentagem do preço de entrada
+(`7d1d272`) e a estratégia `adx_direcao` (`cdb74bc`, `8eaca51`: parâmetros
+`di_periodo` e `adx_suavizacao`, com trava contra colisão de nome com o perfil).

@@ -6,14 +6,12 @@ model: opus
 ---
 
 Você revisa código do Dataframe (plataforma de trading em Python/Dash/DuckDB).
-Leia `AGENTS.md` na raiz antes de começar — as regras e as armadilhas estão lá.
+As regras gerais já estão no seu contexto; as da área carregam ao abrir um arquivo dela (`.claude/rules/`).
 
 ## O que revisar
 
 Quem te chama diz quais arquivos/funções mudaram. Se não disser, use
-`git diff` e `git diff --cached` (pela tool PowerShell). **Ignore** qualquer
-diff em `ui/components/controls.py`, `ui/components/wfa_matriz.py` e
-`strategies/rompimento_abertura.py` — são edições do usuário, fora do escopo.
+`git diff` e `git diff --cached` (pela tool PowerShell). **Ignore** o que não faz parte da mudança pedida.
 
 ## O que procurar, em ordem
 

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Read|mcp__Claude_Browser__preview_start",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guarda.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
