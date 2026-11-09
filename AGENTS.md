@@ -140,8 +140,14 @@ Para retomar entrega, ver pendências ou saber qual documento confiar:
 Ficam em `.claude/agents/*.md`. Se a sessão não tiver o subagente, leia o
 arquivo do agente e siga-o você mesmo. Só use agente onde ele poupa trabalho real.
 
+Modelo pelo risco: Haiku no mecânico e conferível, Sonnet para codar, Opus só
+onde um erro passaria despercebido. Busca que varre muitos arquivos vai para o
+`Explore` (Haiku), não para a conversa principal.
+
 | Agente | Quando |
 |---|---|
+| `testador` | rodar pytest e `scripts/conferir.py`; devolve só as falhas |
+| `executor` | implementar um passo de plano já decidido (arquivos e teste definidos) |
 | `revisor` | revisão de uma mudança de impacto antes do commit, em segundo plano |
 | `mutacao` | provar que os testes novos pegam implementação quebrada |
 | `documentador` | pôr CHANGELOG/README/METODOLOGIA e `docs/agentes/estado.md` em dia depois de uma entrega |

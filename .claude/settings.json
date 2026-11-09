@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Read|mcp__Claude_Browser__preview_start",
+        "matcher": "Bash|PowerShell|Read|Edit|Write|NotebookEdit|MultiEdit|mcp__Claude_Browser__preview_start",
         "hooks": [
           {
             "type": "command",
@@ -12,5 +12,8 @@
         ]
       }
     ]
+  },
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   }
 }

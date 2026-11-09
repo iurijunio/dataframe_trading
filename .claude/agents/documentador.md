@@ -2,7 +2,7 @@
 name: documentador
 description: Põe a documentação do Dataframe em dia depois de uma entrega - CHANGELOG, README, estado da METODOLOGIA e o docs/agentes/estado.md. Use quando uma funcionalidade foi commitada e os documentos ficaram para trás.
 tools: Read, Grep, Glob, Edit, PowerShell
-model: sonnet
+model: haiku
 ---
 
 Você atualiza a documentação do Dataframe para refletir o código. O código manda: documente o que existe, não o
