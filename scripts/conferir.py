@@ -16,13 +16,13 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 PY = str(Path(".venv/Scripts/python.exe"))
 
-CICLO = re.compile(r"ui/(app\.py|callbacks.*\.py)$")
+CICLO = re.compile(r"ui/(app\.py|callbacks.*\.py|cb_\w+/\w+\.py)$")
 MOTOR = re.compile(r"(core/engine/|strategies/)")
 ESTRATEGIA = re.compile(r"(strategies/|core/codigo\.py$)")
 BUSCA = re.compile(r"(busca\.py$|core/busca/)")
 MENU = re.compile(r"ui/components/(controls|mining|mine_\w+|catalogo)\.py$")
 TELA_PESQUISA = re.compile(
-    r"ui/(callbacks\.py|callbacks_(candidata|portfolio)\.py|components/(mining|mine_\w+|scatter|charts|stats_cards|"
+    r"ui/(callbacks\.py|cb_pesquisa/\w+\.py|callbacks_(candidata|portfolio)\.py|components/(mining|mine_\w+|scatter|charts|stats_cards|"
     r"results_grid|wfa_\w+|candidata_panel|portfolio_panel|detalhes_cards|robustez_cards|analytics_charts|cartao|ficha)\.py)$"
 )
 TEM_CODIGO = re.compile(r"\.(py|sql|js|css)$")
@@ -50,7 +50,7 @@ def o_que_conferir(arquivos: list[str]) -> dict[str, list[str]]:
     if tem(BUSCA):
         lembrar.append("Prova da busca: scripts/conferir_busca.py <busca_id>. Busca em andamento segue com o código antigo")
     if tem(MENU):
-        rodar.append(f"{PY} scripts/campos_menu.py")
+        rodar.append(f"{PY} scripts/campos_menu.py conferir")
     if tem(TELA_PESQUISA):
         rodar.append(f"{PY} scripts/referencia_telas.py conferir")
     reabrir: list[str] = []

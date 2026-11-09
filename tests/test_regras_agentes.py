@@ -111,6 +111,12 @@ def test_nucleo_nao_cita_estrategia_especifica():
     ("core/ativo.py", "cme"),
     ("core/portfolio.py", "portfolio"),
     ("ui/callbacks.py", "tela"),
+    # os pacotes que vieram das cascas carregam a mesma regra delas
+    ("ui/components/ordens/base.py", "ordens"),
+    ("ui/components/ao_vivo/ficha.py", "ordens"),
+    ("core/leitura/demo.py", "captura-papel"),
+    ("ui/cb_operacao/tela.py", "captura-papel"),
+    ("ui/components/operacao/bloco.py", "captura-papel"),
     ("ui/assets/style.css", "tela"),
 ])
 def test_arquivo_critico_carrega_a_regra(arquivo, regra):
@@ -381,6 +387,10 @@ def test_conferir_motor_e_estrategia():
     ("ui/callbacks_ordens.py", "test_callbacks_sem_ciclo"),
     ("ui/components/mine_regiao.py", "campos_menu"),
     ("ui/components/portfolio_panel.py", "referencia_telas"),
+    ("ui/cb_pesquisa/r_wfa.py", "referencia_telas"),
+    ("ui/cb_pesquisa/r_menu.py", "test_callbacks_sem_ciclo"),
+    ("ui/cb_operacao/ordens.py", "test_callbacks_sem_ciclo"),
+    ("ui/components/mine_regiao.py", "campos_menu.py conferir"),
 ])
 def test_conferir_tela(arquivo, trecho):
     assert any(trecho in c for c in conferir.o_que_conferir([arquivo])["rodar"])

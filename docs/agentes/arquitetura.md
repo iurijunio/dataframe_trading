@@ -25,7 +25,21 @@ backtest e pula para ela:
 
 Outros: `core/mt5_source.py` (sincronização com o MT5, sem botão na tela — a
 captura já preenche o que falta; o `ui/callbacks_mt5.py` foi removido); `core/plano.vencendo` + selo no topbar (reotimização vencendo);
-`ui/callbacks.py:register` registra todos os `callbacks_*.py`.
+`ui/callbacks.py:register` registra todos os `callbacks_*.py` (a chamada mora em `ui/cb_pesquisa/r_resto.py`).
+
+Arquivo grande virou pacote: o arquivo antigo é uma **casca** que só reexporta, e o código mora no pacote:
+
+| Casca | Pacote |
+|---|---|
+| `ui/callbacks.py` | `ui/cb_pesquisa/` (menu, Backtest, mineração, Walk-Forward) |
+| `ui/callbacks_operacao.py` | `ui/cb_operacao/` |
+| `ui/components/operacao_panel.py` | `ui/components/operacao/` |
+| `ui/components/ordens_panel.py` | `ui/components/ordens/` |
+| `ui/components/ao_vivo_panel.py` | `ui/components/ao_vivo/` |
+| `core/papel_leitura.py` | `core/leitura/` |
+
+Para trocar um nome num teste (`monkeypatch`), mire o módulo do pacote onde ele é usado, não a casca. Divisão
+nova: só mudança de lugar, provada por `scripts/provar_divisao.py --de <commit>`.
 
 Fluxo do dado: mineração (`mining_runs`, com `variante_id`) → walk-forward
 (`wfa_runs`, `wfa_trades` = trades fora da amostra) → Candidata grava

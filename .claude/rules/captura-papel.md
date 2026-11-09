@@ -12,6 +12,7 @@ paths:
   - "core/papel.py"
   - "core/papel_backtest.py"
   - "core/papel_leitura.py"
+  - "core/leitura/**"
   - "core/papel_vivo.py"
   - "core/plano.py"
   - "core/variantes.py"
@@ -19,8 +20,10 @@ paths:
   - "cli.py"
   - "ui/callbacks_pregao.py"
   - "ui/callbacks_operacao.py"
+  - "ui/cb_operacao/**"
   - "ui/components/pregao_panel.py"
   - "ui/components/operacao_panel.py"
+  - "ui/components/operacao/**"
   - "iniciar.bat"
   - "captura.bat"
 ---
