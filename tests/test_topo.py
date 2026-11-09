@@ -60,7 +60,8 @@ def test_sem_botao_de_sincronizar():
 
 def test_ao_vivo_abre_em_estrategias():
     from ui.components import ao_vivo_panel as AV
-    fonte = Path(AV.__file__).read_text(encoding="utf-8")
+    casca = Path(AV.__file__)  # o código mora no pacote ao lado da casca
+    fonte = "".join(p.read_text(encoding="utf-8") for p in [casca, *sorted(casca.with_name("ao_vivo").glob("*.py"))])
     app = build()
     layout = app.layout() if callable(app.layout) else app.layout
     sub = [c for c in _todos(layout) if getattr(c, "id", None) == "av-subtela"]
