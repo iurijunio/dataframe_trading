@@ -20,6 +20,7 @@ Sai com 1 se houver problema; alertas não reprovam, mas aparecem.
 import argparse
 import ast
 import builtins
+import re
 import subprocess
 import sys
 import symtable
@@ -141,12 +142,49 @@ def _importados(fonte: str) -> set[str]:
             if isinstance(no, (ast.Import, ast.ImportFrom)) for a in no.names}
 
 
+def apelidos(fonte: str, caminho_fonte: str, modulo: str) -> set[str]:
+    """Nomes pelos quais `fonte` chama o módulo `modulo` (ex.: `from ui import callbacks_operacao as CO` → CO)."""
+    saida = set()
+    for no in ast.walk(ast.parse(fonte)):
+        if isinstance(no, ast.Import):
+            for a in no.names:
+                if a.name == modulo:
+                    saida.add(a.asname or a.name)
+        elif isinstance(no, ast.ImportFrom):
+            base = _absoluto(caminho_fonte, no)
+            for a in no.names:
+                if f"{base}.{a.name}" == modulo:
+                    saida.add(a.asname or a.name)
+    return saida
+
+
+def _usos_por_apelido(caminho: str):
+    """(arquivo, linha, apelido) de cada lugar do projeto que importa o módulo de `caminho`."""
+    modulo = _modulo_de(caminho)
+    rastreados = subprocess.run(["git", "ls-files", "*.py"], cwd=RAIZ, capture_output=True, text=True,
+                                encoding="utf-8").stdout.split()
+    for outro in rastreados:
+        if outro == caminho or not (RAIZ / outro).exists():
+            continue
+        texto = (RAIZ / outro).read_text(encoding="utf-8")
+        if modulo.split(".")[-1] not in texto:
+            continue
+        try:
+            nomes = apelidos(texto, outro, modulo)
+        except SyntaxError:
+            continue
+        if nomes:
+            yield outro, texto, nomes
+
+
 def _import_usado_por_fora(caminho: str, nome: str) -> list[str]:
-    """Quem lê `modulo.nome` (ex.: um teste que troca `captura.time`)."""
-    modulo = Path(caminho).stem
-    saida = subprocess.run(["git", "grep", "-nE", rf"\b{modulo}\.{nome}\b", "--", "*.py"], cwd=RAIZ,
-                           capture_output=True, text=True, encoding="utf-8").stdout
-    return [s for s in saida.splitlines() if not s.startswith(caminho + ":")]
+    """Quem lê `apelido.nome` (ex.: um teste que faz `CO.AV`)."""
+    usos = []
+    for outro, texto, nomes in _usos_por_apelido(caminho):
+        for n, linha in enumerate(texto.splitlines(), 1):
+            if any(re.search(rf"\b{re.escape(a)}\.{re.escape(nome)}\b", linha) for a in nomes):
+                usos.append(f"{outro}:{n}")
+    return usos
 
 
 def indefinidos(fonte: str, nome: str = "<arquivo>") -> set[str]:
@@ -323,17 +361,17 @@ def _git(*args: str) -> str:
 
 def _trocas_em_testes(antes: dict[str, str], depois: dict[str, str]) -> list[str]:
     """Teste que troca (monkeypatch) um nome que mudou de arquivo pode deixar de valer em silêncio."""
-    movidos = set()
-    for caminho, fonte in antes.items():
-        ficou = set(pecas(depois.get(caminho, "")))
-        movidos |= {c.split(".")[-1].split("/")[-1] for c in pecas(fonte) if c not in ficou}
-    movidos -= {"<linha>", "<linha de módulo>"}
     alertas = []
-    for teste in sorted((RAIZ / "tests").glob("test_*.py")):
-        for n, linha in enumerate(teste.read_text(encoding="utf-8").splitlines(), 1):
-            if "setattr(" in linha and any(f'"{m}"' in linha or f"'{m}'" in linha or f".{m}," in linha
-                                           for m in movidos):
-                alertas.append(f"tests/{teste.name}:{n} troca nome que mudou de arquivo: {linha.strip()[:90]}")
+    for caminho, fonte in antes.items():
+        ficou = {c.split(" ")[-1] for c in pecas(depois.get(caminho, ""))}
+        # o nome não mora mais na casca: trocá-lo nela não chega a quem usa
+        movidos = (oferecidos(fonte) - ficou) - {"<linha>", "<linha de módulo>"}
+        for outro, texto, nomes in _usos_por_apelido(caminho):
+            for n, linha in enumerate(texto.splitlines(), 1):
+                for a in nomes:
+                    m = re.search(rf"setattr\(\s*{re.escape(a)}\s*,\s*['\"](\w+)['\"]", linha)
+                    if m and m.group(1) in movidos:
+                        alertas.append(f"{outro}:{n} troca {a}.{m.group(1)}, que não mora mais na casca")
     return alertas
 
 

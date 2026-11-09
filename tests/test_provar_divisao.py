@@ -185,6 +185,13 @@ def test_delegacao_com_outro_argumento_conta_como_codigo_novo():
     assert any("linhas soltas mudaram" in p for p in problemas)
 
 
+def test_apelidos_do_modulo():
+    fonte = ("from ui import callbacks_operacao as CO\nimport ui.callbacks_operacao\n"
+             "from . import callbacks_operacao\nfrom ui import outro as CO2\n")
+    assert pd.apelidos(fonte, "ui/x.py", "ui.callbacks_operacao") == {"CO", "ui.callbacks_operacao",
+                                                                      "callbacks_operacao"}
+
+
 def test_funcao_repetida_reprova():
     novo = dict(CERTO)
     novo["pkg/extra.py"] = "def area(r):\n    return math.pi * r * r\n\nimport math\n"
