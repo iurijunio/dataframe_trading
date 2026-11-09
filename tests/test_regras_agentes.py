@@ -186,6 +186,146 @@ def test_guarda_recusa_leitura_inteira_so_de_arquivo_grande():
     assert guarda.decidir("Read", {"file_path": "a.png"}, linhas=grande) is None
 
 
+@pytest.mark.parametrize("comando", [
+    ".venv/Scripts/python.exe ordens_real.py",
+    "python captura.py",
+    '& ".venv\\Scripts\\python.exe" C:\\x\\dataframe_trading\\ordens_real.py',
+    ".venv/Scripts/python.exe -u captura.py --x",
+    "cmd /c iniciar.bat",
+    ".\\captura.bat",
+    "./ordens_real.bat",
+    "Start-Process ordens_real.bat",
+    "start iniciar.bat",
+    "cd x; call captura.bat",
+    'python -c "import MetaTrader5 as mt5; mt5.initialize()"',
+    "python -c \"from core.ordem_teste import enviar; enviar()\"",
+    "python - <<'EOF'\nimport core.ordens\nEOF",
+    "python -c \"from core import corretora\"",
+    "python -c \"x.order_send(req)\"",
+])
+def test_guarda_recusa_o_que_pode_operar_a_conta(comando):
+    for shell in ("Bash", "PowerShell"):
+        assert guarda.decidir(shell, {"command": comando}, aberto=FECHADO), comando
+
+
+@pytest.mark.parametrize("comando", [
+    ".venv/Scripts/python.exe -m pytest -q tests/test_captura_ordens.py",
+    ".venv/Scripts/python.exe -m pytest -q tests/test_ordens.py -k order_send",
+    ".venv/Scripts/python.exe scripts/conferir.py core/ordens.py ordens_real.py",
+    "git diff -- ordens_real.py captura.py iniciar.bat",
+    "grep -n order_send core/ordens.py",
+    "cat ordens_real.bat",
+    "Get-Content iniciar.bat",
+    "python -m py_compile captura.py",
+    "python -c \"import duckdb\"",
+])
+def test_guarda_libera_testes_e_leitura_do_codigo_de_ordens(comando):
+    assert guarda.decidir("Bash", {"command": comando}, aberto=FECHADO) is None, comando
+
+
+@pytest.mark.parametrize("comando", [
+    "rm data/ao_vivo/ordens/2026-11-09.jsonl",
+    "rm -rf data/ao_vivo",
+    "Remove-Item data\\ao_vivo\\ordens\\*.jsonl",
+    "del data\\ao_vivo\\ordens\\x.jsonl",
+    "mv data/ao_vivo/ordens/x.jsonl /tmp/",
+    "Move-Item data\\ao_vivo\\ordens\\x.jsonl y",
+    "Clear-Content data/ao_vivo/ordens/x.jsonl",
+    "Set-Content data/ao_vivo/ordens/x.jsonl ''",
+    "echo {} > data/ao_vivo/ordens/x.jsonl",
+    "echo {} >> data/ao_vivo/ordens/x.jsonl",
+    "cmd /c rmdir /s /q data\\ao_vivo\\ordens",
+    "python -c \"import os; os.remove('data/ao_vivo/ordens/x.jsonl')\"",
+])
+def test_guarda_recusa_mexer_no_diario_de_ordens(comando):
+    for shell in ("Bash", "PowerShell"):
+        assert guarda.decidir(shell, {"command": comando}, aberto=FECHADO), comando
+
+
+@pytest.mark.parametrize("comando", [
+    "cat data/ao_vivo/ordens/2026-11-09.jsonl",
+    "tail -5 data/ao_vivo/ordens/x.jsonl",
+    "Get-Content data\\ao_vivo\\ordens\\x.jsonl -Tail 5",
+    "ls data/ao_vivo/ordens",
+    "rm data/ao_vivo_backup.txt",
+    "python -c \"print(open('data/ao_vivo/ordens/x.jsonl').read())\"",
+])
+def test_guarda_libera_ler_o_diario(comando):
+    assert guarda.decidir("Bash", {"command": comando}, aberto=FECHADO) is None, comando
+
+
+@pytest.mark.parametrize("ferramenta", ["Edit", "Write", "NotebookEdit"])
+def test_guarda_recusa_editar_o_diario_pela_ferramenta(ferramenta):
+    for caminho in ("C:\\x\\data\\ao_vivo\\ordens\\2026-11-09.jsonl", "data/ao_vivo/ordens/retrato.json"):
+        assert guarda.decidir(ferramenta, {"file_path": caminho}, aberto=FECHADO)
+
+
+def test_guarda_recusa_script_avulso_que_envia_ordem():
+    fora = str(Path("C:/Temp/claude/scratch/envia.py"))
+    assert guarda.decidir("Write", {"file_path": fora, "content": "mt5.order_send(req)"}, aberto=FECHADO)
+    assert guarda.decidir("Write", {"file_path": fora, "content": "import MetaTrader5"}, aberto=FECHADO)
+    assert guarda.decidir("Edit", {"file_path": fora, "new_string": "order_send(x)"}, aberto=FECHADO)
+    dentro = str(RAIZ / "core" / "ordens.py")
+    assert guarda.decidir("Edit", {"file_path": dentro, "new_string": "res = mt5.order_send(req)"},
+                          aberto=FECHADO) is None
+    assert guarda.decidir("Write", {"file_path": fora, "content": "print(1)"}, aberto=FECHADO) is None
+    # documento que só cita a função, e o próprio guarda, não são script que envia
+    regra = str(RAIZ / ".claude" / "rules" / "ordens.md")
+    assert guarda.decidir("Edit", {"file_path": regra, "new_string": "`order_send`"}, aberto=FECHADO) is None
+    proprio = str(RAIZ / ".claude" / "hooks" / "guarda.py")
+    assert guarda.decidir("Edit", {"file_path": proprio, "new_string": "order_send"}, aberto=FECHADO) is None
+    assert guarda.decidir("Write", {"file_path": str(RAIZ / "scripts" / "x.py"), "content": "order_send"},
+                          aberto=FECHADO)
+
+
+# Formas comuns de escapar que a revisão achou na primeira versão da trava.
+@pytest.mark.parametrize("comando", [
+    "py ordens_real.py", "py -3 captura.py", ".venv/Scripts/pythonw.exe ordens_real.py", "python -m ordens_real",
+    ".venv/Scripts/python.exe -X utf8 captura.py", "python -W ignore ordens_real.py",
+    "Start-Process python ordens_real.py", "Start-Process .venv\\Scripts\\python.exe -ArgumentList ordens_real.py",
+    "cmd /c start iniciar.bat", "cmd /c iniciar", "Invoke-Item iniciar.bat",
+    # `Get-Content x.py | python` não dá para julgar pelo comando: quem segura é a trava do Write de x.py
+    "echo 'import MetaTrader5' | python", "echo 'from core import corretora' | .venv/Scripts/python.exe",
+])
+def test_guarda_recusa_outras_formas_de_operar(comando):
+    assert guarda.decidir("PowerShell", {"command": comando}, aberto=FECHADO), comando
+
+
+@pytest.mark.parametrize("comando", [
+    "Remove-Item data\\ao_vivo\\* -Recurse -Force", "rm -rf data/ao_vivo/*",
+    "Get-ChildItem data\\ao_vivo\\ordens -Filter *.jsonl | Remove-Item", "cd data/ao_vivo/ordens; rm *.jsonl",
+    "cp vazio.jsonl data/ao_vivo/ordens/x.jsonl", "Copy-Item vazio.jsonl data\\ao_vivo\\ordens\\x.jsonl -Force",
+    "New-Item -Force data\\ao_vivo\\ordens\\x.jsonl", "sed -i '$d' data/ao_vivo/ordens/x.jsonl",
+    "git clean -fdx", "git clean -fX",
+])
+def test_guarda_recusa_outras_formas_de_apagar_o_diario(comando):
+    assert guarda.decidir("PowerShell", {"command": comando}, aberto=FECHADO), comando
+
+
+@pytest.mark.parametrize("comando", [
+    "python -c \"print(open('data/ao_vivo/ordens/x.jsonl').read().replace(',', ';'))\"",
+    "python -c \"open('data/ao_vivo/ordens/x.jsonl', encoding='ascii').read()\"",
+    "git clean -n", "git diff -- iniciar.bat", "rg captura docs/",
+])
+def test_guarda_nao_trava_leitura_que_parece_escrita(comando):
+    assert guarda.decidir("PowerShell", {"command": comando}, aberto=FECHADO) is None, comando
+
+
+@pytest.mark.parametrize("conteudo", [
+    "from core import ordens; ordens.enviar()", "from core.ordem_teste import rodar", "import core.corretora as K",
+    "import os; os.remove('data/ao_vivo/ordens/x.jsonl')",
+])
+def test_guarda_recusa_script_avulso_que_usa_o_codigo_de_ordens(conteudo):
+    assert guarda.decidir("Write", {"file_path": "C:/Temp/s/x.py", "content": conteudo}, aberto=FECHADO)
+    assert guarda.decidir("Write", {"file_path": "C:/Temp/s/x.sh", "content": conteudo}, aberto=FECHADO)
+
+
+def test_guarda_olha_multiedit_e_comando_vazio():
+    assert guarda.decidir("MultiEdit", {"file_path": "data/ao_vivo/ordens/x.jsonl", "edits": []})
+    assert guarda.decidir("MultiEdit", {"file_path": "C:/Temp/x.py", "edits": [{"new_string": "order_send(r)"}]})
+    assert guarda.decidir("Bash", {"command": None}, aberto=FECHADO) is None
+
+
 def test_guarda_nao_recusa_outras_ferramentas():
     assert guarda.decidir("Edit", {"file_path": "a.py"}, aberto=ABERTO) is None
 
