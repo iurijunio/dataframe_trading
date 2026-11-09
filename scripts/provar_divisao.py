@@ -48,6 +48,36 @@ def _alvos(no: ast.stmt) -> list[str]:
     return []
 
 
+def _delegacao(recipiente: ast.FunctionDef, no: ast.stmt) -> str | None:
+    """`parte.register(app)` dentro de `register(app)`: o recipiente repassa a uma parte. Devolve o nome da parte."""
+    if not (isinstance(no, ast.Expr) and isinstance(no.value, ast.Call)):
+        return None
+    f, c = no.value.func, no.value
+    params = [a.arg for a in recipiente.args.args]
+    if isinstance(f, ast.Attribute) and f.attr == recipiente.name and isinstance(f.value, ast.Name) \
+            and not c.keywords and [getattr(a, "id", None) for a in c.args] == params:
+        return f.value.id
+    return None
+
+
+def delegacoes(fontes: dict[str, str]) -> tuple[set[str], set[str]]:
+    """(módulos chamados por delegação, módulos que têm recipiente)."""
+    orig = origens(fontes)
+    chamados, com_recipiente = set(), set()
+    for caminho, fonte in fontes.items():
+        for no in ast.parse(fonte).body:
+            if isinstance(no, ast.ImportFrom) and any(a.name in RECIPIENTES and (a.asname or a.name) == a.name
+                                                      for a in no.names):
+                chamados.add(_absoluto(caminho, no))  # a casca reexporta o register inteiro
+            if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)) and no.name in RECIPIENTES:
+                com_recipiente.add(_modulo_de(caminho))
+                for filho in no.body:
+                    alias = _delegacao(no, filho)
+                    if alias:
+                        chamados.add(orig[caminho].get(alias, "?").removeprefix("import:"))
+    return chamados, com_recipiente
+
+
 def pecas(fonte: str) -> dict[str, list[str]]:
     """Nome → árvores de sintaxe de cada definição com esse nome (uma por ocorrência)."""
     saida: dict[str, list[str]] = {}
@@ -60,6 +90,8 @@ def pecas(fonte: str) -> dict[str, list[str]]:
             for i, filho in enumerate(no.body):
                 if isinstance(filho, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     por(f"{no.name}/{filho.name}", filho)
+                elif _delegacao(no, filho):
+                    continue
                 elif not (i == 0 and isinstance(filho, ast.Expr) and isinstance(filho.value, ast.Constant)):
                     por(f"{no.name}/<linha>", filho)
         elif isinstance(no, ast.ClassDef):
@@ -145,9 +177,98 @@ def indefinidos(fonte: str, nome: str = "<arquivo>") -> set[str]:
     return faltam
 
 
+def _modulo_de(caminho: str) -> str:
+    partes = list(Path(caminho).with_suffix("").parts)
+    return ".".join(partes[:-1] if partes[-1] == "__init__" else partes)
+
+
+def _absoluto(caminho: str, no: ast.ImportFrom) -> str:
+    if not no.level:
+        return no.module or ""
+    base = _modulo_de(caminho).split(".")
+    if not caminho.endswith("__init__.py"):
+        base = base[:-1]
+    base = base[:len(base) - (no.level - 1)] if no.level > 1 else base
+    return ".".join(base + ([no.module] if no.module else []))
+
+
+def origens(fontes: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Por arquivo: nome do topo → de onde ele vem, num formato comparável entre antes e depois.
+
+    Definição do próprio lado vira "def:<nome>", mesmo que chegue por import de um
+    arquivo vizinho; o resto vira "import:<módulo absoluto>.<nome>".
+    """
+    definidos = {}
+    for caminho, fonte in fontes.items():
+        mod = _modulo_de(caminho)
+        for no in ast.parse(fonte).body:
+            nomes = [no.name] if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else _alvos(no)
+            for n in nomes:
+                definidos[(mod, n)] = f"def:{n}"
+    saida = {}
+    for caminho, fonte in fontes.items():
+        mod, mapa = _modulo_de(caminho), {}
+        for no in ast.parse(fonte).body:
+            if isinstance(no, ast.Import):
+                for a in no.names:
+                    mapa[(a.asname or a.name).split(".")[0]] = f"import:{a.name if a.asname else a.name.split('.')[0]}"
+            elif isinstance(no, ast.ImportFrom):
+                origem = _absoluto(caminho, no)
+                for a in no.names:
+                    mapa[a.asname or a.name] = definidos.get((origem, a.name), f"import:{origem}.{a.name}")
+        for (m, n), o in definidos.items():
+            if m == mod:
+                mapa[n] = o
+        saida[caminho] = mapa
+    return saida
+
+
+def _resolucoes(fontes: dict[str, str]) -> dict[str, set[tuple[str, str]]]:
+    """Por definição: os (nome, origem) dos nomes do topo que ela usa."""
+    orig = origens(fontes)
+    saida: dict[str, set[tuple[str, str]]] = {}
+    for caminho, fonte in fontes.items():
+        mapa = orig[caminho]
+        for no in _sem_docstring_de_modulo(ast.parse(fonte)):
+            itens = []
+            if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)) and no.name in RECIPIENTES:
+                itens = [(f"{no.name}/{f.name}", f) for f in no.body
+                         if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+            elif isinstance(no, ast.ClassDef):
+                itens = [(f"classe {no.name}", no)] + [(f"{no.name}.{m.name}", m) for m in no.body
+                                                         if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            elif isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                itens = [(no.name, no)]
+            elif _alvos(no):
+                itens = [(f"constante {a}", no) for a in _alvos(no)]
+            for chave, alvo in itens:
+                usados = {n.id for n in ast.walk(alvo) if isinstance(n, ast.Name)}
+                saida.setdefault(chave, set()).update((n, mapa[n]) for n in usados if n in mapa)
+    return saida
+
+
 def comparar(antes: dict[str, str], depois: dict[str, str]) -> tuple[list[str], list[str]]:
     """antes/depois: caminho → fonte dos arquivos envolvidos. Devolve (problemas, alertas)."""
     problemas, alertas = [], []
+    ra, rd = _resolucoes(antes), _resolucoes(depois)
+    for chave in sorted(set(ra) & set(rd)):
+        diferentes = {n for n, _ in ra[chave] ^ rd[chave]}
+        if diferentes:
+            problemas.append(f"{chave}: nome agora vem de outro lugar: {', '.join(sorted(diferentes))}")
+    chamados_a, _ = delegacoes(antes)
+    chamados_d, com_recipiente = delegacoes(depois)
+    novos = {_modulo_de(c) for c in depois if c not in antes}
+    for mod in sorted(chamados_d - com_recipiente):
+        problemas.append(f"delegação para {mod}, que não tem register")
+    for mod in sorted((com_recipiente & novos) - chamados_d):
+        problemas.append(f"{mod} tem register, mas ninguém o chama: os callbacks dele não seriam ligados")
+    if chamados_a - chamados_d:
+        problemas.append(f"delegação sumiu: {', '.join(sorted(chamados_a - chamados_d))}")
+    oa, od = origens(antes), origens(depois)
+    for caminho in set(antes) & set(depois):
+        for nome, origem in oa[caminho].items():
+            if nome in od[caminho] and od[caminho][nome] != origem:
+                problemas.append(f"{caminho}: {nome} agora aponta para {od[caminho][nome]}, era {origem}")
     a, d = {}, {}
     onde_a, onde_d = {}, {}
     for lado, fontes, onde in ((a, antes, onde_a), (d, depois, onde_d)):
