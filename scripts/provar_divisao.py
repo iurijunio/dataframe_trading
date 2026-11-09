@@ -79,14 +79,26 @@ def delegacoes(fontes: dict[str, str]) -> tuple[set[str], set[str]]:
     return chamados, com_recipiente
 
 
-def pecas(fonte: str) -> dict[str, list[str]]:
-    """Nome → árvores de sintaxe de cada definição com esse nome (uma por ocorrência)."""
+def pecas(fonte: str, caminho: str | None = None) -> dict[str, list[str]]:
+    """Nome → árvores de sintaxe de cada definição com esse nome (uma por ocorrência).
+
+    Import relativo dentro de função vira absoluto antes de comparar: `from . import x`
+    copiado para uma pasta mais funda tem o mesmo texto e aponta para outro lugar.
+    """
     saida: dict[str, list[str]] = {}
+    arvore = ast.parse(fonte)
+    if caminho:
+        for topo in arvore.body:
+            if isinstance(topo, (ast.Import, ast.ImportFrom)):
+                continue
+            for n in ast.walk(topo):
+                if isinstance(n, ast.ImportFrom) and n.level:
+                    n.module, n.level = _absoluto(caminho, n), 0
 
     def por(chave, no):
         saida.setdefault(chave, []).append(ast.dump(no, include_attributes=False))
 
-    for no in _sem_docstring_de_modulo(ast.parse(fonte)):
+    for no in _sem_docstring_de_modulo(arvore):
         if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)) and no.name in RECIPIENTES:
             for i, filho in enumerate(no.body):
                 if isinstance(filho, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -311,7 +323,7 @@ def comparar(antes: dict[str, str], depois: dict[str, str]) -> tuple[list[str], 
     onde_a, onde_d = {}, {}
     for lado, fontes, onde in ((a, antes, onde_a), (d, depois, onde_d)):
         for caminho, fonte in fontes.items():
-            for chave, arvores in pecas(fonte).items():
+            for chave, arvores in pecas(fonte, caminho).items():
                 lado.setdefault(chave, []).extend(arvores)
                 onde.setdefault(chave, []).extend([caminho] * len(arvores))
     for chave in sorted(set(a) | set(d)):

@@ -192,6 +192,15 @@ def test_apelidos_do_modulo():
                                                                       "callbacks_operacao"}
 
 
+def test_import_relativo_dentro_de_funcao_conta_o_destino():
+    antes = {"core/x.py": "def f():\n    from . import y\n    return y\n"}
+    errado = {"core/x.py": "from .p.m import f\n", "core/p/__init__.py": "",
+              "core/p/m.py": "def f():\n    from . import y\n    return y\n"}
+    assert any("f: o código mudou" in p for p in pd.comparar(antes, errado)[0])
+    certo = dict(errado, **{"core/p/m.py": "def f():\n    from .. import y\n    return y\n"})
+    assert pd.comparar(antes, certo)[0] == []
+
+
 def test_funcao_repetida_reprova():
     novo = dict(CERTO)
     novo["pkg/extra.py"] = "def area(r):\n    return math.pi * r * r\n\nimport math\n"
