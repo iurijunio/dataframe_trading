@@ -126,6 +126,40 @@ def test_toda_estrategia_e_tela_tem_regra():
             assert "tela" in _cobertas(a), a
 
 
+# Teto de tamanho: arquivo grande custa leitura a todo agente.
+
+TETO_LINHAS = 500
+# Acima do teto em 09/11/2026. Só pode diminuir: dividiu, baixe ou tire daqui.
+GRANDES = {
+    "captura.py": 1774, "core/ao_vivo.py": 895, "core/busca/motor.py": 532, "core/candidata.py": 875,
+    "core/engine/execution.py": 723, "core/optimizer.py": 870, "core/ordem_teste.py": 587, "core/ordens.py": 1769,
+    "core/papel.py": 939, "core/papel_leitura.py": 1343, "core/plano.py": 585, "core/portfolio.py": 671,
+    "core/wfa.py": 1548, "ordens_real.py": 550, "scripts/referencia_telas.py": 687, "ui/assets/busca.js": 1064,
+    "ui/assets/style.css": 2204, "ui/callbacks.py": 2924, "ui/callbacks_ao_vivo.py": 595,
+    "ui/callbacks_busca.py": 572, "ui/callbacks_candidata.py": 674, "ui/callbacks_operacao.py": 1050,
+    "ui/components/ao_vivo_panel.py": 1066, "ui/components/candidata_panel.py": 661,
+    "ui/components/operacao_panel.py": 1536, "ui/components/ordens_panel.py": 1236,
+    "ui/components/portfolio_panel.py": 511, "ui/components/wfa_panel.py": 1207,
+}
+
+
+def test_arquivo_de_codigo_respeita_o_teto():
+    # Testes ficam de fora: são lidos por trecho, perto do teste que falhou.
+    acima = {}
+    for a in _rastreados():
+        if a.endswith((".py", ".js", ".css")) and not a.startswith("tests/"):
+            n = len((RAIZ / a).read_text(encoding="utf-8").splitlines())
+            if n > GRANDES.get(a, TETO_LINHAS):
+                acima[a] = n
+    assert acima == {}, "acima do teto (ou cresceu): divida o arquivo"
+
+
+def test_lista_de_grandes_nao_tem_sobra():
+    for a, limite in GRANDES.items():
+        assert limite > TETO_LINHAS, a
+        assert (RAIZ / a).exists(), f"{a} sumiu: tire da lista"
+
+
 # Guarda (.claude/hooks/guarda.py)
 
 guarda = _modulo(RAIZ / ".claude" / "hooks" / "guarda.py")
