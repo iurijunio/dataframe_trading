@@ -369,6 +369,8 @@ def _trocas_em_testes(antes: dict[str, str], depois: dict[str, str]) -> list[str
         for outro, texto, nomes in _usos_por_apelido(caminho):
             for n, linha in enumerate(texto.splitlines(), 1):
                 for a in nomes:
+                    if re.search(rf"\b{re.escape(a)}\.__file__\b", linha):
+                        alertas.append(f"{outro}:{n} lê o texto de {a}.__file__, que agora é só a casca")
                     m = re.search(rf"setattr\(\s*{re.escape(a)}\s*,\s*['\"](\w+)['\"]", linha)
                     if m and m.group(1) in movidos:
                         alertas.append(f"{outro}:{n} troca {a}.{m.group(1)}, que não mora mais na casca")
