@@ -161,7 +161,8 @@ def test_wfa_listas_filtram_pelo_ativo(fns, sem_varredura, monkeypatch):
     assert (_valores(opts), valor) == ([1], 1)
     assert fns["wfa_mineracoes"]("rompimento_canal", None, None) == ([], None)
 
-    monkeypatch.setattr(CB, "ctx", type("C", (), {"triggered_id": "wfa-ativo"}))
+    from ui.cb_pesquisa import r_wfa_salvos  # onde wfa_guardar lê o ctx
+    monkeypatch.setattr(r_wfa_salvos, "ctx", type("C", (), {"triggered_id": "wfa-ativo"}))
     opts, _aviso, _rot = fns["wfa_guardar"](0, None, "rompimento_canal", None,
                                             "MES", "")
     assert _valores(opts) == [11]

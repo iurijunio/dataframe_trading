@@ -204,8 +204,9 @@ def test_wfa_montar_recebe_todos_os_nomes_que_usa():
     import inspect
     from pathlib import Path
 
+    # `_wfa_montar` mora na parte do Walk-Forward; `ui/callbacks.py` é só a casca
     fonte = Path(inspect.getfile(
-        __import__("ui.callbacks", fromlist=["x"]))).read_text(encoding="utf-8")
+        __import__("ui.cb_pesquisa.r_wfa", fromlist=["x"]))).read_text(encoding="utf-8")
     arvore = ast.parse(fonte)
     alvo = next(n for n in ast.walk(arvore)
                 if isinstance(n, ast.FunctionDef) and n.name == "_wfa_montar")

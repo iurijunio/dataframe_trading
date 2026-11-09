@@ -135,7 +135,7 @@ GRANDES = {
     "core/engine/execution.py": 723, "core/optimizer.py": 870, "core/ordem_teste.py": 587, "core/ordens.py": 1769,
     "core/papel.py": 939, "core/plano.py": 585, "core/portfolio.py": 671,
     "core/wfa.py": 1548, "ordens_real.py": 550, "scripts/referencia_telas.py": 687, "ui/assets/busca.js": 1064,
-    "ui/assets/style.css": 2204, "ui/callbacks.py": 2924, "ui/callbacks_ao_vivo.py": 595,
+    "ui/assets/style.css": 2204, "ui/callbacks_ao_vivo.py": 595,
     "ui/callbacks_busca.py": 572, "ui/callbacks_candidata.py": 674,
  "ui/components/candidata_panel.py": 661,
    

@@ -569,7 +569,8 @@ def test_arranque_mineracao_salva_volta_inteira(monkeypatch):
         r = _r_vazio()
         r[0] = "rompimento_canal"
         return r
-    monkeypatch.setattr(CB, "_carregar_mineracao", carregar)
+    from ui.cb_pesquisa import ativo  # onde _arranque procura _carregar_mineracao
+    monkeypatch.setattr(ativo, "_carregar_mineracao", carregar)
     MINERACAO.estado.update(rodando=False, trials=[{"x": 1}], run_id=60,
                             estrategia="rompimento_canal")
     r = _arranque()
