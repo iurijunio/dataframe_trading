@@ -138,7 +138,7 @@ GRANDES = {
     "ui/assets/style.css": 2204, "ui/callbacks.py": 2924, "ui/callbacks_ao_vivo.py": 595,
     "ui/callbacks_busca.py": 572, "ui/callbacks_candidata.py": 674, "ui/callbacks_operacao.py": 1050,
     "ui/components/ao_vivo_panel.py": 1066, "ui/components/candidata_panel.py": 661,
-    "ui/components/operacao_panel.py": 1536, "ui/components/ordens_panel.py": 1236,
+    "ui/components/ordens_panel.py": 1236,
     "ui/components/portfolio_panel.py": 511, "ui/components/wfa_panel.py": 1207,
 }
 
