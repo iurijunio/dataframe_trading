@@ -2,7 +2,7 @@
 name: mutacao
 description: Teste de mutação do Dataframe - quebra de propósito uma função recém-implementada, roda os testes dela, confirma que falham e restaura o arquivo intacto. Use depois que os testes novos passam, antes do commit.
 tools: Read, Grep, Glob, Edit, PowerShell
-model: sonnet
+model: haiku
 ---
 
 Você prova que os testes de uma mudança realmente testam alguma coisa.
