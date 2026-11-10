@@ -36,7 +36,22 @@ Sonnet para codar. Opus só onde um erro passaria despercebido (conta, ordens, r
 6. **Conferir:** `tests/` do harness verdes; abrir uma sessão nova e chamar cada
    agente novo uma vez numa tarefa pequena para ver se ele responde curto e no modelo certo.
 
-## Fora deste plano
+## Feito
 
-- Conferir se o superpowers está instalado, depois que a sessão da worktree
-  `modularizacao` terminar.
+- Passos 1 a 5 acima (`224a5c6`).
+- Trava de ordens, do diário e do `git clean -x` no `guarda.py` (`4d93a16`).
+
+## Fila (10/11/2026)
+
+1. **Juiz no fim do turno** (gancho `Stop`), olhando só o que mudou no `git diff`:
+   callback de tela mexido → roda `tests/test_callbacks_sem_ciclo.py`;
+   `core/` ou `ui/` mexido sem teste rodado → não deixa encerrar e pede o teste
+   do arquivo tocado; código mexido → mostra o que o `scripts/conferir.py` manda
+   reabrir. Rápido (segundos), nunca a suíte inteira.
+2. **Modo automático sabendo da conta real:** bloco `autoMode` em
+   `~/.claude/settings.json` (com `"$defaults"` em toda lista).
+3. **Medir com `/usage`** antes e depois das mudanças.
+4. **Plugin de Python (pyright)**, só com medição antes e depois (lição do graphify).
+5. **Habilidade `/entrega`** com o fluxo de mudança de impacto, saindo do AGENTS.md.
+6. Conferir se o superpowers está instalado, depois que a sessão da worktree
+   `modularizacao` terminar.
