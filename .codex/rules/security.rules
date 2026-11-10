@@ -1,0 +1,6 @@
+# Regras de prefixo: camada adicional; não interpretam todo PowerShell.
+prefix_rule(pattern = ["git", "clean"], decision = "forbidden", justification = "Preserve banco e alterações alheias; use caminhos explícitos e commit solicitado.")
+prefix_rule(pattern = ["git", "add", "-A"], decision = "forbidden", justification = "Preserve banco e alterações alheias; use caminhos explícitos e commit solicitado.")
+prefix_rule(pattern = ["git", "add", "."], decision = "forbidden", justification = "Preserve banco e alterações alheias; use caminhos explícitos e commit solicitado.")
+prefix_rule(pattern = ["git", "add", "--all"], decision = "forbidden", justification = "Preserve banco e alterações alheias; use caminhos explícitos e commit solicitado.")
+prefix_rule(pattern = ["git", "commit", "-a"], decision = "forbidden", justification = "Preserve banco e alterações alheias; use caminhos explícitos e commit solicitado.")

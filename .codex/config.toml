@@ -1,0 +1,13 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+model = "gpt-6.1-sol"
+model_reasoning_effort = "medium"
+developer_instructions = "Antes de trabalhar neste repositório, leia .codex/INSTRUCTIONS.md a partir da raiz Git. Esse arquivo contém o encaminhamento exclusivo do Codex; mantenha AGENTS.md compartilhado sem detalhes deste cliente."
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+default_subagent_model = "gpt-6-luna"
+default_subagent_reasoning_effort = "high"
+
+[features]
+hooks = true
