@@ -9,7 +9,8 @@ Para o WIN (sem campos novos) todas as conversoes daqui sao identidade.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from functools import lru_cache
 
 import numpy as np
@@ -116,6 +117,14 @@ def utc_para_pregao(col: pl.Expr, f: Ficha) -> pl.Expr:
     )
 
 
+def pregao_de(instante_utc: datetime, f: Ficha) -> date:
+    """Pregão em curso num instante UTC: mesma conta de `utc_para_pregao`, para um `datetime`."""
+    if instante_utc.tzinfo is None:
+        instante_utc = instante_utc.replace(tzinfo=timezone.utc)
+    local = instante_utc.astimezone(ZoneInfo(f.timezone)).replace(tzinfo=None)
+    return (local + timedelta(minutes=f.deslocamento_min)).date()
+
+
 def hora_para_exibir(ts: datetime, f: Ficha) -> datetime:
     if f.deslocamento_min == 0:
         return ts
@@ -143,6 +152,17 @@ def ficha_do_instrumento(instr: dict) -> Ficha | None:
     if "price_decimals" not in instr and "sessao_abertura" not in instr:
         return None
     return ficha_de(instr)
+
+
+def fechamento_no_motor(hhmm: str, instr: dict) -> str:
+    """O horário de fechamento do perfil (hora humana do ativo) no relógio do motor.
+
+    O papel compara o fechamento com a última barra, que está no relógio de
+    pregão: sem isto, na CME (NY + 360 min) uma operação ainda aberta saía
+    como encerrada no meio do pregão. WIN e teste não têm deslocamento.
+    """
+    f = ficha_do_instrumento(instr)
+    return hhmm if f is None else hora_para_motor(hhmm, f)
 
 
 def instrumento_para_motor(instr: dict, f: Ficha | None) -> dict:
@@ -251,3 +271,4 @@ def janela_valida(ini: str, fim: str, f: Ficha | None,
         if deslocado and c > hora_para_minuto(hora_para_motor("17:00", f)):
             return "fechamento dentro da pausa do pregão (17:00–18:00 NY)"
     return None
+

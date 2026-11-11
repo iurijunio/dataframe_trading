@@ -6,6 +6,7 @@
     py cli.py derive [--symbol]         reconstroi trading_days e rollovers
     py cli.py status [--symbol]         estado da base
     py cli.py verify [--symbol]         reconstroi do Parquet e compara
+    py cli.py exportar-pacote --portfolio <id> --saida <pasta>   pacote para o prop_live
 """
 
 from __future__ import annotations
@@ -274,6 +275,17 @@ def cmd_minas(args) -> None:
           "refazem. Para guardar uma cópia, feche o app e copie o arquivo.")
 
 
+def cmd_exportar_pacote(args) -> None:
+    """Grava `portfolio_<id>.json` (o pacote do prop_live). Só lê o banco."""
+    from core import exportar_pacote as ex
+
+    try:
+        caminho = ex.exportar(args.portfolio, Path(args.saida))
+    except ex.ExportacaoRecusada as erro:
+        sys.exit(f"pacote não exportado: {erro}")
+    print(f"pacote gravado em {caminho}")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="cli.py", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -296,6 +308,12 @@ def main() -> None:
     pm.add_argument("--limpar", action="store_true")
     pm.set_defaults(func=cmd_minas)
 
+    pe = sub.add_parser("exportar-pacote", help="grava o pacote de um portfólio para o prop_live")
+    pe.add_argument("--portfolio", type=int, required=True)
+    pe.add_argument("--saida", required=True, help="pasta onde gravar portfolio_<id>.json")
+    pe.add_argument("--dia", help="pregão AAAA-MM-DD (padrão: o pregão em curso do ativo)")
+    pe.set_defaults(func=cmd_exportar_pacote)
+
     for name, fn in (("derive", cmd_derive), ("status", cmd_status), ("verify", cmd_verify)):
         sp = sub.add_parser(name)
         sp.add_argument("--symbol", default=DEFAULT_SYMBOL)
@@ -307,3 +325,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

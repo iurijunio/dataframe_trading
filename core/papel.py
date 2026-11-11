@@ -42,7 +42,7 @@ from datetime import date, datetime, time, timedelta
 
 import numpy as np
 
-from . import codigo
+from . import ativo, codigo
 from .captura import PREFIXO_RECONFERENCIA
 from . import db_manager as db
 from . import engine
@@ -311,7 +311,7 @@ def calcular(barras: dict, dia: date, plano: dict, mod, inst: dict,
     if provisoria and n >= 2:
         ref = int(barras["ts"][n - 2].astype("datetime64[m]").astype(np.int64)
                   % 1440)
-    corte = ref < _minutes(fechamento_hhmm or perfil.fechamento)
+    corte = ref < _minutes(fechamento_hhmm or ativo.fechamento_no_motor(perfil.fechamento, inst))
     # a vela do timeframe da última barra ainda não fechou pelo relógio:
     # para o stop/alvo, só vale a vela anterior (ver `run_strategy`). Dia
     # encerrado não tem vela aberta: a última vela do pregão termina na
