@@ -118,11 +118,15 @@ def utc_para_pregao(col: pl.Expr, f: Ficha) -> pl.Expr:
 
 
 def pregao_de(instante_utc: datetime, f: Ficha) -> date:
-    """Pregão em curso num instante UTC: mesma conta de `utc_para_pregao`, para um `datetime`."""
+    """Pregão em curso num instante UTC: mesma conta de `utc_para_pregao`, para um `datetime`.
+
+    Sábado e domingo não têm pregão: o resultado vira a segunda seguinte. Feriados ficam de fora.
+    """
     if instante_utc.tzinfo is None:
         instante_utc = instante_utc.replace(tzinfo=timezone.utc)
     local = instante_utc.astimezone(ZoneInfo(f.timezone)).replace(tzinfo=None)
-    return (local + timedelta(minutes=f.deslocamento_min)).date()
+    dia = (local + timedelta(minutes=f.deslocamento_min)).date()
+    return dia + timedelta(days=(7 - dia.weekday()) if dia.weekday() >= 5 else 0)
 
 
 def hora_para_exibir(ts: datetime, f: Ficha) -> datetime:

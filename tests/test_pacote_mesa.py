@@ -24,7 +24,7 @@ def _pacote() -> pm.Pacote:
         portfolio=pm.PortfolioPacote(id=7, name="p", capital=50000.0, currency="BRL"),
         variants=(pm.VariantePacote(
             id=1, name="v", strategy="rompimento_canal", plan_id=3, symbol="WIN$N",
-            timeframe="M15", contracts=2, breaker={"nivel2.queda": 900.0},
+            timeframe="M15", contracts=2, code_hash="h" * 64, breaker={"nivel2.queda": 900.0},
             engine_plan={"plano_id": 3, "params": {"a": 1}, "contratos": 2}),),
         instrument={"symbol": "WIN$N", "currency": "BRL", "tick_size": 5, "tick_value": 1.0,
                     "point_value": 0.2, "price_decimals": 0, "pregoes_descartados": {}},
@@ -54,6 +54,36 @@ def test_versao_errada_e_recusada(tmp_path):
     destino.write_text(json.dumps(bruto), encoding="utf-8")
     with pytest.raises(pm.PacoteInvalido, match="format_version"):
         pm.ler(destino)
+
+
+def test_code_hash_vai_e_volta_no_json(tmp_path):
+    destino = tmp_path / "p.json"
+    pm.gravar(_pacote(), destino)
+    bruto = json.loads(destino.read_text(encoding="utf-8"))
+    assert bruto["variants"][0]["code_hash"] == "h" * 64
+    assert pm.ler(destino).variants[0].code_hash == "h" * 64
+
+
+def test_code_hash_e_obrigatorio_na_leitura(tmp_path):
+    bruto = pm.para_dicionario(_pacote())
+    del bruto["variants"][0]["code_hash"]
+    with pytest.raises(pm.PacoteInvalido, match="code_hash"):
+        pm.de_dicionario(bruto)
+
+
+def test_versao_diferente_e_um_pacote_invalido():
+    bruto = pm.para_dicionario(_pacote())
+    bruto["format_version"] = 2
+    with pytest.raises(pm.VersaoDiferente, match="format_version 2, esperado 1"):
+        pm.de_dicionario(bruto)
+    with pytest.raises(pm.PacoteInvalido):  # quem captura a base pega a versão também
+        pm.de_dicionario(bruto)
+
+
+def test_entrada_que_nao_e_dicionario_e_pacote_invalido_simples():
+    with pytest.raises(pm.PacoteInvalido) as erro:
+        pm.de_dicionario([1, 2])
+    assert not isinstance(erro.value, pm.VersaoDiferente)
 
 
 def test_escrita_atomica_nao_deixa_arquivo_pela_metade(tmp_path, monkeypatch):

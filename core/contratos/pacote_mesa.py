@@ -25,6 +25,10 @@ class PacoteInvalido(Exception):
     """Arquivo que não é um pacote v1 (versão diferente, campo faltando, JSON quebrado)."""
 
 
+class VersaoDiferente(PacoteInvalido):
+    """O arquivo é um dicionário, mas de outra versão do formato."""
+
+
 @dataclass(frozen=True)
 class PortfolioPacote:
     id: int
@@ -42,6 +46,7 @@ class VariantePacote:
     symbol: str
     timeframe: str
     contracts: int
+    code_hash: str  # hash do código da estratégia no disco (`codigo.hash_estrategia`)
     breaker: dict  # nome do limite -> valor numérico do disjuntor do plano
     engine_plan: dict  # o plano como `papel.calcular` o recebe, em unidade humana
 
@@ -93,6 +98,7 @@ def _variante_para_dicionario(v: VariantePacote) -> dict:
         "symbol": v.symbol,
         "timeframe": v.timeframe,
         "contracts": v.contracts,
+        "code_hash": v.code_hash,
         "breaker": dict(v.breaker),
         "engine_plan": v.engine_plan,
     }
@@ -135,9 +141,10 @@ def ler(caminho: Path) -> Pacote:
 
 
 def de_dicionario(bruto: dict) -> Pacote:
-    if not isinstance(bruto, dict) or bruto.get("format_version") != FORMATO:
-        versao = bruto.get("format_version") if isinstance(bruto, dict) else None
-        raise PacoteInvalido(f"format_version {versao!r}, esperado {FORMATO}")
+    if not isinstance(bruto, dict):
+        raise PacoteInvalido(f"format_version None, esperado {FORMATO}")
+    if bruto.get("format_version") != FORMATO:
+        raise VersaoDiferente(f"format_version {bruto.get('format_version')!r}, esperado {FORMATO}")
     try:
         return _montar(bruto)
     except (KeyError, TypeError, ValueError) as erro:
@@ -167,6 +174,7 @@ def _variante(v: dict) -> VariantePacote:
         symbol=str(v["symbol"]),
         timeframe=str(v["timeframe"]),
         contracts=int(v["contracts"]),
+        code_hash=str(v["code_hash"]),
         breaker={str(k): float(x) for k, x in v["breaker"].items()},
         engine_plan=dict(v["engine_plan"]),
     )

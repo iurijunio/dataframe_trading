@@ -13,7 +13,7 @@ import subprocess
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import ativo
+from . import ativo, codigo
 from . import db_manager as db
 from . import engine
 from . import plano as plano_db
@@ -75,6 +75,12 @@ def agora_utc() -> datetime:
     """O instante atual em UTC (os testes trocam por um instante fixo)."""
     return datetime.now(timezone.utc)
 
+
+def hoje_local() -> date:
+    """O dia do calendário do PC (os testes trocam por um dia fixo)."""
+    return date.today()
+
+
 def _portfolio_de(portfolio_id: int) -> dict:
     for p in P.listar():
         if p["portfolio_id"] == portfolio_id:
@@ -89,18 +95,35 @@ def _plano_em_vigor(membro: dict, hoje: date) -> dict:
     return plano_db.detalhes(vigor["plano_id"])
 
 
+def _hash_do_codigo(membro: dict, plano: dict, estrategia: str) -> str:
+    """Hash do código no disco; recusa se sumiu ou mudou desde o plano (como o papel faz).
+
+    Plano antigo, sem `codigo_hash`, é aceito.
+    """
+    hash_disco = codigo.hash_estrategia(estrategia)
+    if hash_disco is None:
+        raise ExportacaoRecusada(f"a variante '{membro['nome']}': código da estratégia não encontrado")
+    if plano.get("codigo_hash") and plano["codigo_hash"] != hash_disco:
+        raise ExportacaoRecusada(
+            f"a variante '{membro['nome']}': código mudou desde o plano (plano #{plano['plano_id']})"
+        )
+    return hash_disco
+
+
 def _variante(membro: dict, plano: dict) -> contrato.VariantePacote:
     timeframe = (plano.get("profile") or {}).get("timeframe")
     if not timeframe:
         raise ExportacaoRecusada(f"o plano #{plano['plano_id']} não grava o timeframe")
+    estrategia = plano["strategy"] or membro["estrategia"]
     return contrato.VariantePacote(
         id=membro["variante_id"],
         name=membro["nome"],
-        strategy=plano["strategy"] or membro["estrategia"],
+        strategy=estrategia,
         plan_id=plano["plano_id"],
         symbol=plano["symbol"],
         timeframe=timeframe,
         contracts=int(plano["contratos"]),
+        code_hash=_hash_do_codigo(membro, plano, estrategia),
         breaker=limites_do_disjuntor(plano.get("disjuntor")),
         engine_plan=plano,
     )
@@ -130,19 +153,44 @@ def _variantes_do_dia(portfolio_id: int, dia: date) -> list[contrato.VariantePac
     return [_variante(m, _plano_em_vigor(m, dia)) for m in ligados]
 
 
+def _simbolo_no_dia(portfolio_id: int, dia: date) -> str | None:
+    """O ativo do primeiro plano em vigor no dia entre as variantes ligadas, sem validar nada."""
+    for membro in P.membros(portfolio_id, dia):
+        vigor = variantes.plano_em_vigor(membro["variante_id"], dia) if membro["ligada"] else None
+        if vigor is not None:
+            return plano_db.detalhes(vigor["plano_id"])["symbol"]
+    return None
+
+
+def _simbolo_provisorio(portfolio_id: int, dia: date) -> str:
+    """Só descobre o ativo (para achar o pregão): o plano em vigor no dia ou, na falta, no próximo
+    dia útil (plano gravado na sexta, ou variante nova, só vale na segunda)."""
+    simbolo = _simbolo_no_dia(portfolio_id, dia) or _simbolo_no_dia(
+        portfolio_id, plano_db.proximo_dia_util(dia)
+    )
+    if simbolo is None:
+        _variantes_do_dia(portfolio_id, dia)  # sem ligada ou sem plano: a recusa de sempre
+        raise ExportacaoRecusada("nenhuma variante ligada tem plano em vigor")
+    return simbolo
+
+
 def _itens_do_pregao(portfolio_id: int, hoje: date | None) -> tuple[list[contrato.VariantePacote], date]:
     """Variantes com o plano em vigor no pregão e o dia desse pregão.
 
     Sem `hoje`, o pregão vem da ficha do ativo (CME vira o dia às 18:00 de NY). O ativo só se
-    conhece pelo plano, então parte do calendário local e refaz se o pregão for outro dia.
+    conhece pelo plano: acha-se o ativo sem validar, calcula-se o pregão e só nele se valida.
     """
     if hoje is not None:
         return _variantes_do_dia(portfolio_id, hoje), hoje
-    provisorio = date.today()
-    itens = _variantes_do_dia(portfolio_id, provisorio)
-    pregao = ativo.pregao_de(agora_utc(), ativo.ficha(_confere_instrumento_unico(itens)))
-    if pregao != provisorio:
-        itens = _variantes_do_dia(portfolio_id, pregao)
+    simbolo = _simbolo_provisorio(portfolio_id, hoje_local())
+    pregao = ativo.pregao_de(agora_utc(), ativo.ficha(simbolo))
+    itens = _variantes_do_dia(portfolio_id, pregao)
+    final = _confere_instrumento_unico(itens)
+    if final != simbolo:
+        raise ExportacaoRecusada(
+            f"o ativo muda de {simbolo} para {final} no pregão de {pregao:%d/%m/%Y}: "
+            "tente de novo depois da virada do plano"
+        )
     return itens, pregao
 
 
@@ -155,7 +203,7 @@ def _montar(portfolio_id: int, hoje: date | None) -> contrato.Pacote:
     ficha = db.load_instrument_yaml(simbolo)
     return contrato.Pacote(
         format_version=contrato.FORMATO,
-        exported_at=datetime.now().replace(microsecond=0),
+        exported_at=agora_utc().replace(microsecond=0),
         platform_commit=commit_da_plataforma(),
         engine_version=engine.VERSAO,
         portfolio=contrato.PortfolioPacote(

@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import sys
 import subprocess
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core import codigo  # noqa: E402
 from core import db_manager as db  # noqa: E402
 from core import exportar_pacote as ex  # noqa: E402
 from core import plano, variantes  # noqa: E402
@@ -218,6 +219,57 @@ def test_pregao_do_win_e_o_dia_corrente(banco, monkeypatch):
 def test_dia_explicito_vira_o_session_date(banco):
     vid, _ = _variante_com_plano(1)
     assert ex.montar_pacote(_portfolio(vid), hoje=HOJE).session_date == HOJE
+
+
+def _grava_hash_no_plano(pid, valor):
+    with db.connect_write() as con:
+        con.execute("UPDATE planos_operacao SET codigo_hash = ? WHERE plano_id = ?", [valor, pid])
+
+
+def test_hash_do_plano_diferente_do_disco_e_recusado(banco):
+    vid, pid = _variante_com_plano(1, nome="vv")
+    _grava_hash_no_plano(pid, "antigo")
+    with pytest.raises(ex.ExportacaoRecusada) as erro:
+        ex.montar_pacote(_portfolio(vid), hoje=HOJE)
+    assert str(erro.value) == f"a variante 'vv': código mudou desde o plano (plano #{pid})"
+
+
+def test_estrategia_sem_arquivo_e_recusada(banco, monkeypatch):
+    vid, _ = _variante_com_plano(1, nome="vv")
+    monkeypatch.setattr(codigo, "hash_estrategia", lambda _estrategia: None)
+    with pytest.raises(ex.ExportacaoRecusada) as erro:
+        ex.montar_pacote(_portfolio(vid), hoje=HOJE)
+    assert str(erro.value) == "a variante 'vv': código da estratégia não encontrado"
+
+
+def test_plano_sem_hash_e_aceito_e_o_pacote_leva_o_hash_do_disco(banco):
+    vid, pid = _variante_com_plano(1)
+    assert plano.detalhes(pid)["codigo_hash"] is None
+    v = ex.montar_pacote(_portfolio(vid), hoje=HOJE).variants[0]
+    assert v.code_hash == codigo.hash_estrategia("rompimento_canal")
+
+
+def test_plano_com_hash_igual_ao_disco_e_aceito(banco):
+    vid, pid = _variante_com_plano(1)
+    _grava_hash_no_plano(pid, codigo.hash_estrategia("rompimento_canal"))
+    v = ex.montar_pacote(_portfolio(vid), hoje=HOJE).variants[0]
+    assert v.code_hash == codigo.hash_estrategia("rompimento_canal")
+
+
+def test_code_hash_sobrevive_a_gravar_e_ler(banco, tmp_path):
+    vid, _ = _variante_com_plano(1)
+    caminho = ex.exportar(_portfolio(vid), tmp_path, hoje=HOJE)
+    lido = pm.ler(caminho).variants[0]
+    assert lido.code_hash == codigo.hash_estrategia("rompimento_canal")
+
+
+def test_exported_at_e_utc_com_fuso(banco, monkeypatch):
+    vid, _ = _variante_com_plano(1)
+    instante = datetime(2026, 11, 11, 12, 30, 15, 999, tzinfo=timezone.utc)
+    monkeypatch.setattr(ex, "agora_utc", lambda: instante)
+    exportado = ex.montar_pacote(_portfolio(vid), hoje=HOJE).exported_at
+    assert exportado == datetime(2026, 11, 11, 12, 30, 15, tzinfo=timezone.utc)
+    assert exportado.utcoffset() == timedelta(0)
 
 
 def test_ativo_sem_yaml_e_recusado(banco):
