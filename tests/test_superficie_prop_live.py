@@ -30,6 +30,7 @@ ASSINATURAS = {
     ("core.ativo", "hora_para_motor"): ["hhmm", "f"],
     ("core.importar_lse", "preparar"): ["df", "f"],
     ("strategies.registry", "carregar"): ["nome"],
+    ("core.codigo", "hash_estrategia"): ["estrategia", "pasta"],
 }
 
 
@@ -44,3 +45,24 @@ def test_constantes_existem():
 
     assert papel.FECHAMENTO_DIA_ENCERRADO == "00:00", AVISO
     assert isinstance(engine.VERSAO, str) and engine.VERSAO, AVISO
+
+
+def test_hash_estrategia_devolve_hex_ou_none(tmp_path):
+    """A ponte compara o hash da worktree fixa com o `code_hash` do pacote."""
+    from core import codigo
+
+    (tmp_path / "base.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "minha.py").write_text("y = 2\n", encoding="utf-8")
+    h = codigo.hash_estrategia("minha", tmp_path)
+    assert isinstance(h, str) and len(h) == 64 and int(h, 16) >= 0, AVISO
+    assert codigo.hash_estrategia("nao_existe", tmp_path) is None, AVISO
+
+
+def test_contrato_do_pacote():
+    import dataclasses
+
+    from core.contratos import pacote_mesa
+
+    assert issubclass(pacote_mesa.VersaoDiferente, pacote_mesa.PacoteInvalido), AVISO
+    campos = {c.name for c in dataclasses.fields(pacote_mesa.VariantePacote)}
+    assert "code_hash" in campos, AVISO
