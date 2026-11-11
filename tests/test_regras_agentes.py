@@ -237,11 +237,6 @@ def test_guarda_recusa_leitura_inteira_so_de_arquivo_grande():
     "Start-Process ordens_real.bat",
     "start iniciar.bat",
     "cd x; call captura.bat",
-    'python -c "import MetaTrader5 as mt5; mt5.initialize()"',
-    "python -c \"from core.ordem_teste import enviar; enviar()\"",
-    "python - <<'EOF'\nimport core.ordens\nEOF",
-    "python -c \"from core import corretora\"",
-    "python -c \"x.order_send(req)\"",
 ])
 def test_guarda_recusa_o_que_pode_operar_a_conta(comando):
     for shell in ("Bash", "PowerShell"):
@@ -258,6 +253,9 @@ def test_guarda_recusa_o_que_pode_operar_a_conta(comando):
     "Get-Content iniciar.bat",
     "python -m py_compile captura.py",
     "python -c \"import duckdb\"",
+    # A trava por menção ao MT5 saiu a pedido do usuário (09/11/2026): barrava análise só de leitura.
+    "python -c \"from core import corretora\"",
+    "python - <<'EOF'\nimport core.ordens\nEOF",
 ])
 def test_guarda_libera_testes_e_leitura_do_codigo_de_ordens(comando):
     assert guarda.decidir("Bash", {"command": comando}, aberto=FECHADO) is None, comando
@@ -300,22 +298,11 @@ def test_guarda_recusa_editar_o_diario_pela_ferramenta(ferramenta):
         assert guarda.decidir(ferramenta, {"file_path": caminho}, aberto=FECHADO)
 
 
-def test_guarda_recusa_script_avulso_que_envia_ordem():
-    fora = str(Path("C:/Temp/claude/scratch/envia.py"))
-    assert guarda.decidir("Write", {"file_path": fora, "content": "mt5.order_send(req)"}, aberto=FECHADO)
-    assert guarda.decidir("Write", {"file_path": fora, "content": "import MetaTrader5"}, aberto=FECHADO)
-    assert guarda.decidir("Edit", {"file_path": fora, "new_string": "order_send(x)"}, aberto=FECHADO)
-    dentro = str(RAIZ / "core" / "ordens.py")
-    assert guarda.decidir("Edit", {"file_path": dentro, "new_string": "res = mt5.order_send(req)"},
-                          aberto=FECHADO) is None
-    assert guarda.decidir("Write", {"file_path": fora, "content": "print(1)"}, aberto=FECHADO) is None
-    # documento que só cita a função, e o próprio guarda, não são script que envia
-    regra = str(RAIZ / ".claude" / "rules" / "ordens.md")
-    assert guarda.decidir("Edit", {"file_path": regra, "new_string": "`order_send`"}, aberto=FECHADO) is None
-    proprio = str(RAIZ / ".claude" / "hooks" / "guarda.py")
-    assert guarda.decidir("Edit", {"file_path": proprio, "new_string": "order_send"}, aberto=FECHADO) is None
-    assert guarda.decidir("Write", {"file_path": str(RAIZ / "scripts" / "x.py"), "content": "order_send"},
-                          aberto=FECHADO)
+def test_guarda_nao_julga_script_pelo_texto():
+    # Saiu a pedido do usuário (09/11/2026): procurar nomes do MT5 no texto barrava análise só de leitura.
+    fora = str(Path("C:/Temp/claude/scratch/analise.py"))
+    for texto in ("mt5.order_send(req)", "import MetaTrader5", "from core import ordens"):
+        assert guarda.decidir("Write", {"file_path": fora, "content": texto}, aberto=FECHADO) is None
 
 
 # Formas comuns de escapar que a revisão achou na primeira versão da trava.
@@ -324,8 +311,6 @@ def test_guarda_recusa_script_avulso_que_envia_ordem():
     ".venv/Scripts/python.exe -X utf8 captura.py", "python -W ignore ordens_real.py",
     "Start-Process python ordens_real.py", "Start-Process .venv\\Scripts\\python.exe -ArgumentList ordens_real.py",
     "cmd /c start iniciar.bat", "cmd /c iniciar", "Invoke-Item iniciar.bat",
-    # `Get-Content x.py | python` não dá para julgar pelo comando: quem segura é a trava do Write de x.py
-    "echo 'import MetaTrader5' | python", "echo 'from core import corretora' | .venv/Scripts/python.exe",
 ])
 def test_guarda_recusa_outras_formas_de_operar(comando):
     assert guarda.decidir("PowerShell", {"command": comando}, aberto=FECHADO), comando
@@ -351,18 +336,15 @@ def test_guarda_nao_trava_leitura_que_parece_escrita(comando):
     assert guarda.decidir("PowerShell", {"command": comando}, aberto=FECHADO) is None, comando
 
 
-@pytest.mark.parametrize("conteudo", [
-    "from core import ordens; ordens.enviar()", "from core.ordem_teste import rodar", "import core.corretora as K",
-    "import os; os.remove('data/ao_vivo/ordens/x.jsonl')",
-])
-def test_guarda_recusa_script_avulso_que_usa_o_codigo_de_ordens(conteudo):
+def test_guarda_recusa_script_avulso_que_apaga_o_diario():
+    conteudo = "import os; os.remove('data/ao_vivo/ordens/x.jsonl')"
     assert guarda.decidir("Write", {"file_path": "C:/Temp/s/x.py", "content": conteudo}, aberto=FECHADO)
     assert guarda.decidir("Write", {"file_path": "C:/Temp/s/x.sh", "content": conteudo}, aberto=FECHADO)
 
 
 def test_guarda_olha_multiedit_e_comando_vazio():
     assert guarda.decidir("MultiEdit", {"file_path": "data/ao_vivo/ordens/x.jsonl", "edits": []})
-    assert guarda.decidir("MultiEdit", {"file_path": "C:/Temp/x.py", "edits": [{"new_string": "order_send(r)"}]})
+    assert guarda.decidir("MultiEdit", {"file_path": "C:/Temp/x.py", "edits": [{"new_string": "order_send(r)"}]}) is None
     assert guarda.decidir("Bash", {"command": None}, aberto=FECHADO) is None
 
 

@@ -85,6 +85,8 @@ de layout; documentação exige validar instruções, não a suíte de produçã
 
 ## Regras do código
 
+- **Arquivo pequeno (≤ 500 linhas, mire 150–300), função atômica, pasta por
+  assunto** — em todo código novo ou tocado: `.claude/rules/codigo-pequeno.md`.
 - Código, nomes, comentários e textos de tela em **português**.
 - Comentário explica **por quê**; referência: `core/wfa.py`.
 - **Nada em `core/` importa Dash.** `core/` são contas; `ui/` liga a tela.
@@ -142,6 +144,7 @@ Referências existentes do projeto:
 | MES/MNQ, escala, unidades | `.claude/rules/cme.md` |
 | Portfólio | `.claude/rules/portfolio.md` |
 | qualquer tela | `.claude/rules/tela.md` |
+| qualquer código | `.claude/rules/codigo-pequeno.md` |
 
 Para retomar entrega, ver pendências ou saber qual documento confiar:
 `docs/agentes/estado.md`. Mapa dos arquivos: `docs/agentes/arquitetura.md`.

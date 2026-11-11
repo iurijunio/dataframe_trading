@@ -32,8 +32,6 @@ LANCADOR = re.compile(r"(&\s*)?[\"']?(\S*[/\\])?(python\w*(\.exe)?|py(\.exe)?|cm
 SO_TESTA = re.compile(r"\b(pytest|py_compile|conferir\.py)\b", re.I)
 PYTHON_AVULSO = re.compile(r"(python\w*|py)(\.exe)?[\"']?\s+(-\S+\s+)*(-c\b|-(\s|$)|<<)"
                            r"|\|\s*[\"']?(\S*[/\\])?python\w*(\.exe)?[\"']?\s*($|[;&|\n])", re.I)
-FALA_COM_MT5 = re.compile(r"\b(order_send|MetaTrader5|ordem_teste|ordens_real|corretora)\b|core[./\\]ordens\b"
-                          r"|from\s+core\s+import\s+[^\n]*\bordens\b")
 
 # É do diário (não do banco) que a captura relê "já enviei a entrada X" e "conta
 # travada hoje": perder uma linha pode reenviar uma ordem ou destravar a conta.
@@ -91,19 +89,15 @@ def decidir(ferramenta: str, entrada: dict, aberto=app_aberto, linhas=_linhas) -
         partes += [e.get("new_string") for e in entrada.get("edits") or [] if isinstance(e, dict)]
         texto = " ".join(str(x) for x in partes if x)
         executavel = Path(caminho).suffix.lower() in {".py", ".pyw", ".ipynb", ".bat", ".cmd", ".ps1", ".sh"}
-        if executavel and not _pode_ter_mt5(caminho):
-            if FALA_COM_MT5.search(texto):
-                return OPERA
-            if PASTA_DIARIO.search(texto) and PY_DESTROI.search(texto):
-                return DIARIO
+        # Procurar nomes do MT5 no texto barrava análise só de leitura (09/11/2026, pedido do
+        # usuário): a trava ficou só no que lança o serviço e no que apaga o diário.
+        if executavel and not _pode_ter_mt5(caminho) and PASTA_DIARIO.search(texto) and PY_DESTROI.search(texto):
+            return DIARIO
         return None
     if ferramenta in SHELL:
         comando = entrada.get("command") or ""
-        if PYTHON_AVULSO.search(comando):
-            if FALA_COM_MT5.search(comando):
-                return OPERA
-            if PASTA_DIARIO.search(comando) and PY_DESTROI.search(comando):
-                return DIARIO
+        if PYTHON_AVULSO.search(comando) and PASTA_DIARIO.search(comando) and PY_DESTROI.search(comando):
+            return DIARIO
         trechos = [t.strip() for t in re.split(r"[;&|\n]+", comando)]
         # pipe e cd separam o caminho do verbo (`ls ordens | Remove-Item`, `cd ordens; rm *`)
         if PASTA_DIARIO.search(comando) and (any(DESTROI.match(t) for t in trechos) or REDIRECIONA.search(comando)):

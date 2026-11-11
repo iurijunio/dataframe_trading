@@ -74,9 +74,7 @@ class Harness(unittest.TestCase):
 
     def test_servicos_e_mt5_bloqueados_sem_executar(self):
         for comando in ['python captura.py', 'cmd /c iniciar.bat',
-                        '.venv/Scripts/python.exe ordens_real.py',
-                        'python -c "import MetaTrader5"', 'py -c "import MetaTrader5"',
-                        'py.exe -c "import MetaTrader5"', 'git clean -fdx']:
+                        '.venv/Scripts/python.exe ordens_real.py', 'git clean -fdx']:
             with self.subTest(comando=comando):
                 self.assertTrue(guarda.avaliar_evento({'tool_name': 'Bash', 'tool_input': {'command': comando}}, aberto=lambda: False))
 
@@ -97,9 +95,10 @@ class Harness(unittest.TestCase):
         patch = '*** Update File: tests/test_x.py\n+CAMINHO = "data/ao_vivo/ordens/dia.jsonl"\n'
         self.assertIsNone(guarda.avaliar_evento({'tool_name': 'apply_patch', 'tool_input': {'command': patch}}))
 
-    def test_patch_script_mt5_fora_do_core_bloqueado(self):
+    def test_patch_script_mt5_fora_do_core_liberado(self):
+        # A trava por menção ao MT5 saiu a pedido do usuário: atrapalhava análise só de leitura.
         patch = '*** Add File: scripts/avulso.py\n+import MetaTrader5\n'
-        self.assertTrue(guarda.avaliar_evento({'tool_name': 'apply_patch', 'tool_input': {'command': patch}}))
+        self.assertIsNone(guarda.avaliar_evento({'tool_name': 'apply_patch', 'tool_input': {'command': patch}}))
 
     def test_app_duplicado(self):
         evento = {'tool_name': 'Bash', 'tool_input': {'command': '.venv/Scripts/python.exe ui/app.py'}}

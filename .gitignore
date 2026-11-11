@@ -1,4 +1,5 @@
 .venv/
+.env.lse.local
 __pycache__/
 *.pyc
 data/database.duckdb
@@ -15,3 +16,5 @@ data/buscas.duckdb
 data/buscas.duckdb.wal
 data/buscas/
 ativos_temp/
+# anotações de trabalho temporárias (ex.: lista de más práticas a arrumar)
+temp/
