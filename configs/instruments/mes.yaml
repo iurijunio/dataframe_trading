@@ -97,5 +97,7 @@ faixas:
     filtro_amplitude: {valor: 0, de: 0, passo: 2, ate: 80}
   rompimento_ema_abertura:
     distancia_abertura: {valor: 0, de: 0, passo: 2, ate: 80}
+  tendencia_medias_abertura:
+    distancia_pontos: {valor: 20, de: 0, passo: 2, ate: 80}
   adx_direcao:
     amplitude_max: {valor: 25, de: 5, passo: 5, ate: 80}

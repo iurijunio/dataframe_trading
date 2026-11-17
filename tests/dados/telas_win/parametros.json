@@ -9074,6 +9074,1310 @@
    "type": "Div"
   }
  ],
+ "campos.tendencia_medias_abertura": [
+  {
+   "ns": "dash_html_components",
+   "props": {
+    "children": [
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": "Período da média exponencial rápida",
+          "className": "fld-label"
+         },
+         "type": "Label"
+        },
+        {
+         "ns": "dash_core_components",
+         "props": {
+          "className": "opt-toggle",
+          "id": {
+           "p": "ema_rapida",
+           "type": "opt-on"
+          },
+          "options": [
+           {
+            "label": "minerar",
+            "value": "on"
+           }
+          ],
+          "value": []
+         },
+         "type": "Checklist"
+        }
+       ],
+       "className": "fld-top"
+      },
+      "type": "Div"
+     },
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": {
+        "ns": "dash_core_components",
+        "props": {
+         "className": "inp",
+         "debounce": true,
+         "id": {
+          "p": "ema_rapida",
+          "type": "val"
+         },
+         "min": 2,
+         "step": 1,
+         "type": "number",
+         "value": 9
+        },
+        "type": "Input"
+       },
+       "id": {
+        "p": "ema_rapida",
+        "type": "valwrap"
+       }
+      },
+      "type": "Div"
+     },
+     null,
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "de",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "de",
+              "p": "ema_rapida",
+              "type": "opt"
+             },
+             "min": 2,
+             "step": 1,
+             "type": "number",
+             "value": 2
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "passo",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "passo",
+              "p": "ema_rapida",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 1
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "até",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "ate",
+              "p": "ema_rapida",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 27
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        }
+       ],
+       "className": "opt",
+       "id": {
+        "p": "ema_rapida",
+        "type": "optrow"
+       },
+       "style": {
+        "display": "none"
+       }
+      },
+      "type": "Div"
+     }
+    ],
+    "className": "fld"
+   },
+   "type": "Div"
+  },
+  {
+   "ns": "dash_html_components",
+   "props": {
+    "children": [
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": "Período da média exponencial intermediária",
+          "className": "fld-label"
+         },
+         "type": "Label"
+        },
+        {
+         "ns": "dash_core_components",
+         "props": {
+          "className": "opt-toggle",
+          "id": {
+           "p": "ema_intermediaria",
+           "type": "opt-on"
+          },
+          "options": [
+           {
+            "label": "minerar",
+            "value": "on"
+           }
+          ],
+          "value": []
+         },
+         "type": "Checklist"
+        }
+       ],
+       "className": "fld-top"
+      },
+      "type": "Div"
+     },
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": {
+        "ns": "dash_core_components",
+        "props": {
+         "className": "inp",
+         "debounce": true,
+         "id": {
+          "p": "ema_intermediaria",
+          "type": "val"
+         },
+         "min": 2,
+         "step": 1,
+         "type": "number",
+         "value": 21
+        },
+        "type": "Input"
+       },
+       "id": {
+        "p": "ema_intermediaria",
+        "type": "valwrap"
+       }
+      },
+      "type": "Div"
+     },
+     null,
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "de",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "de",
+              "p": "ema_intermediaria",
+              "type": "opt"
+             },
+             "min": 2,
+             "step": 1,
+             "type": "number",
+             "value": 2
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "passo",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "passo",
+              "p": "ema_intermediaria",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 1
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "até",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "ate",
+              "p": "ema_intermediaria",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 63
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        }
+       ],
+       "className": "opt",
+       "id": {
+        "p": "ema_intermediaria",
+        "type": "optrow"
+       },
+       "style": {
+        "display": "none"
+       }
+      },
+      "type": "Div"
+     }
+    ],
+    "className": "fld"
+   },
+   "type": "Div"
+  },
+  {
+   "ns": "dash_html_components",
+   "props": {
+    "children": [
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": "Período da média exponencial longa",
+          "className": "fld-label"
+         },
+         "type": "Label"
+        },
+        {
+         "ns": "dash_core_components",
+         "props": {
+          "className": "opt-toggle",
+          "id": {
+           "p": "ema_lenta",
+           "type": "opt-on"
+          },
+          "options": [
+           {
+            "label": "minerar",
+            "value": "on"
+           }
+          ],
+          "value": []
+         },
+         "type": "Checklist"
+        }
+       ],
+       "className": "fld-top"
+      },
+      "type": "Div"
+     },
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": {
+        "ns": "dash_core_components",
+        "props": {
+         "className": "inp",
+         "debounce": true,
+         "id": {
+          "p": "ema_lenta",
+          "type": "val"
+         },
+         "min": 2,
+         "step": 1,
+         "type": "number",
+         "value": 50
+        },
+        "type": "Input"
+       },
+       "id": {
+        "p": "ema_lenta",
+        "type": "valwrap"
+       }
+      },
+      "type": "Div"
+     },
+     null,
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "de",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "de",
+              "p": "ema_lenta",
+              "type": "opt"
+             },
+             "min": 2,
+             "step": 1,
+             "type": "number",
+             "value": 2
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "passo",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "passo",
+              "p": "ema_lenta",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 1
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "até",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "ate",
+              "p": "ema_lenta",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 150
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        }
+       ],
+       "className": "opt",
+       "id": {
+        "p": "ema_lenta",
+        "type": "optrow"
+       },
+       "style": {
+        "display": "none"
+       }
+      },
+      "type": "Div"
+     }
+    ],
+    "className": "fld"
+   },
+   "type": "Div"
+  },
+  {
+   "ns": "dash_html_components",
+   "props": {
+    "children": [
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": "Unidade da distância · 0 pontos · 1 % da abertura",
+          "className": "fld-label"
+         },
+         "type": "Label"
+        },
+        {
+         "ns": "dash_core_components",
+         "props": {
+          "className": "opt-toggle",
+          "id": {
+           "p": "unidade_distancia",
+           "type": "opt-on"
+          },
+          "options": [
+           {
+            "label": "minerar",
+            "value": "on"
+           }
+          ],
+          "value": []
+         },
+         "type": "Checklist"
+        }
+       ],
+       "className": "fld-top"
+      },
+      "type": "Div"
+     },
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": {
+        "ns": "dash_core_components",
+        "props": {
+         "className": "inp",
+         "debounce": true,
+         "id": {
+          "p": "unidade_distancia",
+          "type": "val"
+         },
+         "min": 0,
+         "step": 1,
+         "type": "number",
+         "value": 0
+        },
+        "type": "Input"
+       },
+       "id": {
+        "p": "unidade_distancia",
+        "type": "valwrap"
+       }
+      },
+      "type": "Div"
+     },
+     null,
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "de",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "de",
+              "p": "unidade_distancia",
+              "type": "opt"
+             },
+             "min": 0,
+             "step": 1,
+             "type": "number",
+             "value": 0
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "passo",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "passo",
+              "p": "unidade_distancia",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 1
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "até",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "ate",
+              "p": "unidade_distancia",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 1
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        }
+       ],
+       "className": "opt",
+       "id": {
+        "p": "unidade_distancia",
+        "type": "optrow"
+       },
+       "style": {
+        "display": "none"
+       }
+      },
+      "type": "Div"
+     }
+    ],
+    "className": "fld"
+   },
+   "type": "Div"
+  },
+  {
+   "ns": "dash_html_components",
+   "props": {
+    "children": [
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": "Distância mínima da abertura (pontos; vale com unidade 0)",
+          "className": "fld-label"
+         },
+         "type": "Label"
+        },
+        {
+         "ns": "dash_core_components",
+         "props": {
+          "className": "opt-toggle",
+          "id": {
+           "p": "distancia_pontos",
+           "type": "opt-on"
+          },
+          "options": [
+           {
+            "label": "minerar",
+            "value": "on"
+           }
+          ],
+          "value": []
+         },
+         "type": "Checklist"
+        }
+       ],
+       "className": "fld-top"
+      },
+      "type": "Div"
+     },
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": {
+        "ns": "dash_core_components",
+        "props": {
+         "className": "inp",
+         "debounce": true,
+         "id": {
+          "p": "distancia_pontos",
+          "type": "val"
+         },
+         "min": 0,
+         "step": 50,
+         "type": "number",
+         "value": 300
+        },
+        "type": "Input"
+       },
+       "id": {
+        "p": "distancia_pontos",
+        "type": "valwrap"
+       }
+      },
+      "type": "Div"
+     },
+     null,
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "de",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "de",
+              "p": "distancia_pontos",
+              "type": "opt"
+             },
+             "min": 0,
+             "step": 50,
+             "type": "number",
+             "value": 0
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "passo",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "passo",
+              "p": "distancia_pontos",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 50,
+             "type": "number",
+             "value": 50
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "até",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "ate",
+              "p": "distancia_pontos",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 50,
+             "type": "number",
+             "value": 900
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        }
+       ],
+       "className": "opt",
+       "id": {
+        "p": "distancia_pontos",
+        "type": "optrow"
+       },
+       "style": {
+        "display": "none"
+       }
+      },
+      "type": "Div"
+     }
+    ],
+    "className": "fld"
+   },
+   "type": "Div"
+  },
+  {
+   "ns": "dash_html_components",
+   "props": {
+    "children": [
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": "Distância mínima da abertura (centésimos de %: 20 = 0,20%; vale com unidade 1)",
+          "className": "fld-label"
+         },
+         "type": "Label"
+        },
+        {
+         "ns": "dash_core_components",
+         "props": {
+          "className": "opt-toggle",
+          "id": {
+           "p": "distancia_centesimos_pct",
+           "type": "opt-on"
+          },
+          "options": [
+           {
+            "label": "minerar",
+            "value": "on"
+           }
+          ],
+          "value": []
+         },
+         "type": "Checklist"
+        }
+       ],
+       "className": "fld-top"
+      },
+      "type": "Div"
+     },
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": {
+        "ns": "dash_core_components",
+        "props": {
+         "className": "inp",
+         "debounce": true,
+         "id": {
+          "p": "distancia_centesimos_pct",
+          "type": "val"
+         },
+         "min": 0,
+         "step": 5,
+         "type": "number",
+         "value": 20
+        },
+        "type": "Input"
+       },
+       "id": {
+        "p": "distancia_centesimos_pct",
+        "type": "valwrap"
+       }
+      },
+      "type": "Div"
+     },
+     null,
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "de",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "de",
+              "p": "distancia_centesimos_pct",
+              "type": "opt"
+             },
+             "min": 0,
+             "step": 5,
+             "type": "number",
+             "value": 0
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "passo",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "passo",
+              "p": "distancia_centesimos_pct",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 5,
+             "type": "number",
+             "value": 5
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "até",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "ate",
+              "p": "distancia_centesimos_pct",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 5,
+             "type": "number",
+             "value": 60
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        }
+       ],
+       "className": "opt",
+       "id": {
+        "p": "distancia_centesimos_pct",
+        "type": "optrow"
+       },
+       "style": {
+        "display": "none"
+       }
+      },
+      "type": "Div"
+     }
+    ],
+    "className": "fld"
+   },
+   "type": "Div"
+  },
+  {
+   "ns": "dash_html_components",
+   "props": {
+    "children": [
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": "Saída · 0 sinal contrário · 1 não sai · 2 vira a mão",
+          "className": "fld-label"
+         },
+         "type": "Label"
+        },
+        {
+         "ns": "dash_core_components",
+         "props": {
+          "className": "opt-toggle",
+          "id": {
+           "p": "saida",
+           "type": "opt-on"
+          },
+          "options": [
+           {
+            "label": "minerar",
+            "value": "on"
+           }
+          ],
+          "value": []
+         },
+         "type": "Checklist"
+        }
+       ],
+       "className": "fld-top"
+      },
+      "type": "Div"
+     },
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": {
+        "ns": "dash_core_components",
+        "props": {
+         "className": "inp",
+         "debounce": true,
+         "id": {
+          "p": "saida",
+          "type": "val"
+         },
+         "min": 0,
+         "step": 1,
+         "type": "number",
+         "value": 1
+        },
+        "type": "Input"
+       },
+       "id": {
+        "p": "saida",
+        "type": "valwrap"
+       }
+      },
+      "type": "Div"
+     },
+     null,
+     {
+      "ns": "dash_html_components",
+      "props": {
+       "children": [
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "de",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "de",
+              "p": "saida",
+              "type": "opt"
+             },
+             "min": 0,
+             "step": 1,
+             "type": "number",
+             "value": 0
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "passo",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "passo",
+              "p": "saida",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 1
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        },
+        {
+         "ns": "dash_html_components",
+         "props": {
+          "children": [
+           {
+            "ns": "dash_html_components",
+            "props": {
+             "children": "até",
+             "className": "opt-k"
+            },
+            "type": "Span"
+           },
+           {
+            "ns": "dash_core_components",
+            "props": {
+             "className": "inp",
+             "debounce": true,
+             "id": {
+              "k": "ate",
+              "p": "saida",
+              "type": "opt"
+             },
+             "min": null,
+             "step": 1,
+             "type": "number",
+             "value": 2
+            },
+            "type": "Input"
+           }
+          ]
+         },
+         "type": "Div"
+        }
+       ],
+       "className": "opt",
+       "id": {
+        "p": "saida",
+        "type": "optrow"
+       },
+       "style": {
+        "display": "none"
+       }
+      },
+      "type": "Div"
+     }
+    ],
+    "className": "fld"
+   },
+   "type": "Div"
+  }
+ ],
  "campos_com_faixas.rompimento_canal": [
   {
    "ns": "dash_html_components",
