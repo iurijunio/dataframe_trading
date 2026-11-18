@@ -15,7 +15,7 @@ import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
 from core import candidata, wfa  # noqa: E402
-from scripts import referencia_telas as R  # noqa: E402
+from scripts import screens_reference as R  # noqa: E402
 from ui import callbacks_candidata as CC  # noqa: E402
 from ui.components import candidata_panel as CP  # noqa: E402
 from ui.components import ficha as FI  # noqa: E402

@@ -6,14 +6,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guarda.py\"",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/new_file_notice.py\"",
             "timeout": 5
           }
         ]
       }
     ]
-  },
-  "env": {
-    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   }
 }

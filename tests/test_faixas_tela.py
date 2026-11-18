@@ -20,7 +20,7 @@ from dash import ALL, no_update  # noqa: E402
 from core import ativo as ativo_mod  # noqa: E402
 from core import optimizer  # noqa: E402
 from core.optimizer import MINERACAO  # noqa: E402
-from scripts import referencia_telas as R  # noqa: E402
+from scripts import screens_reference as R  # noqa: E402
 from strategies import registry  # noqa: E402
 from ui import callbacks as CB  # noqa: E402
 from ui.components import controls  # noqa: E402

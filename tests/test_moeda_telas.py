@@ -16,7 +16,7 @@ import pytest  # noqa: E402
 from core import analytics, detalhes, porteira, robustez  # noqa: E402
 from core import ativo as ativo_mod  # noqa: E402
 from core.engine import kernel as K  # noqa: E402
-from scripts import referencia_telas as R  # noqa: E402
+from scripts import screens_reference as R  # noqa: E402
 from ui import callbacks  # noqa: E402
 from ui.components import analytics_charts as AC  # noqa: E402
 from ui.components import detalhes_cards as DC  # noqa: E402

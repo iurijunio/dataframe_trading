@@ -13,7 +13,7 @@ import numpy as np  # noqa: E402
 
 from core import analytics, optimizer, porteira  # noqa: E402
 from core import mineracao_stats as MS  # noqa: E402
-from scripts import referencia_telas as R  # noqa: E402
+from scripts import screens_reference as R  # noqa: E402
 from ui import callbacks  # noqa: E402
 from ui.components import mine_charts as MC  # noqa: E402
 from ui.components import mine_porteira as MP  # noqa: E402

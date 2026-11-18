@@ -1,7 +1,7 @@
 """As telas do WIN continuam escrevendo exatamente o que escreviam.
 
-`scripts/referencia_telas.py gravar` foi rodado antes de a moeda entrar nas
-funções de tela; `conferir` compara o que elas devolvem agora com o gravado em
+`scripts/screens_reference.py record` foi rodado antes de a moeda entrar nas
+funções de tela; `check` compares o que elas devolvem agora com o gravado em
 `tests/dados/telas_win/`. Se um texto, um número ou o JSON de uma figura do WIN
 mudar, este teste mostra qual.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts import referencia_telas as R  # noqa: E402
+from scripts import screens_reference as R  # noqa: E402
 
 
 def test_telas_do_win_identicas_a_referencia():
@@ -40,4 +40,4 @@ def test_conferir_acusa_a_diferenca(tmp_path, monkeypatch):
 
 def test_conferir_acusa_referencia_ausente(tmp_path, monkeypatch):
     monkeypatch.setattr(R, "PASTA", tmp_path / "vazia")
-    assert all("sem referência" in d for d in R.conferir())
+    assert all("no recorded reference" in d for d in R.conferir())
