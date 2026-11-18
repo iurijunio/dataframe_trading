@@ -5,7 +5,7 @@ Toda mudança de estado grava o evento do diário NA MESMA transação.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
 import statistics
@@ -415,13 +415,6 @@ def vincular_plano(run_id, variante_id, manter_plano_id=None,
 
 # ------------------------------------------------ quem roda, e por quê
 _FASE_CONTA = {"demo": "demo", "real_minimo": "real", "real": "real"}
-
-
-def _dias_uteis(de: date, ate: date) -> int:
-    if de is None or de > ate:
-        return 0
-    return sum(1 for i in range((ate - de).days + 1)
-               if (de + timedelta(days=i)).weekday() < 5)
 
 
 def _motivo(pf_ligado, ligada, desligada_por, desligada_em, plano_vigor,

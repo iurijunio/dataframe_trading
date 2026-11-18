@@ -136,14 +136,6 @@ def _busca_da_tela(sel, estrategia, simbolo):
 
 
 # ------------------------------------------------------------ espaço
-def _faixa_txt(f, casas=None) -> str:
-    def n(v):
-        if isinstance(v, float) and casas is not None:
-            return f"{v:.{casas}f}".replace(".", ",")
-        return str(v).replace(".", ",")
-    return f"{n(f['de'])} a {n(f['ate'])}"
-
-
 def _itens_espaco(estrategia: str, simbolo: str, faixas: dict,
                   com_extras: bool = True) -> list[dict]:
     """O catálogo na forma que a aba Espaço de busca desenha (desenho §6:

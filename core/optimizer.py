@@ -650,13 +650,6 @@ def simbolo_salva(run_id) -> str | None:
     return r[0] if r else None
 
 
-def fim_otimizacao_salva(run_id: int) -> str | None:
-    with db.connect(read_only=True) as con:
-        r = con.execute("SELECT holdout_de FROM mining_runs WHERE run_id = ?",
-                        [run_id]).fetchone()
-    return r[0][:10] if r and r[0] and r[0] != "None" else None
-
-
 def detalhes_salva(run_id: int) -> dict | None:
     """Contexto de uma mineração salva: estratégia, perfil e espaço varrido.
 

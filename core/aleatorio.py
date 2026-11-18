@@ -5,7 +5,7 @@ horário, custo e limites do dia são do kernel. Então este teste é uma
 estratégia falsa que sorteia as barras de entrada e herda toda a gestão da
 real, sem tocar no motor.
 
-Duas decisões que fazem a comparação ser honesta (ver PLANO-CANDIDATA §6.1):
+Duas decisões que fazem a comparação ser honesta:
 o sorteio é estratificado pelo histograma de horário das entradas reais, e o
 número de sinais é calibrado até o número de TRADES bater — porque sinal não
 vira trade quando já há posição aberta ou o limite do dia bloqueou.

@@ -2,7 +2,7 @@
 
 Recebe um walk-forward salvo e responde, antes de arriscar dinheiro:
 quanto a estratégia aguenta, se o resultado é mérito ou sorte, e com
-quantos contratos operar. Ver docs/PLANO-CANDIDATA.md.
+quantos contratos operar.
 
 Os números aparecem numa tabela com mapa de calor, não em cartões: numa
 tela só de números, a tabela lê de cima a baixo e a cor mostra de relance

@@ -109,10 +109,6 @@ def _uma(args):
                 **_sem_trades()}
 
 
-def tamanho_mb(cache: list[dict]) -> float:
-    return sum(c[k].nbytes for c in cache for k in CAMPOS if k in c) / 1e6
-
-
 class Varredura:
     """Roda em segundo plano; a tela lê `estado` e nada mais.
 

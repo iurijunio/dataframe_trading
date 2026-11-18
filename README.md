@@ -19,9 +19,7 @@ iniciar.bat                            # abre o app e o serviço de captura
 | Documento | O que responde |
 |---|---|
 | este README | como usar |
-| [docs/PLANO.md](docs/PLANO.md) | por que é assim: decisões, alternativas descartadas, licenças, riscos |
 | [docs/METODOLOGIA.md](docs/METODOLOGIA.md) | o processo: da ideia ao dinheiro real |
-| [docs/PLANO-WFA.md](docs/PLANO-WFA.md) | o plano e as decisões da aba Walk-Forward |
 | [docs/CALCULOS-WFA.md](docs/CALCULOS-WFA.md) | **como cada número do Walk-Forward é calculado**, com exemplos da #40 |
 | [docs/CALCULOS-CANDIDATA.md](docs/CALCULOS-CANDIDATA.md) | **como cada portão da tela Candidata decide, e como ela dimensiona contratos**, com três walk-forwards reais (#8, #10, #11) |
 | [CHANGELOG.md](CHANGELOG.md) | o que mudou e quando |
@@ -126,11 +124,7 @@ rolagem por gap teria apagado do backtest os maiores movimentos reais da amostra
 
 ## O motor
 
-```bash
-.venv\Scripts\python.exe backtest.py
-.venv\Scripts\python.exe backtest.py --tf M15 --media-rapida 5 --media-lenta 40
-.venv\Scripts\python.exe backtest.py --stop-tipo atr --stop-atr-mult 2 --breakeven 50
-```
+O backtest roda pela aba Mineração do app.
 
 Regras de execução, todas no `core/engine/kernel.py` e todas com teste:
 
@@ -175,13 +169,10 @@ ui/components/             controles, cartões, gráficos, tabela
 ui/components/cartao.py    molde do cartão e do (?) — usado pelos três painéis
 ui/assets/dica.js          o balão do (?), preso ao <body> para não ser cortado
 cli.py                     init · ingest · derive · status · verify
-backtest.py                backtest único pela linha de comando
 core/walkforward.py        consistência entre períodos e holdout
 core/optimizer.py          pool de processos + escritor único
 ui/components/scatter.py   dispersão e cross-filtering
-docs/PLANO.md              decisões e razões
 docs/METODOLOGIA.md        o processo: da ideia ao dinheiro real
-docs/PLANO-WFA.md          plano e decisões do Walk-Forward
 docs/CALCULOS-WFA.md       as contas do Walk-Forward, uma a uma
 docs/CALCULOS-CANDIDATA.md as contas dos 12 portões e do dimensionamento da tela Candidata
 core/papel*.py             papel: calcula o que a variante faria no pregão
@@ -192,15 +183,13 @@ captura.py                 serviço de captura (candles, papel, ordens)
 ordens_real.py             processo "Ordens real" (conta real, em paralelo)
 iniciar.bat                abre o app, a captura e as ordens real
 core/ativo.py              ficha do ativo, relógio de pregão, escala de preço
-core/importar_lse.py       importação dos candles da CME (cli.py importar-lse)
+core/importar_lse.py       conversão de barras usada pelo prop_live (`preparar`)
 configs/instruments/       win.yaml, mes.yaml, mnq.yaml
-scripts/foto_win.py        foto do WIN: prova resultado idêntico após mexer no motor
-scripts/reassinar_codigo.py  reassina o hash de planos quando o código muda sem mudar trades
+scripts/resign_code_hash.py  reassina o hash de planos quando o código muda sem mudar trades
 core/busca/                busca automática: catálogo, espaço, motor MAP-Elites, núcleos, banco, controle, grupos, projeção, detalhe
 busca.py                   processo da busca (sem janela, prioridade baixa, só lê o Parquet)
 data/buscas.duckdb         banco próprio da busca (fora do git)
-scripts/gabarito_motor.py  prova que o motor em camadas dá os mesmos trades de antes
-scripts/conferir_busca.py  prova que a busca dá o número da Varredura
+scripts/verify_search.py   prova que a busca dá o número da Varredura
 ui/assets/busca.js         desenha a tela da busca; o Dash só manda os dados
 tests/                     2.972 testes
 ```

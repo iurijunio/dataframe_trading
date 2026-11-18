@@ -1,32 +1,16 @@
-"""Gabarito dos trades do motor, gravado ANTES de dividi-lo em camadas.
+"""Cases and hashing for the layered-engine golden file (`tests/dados/motor_camadas.json`).
 
-    python scripts/gabarito_motor.py gravar     (recusa sobrescrever)
-    python scripts/gabarito_motor.py conferir   (exit 1 se algo mudou)
-
-A foto do WIN cobre planos, padrões, uma mineração e um walk-forward; este
-gabarito cobre o que ela não alcança e que a busca automática vai exercitar
-combinação por combinação: cada estratégia × stop/alvo de cada tipo, janela,
-dias, direção, filtro ADX, horas sem entrada, limites diários, proteções e
-vários tempos gráficos, no WIN e no MES. Guarda só um hash por caso, então
-cabe no git (`tests/dados/motor_camadas.json`) e o teste o confere sempre.
-
-O arquivo foi gravado com o motor antigo: **nunca regravar** — regravar com o
-código novo transformaria a prova em espelho.
+The golden file was recorded with the old engine and is never re-recorded:
+re-recording with the new code would turn the proof into a mirror.
 """
 from __future__ import annotations
 
 import hashlib
-import json
-import sys
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent.parent
-if str(RAIZ) not in sys.path:
-    sys.path.insert(0, str(RAIZ))
+import numpy as np
 
-import numpy as np  # noqa: E402
-
-ARQUIVO = RAIZ / "tests" / "dados" / "motor_camadas.json"
+ARQUIVO = Path(__file__).resolve().parent / "dados" / "motor_camadas.json"
 PERIODO = ("2024-01-01", "2024-06-30")
 
 # (nome, campos do perfil). Pontos na escala do WIN; no MES a escala muda e
@@ -77,8 +61,8 @@ CAMPOS = ("entry_i", "exit_i", "side", "entry_px", "exit_px", "reason", "points"
 
 
 def assinatura(res) -> str:
-    """Hash dos trades: muda se qualquer entrada, saída, lado, preço, motivo
-    ou resultado mudar."""
+    """Hash of the trades: changes if any entry, exit, side, price, reason
+    or result changes."""
     h = hashlib.sha256()
     h.update(str(int(res.n_trades)).encode())
     for c in CAMPOS:
@@ -88,8 +72,8 @@ def assinatura(res) -> str:
 
 
 def _barras(simbolo: str) -> dict:
-    from core import db_manager as db
-    d = db.read_bars_parquet(simbolo, *PERIODO)
+    from core import db_manager
+    d = db_manager.read_bars_parquet(simbolo, *PERIODO)
     return {
         "ts": np.asarray(d["ts"], dtype="datetime64[ns]"),
         **{c: np.ascontiguousarray(d[c], dtype=np.int64)
@@ -98,11 +82,11 @@ def _barras(simbolo: str) -> dict:
 
 
 def casos():
-    """(chave, bars, módulo, params, perfil, instrumento, vela_aberta).
+    """(key, bars, module, params, profile, instrument, open_candle).
 
-    Além da grade de perfis: "virar a mão" (`saida` = 2) onde a estratégia
-    tem a opção, e a vela aberta do papel ao vivo (`vela_aberta=True`)."""
-    from core import db_manager as db
+    Besides the profile grid: "flip the position" (`saida` = 2) where the strategy
+    has the option, and the live paper's open candle (`vela_aberta=True`)."""
+    from core import db_manager
     from core.engine.execution import ExecutionProfile
     from strategies import registry
     from strategies.base import defaults
@@ -110,7 +94,7 @@ def casos():
     for simbolo, base, perfis in (("WIN$N", BASE_WIN, PERFIS_WIN),
                                   ("MES", BASE_MES, PERFIS_MES)):
         bars = _barras(simbolo)
-        inst = db.load_instrument_yaml(simbolo)
+        inst = db_manager.load_instrument_yaml(simbolo)
         for e in registry.descobrir():
             mod = registry.carregar(e["modulo"])
             params = defaults(mod.params_schema)
@@ -124,35 +108,3 @@ def casos():
                        {**params, "saida": 2}, padrao, inst, False)
             yield (f"{simbolo}|{e['modulo']}|vela_aberta", bars, mod, params,
                    padrao, inst, True)
-
-
-def gerar() -> dict:
-    from core.engine.execution import run_strategy
-    return {chave: assinatura(run_strategy(bars, mod, params, perfil, inst,
-                                           vela_aberta=va))
-            for chave, bars, mod, params, perfil, inst, va in casos()}
-
-
-def main(argv: list[str]) -> int:
-    if argv not in (["gravar"], ["conferir"]):
-        print(__doc__)
-        return 2
-    if argv[0] == "gravar":
-        if ARQUIVO.exists():
-            print(f"{ARQUIVO} já existe; nunca regravar.")
-            return 1
-        g = gerar()
-        ARQUIVO.write_text(json.dumps(g, indent=1, sort_keys=True), encoding="utf-8")
-        print(f"gabarito gravado: {len(g)} casos")
-        return 0
-    salvo = json.loads(ARQUIVO.read_text(encoding="utf-8"))
-    novo = gerar()
-    difs = sorted(k for k in salvo.keys() | novo.keys() if salvo.get(k) != novo.get(k))
-    print(f"{len(difs)} diferença(s) em {len(salvo)} casos")
-    for k in difs[:30]:
-        print("  " + k)
-    return 1 if difs else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))

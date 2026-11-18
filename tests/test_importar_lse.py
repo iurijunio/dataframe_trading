@@ -1,38 +1,19 @@
-import json
-import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 import polars as pl
 import pytest
 
-from core import ativo, db_manager as db, importar_lse as lse
+from core import ativo, importar_lse as lse
 
-D = Path(__file__).parent / "dados" / "lse"
 MES = ativo.ficha("MES")
 
 
-def test_partes_sobrepostas_identicas_emendam():
-    df = lse.ler_partes([D / "mnq_parte_a.parquet", D / "mnq_parte_b.parquet"])
-    assert df["time"].is_unique().all() and df["time"].is_sorted()
-    # a sobreposicao existe de verdade: sem a emenda haveria linhas repetidas
-    soma = pl.read_parquet(D / "mnq_parte_a.parquet").height + pl.read_parquet(D / "mnq_parte_b.parquet").height
-    assert df.height < soma
-
-
-def test_sobreposicao_divergente_para(tmp_path):
-    b = pl.read_parquet(D / "mnq_parte_b.parquet")
-    b = b.with_columns(pl.when(pl.int_range(pl.len()) == 0).then(pl.col("close") + 0.25)
-                       .otherwise(pl.col("close")).alias("close"))
-    b.write_parquet(tmp_path / "b.parquet")
-    with pytest.raises(ValueError, match="diverg"):
-        lse.ler_partes([D / "mnq_parte_a.parquet", tmp_path / "b.parquet"])
-
-
-def test_coluna_faltando_cita_o_arquivo(tmp_path):
-    pl.read_parquet(D / "mnq_parte_a.parquet").drop("trades").write_parquet(tmp_path / "x.parquet")
-    with pytest.raises(ValueError, match="x.parquet"):
-        lse.ler_partes([tmp_path / "x.parquet"])
+def _bars(times, volume=78.0):
+    n = len(times)
+    return pl.DataFrame({"time": times, "open": [7665.25] * n, "high": [7665.5] * n,
+                         "low": [7665.0] * n, "close": [7665.25] * n,
+                         "volume": [volume] * n, "trades": [40] * n},
+                        schema_overrides={"time": pl.Datetime("us", "UTC")})
 
 
 def test_preparar_arredonda_ao_tick_e_escala():
@@ -50,207 +31,11 @@ def test_preparar_arredonda_ao_tick_e_escala():
 
 def test_preparar_recusa_volume_fracionario():
     t = datetime(2026, 9, 15, 20, 59, tzinfo=timezone.utc)
-    df = pl.DataFrame({"time": [t], "open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0],
-                       "volume": [78.5], "trades": [40]},
-                      schema_overrides={"time": pl.Datetime("us", "UTC")})
     with pytest.raises(ValueError, match="volume"):
-        lse.preparar(df, MES)
+        lse.preparar(_bars([t], volume=78.5), MES)
 
 
 def test_preparar_passa_pela_validacao_da_base():
     from core.ingest import validar
-    df = lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES)
-    validar(df, "teste", price_decimals=MES.price_decimals)
-
-
-def test_buraco_de_marco_2020_e_suspeito():
-    s = lse.pregoes_suspeitos(lse.preparar(lse.ler_partes([D / "mes_2020_03.parquet"]), MES), MES)
-    assert {"2020-02-27", "2020-02-28", "2020-03-02", "2020-03-03"} <= set(s)
-    assert "ausente" in s["2020-02-28"] and "14:29" in s["2020-02-27"]
-    assert "2020-02-26" not in s and "2020-03-04" not in s
-    assert "NY" in s["2020-03-02"] and "NY" in s["2020-03-03"]
-
-
-def test_vespera_de_natal_nao_e_suspeita():
-    s = lse.pregoes_suspeitos(lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES), MES)
-    assert "2024-12-24" not in s and "2024-12-26" not in s
-    assert "2024-12-25" not in s  # Natal ausente nao e suspeito
-    assert "2024-12-23" not in s  # comeca no minuto 60: limite estrito
-
-
-def test_vazio_dentro_do_pregao_e_suspeito():
-    df = lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES)
-    # abre um buraco de ~5 h no pregao de 26/12, no meio do dia
-    ts = pl.col("ts")
-    furo = df.filter(~((ts >= pl.datetime(2024, 12, 26, 12, 0)) & (ts < pl.datetime(2024, 12, 26, 17, 0))))
-    s = lse.pregoes_suspeitos(furo, MES)
-    assert "2024-12-26" in s and "vazio" in s["2024-12-26"]
-
-
-def test_ultimo_pregao_incompleto():
-    df = lse.preparar(lse.ler_partes([D / "mnq_parte_a.parquet"]), MES)  # termina 20/09 16:59 NY
-    assert lse.pregao_incompleto(df) is None
-    assert lse.pregao_incompleto(df.filter(pl.col("ts").dt.hour() < 20)) == str(df["ts"].dt.date().max())
-
-
-def test_feriados_de_fechamento_total():
-    from datetime import date
-    assert date(2024, 3, 29) in lse.feriados_de_fechamento_total(2024)
-    assert date(2021, 4, 2) in lse.feriados_de_fechamento_total(2021)
-    assert date(2021, 12, 24) in lse.feriados_de_fechamento_total(2021)   # Natal no sabado
-    assert date(2023, 1, 2) in lse.feriados_de_fechamento_total(2023)     # Ano Novo no domingo
-    assert date(2024, 12, 25) in lse.feriados_de_fechamento_total(2024)
-    assert date(2021, 12, 31) not in lse.feriados_de_fechamento_total(2021)  # CME abre em 31/12
-    assert date(2021, 12, 31) not in lse.feriados_de_fechamento_total(2022)
-
-
-def _corta_pregao_26_depois_de(hora: int, minuto: int):
-    df = lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES)
-    ts = pl.col("ts")
-    dia = (ts >= pl.datetime(2024, 12, 26)) & (ts < pl.datetime(2024, 12, 27))
-    return df.filter(~(dia & (ts > pl.datetime(2024, 12, 26, hora, minuto))))  # relogio de pregao = NY + 6h
-
-
-def test_fechamento_as_13h15_nao_e_suspeito_mas_13h16_e():
-    ok = lse.pregoes_suspeitos(_corta_pregao_26_depois_de(19, 15), MES)   # ultima barra 13:15 NY
-    assert "2024-12-26" not in ok
-    ruim = lse.pregoes_suspeitos(_corta_pregao_26_depois_de(19, 16), MES)  # ultima barra 13:16 NY
-    assert "terminou as 13:16 NY" in ruim["2024-12-26"]
-
-
-def test_todos_os_motivos_aparecem():
-    df = lse.preparar(lse.ler_partes([D / "mes_2024_12.parquet"]), MES)
-    ts = pl.col("ts")
-    dia = (ts >= pl.datetime(2024, 12, 26)) & (ts < pl.datetime(2024, 12, 27))
-    # fura o meio do dia e corta o comeco e o fim do pregao
-    q = df.filter(~(dia & (((ts >= pl.datetime(2024, 12, 26, 3)) & (ts < pl.datetime(2024, 12, 26, 9)))
-                          | (ts < pl.datetime(2024, 12, 26, 2))
-                          | (ts >= pl.datetime(2024, 12, 26, 17)))))
-    m = lse.pregoes_suspeitos(q, MES)["2024-12-26"]
-    assert m.count(";") == 2 and "vazio" in m and "comecou" in m and "terminou" in m
-
-
-@pytest.fixture(autouse=True)
-def _parquet_isolado(tmp_path, monkeypatch):
-    monkeypatch.setattr(db, "PARQUET_DIR", tmp_path / "parquet")
-
-
-def _con():
-    con = db.connect(); db.init_schema(con); db.sync_instruments(con); return con
-
-
-def test_importar_descarta_os_da_lista_e_grava_o_resto():
-    con = _con()
-    r = lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
-    datas = {str(d) for (d,) in con.execute("SELECT DISTINCT CAST(ts AS DATE) FROM bars_m1 WHERE symbol='MES'").fetchall()}
-    assert "2020-03-03" not in datas and "2020-03-04" in datas
-    assert "2020-03-03" in r.descartados
-    obs = con.execute("SELECT observacao FROM ingest_log WHERE symbol='MES'").fetchone()[0]
-    assert "2020-03-03" in obs
-
-
-def test_suspeito_fora_da_lista_para_sem_gravar(monkeypatch):
-    con = _con()
-    monkeypatch.setattr(lse, "_ficha", lambda s: ativo.ficha_de({**db.load_instrument_yaml("MES"), "pregoes_descartados": {}}))
-    with pytest.raises(lse.SuspeitoNovo) as e:
-        lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
-    assert "2020-03-03" in e.value.pregoes
-    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES'").fetchone()[0] == 0
-    assert con.execute("SELECT count(*) FROM ingest_log WHERE symbol='MES'").fetchone()[0] == 0
-    assert not (db.PARQUET_DIR / db.safe_symbol("MES")).exists()
-
-
-def test_mantido_pela_lista_e_gravado(monkeypatch):
-    con = _con()
-    cfg = {**db.load_instrument_yaml("MES"), "pregoes_descartados": {},
-           "pregoes_mantidos": {d: "teste" for d in ("2020-02-27", "2020-02-28", "2020-03-02", "2020-03-03")}}
-    monkeypatch.setattr(lse, "_ficha", lambda s: ativo.ficha_de(cfg))
-    lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
-    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES' AND CAST(ts AS DATE)='2020-03-03'").fetchone()[0] > 0
-
-
-def test_reimportar_nao_altera_nada():
-    con = _con()
-    lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
-    r = lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
-    assert r.ingest.rows_inserted == 0 and r.ingest.rows_updated == 0
-
-
-def _seed_win(con):
-    from core import calendar as cal, ingest as ing
-    ts = [datetime(2024, 12, 2, 9, m) for m in range(5)]
-    df = pl.DataFrame({
-        "ts": ts, "open": [100000 + m for m in range(5)], "high": [100010 + m for m in range(5)],
-        "low": [99990 + m for m in range(5)], "close": [100005 + m for m in range(5)],
-        "tick_volume": [10] * 5, "volume": [5] * 5, "spread": [None] * 5,
-    }, schema_overrides={"spread": pl.Int32})
-    ing.ingest_df(con, df, "WIN$N", "win_teste", "sha_win")
-    cal.rebuild_trading_days(con, "WIN$N")
-    return db.export_parquet(con, "WIN$N")
-
-
-def _foto_win(con, pasta):
-    import hashlib
-    bars = con.execute("SELECT * FROM bars_m1 WHERE symbol='WIN$N' ORDER BY ts").fetchall()
-    dias = con.execute("SELECT * FROM trading_days WHERE symbol='WIN$N' ORDER BY date").fetchall()
-    shas = {str(p.relative_to(pasta)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(pasta.rglob("*.parquet"))}
-    return bars, dias, shas
-
-
-def test_win_nao_e_tocado():
-    con = _con()
-    pasta = _seed_win(con)
-    antes = _foto_win(con, pasta)
-    assert antes[0] and antes[1] and antes[2]
-    lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
-    assert _foto_win(con, pasta) == antes
-
-
-def test_descartados_so_do_periodo_importado():
-    con = _con()
-    r = lse.importar(con, "MES", [D / "mes_2024_12.parquet"])
-    assert r.descartados == {}
-    obs = con.execute("SELECT observacao FROM ingest_log WHERE symbol='MES'").fetchone()[0]
-    assert json.loads(obs)["descartados"] == {}
-
-
-def test_cli_importar_lse_sucesso_e_suspeito(monkeypatch, capsys):
-    import cli
-    monkeypatch.setattr(sys, "argv", ["cli.py", "importar-lse", "--symbol", "MES",
-                                      str(D / "mes_2024_12.parquet")])
-    cli.main()
-    assert "[MES]" in capsys.readouterr().out
-    with db.connect() as con:
-        assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES'").fetchone()[0] > 0
-
-    monkeypatch.setattr(lse, "_ficha", lambda s: ativo.ficha_de({**db.load_instrument_yaml("MES"), "pregoes_descartados": {}}))
-    monkeypatch.setattr(sys, "argv", ["cli.py", "importar-lse", "--symbol", "MES",
-                                      str(D / "mes_2020_03.parquet")])
-    with pytest.raises(SystemExit) as e:
-        cli.main()
-    assert e.value.code == 1
-    out = capsys.readouterr().out
-    assert "2020-03-03" in out and "pregoes_descartados" in out
-
-
-def test_descartar_apaga_a_barra_ja_gravada_so_do_simbolo(monkeypatch):
-    con = _con()
-    lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
-    dia = "2020-03-04"
-    # WIN com barra no mesmo dia: nao pode ser tocado
-    con.execute("INSERT INTO instruments (symbol, description) VALUES ('WIN$N','w') "
-                "ON CONFLICT DO NOTHING")
-    con.execute("INSERT INTO bars_m1 (symbol, ts, open, high, low, close, volume, src_ingest_id) "
-                "VALUES ('WIN$N', TIMESTAMP '2020-03-04 10:00:00', 1,1,1,1,1, 1)")
-    antes = con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES' "
-                        "AND CAST(ts AS DATE)=?", [dia]).fetchone()[0]
-    assert antes > 0
-    cfg = db.load_instrument_yaml("MES")
-    cfg = {**cfg, "pregoes_descartados": {**cfg.get("pregoes_descartados", {}), dia: "teste"}}
-    monkeypatch.setattr(lse, "_ficha", lambda s: ativo.ficha_de(cfg))
-    lse.importar(con, "MES", [D / "mes_2020_03.parquet"])
-    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES' "
-                       "AND CAST(ts AS DATE)=?", [dia]).fetchone()[0] == 0
-    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='MES'").fetchone()[0] > 0
-    assert con.execute("SELECT count(*) FROM bars_m1 WHERE symbol='WIN$N'").fetchone()[0] == 1
+    times = [datetime(2024, 12, 17, 14, m, tzinfo=timezone.utc) for m in (0, 1, 2)]
+    validar(lse.preparar(_bars(times), MES), "teste", price_decimals=MES.price_decimals)

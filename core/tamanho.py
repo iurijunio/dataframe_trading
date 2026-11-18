@@ -25,8 +25,8 @@ CAUDA = 0.05
 # 20 pregões, 5% arredondado para cima ainda é UM dia, e a "média dos piores"
 # seria o pior. 21 é o primeiro tamanho em que a cauda tem dois dias.
 #
-# Isto não é a recusa de amostra pequena do desenho (§5 do PLANO-CANDIDATA,
-# 100 operações fora da amostra): essa conta operações e mora em quem chama.
+# Isto não é a recusa de amostra pequena do desenho (100
+# operações fora da amostra): essa conta operações e mora em quem chama.
 # Aqui é só a guarda contra entrada degenerada.
 MIN_PREGOES = 21
 

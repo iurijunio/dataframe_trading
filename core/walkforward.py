@@ -66,14 +66,6 @@ def montar_janelas(inicio, fim, treino_meses=12, teste_meses=3,
     return Janelas(folds, holdout_de, limite)
 
 
-def _mascara(entradas: np.ndarray, janelas: list[tuple]) -> np.ndarray:
-    """Trades cuja ENTRADA cai em alguma das janelas."""
-    m = np.zeros(len(entradas), dtype=bool)
-    for de, ate in janelas:
-        m |= (entradas >= de) & (entradas < ate)
-    return m
-
-
 def resumo(liquido: np.ndarray, capital: float) -> dict:
     """Metricas de uma fatia de trades. Enxuto de proposito: isto roda uma
     vez por combinacao por janela, milhares de vezes."""

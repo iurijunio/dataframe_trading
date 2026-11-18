@@ -1,7 +1,6 @@
 # Metodologia
 
-O processo, não o código. `PLANO.md` explica por que a plataforma é como é;
-aqui está **o que fazer com ela, em que ordem, e o que cada passo decide**.
+O processo, não o código: **o que fazer com ela, em que ordem, e o que cada passo decide**.
 
 O fluxo abaixo é o da metodologia Data N Quant / DQ Labs. A plataforma foi
 construída para servi-lo — cada tela existe por causa de um passo daqui.

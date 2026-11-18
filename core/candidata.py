@@ -117,7 +117,7 @@ def pior_dos_recortes(leitura: dict) -> dict:
     """Para cada métrica de risco, o PIOR valor entre os dois recortes — e de
     qual recorte ele veio.
 
-    O desenho (§4.1 do PLANO-CANDIDATA) manda TODAS as contas de risco
+    O desenho manda TODAS as contas de risco
     rodarem nos dois recortes — curva inteira e últimos 12 meses — valendo o
     pior. Antes desta função só "drawdown esperado" comparava os dois;
     "perdas seguidas" e "pregões abaixo do topo" liam sempre `boot`, e

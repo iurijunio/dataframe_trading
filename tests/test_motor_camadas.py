@@ -1,7 +1,7 @@
 """O motor em camadas tem de dar os mesmos trades do motor de antes.
 
-O gabarito (`tests/dados/motor_camadas.json`) foi gravado com o motor antigo,
-por `scripts/gabarito_motor.py`; cada caso é um hash dos trades.
+O gabarito (`tests/dados/motor_camadas.json`) foi gravado com o motor antigo;
+os casos e o hash estão em `tests/_motor_camadas_helpers.py`.
 """
 import json
 
@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from core import db_manager as db
-from scripts.gabarito_motor import ARQUIVO, assinatura, casos
+from tests._motor_camadas_helpers import ARQUIVO, assinatura, casos
 
 
 def _tem_parquet():

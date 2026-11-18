@@ -12,7 +12,7 @@ Duas regras aqui:
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import duckdb
 import numpy as np
@@ -320,11 +320,6 @@ def candles(symbol: str, inicio: datetime, fim: datetime, tf: str = "auto") -> d
             for r in rows
         ],
     }
-
-
-def default_window(symbol: str, dias: int = 5) -> tuple[datetime, datetime]:
-    _, fim = span(symbol)
-    return fim - timedelta(days=dias), fim
 
 
 def dia_do_pregao(estado: dict | None) -> date:

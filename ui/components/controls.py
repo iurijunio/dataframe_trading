@@ -164,7 +164,7 @@ def topo_menu(simbolo, inicio, fim, ativos=None):
     lado; de, até e tempo gráfico; o holdout; e as abas.
 
     `ativos`: os símbolos do seletor (o app lê do banco; quem monta o menu
-    sem banco, como `scripts/campos_menu.py`, passa a lista).
+    sem banco, passa a lista).
     """
     if ativos is None:
         from ui import data as D
@@ -489,7 +489,3 @@ CAMPOS_EXECUCAO = ["alvo_pontos", "stop_pontos", "breakeven_pct",
                    "alvo_pct", "stop_atr_periodo", "stop_atr_mult", "stop_pct",
                    "adx_periodo", "adx_limiar", "adx_filtro_di",
                    "adx_subindo"]
-
-
-def opt_fields(mod=None):
-    return list((mod or registry.atual()).params_schema) + CAMPOS_EXECUCAO
